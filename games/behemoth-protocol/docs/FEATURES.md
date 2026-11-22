@@ -364,7 +364,7 @@ Six units, the first past M1's four (content/enemies.ts; weapons in content/weap
 - The **command post** (Decapitation's target, unarmed) is in §9 "Directives and sector objectives".
 
 ### Field battery (placed artillery)
-`M3` · `uncommitted` · `playtest: pending` · SPEC §7, §15 "Field artillery (M3)", §16 Q29
+`M3` · `30a779b` · `playtest: pending` · SPEC §7, §15 "Field artillery (M3)", §16 Q29
 A fixed battery dug in near a side of the field. After a 1.2 s aim glint it marks a target zone where the Behemoth is headed and fires four lobbed rounds into it, each landing 2.4 s after it's fired. Steering or a change of speed gets clear; inside 90 units it can't fire at all.
 - **Unit** `artillery` (content/enemies.ts): 75 HP, light, `EMPLACEMENT_FACING`, behavior `fixed`, obstacle `medium` (crushable), threat 2, salvage 14, `spawn: 'edge'`. **Weapon** `batteryShells` (content/weapons.ts): reload 7.5, `salvo` 4 × 0.3 s, `barrage: { radius 30, flight 2.4 }`, lobbed shell 12 dmg / 14 blast / 40 tile, `minRange` 90, `maxRange` 330, `strike` hardpoints 0.25.
 - **Area fire** (`WeaponDef.barrage`, a reusable targeting type): `aimAndFire` (sim/enemies.ts) leads the turret by `barrageLead` (flight + half the salvo spread) and skips the shot inside the shell's `minRange`. When the windup ends, `markBarrage` fixes the zone (Behemoth position + velocity × lead, clamped to the range band), stores it in `e.ai.zone`, pushes a `Barrage` onto `World.barrages` (`from`, `lands`, `until`) and a `barrage` event. `fireRound` then aims each round of the salvo at a random point in the zone, with `SpawnOptions.speed` = distance / flight so it lands on time.

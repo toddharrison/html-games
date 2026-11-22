@@ -17,8 +17,8 @@ import { biomePalette, type Pal } from './tileArt';
 /** Icon frame size (the art sits inside a 1-pixel outline margin). */
 export const MAP_ICON = 26;
 
-export type MapIcon = ApproachId | 'mix' | 'depot' | 'fog';
-const ICONS: readonly MapIcon[] = ['plain', 'forest', 'urban', 'river', 'pass', 'mix', 'depot', 'fog'];
+export type MapIcon = ApproachId | 'mix' | 'depot' | 'fog' | 'event';
+const ICONS: readonly MapIcon[] = ['plain', 'forest', 'urban', 'river', 'pass', 'mix', 'depot', 'fog', 'event'];
 
 /** Texture key of a biome's icon sheet (frames named by `MapIcon`). */
 export const mapIconSheet = (biome: BiomeId) => `mapicons_${biome}`;
@@ -167,6 +167,8 @@ function drawIcon(p: Painter, icon: MapIcon, biome: BiomeId, pal: Pal, rng: Rng)
       return depotIcon(p);
     case 'fog':
       return fogIcon(p);
+    case 'event':
+      return eventIcon(p, pal);
   }
 }
 
@@ -412,6 +414,28 @@ function depotIcon(p: Painter): void {
   line(p, 22, 3, 24, 5, PAL.girder);
   p.rect(16, 3, 1, 3, PAL.outline);
   p.rect(15, 6, 3, 1, PAL.amber);
+}
+
+/** An event (SPEC §8.3): the biome's ground, tire tracks, and an amber hazard diamond on a post with a "!". */
+function eventIcon(p: Painter, pal: Pal): void {
+  ground(p, pal.grass, pal.grassLight, pal.grassDark);
+  for (let x = 4; x <= 22; x++) {
+    p.px(x, Math.round(GY + 2 + Math.sin(x / 3) * 1), pal.dirtDark);
+    p.px(x, Math.round(GY - 1 + Math.sin(x / 3) * 1), pal.dirtDark);
+  }
+  p.rect(12, 13, 2, 8, PAL.steelDark);
+  p.px(12, 13, PAL.steelHi);
+  // The diamond: rows widening to the middle, then narrowing.
+  const cx = 12.5;
+  for (let dy = -6; dy <= 6; dy++) {
+    const half = 6 - Math.abs(dy);
+    for (let dx = -half; dx <= half; dx++) {
+      const edge = Math.abs(dx) === half;
+      p.px(Math.round(cx + dx - 0.5), 8 + dy, edge ? PAL.amberHot : dy < 0 && dx < 0 ? PAL.amberHot : PAL.amber);
+    }
+  }
+  p.rect(12, 4, 2, 5, INK);
+  p.rect(12, 10, 2, 2, INK);
 }
 
 /** Unknown ground: a cloud with a question mark. */

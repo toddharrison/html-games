@@ -17,7 +17,8 @@
  * then the track after the last dot). `?depot=N` (also a practice run) opens the depot after N
  * battles won, with salvage to spend, to try the depot without playing a battle.
  * `?biome=arctic&approach=pass` (also a practice run) fights every battle over that biome and
- * approach (see `recipeFromUrl`).
+ * approach (see `recipeFromUrl`). `?condition=night|storm|none` (also a practice run) fights every
+ * battle in that condition; `?event=convoy` (also a practice run) opens that event (or a random one).
  */
 
 import { MODES, type BattleModeId } from './content/modes';
@@ -25,6 +26,8 @@ import { ADDONS } from './content/addons';
 import { APPROACHES, type ApproachId } from './content/approaches';
 import { BIOMES, type BiomeId } from './content/biomes';
 import { DIRECTIVES, type DirectiveId } from './content/directives';
+import { CONDITIONS, type ConditionId } from './content/conditions';
+import { MAP_EVENTS, type MapEventId } from './content/mapEvents';
 
 export interface Resolution {
   width: number;
@@ -42,7 +45,7 @@ const RESOLUTIONS: Record<string, Resolution> = {
 export const RESOLUTION: Resolution = RESOLUTIONS[params.get('res') ?? ''] ?? RESOLUTIONS['576']!;
 
 /** Playtest run from a URL parameter: straight into battle, nothing saved or deleted. */
-export const PRACTICE = ['seed', 'immobilize', 'addons', 'trailer', 'weapons', 'shells', 'cookoff', 'grades', 'mods', 'depot', 'biome', 'approach', 'map', 'mode', 'directive', 'objective', 'summary'].some((k) => params.has(k));
+export const PRACTICE = ['seed', 'immobilize', 'addons', 'trailer', 'weapons', 'shells', 'cookoff', 'grades', 'mods', 'depot', 'biome', 'approach', 'map', 'mode', 'directive', 'objective', 'summary', 'condition', 'event'].some((k) => params.has(k));
 
 /**
  * Playtest shortcut: the biome and approach every battle is fought over (`?biome=arctic`,
@@ -76,6 +79,20 @@ export function summaryFromUrl(): 'won' | 'failed' | 'destroyed' | null {
   const s = params.get('summary');
   if (s === null) return null;
   return s === 'failed' || s === 'destroyed' ? s : 'won';
+}
+
+/** Playtest shortcut: every battle in this condition (`?condition=night`, `storm`; `none` for clear); undefined = the node's own. */
+export function conditionFromUrl(): ConditionId | null | undefined {
+  const c = params.get('condition');
+  if (c === 'none') return null;
+  return c && c in CONDITIONS ? (c as ConditionId) : undefined;
+}
+
+/** Playtest shortcut: open an event (`?event=convoy`; `?event` alone, a random one); null when not asked for. */
+export function eventFromUrl(): MapEventId | 'random' | null {
+  if (!params.has('event')) return null;
+  const e = params.get('event');
+  return e && e in MAP_EVENTS ? (e as MapEventId) : 'random';
 }
 
 /** Playtest shortcut: every battle in this mode (`?mode=breach`, `chase`, `assault`). */

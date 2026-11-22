@@ -2,7 +2,7 @@ import { DETONATION, TRAILER_MINE } from '../content/tuning';
 import Phaser from 'phaser';
 import { BattleAudio } from '../audio/battleAudio';
 import { toggleMute } from '../audio/mute';
-import { battleLayout, battleLengthFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
+import { battleLayout, battleLengthFromUrl, conditionFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
 import { Controls } from '../input/controls';
 import { BehemothView, TrackMarks } from '../render/compositor';
 import { Effects } from '../render/effects';
@@ -14,6 +14,9 @@ import { ThreatIndicators } from '../render/threatIndicators';
 import { TrailerView } from '../render/trailerView';
 import { DroneViews } from '../render/droneView';
 import { PoolViews } from '../render/poolView';
+import { WeatherView } from '../render/weatherView';
+import { CONDITIONS, conditionName } from '../content/conditions';
+import { sightRadius } from '../sim/conditions';
 import { UnitViews } from '../render/unitViews';
 import { ComponentFx, componentAnchors, hullToSim, trailerPartAt, UnitFx, type UnitStatus } from '../render/statusFx';
 import { canSelfDestruct, damageComponent, damageTreads, firingBinding, hitched } from '../sim/behemoth';
@@ -28,6 +31,7 @@ import { roundSpec } from '../sim/projectiles';
 import { viewX, viewY } from '../render/viewTransform';
 import {
   battleAlertPace,
+  battleCondition,
   battleEnemy,
   battleLength,
   battleObjective,
@@ -75,6 +79,8 @@ export class TopDownBattleScene extends Phaser.Scene {
   private units!: UnitViews;
   private drones!: DroneViews;
   private pools!: PoolViews;
+  /** The condition's veil and weather (SPEC §4.6); null for a clear battle. */
+  private weather: WeatherView | null = null;
   private fx!: Effects;
   private status!: ComponentFx;
   private unitFx!: UnitFx;
@@ -96,6 +102,8 @@ export class TopDownBattleScene extends Phaser.Scene {
   private alertShownAt: number | null = null;
   /** The latest objective call (a target destroyed or lost, the objective done) and when (sim time). */
   private objectiveShown: { at: number; text: string } | null = null;
+  /** When the latest squall began building (sim time), for its banner. */
+  private squallShownAt: number | null = null;
   /** When the drones' revive worked or failed (sim time), for the message over the field. */
   private reviveShown: { at: number; ok: boolean } | null = null;
   private dustTimer = 0;
@@ -145,6 +153,7 @@ export class TopDownBattleScene extends Phaser.Scene {
       ...battleEnemy(run, recipe),
       ...(demo ? { threat: demo.threat, battleLength: demo.battleLength } : { battleLength: battleLengthFromUrl() ?? battleLength(run), alertPace: battleAlertPace(run) }),
       objective: demo ? { mode: demo.mode, strength: 'normal' } : battleObjective(run, modeFromUrl()),
+      condition: demo ? demo.condition : battleCondition(run, conditionFromUrl()),
     });
     if (demo) this.prerollDemo(demo);
     this.stepper = new FixedStepper();
@@ -159,6 +168,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.units = new UnitViews(this);
     this.drones = new DroneViews(this);
     this.pools = new PoolViews(this);
+    this.weather = WeatherView.create(this, this.layout, this.world);
     this.fx = new Effects(this);
     // The attract mode is silent: the title shouldn't blare before anyone has asked to play.
     this.audio = demo ? null : BattleAudio.create(this);
@@ -171,6 +181,7 @@ export class TopDownBattleScene extends Phaser.Scene {
           salvage: run.salvage,
           where: recipeName(this.world.terrain.recipe),
           callsign: run.callsign,
+          ...(this.world.condition ? { condition: conditionName(this.world.condition.id, this.world.terrain.recipe.biome) } : {}),
           ...(this.objectiveBattle() ? { directive: this.directiveInfo() } : {}),
         });
     this.drawExtractionLine();
@@ -187,6 +198,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.paused = false;
     this.waveShownAt = null;
     this.alertShownAt = null;
+    this.squallShownAt = null;
     this.reviveShown = null;
     // The mode's goal, called at the start (SPEC §4.4); a sector's objective, the Directive's ask (SPEC §3).
     const mode = MODES[this.world.objective.mode];
@@ -331,7 +343,10 @@ export class TopDownBattleScene extends Phaser.Scene {
     const hud = this.hud!;
     hud.update(this.world, this.paused ? 0 : dt);
     // The last stand's messages, and the alert banner, sit at the top of the field, out of the fight's way.
-    const top = (this.world.lastStand !== null || this.alertBanner() !== null || this.objectiveBanner() !== null) && !this.world.behemoth.destroyed && !this.paused;
+    const top =
+      (this.world.lastStand !== null || this.alertBanner() !== null || this.objectiveBanner() !== null || this.conditionBanner() !== null) &&
+      !this.world.behemoth.destroyed &&
+      !this.paused;
     hud.message(this.statusMessage(), top);
     hud.setDebug(this.showDebug ? this.debugLines() : null);
   }
@@ -356,7 +371,8 @@ export class TopDownBattleScene extends Phaser.Scene {
     const { height } = this.layout;
     const where = clip.approach ? `${BIOMES[clip.biome].name} - ${APPROACHES[clip.approach].name}` : BIOMES[clip.biome].name;
     const mode = MODES[clip.mode].name;
-    this.add.bitmapText(6, height - 6, FONT_KEY, fontText(`${where}\n${mode}`)).setOrigin(0, 1).setTint(hex(PAL.hudText)).setScrollFactor(0).setDepth(150);
+    const weather = clip.condition ? ` - ${conditionName(clip.condition, clip.biome)}` : '';
+    this.add.bitmapText(6, height - 6, FONT_KEY, fontText(`${where}\n${mode}${weather}`)).setOrigin(0, 1).setTint(hex(PAL.hudText)).setScrollFactor(0).setDepth(150);
     this.cameras.main.fadeIn(DEMO.fade * 1000);
   }
 
@@ -452,7 +468,22 @@ export class TopDownBattleScene extends Phaser.Scene {
       const progress = b.selfDestructHeld > 0 ? `\n${'#'.repeat(filled)}${'-'.repeat(n - filled)}` : '';
       return `${head}\nHold X - final protocol${progress}`;
     }
-    return this.objectiveBanner() ?? this.alertBanner();
+    return this.objectiveBanner() ?? this.alertBanner() ?? this.conditionBanner();
+  }
+
+  /**
+   * The condition (SPEC §4.6), called at the start (after the objective's call, if there is one),
+   * and each squall as it builds.
+   */
+  private conditionBanner(): string | null {
+    const w = this.world;
+    const c = w.condition;
+    if (!c || w.lastStand || w.extractedAt !== null) return null;
+    const start = this.objectiveShown?.at === 0 ? 3 : 0;
+    const name = conditionName(c.id, w.terrain.recipe.biome);
+    if (w.time >= start && w.time < start + 3) return c.id === 'night' ? CONDITIONS.night.banner : `${name}\n${CONDITIONS.storm.banner}`;
+    if (this.squallShownAt !== null && w.time - this.squallShownAt < 2.5) return `${name}: squall\nSight closing in`;
+    return null;
   }
 
   /** For a few seconds after an objective call: the goal at the start, each target, the outcome. */
@@ -552,6 +583,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.unitFx.update(damaged, dt, this.fx);
     this.drones.update(w.drones, this.interp, dt, w.time, this.fx);
     this.pools.update(w.pools, dt, w.time, this.fx);
+    this.weather?.update(w, this.interp, this.cameras.main, dt);
     this.threats?.update(w.enemies, w.frame, w.time);
     this.updateLockMark();
     for (const p of w.projectiles) {
@@ -609,6 +641,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     const w = this.world;
     const cam = this.cameras.main;
     const ts = w.terrain.tileSize;
+    this.weather?.handle(w.events);
     for (const ev of w.events) {
       switch (ev.type) {
         case 'fire': {
@@ -805,6 +838,9 @@ export class TopDownBattleScene extends Phaser.Scene {
         case 'alert':
           this.alertShownAt = w.time;
           break;
+        case 'squall':
+          if (ev.rising) this.squallShownAt = w.time;
+          break;
         case 'objective':
           this.objectiveShown = { at: w.time, text: this.objectiveCall(ev.what, ev.done, ev.enemy) };
           break;
@@ -829,6 +865,7 @@ export class TopDownBattleScene extends Phaser.Scene {
       `SHOTS ${w.projectiles.length}`,
       `ALERT ${w.encounter.alert.wave} NEXT ${w.encounter.alert.next.toFixed(1)} Q ${w.encounter.alert.queue.toFixed(1)}`,
       `POSTS ${w.encounter.posts.length} THREAT ${w.threat}`,
+      ...(w.condition ? [`${w.condition.id.toUpperCase()} SIGHT ${sightRadius(w)?.toFixed(0) ?? '-'} SQUALL ${w.condition.squall.toFixed(2)}`] : []),
       `MODE ${w.objective.mode.toUpperCase()} ${w.objective.destroyed}/${w.objective.total} LOST ${w.objective.lost}`,
       ...(w.lastStand ? [`WAVE ${w.lastStand.wave} NEXT ${w.lastStand.nextWave.toFixed(1)}`] : []),
     ];

@@ -53,6 +53,7 @@ export class BattleAudio {
 
   update(w: World, cmd: PlayerCommand, wet: (x: number, y: number) => boolean): void {
     const b = w.behemoth;
+    this.synth.setWeather(w.condition?.id ?? null, w.condition?.squall ?? 0);
     if (this.dead) return;
     const cruiseFrac = b.chassis.speed.cruise / b.chassis.speed.top;
     this.synth.update(engineState(b, cmd), wet(b.x, b.y), cruiseFrac, reactorState(b, this.fuseStart));

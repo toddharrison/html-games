@@ -16,8 +16,12 @@ import { hex, PAL } from '../render/palette';
 import { openDepot } from '../sim/depot';
 import { hashSeed } from '../sim/rng';
 import { directiveAsk, enterMapNode, restoreBehemoth, type RunState } from '../sim/run';
+import { lastEventOutcome } from '../sim/mapEvents';
+import { CONDITIONS, conditionName } from '../content/conditions';
+import { MAP_EVENTS } from '../content/mapEvents';
 import {
   depotKey,
+  hiddenEvent,
   hiddenIntel,
   isFinalNode,
   nodeAt,
@@ -224,9 +228,10 @@ export class MapScene extends Phaser.Scene {
     this.text((left + right) / 2, RESOLUTION.height - 12, 'Click a node or 1-9, then Enter    Esc - title', PAL.hudDim).setOrigin(0.5, 0);
   }
 
-  /** What a node's icon shows: its ground (fogged ground shows as fog), or a depot. */
+  /** What a node's icon shows: its ground (fogged ground shows as fog), a depot, or an event. */
   private iconFor(n: MapNode, hidden: readonly IntelField[]): MapIcon {
     if (n.kind === 'depot') return 'depot';
+    if (n.kind === 'event') return 'event';
     if (hidden.includes('approach')) return 'fog';
     return n.battle!.approach ?? 'mix';
   }
@@ -240,14 +245,35 @@ export class MapScene extends Phaser.Scene {
     const alpha = done ? 0.5 : 1;
     this.add.image(x, y, mapIconSheet(biome), this.iconFor(n, hidden)).setAlpha(alpha);
     if (n.kind !== 'battle') return;
+    const g = this.add.graphics().setAlpha(alpha);
+    const by = y - MAP_ICON / 2 + 3;
+
+    // The condition (SPEC §4.6) under the icon's left shoulder: a moon and a star for night, a
+    // raincloud for a storm (shapes, not letters, so they never read as a mode's initial).
+    const cond = n.battle!.condition;
+    if (cond) {
+      const cx = x - MAP_ICON / 2 + 3;
+      const cy = y + MAP_ICON / 2 - 4;
+      g.fillStyle(hex(PAL.outline), 1).fillRect(cx - 4, cy - 4, 9, 9);
+      g.fillStyle(hex(cond === 'night' ? '#1c2440' : '#3a4654'), 1).fillRect(cx - 3, cy - 3, 7, 7);
+      const px = (color: string, cells: readonly (readonly [number, number, number?])[]) => {
+        g.fillStyle(hex(color), 1);
+        for (const [dx, dy, w = 1] of cells) g.fillRect(cx + dx, cy + dy, w, 1);
+      };
+      if (cond === 'night') {
+        px('#e8e2b0', [[-2, -1, 2], [-3, 0, 4], [-3, 1, 4], [-2, 2, 2]]);
+        px('#fff6d0', [[2, -2], [3, -1]]);
+      } else {
+        px('#e4e9ee', [[-1, -3, 3], [-3, -2, 7], [-3, -1, 7]]);
+        px('#8fb4d8', [[-2, 1], [0, 1], [2, 1], [-1, 3], [1, 3]]);
+      }
+    }
 
     // The defenders' marker on the icon's shoulder: red, or amber for strong defenses; an objective
     // gets a bigger one. Strength only shows when it isn't fogged.
     const strength = hidden.includes('strength') ? 'normal' : n.battle!.strength;
     const r = strength === 'objective' ? 5 : 3;
     const bx = x + MAP_ICON / 2 - 3;
-    const by = y - MAP_ICON / 2 + 3;
-    const g = this.add.graphics().setAlpha(alpha);
     g.fillStyle(hex(PAL.outline), 1).fillRect(bx - r - 1, by - r - 1, 2 * r + 3, 2 * r + 3);
     g.fillStyle(hex(strength === 'normal' ? PAL.enemy : PAL.amber), 1).fillRect(bx - r, by - r, 2 * r + 1, 2 * r + 1);
     g.lineStyle(1, hex(strength === 'normal' ? PAL.enemyHi : PAL.amberHot), 1);
@@ -352,6 +378,18 @@ export class MapScene extends Phaser.Scene {
     const down = b.hardpoints.filter((h) => h.weapon && h.integrity.hp <= 0).length;
     if (down > 0) row('Weapons down', String(down), PAL.bad);
 
+    const ev = lastEventOutcome(run);
+    if (ev && this.run.at && nodeAt(map, this.run.at)?.kind === 'event') {
+      y += 6;
+      this.text(x, y, ev.title, PAL.glow);
+      y += 9;
+      for (const l of ev.lines) {
+        for (const w of wrapText(l, PANEL_CHARS)) {
+          this.text(x, y, w, PAL.hudDim);
+          y += 9;
+        }
+      }
+    }
     const r = run.lastBattle;
     if (r && this.run.at && nodeAt(map, this.run.at)?.kind === 'battle') {
       y += 6;
@@ -388,7 +426,15 @@ export class MapScene extends Phaser.Scene {
     const done = this.visited(pos);
     const choice = this.options.findIndex((o) => samePos(o, pos));
 
-    if (node.kind === 'depot') {
+    if (node.kind === 'event') {
+      const ev = node.event!;
+      const hiddenKind = !done && hiddenEvent(ev, near, this.run.behemoth.grades.sensors ?? 1);
+      t(hiddenKind ? 'Event: unknown contact' : `Event: ${MAP_EVENTS[ev.id].title}`, PAL.glow);
+      y += 2;
+      for (const l of wrapText(hiddenKind ? 'Something out there. Closer, or better sensors, shows what.' : MAP_EVENTS[ev.id].teaser, 38)) t(l, PAL.hudDim);
+      y += 4;
+      t('No battle: a choice', PAL.hudText);
+    } else if (node.kind === 'depot') {
       t('Depot', PAL.glow);
       y += 2;
       t('Repair, rearm, and refit.', PAL.hudDim);
@@ -439,6 +485,12 @@ export class MapScene extends Phaser.Scene {
     field('Defenders', fog('doctrine') ? '?' : `${DOCTRINES[intel.doctrine].name}: ${DOCTRINES[intel.doctrine].intel.toLowerCase()}`);
     const strength = intel.strength === 'objective' ? 'Objective: heavy' : intel.strength === 'strong' ? 'Strong' : 'Normal';
     field('Strength', fog('strength') ? '?' : strength, intel.strength === 'normal' ? PAL.hudText : PAL.amber);
+    // An event moved the defenders (SPEC §8.3); shown with the strength.
+    if (!fog('strength') && intel.shift) t(intel.shift > 0 ? `Alerted: +${intel.shift} threat` : `Weakened: ${intel.shift} threat`, intel.shift > 0 ? PAL.amber : PAL.glow, 4);
+    // The weather is never fogged (SPEC §4.6).
+    const biome = this.run.map.sectors[this.sector]!.biome;
+    field('Conditions', intel.condition ? conditionName(intel.condition, biome) : 'Clear', intel.condition ? PAL.amber : PAL.hudText);
+    if (intel.condition) for (const l of wrapText(CONDITIONS[intel.condition].intel, 36)) t(l, PAL.hudDim, 4);
     field('Reward', fog('reward') ? '?' : `+${intel.salvage} salvage on extraction`, PAL.amber);
     if (!fog('reward') && mode.bonus > 0) t(`+${mode.bonus} for destroying all ${mode.target?.[1] ?? 'targets'}`, PAL.amber, 4);
     if (!fog('reward') && intel.cache) t('Supply cache: +1 depot action', PAL.glow, 4);

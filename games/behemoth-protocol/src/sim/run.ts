@@ -5,7 +5,9 @@ import { BIOMES, type BiomeId } from '../content/biomes';
 import { ARMOR_ARCS, CHASSIS, type ArmorArc, type ChassisId } from '../content/chassis';
 import { CALLSIGNS } from '../content/callsigns';
 import { DIRECTIVES, DIRECTIVE_IDS, type DirectiveDef, type DirectiveId } from '../content/directives';
+import type { ConditionId } from '../content/conditions';
 import type { EnemyId } from '../content/enemies';
+import type { EventReport } from './mapEvents';
 import { battleForces, type Forces } from './encounter';
 import { moduleLoads, type ModuleId } from '../content/trailer';
 import { DIRECTIVE, RUN } from '../content/tuning';
@@ -108,12 +110,12 @@ export interface BattleReport {
 }
 
 /**
- * Where the run picks up: the sector map (choosing the next node), the battle or depot at `at`, or
+ * Where the run picks up: the sector map (choosing the next node), the battle, depot, or event at `at`, or
  * the run over without a death: won (the Directive complete: the last sector's objective taken) or
  * failed (extracted from the last objective battle without taking it).
  */
-export type RunNext = 'map' | 'battle' | 'depot' | 'won' | 'failed';
-export const RUN_NEXT: readonly RunNext[] = ['map', 'battle', 'depot', 'won', 'failed'];
+export type RunNext = 'map' | 'battle' | 'depot' | 'event' | 'won' | 'failed';
+export const RUN_NEXT: readonly RunNext[] = ['map', 'battle', 'depot', 'event', 'won', 'failed'];
 
 export interface RunState {
   seed: number;
@@ -141,6 +143,8 @@ export interface RunState {
   behemoth: BehemothSnapshot;
   /** The battle just won, for the depot screen. */
   lastBattle: BattleReport | null;
+  /** The event just decided (SPEC §8.3), for its result screen and the map; null until one is. */
+  lastEvent: EventReport | null;
   /** The depot the run is at (stock and actions left); null between depots. */
   depot: DepotState | null;
 }
@@ -178,6 +182,7 @@ export function newRun(
     time: 0,
     behemoth: snapshotBehemoth(createBehemoth(chassis, loadout, 0, 0, addons, bays, upgrades)),
     lastBattle: null,
+    lastEvent: null,
     depot: null,
   };
 }
@@ -310,6 +315,7 @@ export function enterMapNode(run: RunState, pos: MapPos): RunState {
   const node = nodeAt(run.map, pos)!;
   const moved = { ...run, at: pos, path: [...run.path, pos], next: node.kind };
   if (node.kind === 'battle') return { ...moved, depot: null };
+  if (node.kind === 'event') return { ...moved, depot: null, lastEvent: null };
   const depot = openDepot(run, run.behemoth, depotKey(pos));
   return { ...moved, cache: 0, depot: { ...depot, actions: depot.actions + run.cache, total: depot.total + run.cache } };
 }
@@ -329,6 +335,11 @@ export function battleRecipe(run: RunState, override: { biome?: BiomeId; approac
 /** A recipe as the HUD names it: the biome, then the approach (if any) on its own line. */
 export function recipeName(r: TerrainRecipe): string {
   return r.approach ? `${BIOMES[r.biome].name}\n${APPROACHES[r.approach].name}` : BIOMES[r.biome].name;
+}
+
+/** The battle's condition (SPEC §4.6); `override` (a practice URL param) replaces it, null for clear. */
+export function battleCondition(run: RunState, override?: ConditionId | null): ConditionId | null {
+  return override !== undefined ? override : currentBattle(run).condition;
 }
 
 /** The run's battle's threat (sizes its defenders and alert waves). */
@@ -476,6 +487,8 @@ export function runWhere(run: RunState): string {
       return `battle ${run.battle + 1}, ${sector}`;
     case 'depot':
       return `at a depot, ${sector}`;
+    case 'event':
+      return `at an event, ${sector}`;
     case 'won':
       return 'Directive complete';
     case 'failed':

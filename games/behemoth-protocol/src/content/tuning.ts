@@ -243,6 +243,45 @@ export const CONCEALMENT = {
 };
 
 /**
+ * Conditions (SPEC §4.6; content/conditions.ts, `sim/conditions.ts`). Sight radii are world units
+ * from the Behemoth's center, scaled by its sensors like auto-weapon reach (`autoReach`: damage
+ * shrinks it, a higher grade stretches it). Provisional numbers (M3).
+ */
+export const CONDITION = {
+  /** Chance a battle node (not the opening battle) has a condition; which one is weighted by biome. */
+  chance: 0.3,
+  night: {
+    /** How far the Behemoth sees (the light tank's gun reaches 160, the heavy's 210). */
+    sight: 140,
+    /**
+     * How far the enemy sees the Behemoth in the dark (to its nearest edge, roughly: less half its
+     * length). Farther out, a unit can't open fire unless the Behemoth's muzzle flash marks it.
+     */
+    enemySight: 140,
+    /** Seconds the Behemoth's own muzzle flash marks it for the enemy (point defense doesn't count). */
+    flashMark: 2,
+  },
+  storm: {
+    /** Seconds to the first squall, and between one squall's end and the next (ranges). */
+    first: [12, 22] as const,
+    gap: [16, 28] as const,
+    /** Seconds a squall lasts at full strength, and to build up or die away either side of that. */
+    length: [8, 12] as const,
+    ramp: 2.5,
+    /**
+     * Sight at full strength, for both sides (the enemy can't open fire past it either); between
+     * squalls it's unlimited (it eases in from `clearSight`).
+     */
+    sight: 110,
+    clearSight: 500,
+    /** Spread on both sides' fire at full strength (the wind). */
+    spread: 1.6,
+    /** Hovercraft speed at full strength. */
+    hover: 0.55,
+  },
+};
+
+/**
  * The Immobilized last stand (SPEC §5.1): the defenders and the alert clock stop and reinforcements come in
  * escalating waves, from ahead and behind, until the reactor falls. Stands in for the alert
  * clock's "continuous" phase until M3.
@@ -506,6 +545,13 @@ export const SECTOR_MAP = {
    * through all of it.
    */
   fog: { far: { approach: 0.25, doctrine: 0.6, strength: 0.4, reward: 0.5 }, deep: 0.12 },
+  /**
+   * Events (SPEC §8.3): chance a battle node that isn't an entry or an objective is an event
+   * instead (about 2.5 a run), and chance an event's kind is fogged two or more steps away. Events
+   * don't repeat in a run until every kind has come up.
+   */
+  eventChance: 0.22,
+  eventFog: 0.5,
 };
 
 /**

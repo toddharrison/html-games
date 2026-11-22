@@ -34,7 +34,7 @@ export interface SummaryData {
 }
 
 /**
- * Opens wherever the run picks up: the map, a battle, or a depot; or, for a run over without a
+ * Opens wherever the run picks up: the map, a battle, a depot, or an event; or, for a run over without a
  * death (the Directive complete or failed), the run summary, which ends the run.
  */
 export function enterNode(scene: Phaser.Scene, ctx: RunContext): void {
@@ -44,7 +44,7 @@ export function enterNode(scene: Phaser.Scene, ctx: RunContext): void {
     showSummary(scene, { summary: summarizeRun(ctx.run), shot: null });
     return;
   }
-  scene.scene.start(next === 'battle' || next === 'depot' ? next : 'map', ctx);
+  scene.scene.start(next === 'battle' || next === 'depot' || next === 'event' ? next : 'map', ctx);
 }
 
 export function showSummary(scene: Phaser.Scene, data: SummaryData): void {

@@ -1,4 +1,5 @@
 import { revealRadius } from './behemoth';
+import { beyondSight } from './conditions';
 import type { Enemy } from './entities';
 import type { World } from './world';
 
@@ -15,6 +16,11 @@ export function concealed(w: World, e: Enemy): boolean {
   return Math.hypot(e.x - b.x, e.y - b.y) - e.def.radius > revealRadius(b);
 }
 
+/** Hidden from the player: concealed in cover, or lost in the dark or the storm (SPEC §4.6). */
+export function hiddenNow(w: World, e: Enemy): boolean {
+  return concealed(w, e) || beyondSight(w, e);
+}
+
 export function stepConcealment(w: World, dt: number): void {
   // Minefields show up as the sensors sweep them (SPEC §4.5), and stay marked.
   const b = w.behemoth;
@@ -22,6 +28,6 @@ export function stepConcealment(w: World, dt: number): void {
   for (const e of w.enemies) {
     if (!e.alive) continue;
     e.exposed = Math.max(0, e.exposed - dt);
-    e.hidden = concealed(w, e);
+    e.hidden = hiddenNow(w, e);
   }
 }

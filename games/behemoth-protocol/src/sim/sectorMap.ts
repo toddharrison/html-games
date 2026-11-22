@@ -1,9 +1,11 @@
 import { APPROACH_IDS, type ApproachId } from '../content/approaches';
 import { BIOMES, BIOME_IDS, type BiomeId } from '../content/biomes';
 import { DIRECTIVES, type DirectiveId } from '../content/directives';
+import { CONDITIONS, CONDITION_IDS, type ConditionId } from '../content/conditions';
 import { DOCTRINES, DOCTRINE_IDS, type DoctrineId } from '../content/doctrines';
+import { MAP_EVENT_IDS, type MapEventId } from '../content/mapEvents';
 import { MODES, MODE_IDS, type BattleModeId } from '../content/modes';
-import { ENCOUNTER, RUN, SECTOR_MAP } from '../content/tuning';
+import { CONDITION, ENCOUNTER, RUN, SECTOR_MAP } from '../content/tuning';
 import { Rng, hashSeed } from './rng';
 
 /**
@@ -13,10 +15,11 @@ import { Rng, hashSeed } from './rng';
  * objective battle. Battle nodes carry intel (approach, defenders, strength, reward), some of it
  * fogged until the node is close. Generated once from the run seed and kept in the run save, so a
  * content change never reshapes a map mid-run. Plain data. The run's Directive (SPEC §3) sets the
- * mode of every sector's objective battle.
+ * mode of every sector's objective battle. Some nodes are events instead of battles (SPEC §8.3): a
+ * short choice, no fight.
  */
 
-export type NodeKind = 'battle' | 'depot';
+export type NodeKind = 'battle' | 'depot' | 'event';
 /** The battle's mode (SPEC §4.4): what it asks beyond reaching the extraction line. */
 export type BattleMode = BattleModeId;
 export type Strength = 'normal' | 'strong' | 'objective';
@@ -41,6 +44,17 @@ export interface BattleIntel {
   fog: IntelField[];
   /** Fields hidden even one step away (a subset of `fog`). */
   deep: IntelField[];
+  /** The battle's condition (SPEC §4.6: night, a storm); null for clear. Never fogged. */
+  condition: ConditionId | null;
+  /** Threat an event has added (+) or taken away (−) since the map was drawn; absent for none. */
+  shift?: number;
+}
+
+/** An event node (SPEC §8.3): which event, its outcomes' seed, and whether its kind is fogged from afar. */
+export interface EventIntel {
+  id: MapEventId;
+  seed: number;
+  fog: boolean;
 }
 
 export interface MapNode {
@@ -54,6 +68,8 @@ export interface MapNode {
   /** Nodes in the next layer this one leads to (empty for the objective). */
   next: number[];
   battle: BattleIntel | null;
+  /** Set exactly for an event node. */
+  event: EventIntel | null;
 }
 
 export interface Sector {
@@ -81,8 +97,33 @@ export function generateMap(seed: number, directive: DirectiveId | null = null):
     return sector;
   });
   const map = { sectors };
+  placeEvents(map, seed);
   if (directive) setObjectiveModes(map, directive);
   return map;
+}
+
+/**
+ * Turns some battles into events (SPEC §8.3), on a stream of its own so every other node keeps the
+ * intel it was drawn with. Never an entry or an objective. Kinds are dealt from a shuffled bag, so
+ * none repeats until all have come up.
+ */
+function placeEvents(map: SectorMap, seed: number): void {
+  const rng = new Rng(hashSeed(seed, 0xe7e7));
+  let bag: MapEventId[] = [];
+  map.sectors.forEach((sector, s) => {
+    for (const n of sector.nodes) {
+      if (n.kind !== 'battle' || n.layer === 0 || n.layer === sector.layers - 1 || !rng.chance(SECTOR_MAP.eventChance)) continue;
+      if (bag.length === 0) bag = shuffle(rng, [...MAP_EVENT_IDS]);
+      // Never the same event as a sibling (a fresh bag could deal one again straight away).
+      const siblings = sector.nodes.filter((m) => m.layer === n.layer && m.event).map((m) => m.event!.id);
+      let k = bag.length - 1;
+      while (k > 0 && siblings.includes(bag[k]!)) k--;
+      const [id] = bag.splice(k, 1);
+      n.kind = 'event';
+      n.battle = null;
+      n.event = { id: id!, seed: hashSeed(seed, 0xe7e8, s, n.id), fog: rng.chance(SECTOR_MAP.eventFog) };
+    }
+  });
 }
 
 /** Every sector's objective battle in the Directive's mode (everything else about the map stays). */
@@ -137,7 +178,7 @@ function generateSector(seed: number, s: number, biome: BiomeId, layerOffset: nu
   }
 
   const nodes: MapNode[] = [];
-  const add = (layer: number, col: number) => nodes.push({ id: nodes.length, layer, col, kind: 'battle', next: [], battle: null });
+  const add = (layer: number, col: number) => nodes.push({ id: nodes.length, layer, col, kind: 'battle', next: [], battle: null, event: null });
   add(0, (cols - 1) / 2);
   for (let k = 1; k <= depotLayer; k++) {
     for (let c = 0; c < cols; c++) if (cells.has(`${k}:${c}`)) add(k, c);
@@ -170,7 +211,7 @@ function generateSector(seed: number, s: number, biome: BiomeId, layerOffset: nu
     for (const n of inLayer(k)) {
       if (n.kind !== 'battle') continue;
       if (approaches.length === 0) approaches = shuffle(rng, [null, ...APPROACH_IDS]);
-      n.battle = battleIntel(rng, seed, s, n, layers, layerOffset, approaches.pop()!);
+      n.battle = battleIntel(rng, seed, s, n, layers, layerOffset, approaches.pop()!, biome);
     }
   }
   return { biome, layers, nodes };
@@ -218,7 +259,7 @@ function brokenRoutes(nodes: MapNode[]): number {
   return broken;
 }
 
-function battleIntel(rng: Rng, seed: number, s: number, n: MapNode, layers: number, layerOffset: number, drawn: ApproachId | null): BattleIntel {
+function battleIntel(rng: Rng, seed: number, s: number, n: MapNode, layers: number, layerOffset: number, drawn: ApproachId | null, biome: BiomeId): BattleIntel {
   const opening = s === 0 && n.layer === 0;
   const objective = n.layer === layers - 1;
   const strength: Strength = objective ? 'objective' : !opening && rng.chance(SECTOR_MAP.strong.chance) ? 'strong' : 'normal';
@@ -248,7 +289,16 @@ function battleIntel(rng: Rng, seed: number, s: number, n: MapNode, layers: numb
     cache: !opening && rng.chance(SECTOR_MAP.cacheChance),
     fog,
     deep,
+    // Its own stream too. The opening battle is always clear: `?seed=N` stays the same fight.
+    condition: opening ? null : conditionFor(seed, s, n.id, biome),
   };
+}
+
+/** A battle node's condition: none, or one weighted by the biome (SPEC §4.6). */
+function conditionFor(seed: number, s: number, node: number, biome: BiomeId): ConditionId | null {
+  const rng = new Rng(hashSeed(seed, 0xc0d1, s, node));
+  if (!rng.chance(CONDITION.chance)) return null;
+  return rng.weighted(CONDITION_IDS, (id) => CONDITIONS[id].weight[biome])!;
 }
 
 function shuffle<T>(rng: Rng, items: T[]): T[] {
@@ -295,6 +345,22 @@ export function hiddenIntel(intel: BattleIntel, near: boolean, sensors: number):
   if (sensors >= 3) return [];
   if (near) return sensors >= 2 ? [] : intel.deep;
   return intel.fog;
+}
+
+/** Whether an event node's kind is hidden: fogged and two or more steps away (Gen 3 sensors see it anyway). */
+export function hiddenEvent(intel: EventIntel, near: boolean, sensors: number): boolean {
+  return intel.fog && !near && sensors < 3;
+}
+
+/** Clears the fog off every node in a sector (an event's intel, SPEC §8.3). */
+export function revealSector(map: SectorMap, sector: number): void {
+  for (const n of map.sectors[sector]?.nodes ?? []) {
+    if (n.battle) {
+      n.battle.fog = [];
+      n.battle.deep = [];
+    }
+    if (n.event) n.event.fog = false;
+  }
 }
 
 /** Whether `to` is still ahead of `from` in the same sector (on some route from it). */

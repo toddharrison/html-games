@@ -13,6 +13,8 @@ import {
 } from './behemoth';
 import { resolveBehemothCollisions } from './collision';
 import { stepConcealment } from './concealment';
+import { createCondition, stepCondition, type ConditionState } from './conditions';
+import type { ConditionId } from '../content/conditions';
 import { stepDrones } from './drones';
 import { createEncounter, stepEncounter, type EncounterState } from './encounter';
 import { stepReactor } from './detonation';
@@ -57,6 +59,8 @@ export interface WorldOptions {
   objective?: ObjectiveSpec;
   /** How fast the alert clock runs (×, default 1; a Directive's objective battle, SPEC §3). */
   alertPace?: number;
+  /** The battle's condition (SPEC §4.6); default none. */
+  condition?: ConditionId | null;
 }
 
 export interface World {
@@ -99,6 +103,8 @@ export interface World {
   extractedAt: number | null;
   /** Set once the Behemoth is Immobilized (SPEC §5.1). */
   lastStand: LastStandState | null;
+  /** The battle's condition (SPEC §4.6: night, a storm); null for none. */
+  condition: ConditionState | null;
   stats: BattleStats;
 }
 
@@ -159,6 +165,7 @@ export function createWorld(opts: WorldOptions): World {
     exitX,
     extractedAt: null,
     lastStand: null,
+    condition: createCondition(opts.condition ?? null, opts.seed),
     stats: { kills: 0, blastKills: 0, salvage: 0, blastBest: null },
   };
   ensureTerrain(world);
@@ -195,6 +202,7 @@ export function stepWorld(w: World, cmd: PlayerCommand): void {
   const b = w.behemoth;
   w.tick++;
   w.time += dt;
+  stepCondition(w);
 
   if (!b.destroyed) {
     stepMovement(b, cmd, dt, w.terrain.height);

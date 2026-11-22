@@ -61,7 +61,7 @@ Fixed 60 Hz stepper, a world/entity store, and the seeded RNG (`sim/rng.ts`), al
 
 ### Practice URL parameters
 `M0`–`M2` · various · `playtest: n/a`
-Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`, `trailer`, `weapons`, `shells`, `cookoff`, `grades`, `mods`, `depot`, `biome`, `approach`, `map`, `mode`) skips the title screen and never saves.
+Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`, `trailer`, `weapons`, `shells`, `cookoff`, `grades`, `mods`, `depot`, `biome`, `approach`, `map`, `mode`, `directive`, `objective`, `summary`, `condition`, `event`) skips the title screen and never saves.
 
 | Param | Effect |
 |---|---|
@@ -80,6 +80,8 @@ Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`
 | `?approach=pass` | Every battle on that approach (`plain`, `forest`, `urban`, `river`, `pass`; `none` = the biome's own mix) |
 | `?mode=breach` | Every battle in that mode (`assault`, `breach`, `chase`); the node's strength still sets the target count. With `?exit=60` the fortress is close (Breach) |
 | `?map` or `?map=N` | Opens the sector map at the start of sector N (default 1) instead of a battle; with `?biome`, that sector is drawn in that biome (for looking at the map art) |
+| `?condition=night` | Every battle in that condition (`night`, `storm`; `none` = clear) |
+| `?event=convoy` | Opens that event (`convoy`, `orders`, `hulk`, `dump`, `drop`, `scavengers`; `?event` alone, one drawn from the seed) on the first layer of sector 1, with a worn Behemoth (treads 60%, armor 50%, sensors 80%, munitions half) and 120 salvage |
 | `?res=480\|576\|640` | Internal resolution (default 576×324) |
 
 ### Headless screenshots
@@ -366,6 +368,19 @@ Infantry in forest stay hidden outside the sensor reveal radius (sensor damage s
 - `sim/concealment.ts` sets `Enemy.hidden` each step (after projectiles) from `def.canHide`, the material's `conceals` flag (`terrain.concealsAt`), `revealRadius(b)` (chassis `revealRadius` × `sensorRangeScale`), and the reveal triggers (windup, salvo, the `exposed` timer set by `fireRound` and `damageEnemy`; durations in `CONCEALMENT`).
 - Autos and `missileLockTarget` skip hidden units. The renderer fades them out (0.5 s), flashes white when spotted, and hides threat arrows and the lock bracket.
 
+### Conditions: night and storm
+`M3` · `uncommitted` · `playtest: pending` · SPEC §3.1, §4.6, §15 "Conditions and events (M3)", §16 Q27
+A battle can be fought at night or in a storm (30% of battle nodes, never the opening one). Both work through **sight**: past it a unit is hidden like a concealed squad (not drawn, no auto-target, no lock, no threat arrow) unless it's giving itself away; objective targets always show. The enemy can't open fire from past its own sight either. **Night:** sight 140 both ways, but for 2 s after the Behemoth fires anything but point defense every enemy in range can see it. **Storm** (rainstorm, blizzard, sandstorm, ash storm by biome): squalls close sight in to 110 for both sides, widen everyone's spread up to ×1.6, and slow hovercraft to 55%.
+- Content: `content/conditions.ts` (`ConditionId`, `CONDITION_IDS`, `CONDITIONS`: name, intel, banner, per-biome `weight`; `STORM_NAMES`, `conditionName(id, biome)`). Tuning: `CONDITION` in tuning.ts (`chance` 0.3; night `sight` 140, `enemySight` 140, `flashMark` 2; storm `first` [12, 22], `gap` [16, 28], `length` [8, 12], `ramp` 2.5, `sight` 110, `clearSight` 500, `spread` 1.6, `hover` 0.55).
+- Sim: `sim/conditions.ts`: `ConditionState {id, flashAt, squall, gust, rng}` (`World.condition`, `WorldOptions.condition`), `createCondition(id, seed)` (squall schedule on its own stream `hashSeed(seed, 0x57a4)`), `stepCondition` (first thing in `stepWorld`; events `squall {rising}`), `sightRadius(w)` (× `autoReach`; null = no limit), `beyondSight(w, e)`, `enemyCanSee(w, e)` (distance less half the hull's length; checked before an aim starts in `aimAndFire`), `behemothMarked`, `markFlash` (in `spawnProjectile` for player rounds and `shootBeam`), `conditionSpread(w)` (storm only), `hoverScale(w)` (in `moveEnemy`). `concealment.ts`: `hiddenNow(w, e)` = `concealed || beyondSight`, used by `stepConcealment` and `spawnEnemy`.
+- Map and run: `BattleIntel.condition` (own stream `hashSeed(seed, 0xc0d1, s, node)`, weighted by the sector's biome); `battleCondition(run, override?)`.
+- Render: `render/weatherView.ts` `WeatherView` (null when clear): a screen-fixed `RenderTexture` over the field column at depth 5.8 (over units and the hull, under rounds and effects), filled each frame (night 0x04060d at 0.8; storm per-biome color, haze 0.1–0.14 plus up to 0.55–0.72 in a squall) with soft light holes erased in it: the sight (×1.3 radius), night glows on units with `exposed` (fading), plasma pools, and brief glows from `fire`, `beam`, `explosion`, `enemyDestroyed`, `trailerBlast`, `detonation` events. Storm motes (rain streaks, snow, sand, ash) on a Graphics at 5.9, more and faster in a squall. Map badges (moon, raincloud) under the icon's left shoulder; intel "Conditions" field; HUD right panel line under the ground ("Sandstorm - squall"); banners at the start (after the objective's) and per squall; debug line `NIGHT/STORM SIGHT … SQUALL …`.
+- Audio: `WeatherLoop` in `audio/synth.ts` (`WEATHER` levels: a wandering band-passed pink-noise wind and a high-passed hiss, both swelling with the squall; a faint wind at night), driven by `Synth.setWeather` from `BattleAudio.update`.
+- Bot (8 seeds, stock Class II, the attract-mode autopilot, T 7): clear 8/8, treads 47%, armor 73%, 34 enemy shots; night 8/8, 42%/63%, 50 shots; night with autos off 6/8, 23%/24% (the AP guns are missed more than the dark helps); storm 8/8, 46%/71%. T 10: clear 8/8 39%/55%; night 7/8 34%/35%; storm 7/8 39%/44%. A first cut (enemy spread ×2.5 at a dark Behemoth) barely changed anything: 87 of 88 shots still hit with the autos off.
+- Tests: `tests/sim/conditions.test.ts` (content, sight and sensors, hidden past sight and given away, enemy sight and the flash mark, never lining up a shot unseen, the squall cycle and its events, its own stream, a squall blinding both sides, map draw rate and determinism, `battleCondition`), `tests/input/demoBot.test.ts` (clips with conditions).
+- **Gotcha:** the veil's `RenderTexture` buffers its commands until `render()`, so every light needs its own `Image` (a pool, `WeatherView.lights`), never one image moved between erases.
+- **Gotcha:** objective targets (`e.objective`) are never hidden by a condition, but the enemy-sight rule applies to every unit (fortress guns too).
+
 ### Cover and garrisons
 `M2` · `initial` · `playtest: pending` · SPEC §4.5, §8.1, §15 "Cover and garrisons"
 Infantry garrison buildings: 60% protection (forest 30%), walls stop direct fire, and they fire out of their own tile. Buildings pay 2 salvage each.
@@ -449,7 +464,7 @@ The screen a run ends on: won (Directive complete), failed, or destroyed. Verdic
 ### Title attract mode
 `M3` · `initial` · `playtest: pending` · SPEC §10
 User request (Nov 2026): the title screen plays short battles in the background.
-- `scenes/demo.ts`: `DemoClip` {seed, biome, approach, mode, preroll, length, battleLength, threat}, `DEMO` {length 10, threat 10, fade 0.4}, `demoClip(i, seed)` (biomes in `BIOME_IDS` order; biome b on pass k gets mode b + k of assault/chase/breach; approach from the seed; preroll 16 s Assault, 5 s Chase, 7 s Breach on a 1100-unit strip so the fortress is near).
+- `scenes/demo.ts`: `DemoClip` {seed, biome, approach, mode, preroll, length, battleLength, threat, condition}, `DEMO` {length 10, threat 10, fade 0.4, conditionEvery 4: every fourth clip at night or in a storm, by turns, captioned}, `demoClip(i, seed)` (biomes in `BIOME_IDS` order; biome b on pass k gets mode b + k of assault/chase/breach; approach from the seed; preroll 16 s Assault, 5 s Chase, 7 s Breach on a 1100-unit strip so the fortress is near).
 - `input/demoBot.ts` `demoCommand(w)`: pure autopilot. Holds the lane (`Terrain.laneY`, 8-unit deadband), aims at the nearest visible target (a mode's targets first), fires main and missiles at anything, the autocannon within 200; surges after a convoy, brakes for fortress guns in sight.
 - `DemoBattleScene` (key `demo`, in TopDownBattleScene.ts) extends the battle scene: `init` builds the next clip (a static counter) on a throwaway `newRun`, `persist: false`. Demo mode (`this.demo`): full-width layout (`fullWidthLayout`, no HUD panels), no Controls, HUD, audio, threat arrows, reticle, or cursor change; `prerollDemo` steps the sim ahead (first wave pulled to 3 s after the preroll); `startDemo` sends the scene to the back, captions it, fades in; `updateDemo` steps with the autopilot and fades out then `scene.restart()` after `length` s (sooner after an extraction). Extraction and detonation never touch the run or the save.
 - `TitleScene` launches `demo` under itself, stops it on shutdown, and dims it (a 0.2 overlay, a 0.5 band behind the title and menu).
@@ -458,7 +473,7 @@ User request (Nov 2026): the title screen plays short battles in the background.
 - **Gotcha:** a headless screenshot catches the clip's fade-in partway (the loop barely advances in virtual time), so it looks dark.
 
 ### Run save
-`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `3471074` (v11) · `playtest: pending` · SPEC §2
+`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `3471074` (v11) → `uncommitted` (v12) · `playtest: pending` · SPEC §2
 `src/save/runSave.ts`: versioned JSON in localStorage, structural validation, `StorageLike` for tests. Older versions migrate forward.
 
 | Version | Added |
@@ -474,6 +489,7 @@ User request (Nov 2026): the title screen plays short battles in the background.
 | v9 | Sector map (`map`, `at`, `path`, `cache`; `next` is `map/battle/depot/won`; depot `total`). A v8 run goes to the foot of a fresh map from its seed (a run at a depot keeps it) |
 | v10 | Callsign (`callsign: string`); a v9 run gets the one its seed draws (`callsignFor`) |
 | v11 | Directive (`directive`, `objectives: boolean[]`, `earned`, `time`; `next` adds `failed`). A v10 run takes the Directive its last objective's mode matches (breach → decapitation, chase → interdiction, assault → breakthrough; a valid `directive` already in the file wins), every objective is set to that mode, and the sectors behind it count as taken (`fromV10`) |
+| v12 | Conditions and events (`BattleIntel.condition`, optional `shift`; `MapNode.event`; `next: 'event'`; `lastEvent`). A v11 run keeps its map as drawn: every battle clear (`condition: null`), no events (`event: null`), `lastEvent: null` |
 
 ### Sector map
 `M3` · `initial` · `playtest: pending` · SPEC §3, §3.1, §7.2, §15 "Sector map (M3)", §16 Q19–21
@@ -491,10 +507,21 @@ User request (Nov 2026): the title screen plays short battles in the background.
 - **Gotcha:** the save rejects `next: 'battle'` with `at: null`; `next: 'depot'` with no node is allowed (a practice or migrated depot).
 - **Gotcha:** the map is drawn for the sector of the reachable nodes, so after an objective it already shows the next sector.
 
+### Events
+`M3` · `uncommitted` · `playtest: pending` · SPEC §3.1, §8.3, §15 "Conditions and events (M3)", §16 Q28
+Map nodes that are a short text choice instead of a battle: about 22% of battles that aren't an entry or an objective (about 2 on a route through a run). The event screen shows the scene, the Behemoth's state, and 2–3 options with hints; the drawn outcome is applied and saved at once, then shown. Six events: abandoned convoy, intercepted orders, derelict war machine, ammunition dump, stray supply drop, scavengers (details in SPEC §8.3).
+- Content: `content/mapEvents.ts` (`MapEventId`, `MAP_EVENT_IDS`, `MAP_EVENTS`: title, text, teaser, options {label, hint, cost?, outcomes {weight, text, effects}}; `EventEffect`: `salvage`, `damage`/`repair` {part treads/armor/sensors, share}, `rearm`, `cache`, `reveal`, `threat` {amount, scope next/sector}). Tuning: `SECTOR_MAP.eventChance` 0.22, `eventFog` 0.5.
+- Map: `NodeKind` adds `'event'`; `MapNode.event: EventIntel {id, seed, fog} | null` (null for every other kind); `placeEvents` in `generateMap` (own stream `hashSeed(seed, 0xe7e7)`, after every sector's intel, so other nodes are unchanged; a shuffled bag, siblings never the same); `hiddenEvent(intel, near, sensors)`, `revealSector(map, s)`; `BattleIntel.shift?` (threat an event moved).
+- Sim: `sim/mapEvents.ts`: `currentEvent`, `canChoose`, `drawOutcome(seed, id, option)` (`hashSeed(seed, 0x0e7c, option)`), `chooseEventOption(run, option)` (pays the cost, applies the effects to cloned snapshot and map, `next: 'map'`, sets `lastEvent`), `changePart`, `rearmAll` (hardpoints and bunkers, not drones), `shiftThreat` + `nextBattles` (the first battle on every route, past depots and events), `effectLines`, `lastEventOutcome`. Run: `RunNext` adds `'event'`; `RunState.lastEvent: EventReport {id, option, outcome} | null`; `enterMapNode` opens an event; `runWhere` "at an event".
+- Scenes: `scenes/EventScene.ts` (key `event`; 1–3, arrows/W/S, or click; Enter or a second click to decide; Enter or click to continue (armed 250 ms after the choice); Esc to the title). `flow.enterNode` routes `event` there. Map: the `event` icon (`mapArt.ts`: an amber hazard diamond on a post over the biome's ground), intel "Event: <title>" and its teaser ("unknown contact" while fogged), the last event's lines in the left panel, *Alerted +N* / *Weakened -N* under a battle's strength.
+- Practice: `?event=<id>` (see the table in §1).
+- Tests: `tests/sim/mapEvents.test.ts` (content and font glyphs, placement rules and rates, no sibling repeats, fog, entering, choosing and determinism, cost, driving on, a mined convoy, each effect, `nextBattles`, effect lines, save round trip and rejection, v11 migration).
+- **Gotcha:** a test or practice run can make any node an event by setting `kind`, `battle: null`, and `event`; the save requires `event: null` on every non-event node.
+
 ### Sector map art
 `M3` · `initial` · `playtest: pending` · SPEC §10, §15 "Callsigns and the map's look (M3)"
 User request (Nov 2026): large terrain icons on the nodes and a map that looks like a real one. Render-only, placeholder art in code.
-- `render/mapArt.ts`: `makeMapIcons` (called from `generatePlaceholderArt`) builds `mapicons_<biome>` sheets of 26×26 frames (`MAP_ICON`) named by `MapIcon`: the five approaches (`plain`, `forest`, `urban`, `river`, `pass`), `mix` (the biome's own: farmhouse, snowfield, factory, dunes and derrick, crater and wreck), `depot` (workshop, hazard-striped door, cyan light, crane), `fog` (cloud with a question mark). Drawn in the biome's tile palette (`biomePalette` from tileArt.ts) on a ground oval, then a 1-pixel ink `outline` pass.
+- `render/mapArt.ts`: `makeMapIcons` (called from `generatePlaceholderArt`) builds `mapicons_<biome>` sheets of 26×26 frames (`MAP_ICON`) named by `MapIcon`: the five approaches (`plain`, `forest`, `urban`, `river`, `pass`), `mix` (the biome's own: farmhouse, snowfield, factory, dunes and derrick, crater and wreck), `depot` (workshop, hazard-striped door, cyan light, crane), `fog` (cloud with a question mark), `event` (an amber hazard diamond on a post over the biome's ground, tire tracks). Drawn in the biome's tile palette (`biomePalette` from tileArt.ts) on a ground oval, then a 1-pixel ink `outline` pass.
 - `makeMapBackground(scene, key, { w, h, biome, seed, clear, routes, grid })`: the sector's sheet as a canvas texture: paper per biome (`LOOK`), value-noise elevation (`fbm`) with contour lines (every fourth bolder) and lakes, a vegetation noise for woods, a river across the sheet (a dotted dry wash in the desert), faint grid lines, paper grain, darkened edges, then map symbols (trees in the woods, hill marks up high, the biome's scatter, a few settlements) kept off the nodes and routes, and a north arrow.
 - `MapScene`: the sheet fills `mapRect()` (x 136 to width − 166, y 6 to height − 18), framed, with grid references (letters across, numbers down) and the arrow's N as text; lanes are spaced up to `MAX_LANE` 56. A node shows `iconFor(node, hidden)`: its approach, `mix` for none, `fog` while the approach is fogged, `depot`. Battles carry a defenders badge on the icon's shoulder (red; amber when strong; bigger for the objective; normal while strength is fogged). Visited nodes are drawn at half alpha.
 - Seeded from `hashSeed(run seed, 0x3a95, sector)`, so a sector's sheet is the same every visit.

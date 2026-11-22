@@ -4,7 +4,9 @@ import { APPROACHES } from '../content/approaches';
 import { BIOMES } from '../content/biomes';
 import { ARMOR_ARCS, CHASSIS } from '../content/chassis';
 import { DIRECTIVES, type DirectiveId } from '../content/directives';
+import { CONDITIONS } from '../content/conditions';
 import { DOCTRINES } from '../content/doctrines';
+import { MAP_EVENTS, type MapEventId } from '../content/mapEvents';
 import { DEPOT } from '../content/tuning';
 import { GRADES, TRACKS } from '../content/upgrades';
 import { TRAILER_MODULES } from '../content/trailer';
@@ -26,9 +28,10 @@ export const RUN_SAVE_KEY = 'behemoth-protocol/run';
  * 8: component grades and mods (and grades for sale). 9: the sector map (the route, where the run
  * is, supply caches) and the depot's opening action count. 10: the Behemoth's callsign. 11: the
  * Directive, each sector's objective result, and the run's totals (salvage earned, time in battle).
+ * 12: conditions on battle nodes, event nodes (and `next: 'event'`), and the last event's result.
  * Older saves are migrated on load.
  */
-export const RUN_SAVE_VERSION = 11;
+export const RUN_SAVE_VERSION = 12;
 
 /** The slice of the Storage API the save needs, so tests can pass a plain map. */
 export interface StorageLike {
@@ -57,7 +60,7 @@ export function parseRun(text: string): RunState | null {
   }
   if (!isObject(file)) return null;
   const v = file['version'];
-  const migrations = [fromV1, fromV2, fromV3, fromV4, fromV5, fromV6, fromV7, fromV8, fromV9, fromV10];
+  const migrations = [fromV1, fromV2, fromV3, fromV4, fromV5, fromV6, fromV7, fromV8, fromV9, fromV10, fromV11];
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > RUN_SAVE_VERSION) return null;
   const run = migrations.slice(v - 1).reduce((r, migrate) => migrate(r), file['run']);
   return isRun(run) ? run : null;
@@ -190,6 +193,27 @@ function fromV10(run: unknown): unknown {
   };
 }
 
+/**
+ * Version 11 predates conditions and events: every battle is fought clear, no node is an event
+ * (the map stays as it was drawn), and no event has been decided.
+ */
+function fromV11(run: unknown): unknown {
+  if (!isObject(run) || !isObject(run['map']) || !Array.isArray(run['map']['sectors'])) return run;
+  const sectors = run['map']['sectors'].map((sec) =>
+    isObject(sec) && Array.isArray(sec['nodes'])
+      ? {
+          ...sec,
+          nodes: sec['nodes'].map((n) =>
+            isObject(n)
+              ? { ...n, event: n['event'] ?? null, battle: isObject(n['battle']) ? { ...n['battle'], condition: n['battle']['condition'] ?? null } : n['battle'] }
+              : n,
+          ),
+        }
+      : sec,
+  );
+  return { ...run, map: { ...run['map'], sectors }, lastEvent: run['lastEvent'] ?? null };
+}
+
 export function loadRun(storage: StorageLike | null = browserStorage()): RunState | null {
   const text = safe(() => storage?.getItem(RUN_SAVE_KEY) ?? null, null);
   return text === null ? null : parseRun(text);
@@ -262,6 +286,9 @@ function isRun(v: unknown): v is RunState {
     return false;
   const report = v['lastBattle'];
   if (report !== null && !(isObject(report) && ['battle', 'kills', 'salvage', 'bonus', 'time'].every((k) => isNum(report[k])))) return false;
+  if (!isEventReport(v['lastEvent'])) return false;
+  // An event to decide needs an event node to be at.
+  if (v['next'] === 'event' && !(at !== null && nodeAt(map, at as MapPos)?.kind === 'event')) return false;
   const b = v['behemoth'];
   if (!isObject(b) || typeof b['chassis'] !== 'string' || !(b['chassis'] in CHASSIS)) return false;
   if (!isNum(b['treads']) || !isNum(b['sensors']) || !isNum(b['reactor']) || !isNum(b['fireControl']) || !isNum(b['magazine'])) return false;
@@ -309,7 +336,9 @@ function isMap(m: unknown): boolean {
         isNum(n['col']) &&
         Array.isArray(n['next']) &&
         n['next'].every((id) => Number.isInteger(id) && (id as number) >= 0 && (id as number) < count) &&
-        ((n['kind'] === 'depot' && n['battle'] === null) || (n['kind'] === 'battle' && isIntel(n['battle']))),
+        ((n['kind'] === 'depot' && n['battle'] === null && n['event'] === null) ||
+          (n['kind'] === 'battle' && isIntel(n['battle']) && n['event'] === null) ||
+          (n['kind'] === 'event' && n['battle'] === null && isEventIntel(n['event']))),
     );
   });
 }
@@ -327,8 +356,22 @@ function isIntel(b: unknown): boolean {
     ['normal', 'strong', 'objective'].includes(b['strength'] as string) &&
     typeof b['cache'] === 'boolean' &&
     fields(b['fog']) &&
-    fields(b['deep'])
+    fields(b['deep']) &&
+    (b['condition'] === null || (typeof b['condition'] === 'string' && b['condition'] in CONDITIONS)) &&
+    (b['shift'] === undefined || isNum(b['shift']))
   );
+}
+
+function isEventIntel(e: unknown): boolean {
+  return isObject(e) && typeof e['id'] === 'string' && e['id'] in MAP_EVENTS && isNum(e['seed']) && typeof e['fog'] === 'boolean';
+}
+
+/** The last event decided: a known event, one of its options, one of that option's outcomes. */
+function isEventReport(r: unknown): boolean {
+  if (r === null) return true;
+  if (!isObject(r) || typeof r['id'] !== 'string' || !(r['id'] in MAP_EVENTS) || !isNum(r['option']) || !isNum(r['outcome'])) return false;
+  const option = MAP_EVENTS[r['id'] as MapEventId].options[r['option']];
+  return !!option && !!option.outcomes[r['outcome']];
 }
 
 const isCore = (v: unknown) => typeof v === 'string' && v in GRADES;

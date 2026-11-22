@@ -3,6 +3,7 @@ import {
   addonsFromUrl,
   depotFromUrl,
   directiveFromUrl,
+  eventFromUrl,
   gradesFromUrl,
   mapFromUrl,
   modsFromUrl,
@@ -16,6 +17,7 @@ import {
   weaponsFromUrl,
 } from '../config';
 import { ADDONS, type AddonId } from '../content/addons';
+import { ARMOR_ARCS } from '../content/chassis';
 import { DEPOT } from '../content/tuning';
 import { TRAILER_MODULES, type ModuleId } from '../content/trailer';
 import { GRADES, TRACKS, type Upgrades } from '../content/upgrades';
@@ -26,6 +28,8 @@ import { generatePixelFont } from '../render/pixelFont';
 import { openDepot } from '../sim/depot';
 import { enterMapNode, newRun, summarizeRun, type RunState } from '../sim/run';
 import { objectiveNode, reachable } from '../sim/sectorMap';
+import { hashSeed } from '../sim/rng';
+import { MAP_EVENT_IDS } from '../content/mapEvents';
 import { enterNode, randomSeed, showSummary, type RunContext } from './flow';
 
 /**
@@ -65,6 +69,27 @@ export class BootScene extends Phaser.Scene {
         const at = { sector: s, node: objectiveNode(run.map, s)!.id };
         run = { ...run, at, path: [at], next: 'battle', objectives: Array<boolean>(s).fill(true) };
         enterNode(this, { run, persist: false });
+        return;
+      }
+      const event = eventFromUrl();
+      if (event !== null) {
+        // An event node of the first sector, turned into the one asked for, entered from the opening
+        // battle. The Behemoth comes worn, so the repairs and the rearm show what they do.
+        const b = structuredClone(run.behemoth);
+        b.treads *= 0.6;
+        b.sensors *= 0.8;
+        for (const arc of ARMOR_ARCS) b.armor[arc] *= 0.5;
+        for (const h of b.hardpoints) if (h.ammo !== null) h.ammo = Math.floor(h.ammo / 2);
+        run = { ...run, salvage: PRACTICE_EVENT_SALVAGE, behemoth: b };
+        const start = reachable(run.map, null)[0]!;
+        run = { ...run, at: start, path: [start] };
+        const pos = reachable(run.map, start)[0]!;
+        const node = run.map.sectors[pos.sector]!.nodes[pos.node]!;
+        const id = event === 'random' ? MAP_EVENT_IDS[run.seed % MAP_EVENT_IDS.length]! : event;
+        node.kind = 'event';
+        node.battle = null;
+        node.event = { id, seed: hashSeed(run.seed, 0xe7e8, pos.sector, pos.node), fog: false };
+        enterNode(this, { run: enterMapNode(run, pos), persist: false });
         return;
       }
       const map = mapFromUrl();
@@ -112,6 +137,8 @@ function previewSummary(run: RunState, outcome: 'won' | 'failed' | 'destroyed') 
 
 /** Salvage a `?depot` practice run starts with. */
 const PRACTICE_DEPOT_SALVAGE = 1000;
+/** Salvage an `?event` practice run starts with (enough to buy from the scavengers). */
+const PRACTICE_EVENT_SALVAGE = 120;
 
 /** Grades and mods from the practice URL; unknown components, tracks, and levels are dropped. */
 function upgradesFromUrl(): Upgrades {

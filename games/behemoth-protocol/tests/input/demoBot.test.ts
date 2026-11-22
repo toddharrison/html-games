@@ -57,5 +57,9 @@ describe('attract-mode clips', () => {
     for (const b of BIOME_IDS) expect(new Set(clips.filter((c) => c.biome === b).map((c) => c.mode)).size).toBe(MODE_IDS.length);
     for (const c of clips) expect(c.length).toBe(DEMO.length);
     expect(clips.find((c) => c.mode === 'breach')!.battleLength).toBeDefined();
+    // Every so often a clip at night or in a storm, both turning up.
+    const weather = clips.filter((c) => c.condition !== null);
+    expect(weather.length).toBe(Math.floor(clips.length / DEMO.conditionEvery));
+    expect(new Set(weather.map((c) => c.condition))).toEqual(new Set(['night', 'storm']));
   });
 });

@@ -329,7 +329,10 @@ export class Hud {
     this.drawSchematic(b, w.revive);
     const toGo = Math.max(0, Math.ceil((w.exitX - b.x) / 10));
     const exit = w.extractedAt !== null ? 'Extracted' : `Exit ${toGo}m`;
-    let stats = `Battle ${this.run.battle}\n${this.run.where}\nKills ${w.stats.kills}\nSalvage ${this.run.salvage + w.stats.salvage}\n${exit}`;
+    // The condition under where it's fought; a storm says when a squall is on.
+    const squall = (w.condition?.squall ?? 0) > 0.3 ? ' - squall' : '';
+    const weather = this.run.condition ? `\n${this.run.condition}${squall}` : '';
+    let stats = `Battle ${this.run.battle}\n${this.run.where}${weather}\nKills ${w.stats.kills}\nSalvage ${this.run.salvage + w.stats.salvage}\n${exit}`;
     const ls = w.lastStand;
     if (ls && !b.destroyed) stats += `\n\nLast stand\nWave ${ls.wave}  next ${Math.ceil(ls.nextWave)}s\nHeld ${Math.floor(ls.time)}s`;
     this.stats.setText(fontText(stats));
@@ -563,4 +566,6 @@ export interface HudRun {
   callsign: string;
   /** Set only in a sector's objective battle (SPEC §3): the goal, its par (seconds), and targets it needs. */
   directive?: { goal: DirectiveGoal; par: number | null; need: number | null };
+  /** The battle's condition as named for its biome (SPEC §4.6: Night, Sandstorm, …); absent when clear. */
+  condition?: string;
 }

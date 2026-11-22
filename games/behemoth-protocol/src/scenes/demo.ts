@@ -1,6 +1,7 @@
 import { APPROACH_IDS, type ApproachId } from '../content/approaches';
 import { BIOME_IDS, type BiomeId } from '../content/biomes';
 import type { BattleModeId } from '../content/modes';
+import type { ConditionId } from '../content/conditions';
 import { hashSeed } from '../sim/rng';
 
 /**
@@ -21,10 +22,15 @@ export interface DemoClip {
   /** A shorter strip for a Breach, so its fortress is in view. */
   battleLength?: number;
   threat: number;
+  /** Now and then a clip at night or in a storm (SPEC §4.6), to show them off. */
+  condition: ConditionId | null;
 }
 
-/** Shown per clip, and how busy the battles are (above the opening battle's threat, for the show). */
-export const DEMO = { length: 10, threat: 10, fade: 0.4 };
+/**
+ * Shown per clip, and how busy the battles are (above the opening battle's threat, for the show).
+ * Every `conditionEvery`th clip is fought at night or in a storm, by turns.
+ */
+export const DEMO = { length: 10, threat: 10, fade: 0.4, conditionEvery: 4 };
 
 /** Modes in the order the clips walk through them (offset per pass, so a biome doesn't always get the same one). */
 const MODE_ORDER: readonly BattleModeId[] = ['assault', 'chase', 'breach'];
@@ -38,7 +44,9 @@ export function demoClip(i: number, seed: number): DemoClip {
   const mode = MODE_ORDER[(b + pass) % MODE_ORDER.length]!;
   const approaches: (ApproachId | null)[] = [null, ...APPROACH_IDS];
   const approach = approaches[hashSeed(seed, 0xde30) % approaches.length]!;
-  const base = { seed, biome, approach, mode, length: DEMO.length, threat: DEMO.threat };
+  const turn = Math.floor(i / DEMO.conditionEvery);
+  const condition: ConditionId | null = i % DEMO.conditionEvery === DEMO.conditionEvery - 1 ? (turn % 2 === 0 ? 'night' : 'storm') : null;
+  const base = { seed, biome, approach, mode, length: DEMO.length, threat: DEMO.threat, condition };
   // Start where the action is: a few posts in (Assault), the convoy just caught up with (Chase),
   // the fortress coming into range (Breach, on a short strip).
   if (mode === 'chase') return { ...base, preroll: 5 };

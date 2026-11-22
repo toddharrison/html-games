@@ -49,6 +49,11 @@ const LEVEL: Record<SoundId, number> = {
 
 /** Engine and tread loop levels. */
 const ENGINE = { level: 0.065, rumble: 0.35, treads: 0.4, wade: 0.35 };
+/**
+ * The weather bed (SPEC §4.6): a storm's wind and rain or sand hiss, swelling with each squall; a
+ * faint wind under the night. `base` is the level between squalls, `squall` what a full one adds.
+ */
+const WEATHER = { night: 0.018, base: 0.02, squall: 0.11, hiss: 0.05 };
 /** Reactor hum bed, meltdown whine, and siren. */
 const REACTOR = { level: 0.025, whine: 0.008, siren: 0.08 };
 
@@ -791,6 +796,60 @@ class EngineLoop {
 }
 
 /**
+ * Weather: wind (low pink noise through a wandering band-pass) and a brighter hiss of rain, sand,
+ * or snow on the hull. A squall swells both and lifts the wind's pitch; gusts wobble it.
+ */
+class WeatherLoop {
+  private readonly out: GainNode;
+  private readonly wind: GainNode;
+  private readonly band: BiquadFilterNode;
+  private readonly hiss: GainNode;
+  private readonly sources: AudioScheduledSourceNode[] = [];
+  private gust = 0;
+
+  constructor(private readonly s: Synth) {
+    const ctx = s.ctx;
+    this.out = ctx.createGain();
+    this.out.connect(s.bus);
+    this.wind = ctx.createGain();
+    this.wind.gain.value = 0;
+    this.band = ctx.createBiquadFilter();
+    this.band.type = 'bandpass';
+    this.band.frequency.value = 320;
+    this.band.Q.value = 0.8;
+    const air = loopSource(ctx, s.bank.noise.pink);
+    air.connect(this.band).connect(this.wind).connect(this.out);
+    this.sources.push(air);
+    this.hiss = ctx.createGain();
+    this.hiss.gain.value = 0;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 2400;
+    const grit = loopSource(ctx, s.bank.noise.white);
+    grit.connect(hp).connect(this.hiss).connect(this.out);
+    this.sources.push(grit);
+  }
+
+  /** `kind` null: silent. `squall` 0–1 for a storm. */
+  update(kind: 'night' | 'storm' | null, squall: number): void {
+    const t = this.s.ctx.currentTime;
+    // Gusts: a slow random walk on top of the squall.
+    this.gust = Math.max(-1, Math.min(1, this.gust + (Math.random() - 0.5) * 0.12));
+    const wobble = 1 + 0.35 * this.gust;
+    const wind = kind === 'night' ? WEATHER.night : kind === 'storm' ? (WEATHER.base + WEATHER.squall * squall) * wobble : 0;
+    this.wind.gain.setTargetAtTime(Math.max(0, wind), t, 0.4);
+    this.band.frequency.setTargetAtTime((kind === 'storm' ? 280 + 420 * squall : 220) * wobble, t, 0.6);
+    this.hiss.gain.setTargetAtTime(kind === 'storm' ? WEATHER.hiss * (0.25 + 0.75 * squall) : 0, t, 0.5);
+  }
+
+  stop(): void {
+    const t = this.s.ctx.currentTime;
+    this.out.gain.setTargetAtTime(0, t, 0.05);
+    for (const n of this.sources) n.stop(t + 0.4);
+  }
+}
+
+/**
  * Reactor: a low hum (saw through a low-pass) under the engine, flutter as it takes damage, and
  * in a meltdown the hum climbs and shakes, the capacitor bank screams, and a siren wails.
  */
@@ -893,6 +952,7 @@ export class Synth {
   private readonly holds = new Map<HoldId, Hold>();
   private engine: EngineLoop | null = null;
   private reactor: ReactorLoop | null = null;
+  private weather: WeatherLoop | null = null;
   private voices = 0;
 
   constructor(
@@ -973,6 +1033,13 @@ export class Synth {
     for (const [id, h] of this.holds) h.update(HOLD_LEVEL[id].hold);
   }
 
+  /** The weather bed (it outlasts the reactor: the storm doesn't care). */
+  setWeather(kind: 'night' | 'storm' | null, squall: number): void {
+    if (!this.running) return;
+    if (kind) this.weather ??= new WeatherLoop(this);
+    this.weather?.update(kind, squall);
+  }
+
   setPaused(paused: boolean): void {
     this.bus.gain.setTargetAtTime(paused ? 0 : 1, this.ctx.currentTime, 0.05);
   }
@@ -982,6 +1049,8 @@ export class Synth {
     const t = this.ctx.currentTime;
     this.bus.gain.setTargetAtTime(0, t, 0.05);
     this.stopMachine();
+    this.weather?.stop();
+    this.weather = null;
     for (const h of this.holds.values()) h.stop();
     this.holds.clear();
     setTimeout(() => this.bus.disconnect(), 400);

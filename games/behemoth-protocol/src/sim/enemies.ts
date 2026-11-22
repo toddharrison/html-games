@@ -3,7 +3,8 @@ import { CONCEALMENT, ENEMY } from '../content/tuning';
 import { WEAPONS } from '../content/weapons';
 import { BEHAVIORS } from './ai';
 import { besiege, joinSiege } from './ai/besiege';
-import { concealed } from './concealment';
+import { hiddenNow } from './concealment';
+import { enemyCanSee, hoverScale } from './conditions';
 import { allocId, type Enemy } from './entities';
 import type { KillCause } from './events';
 import { frameRight } from './frame';
@@ -48,7 +49,7 @@ export function spawnEnemy(w: World, id: EnemyId, x: number, y: number): Enemy {
     },
   };
   if (w.lastStand) joinSiege(e, w);
-  e.hidden = concealed(w, e);
+  e.hidden = hiddenNow(w, e);
   w.enemies.push(e);
   return e;
 }
@@ -89,7 +90,8 @@ function moveEnemy(w: World, e: Enemy, dt: number): void {
   const mob = e.def.mobility;
   // Terrain slows small units (forest, rubble). Never fully zero, so a unit pushed into a
   // bad tile can still get out.
-  const cap = e.def.maxSpeed * Math.max(ENEMY.minTerrainSpeed, t.speedAt(e.x, e.y, mob));
+  // A storm's squalls knock hovercraft about (SPEC §4.6).
+  const cap = e.def.maxSpeed * Math.max(ENEMY.minTerrainSpeed, t.speedAt(e.x, e.y, mob)) * (mob === 'hover' ? hoverScale(w) : 1);
   let dvx = want.vx - e.vx;
   let dvy = want.vy - e.vy;
   const dm = Math.hypot(dvx, dvy);
@@ -225,6 +227,8 @@ function aimAndFire(w: World, e: Enemy, dt: number): void {
   if (e.cooldown > 0 || d > e.def.fireRange) return;
   if (Math.abs(angleDiff(e.turret, want)) > ENEMY.aimTolerance) return;
   if (blocked(w, e)) return;
+  // In the dark or a squall the enemy can't line up on what it can't see (SPEC §4.6).
+  if (!enemyCanSee(w, e)) return;
   e.windup = e.def.aimTime;
 }
 

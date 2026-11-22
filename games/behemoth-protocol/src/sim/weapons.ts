@@ -24,6 +24,7 @@ import { frameRight } from './frame';
 import { angleDiff, clamp, dist, rotateToward, wrapAngle } from './math';
 import { damageMultiplier, fireBeam, roundRange, roundSpec, shotSpec } from './projectiles';
 import type { World } from './world';
+import { conditionSpread, markFlash } from './conditions';
 
 /**
  * Weapon firing (SPEC §5.2, §6): spawns projectiles from mounts. Projectile flight lives in
@@ -56,7 +57,10 @@ export function spawnProjectile(w: World, owner: Owner, weapon: WeaponDef, x: nu
   const spec = roundSpec(weapon);
   const count = spec.kind === 'bullet' ? (spec.pellets ?? 1) : 1;
   const rounds: Projectile[] = [];
-  for (let i = 0; i < count; i++) rounds.push(spawnRound(w, owner, weapon, x, y, angle, opts));
+  // The battle's condition widens the spread (SPEC §4.6); a shot from the Behemoth gives it away at night.
+  const spreadMul = (opts.spreadMul ?? 1) * conditionSpread(w);
+  if (owner === 'player') markFlash(w);
+  for (let i = 0; i < count; i++) rounds.push(spawnRound(w, owner, weapon, x, y, angle, { ...opts, spreadMul }));
   const first = rounds[0]!;
   const ev = { type: 'fire', owner, weapon: weapon.id, x, y, angle: Math.atan2(first.vy, first.vx) } as const;
   w.events.push(opts.slot ? { ...ev, slot: opts.slot } : ev);
@@ -93,8 +97,9 @@ function spawnRound(w: World, owner: Owner, weapon: WeaponDef, x: number, y: num
  * `fire` event (recoil, heat) and a `beam` event to draw it.
  */
 export function shootBeam(w: World, weapon: WeaponDef, x: number, y: number, angle: number, opts: { spreadMul?: number; slot?: string } = {}): void {
-  const spread = shotSpec(weapon).spread * (opts.spreadMul ?? 1);
+  const spread = shotSpec(weapon).spread * (opts.spreadMul ?? 1) * conditionSpread(w);
   const a = angle + w.rng.range(-spread, spread);
+  markFlash(w);
   const end = fireBeam(w, weapon, x, y, a);
   const ev = { type: 'fire', owner: 'player', weapon: weapon.id, x, y, angle: a } as const;
   w.events.push(opts.slot ? { ...ev, slot: opts.slot } : ev);

@@ -79,6 +79,8 @@ export type SimEvent =
   /** A convoy's mine layer dropped a mine (world point of the tile's center). */
   | { type: 'mineLaid'; x: number; y: number }
   /** The Behemoth crossed the extraction line: battle won (SPEC §4.4). */
+  /** A storm's squall building (rising) or dying away (SPEC §4.6). */
+  | { type: 'squall'; rising: boolean }
   | { type: 'extracted' }
   | { type: 'reactorCritical'; fuse: number }
   | { type: 'detonation'; x: number; y: number; radius: number; kills: number };

@@ -78,7 +78,10 @@ describe('sector map generation', () => {
           });
           expect(worst).toBeLessThanOrEqual(SECTOR_MAP.maxBattleRun);
         }
-        for (const n of nodes) expect(n.battle === null).toBe(n.kind === 'depot');
+        for (const n of nodes) {
+          expect(n.battle === null).toBe(n.kind !== 'battle');
+          expect(n.event === null).toBe(n.kind !== 'event');
+        }
       });
     }
   });

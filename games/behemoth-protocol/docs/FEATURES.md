@@ -426,7 +426,7 @@ Every battle still ends at the extraction line; **Breach** (destroy the fortress
 - **Gotcha:** `w.objective.total` for a Chase is the haulers that actually spawned (a lane walled in by buildings can drop one).
 
 ### Directives and sector objectives
-`M3` · `uncommitted` · `playtest: pending` · SPEC §3, §3.1, §4.4, §10, §15 "Directives and the run summary (M3)", §16 Q24–26
+`M3` · `3471074` · `playtest: pending` · SPEC §3, §3.1, §4.4, §10, §15 "Directives and the run summary (M3)", §16 Q24–26
 Three Directives, picked on the title when starting a run, each setting every sector's objective battle: **Decapitation** (Breach plus a command post; destroying it cuts the alert clock), **Interdiction** (Chase: stop 3 of 5 haulers), **Breakthrough** (Assault ×1.3 long, alert ×1.25 fast, extract within par). Taking a sector's objective gives +1 depot action; the last one decides the run: Directive complete (won) or failed (the run ends, the Behemoth alive).
 - Content: `content/directives.ts` (`DirectiveId`, `DIRECTIVE_IDS`, `DIRECTIVES`: name, brief, orders, mode, `goal` (`command` | `share {share 0.6}` | `par {slack 1.2}`), objective/final names, `length`, `alertPace`). `DIRECTIVE` in tuning.ts (`sectorReward` 1, `keep {behind 3, cols 3, rows 3}`). Enemy `commandPost` (220 HP, heavy, bunker facing, radius 12, unarmed, `fixed`, threat 4, salvage 40; sprite `post_body`/`post_wreck`, `POST` in placeholder.ts).
 - Map: `generateMap(seed, directive)` → `setObjectiveModes` (only objective nodes' `mode` changes; everything else matches `generateMap(seed)`); `objectiveNode(map, sector)`.
@@ -439,7 +439,7 @@ Three Directives, picked on the title when starting a run, each setting every se
 - **Gotcha:** par uses the battle's actual length (`w.exitX - START_X`), so a practice `?exit=` shortens it too.
 
 ### Run summary
-`M3` · `uncommitted` · `playtest: pending` · SPEC §3, §5.1, §10
+`M3` · `3471074` · `playtest: pending` · SPEC §3, §5.1, §10
 The screen a run ends on: won (Directive complete), failed, or destroyed. Verdict and callsign; the Directive and each sector's objective (taken, missed, lost in this sector, not reached); totals (sectors reached, battles won, kills, salvage earned, time in battle, seed); for a destroyed run, the final blast (kills, the biggest by threat, the last stand) and a still of the battlefield column.
 - `sim/run.ts`: `RunSummary`, `RunOutcome`, `FinalBattle`, `summarizeRun(run, final?)` (a destroyed run adds its last battle's kills, salvage, and time). `BattleStats.blastBest` (set in `destroyEnemy` for blast kills).
 - `scenes/SummaryScene.ts` (key `summary`, data `SummaryData {summary, shot}` in flow.ts): two columns, three with a still. `flow.enterNode` sends `won`/`failed` here (clearing the save); `showSummary`. MapScene's placeholder win screen is gone (a won or failed run at the map is forwarded).
@@ -458,7 +458,7 @@ User request (Nov 2026): the title screen plays short battles in the background.
 - **Gotcha:** a headless screenshot catches the clip's fade-in partway (the loop barely advances in virtual time), so it looks dark.
 
 ### Run save
-`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `uncommitted` (v11) · `playtest: pending` · SPEC §2
+`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `3471074` (v11) · `playtest: pending` · SPEC §2
 `src/save/runSave.ts`: versioned JSON in localStorage, structural validation, `StorageLike` for tests. Older versions migrate forward.
 
 | Version | Added |

@@ -115,7 +115,7 @@ Cruise/min/top speeds, accel and brake, lateral steering capped by forward speed
 Sideways acceleration is jerk-limited, and the Behemoth eases to a stop at the field edge.
 - `easeToward(v, a, target, maxAccel, jerk, dt)` in `sim/math.ts`: an S-curve with a one-step look-ahead (without it, the fixed step arrives with ~12 units/s² left and snaps).
 - `BehemothState.ay`; `stepMovement` steers through it. `edgeApproachSpeed` (behemoth.ts) caps the target near the field edge (`MOVEMENT.edgeMargin` = 0.6 of the room: the target shrinks as the hull closes in).
-- Class II `lateral: { accel 45, jerk 142 }` (was accel 36, no jerk; jerk 150 until Nov 22, 2026, when the user asked for a little smoother turn-in and return, −5%, `uncommitted`): 10–90% turn-in ~0.58 s, full in ~0.77 s, release settles in ~1 s. Tune `accel`/`jerk` in content/chassis.ts.
+- Class II `lateral: { accel 45, jerk 142 }` (was accel 36, no jerk; jerk 150 until Nov 22, 2026, when the user asked for a little smoother turn-in and return, −5%, `7dfa568`): 10–90% turn-in ~0.58 s, full in ~0.77 s, release settles in ~1 s. Tune `accel`/`jerk` in content/chassis.ts.
 - Deflection still writes `vy` directly (a shove).
 
 ### Mass and tread capacity
@@ -176,7 +176,7 @@ Craters, tank traps, walls and bunkers (fortified lines), minefields, and bridge
 - **Craters:** `crater` material; `Terrain.damage` on open ground (`scars: 100`) turns it into one; mines and fuel tanks break to one.
 - **Tank traps:** `tankTrap`, obstacle class `trap` (new in `OBSTACLE_CLASSES`, with `soft` for crops and rails). Checkerboard belts (`traps` feature) and in front of fortified lines.
 - **Walls and bunkers:** `wall` (heavy, blocks everyone), `bunker` (heavy, garrisoned: protection 0.8). `fort` feature: a wall at a column with `gates`, bunkers `bunkerBehind` columns beyond it, a trap belt `trapsAhead` columns before it with its own gates; never near a river.
-- **Minefields:** `mine` (1 HP, `hidden`, `explodes` 14/30, `breaksTo: 'crater'`, obstacle trivial so the treads set it off). `Terrain.reveal` marks swept tiles `seen` (called from `stepConcealment` with the sensor reveal radius × `CONCEALMENT.mineSweep` 1.15, user's call Nov 22, 2026, `uncommitted`: mines show a bit sooner on Gen 1 sensors; only re-sweeps when the hull moves to a new tile).
+- **Minefields:** `mine` (1 HP, `hidden`, `explodes` 14/30, `breaksTo: 'crater'`, obstacle trivial so the treads set it off). `Terrain.reveal` marks swept tiles `seen` (called from `stepConcealment` with the sensor reveal radius × `CONCEALMENT.mineSweep` 1.15, user's call Nov 22, 2026, `7dfa568`: mines show a bit sooner on Gen 1 sensors; only re-sweeps when the hull moves to a new tile).
 - **Bridges:** `bridge` (400 t, 120 HP) and `lightBridge` (300 t, 50 HP), `bearing.give: 'span'`; `Tile.under` holds the water. `River.bridge` (rows, kind) is drawn on its own stream clear of fords. `Terrain.crossings(rv)` = fords + the bridge while it stands; `ai/crossing.ts` `viaFord` routes through both and skips frozen rivers. A destroyed bridge tile (`damage`) or an overload (`bear`) brings down the whole span (`collapse`, flood fill) and emits `bridgeCollapse`.
 - **Gotcha:** `tileChanged` now carries `mat`, the material that changed. Read it instead of the tile: a fallen bridge or a mine has already turned into water or a crater by the time the renderer sees the event.
 
@@ -216,7 +216,7 @@ Rock is immovable, blocks fire, and enemies can't pass it. The hull glances off 
 Rock contact and fording use 80% of the hull's length and width. Crushing, rams, enemy crush, incoming fire, the stopped-hull obstacle, and the field-edge clamp keep the full hull (turned with it since Nov 2026, see below).
 
 ### Turned hit box
-`M3` · `uncommitted` · `playtest: pending` · SPEC §15 "Feedback batch (Nov 22, 2026)"
+`M3` · `7dfa568` · `playtest: pending` · SPEC §15 "Feedback batch (Nov 22, 2026)"
 User request: the hit box follows the hull's shape as it steers (up to ~41°). An oriented box replaces the axis-aligned footprint for incoming fire, crushing and rams, units under the hull, blasts, mines, and plasma pools.
 - `sim/math.ts`: `Box`, `orientedBox`, `toBox` (u along the heading, v across: the same sign as `hullSide`), `pointInBox(box, x, y, pad)`, `closestInBox`, `distanceToBox`, `circleIntersectsBox`, `boxBounds`, `rectIntersectsBox` (separating axes; touching edges don't count).
 - `sim/behemoth.ts`: `hullBox(b)`, `groundBox(b)`; `footprint(b)` is now the turned hull's bounds (the last stand's solid hull, wave placement). Users: `resolveBehemothCollisions` (crushes only tiles `rectIntersectsBox` says the hull covers, of those under its bounds; units by `circleIntersectsBox`), `stepPlayerRound`'s hull hit (`pointInBox`), `shellBurst` (`closestInBox`), `hullBlast` (`distanceToBox`), `terrainBlast`'s under-the-hull test, `poolUnder`/`burn` (`groundBox`; the trailer's pool test uses the same helpers now).
@@ -234,7 +234,7 @@ The turret traverses at a limited rate; the main gun fires on LMB. Shells burst 
 - **Gotcha:** Phaser's `activePointer` is shared across scenes, so the click that leaves the depot (or the title menu) is still held when the battle starts. `Controls.mouseLatched` (src/input/controls.ts) ignores mouse fire until every button has been released once.
 
 ### Ammo counts shots
-`M3` · `uncommitted` · `playtest: pending` · SPEC §6, §15 "Feedback batch (Nov 22, 2026)"
+`M3` · `7dfa568` · `playtest: pending` · SPEC §6, §15 "Feedback batch (Nov 22, 2026)"
 User request: ammo is shots, not missiles, and a launcher's shots are what its missile count was. A salvo weapon spends one round when the salvo starts (`stepMissiles`, sim/weapons.ts) and always finishes it; `WeaponDef.ammo` keeps its number (rack 24, pod 12, busters 10), so a rack now carries 24 salvos of 4. Depot stats read `24 shots` and `salvos of 4`, the hardpoint panel's row `Shots`. No save change (a half rack stays half).
 - **Gotcha:** `magazineLoad` still counts one round's damage per shot, so the cook-off and the detonation's munitions radius kept their size (a full rack ≈ 190). Rearm prices are still per shot (`roundPrice`), so rearming a rack is now cheap per missile; feed into the economy tuning.
 
@@ -266,7 +266,7 @@ Six weapons sold at depots: siegeHowitzer (L), rotaryGun, flakCannon, bunkerBust
 ### Energy weapons
 `M2` · `initial` · `playtest: pending` · SPEC §6, §15 "Energy weapons (M2)", §16 Q14
 Lasers for S/M/L (pulse, beam, heavy) and the plasma thrower (splash plus burning pools that hurt the Behemoth too).
-- Content: `pulseLaser` (S auto), `beamLaser` (M RMB), `heavyLaser` (L LMB), `plasmaThrower` (M RMB) in content/weapons.ts and `DEPOT_WEAPONS`. Laser power +10% (user's call, Nov 22, 2026, `uncommitted`): pulse 1.65, beam 1.76 (17.6/s), heavy 16.5, PD laser 4.4 a shot; the plasma thrower (not a laser) is unchanged. Types: `BeamSpec` (kind `beam`), `RoundSpec` = projectile | beam, `PoolSpec` on `ShellSpec.pool`, `POOL` in tuning.ts (tick 0.25, treads ×1.5, trailer ×1).
+- Content: `pulseLaser` (S auto), `beamLaser` (M RMB), `heavyLaser` (L LMB), `plasmaThrower` (M RMB) in content/weapons.ts and `DEPOT_WEAPONS`. Laser power +10% (user's call, Nov 22, 2026, `7dfa568`): pulse 1.65, beam 1.76 (17.6/s), heavy 16.5, PD laser 4.4 a shot; the plasma thrower (not a laser) is unchanged. Types: `BeamSpec` (kind `beam`), `RoundSpec` = projectile | beam, `PoolSpec` on `ShellSpec.pool`, `POOL` in tuning.ts (tick 0.25, treads ×1.5, trailer ×1).
 - **Gotcha:** `roundSpec` throws for beams; use `shotSpec` for anything that does damage.
 - Sim: `fireBeam` (projectiles.ts: analytic unit hit + 2-unit steps for cover/mines), `shootBeam` (weapons.ts: spread, `fire` + `beam` events), used by `fireAimed` and `stepAutoGun` (no lead). `damageEnemy` is exported.
 - `sim/pools.ts`: `spawnPool` (none in water), `stepPools` (counts ticks, not age: float drift lost the last tick), `poolUnder`. Pools burn units, tiles, the hull's treads (ground box), and a hitched trailer; `w.pools`. Events: `beam`, `plasmaBurn`, `explosion.plasma`.
@@ -405,7 +405,7 @@ A slow superheavy mini-boss that holds the line ahead. Its main turret is a huge
 - Tests: `tests/sim/siegeTank.test.ts` (two guns firing on their own cycles, the rear pivot, `support` targeting, a ram at cruise and its damage, a finishing ram, the callout once, doctrines and facing).
 
 ### Heavy weapons team (lock-on, guided missile)
-`M3` · `uncommitted` · `playtest: pending` · SPEC §7, §15 "Feedback batch (Nov 22, 2026)"
+`M3` · `7dfa568` · `playtest: pending` · SPEC §7, §15 "Feedback batch (Nov 22, 2026)"
 User request: a heavy weapon infantry unit with a longer range, that looks different, with an indicator and a lock-on phase. Two soldiers and a guided missile on a tripod: they dig into cover well off the path like a squad, but fire from 240 (a squad's 115), and paint the hull for 2.2 s before the missile goes.
 - **Unit** `weaponsTeam` (content/enemies.ts): 12 HP, infantry class, foot, `canHide`, `ambusher` (walks up to 100 to cover; its lane is 0.7 × fire range off the path, so it sits farther out than squads), turret 120°/s, threat 1.5, salvage 6, `spawn: 'cover'`, `lockOn: { relock: 1.5 }`. **Weapon** `guidedMissile`: one missile, speed 150, turn 3.2, 22 damage, no blast, range 320, reload 8, `sight: true`.
 - **Lock-on** (`EnemyDef.lockOn`, general): its aim telegraph is a lock. `aimGun` pushes `lockOn {id, x, y, time}` when it starts; while it runs, a lost line of sight breaks it (`breakLock`, sim/enemies.ts: windup 0, cooldown at least `relock`, event `lockBroken`), and so does any damage (`damageEnemy` calls `breakLock` on a survivor). `MissileSpec.sight`: `blocked` no longer waves a missile through, so a guided missile needs the line to lock and to launch. The windup reveals a concealed team (as for any unit).
@@ -433,7 +433,7 @@ A battle can be fought at night or in a storm (30% of battle nodes, never the op
 - **Gotcha:** objective targets (`e.objective`) are never hidden by a condition, but the enemy-sight rule applies to every unit (fortress guns too).
 
 ### Structures pay salvage
-`M3` · `uncommitted` · `playtest: pending` · SPEC §8.1, §15 "Feedback batch (Nov 22, 2026)"
+`M3` · `7dfa568` · `playtest: pending` · SPEC §8.1, §15 "Feedback batch (Nov 22, 2026)"
 User request: bunkers and other buildings pay salvage. `MATERIALS[...].salvage`: bunker 4 → 8, wall 1 → 2, fuel tank 2 (new), tank trap 1 (new); buildings 2, factories 5, wrecks 4, derricks 3 as before.
 
 ### Cover and garrisons
@@ -485,7 +485,7 @@ An extraction line ends a battle. Component damage, weapons, ammo, salvage, and 
 ### Battle modes: Breach and Chase
 `M3` · `initial` · `playtest: pending` · SPEC §3.1, §4.4, §10, §15 "Battle modes (M3)", §16 Q24
 Every battle still ends at the extraction line; **Breach** (destroy the fortress guns) and **Chase** (run down a convoy) add targets. Each target destroyed pays a share of the mode's +60 bonus **as it falls** (since Nov 22, 2026, below); a target left behind the frame, or a hauler past the extraction line, is lost.
-- **Objective as a percentage** (`uncommitted`, `playtest: pending`; user request: the objective should be a percentage destroyed, more destroyed paying more): `objectiveTaken` banks each share at once through `paySalvage` (source `objective`, so it flies to the hull), and `completeBattle`'s `bonus` is the node's extraction reward alone; `BattleReport.objective.salvage` holds the shares (optional: older saves lack it). `objectivePercent` (sim/objective.ts). HUD `2/4 guns 50%`; banners `Gun destroyed - 50% / +30 salvage - 2 guns left`, `Fortress 75% destroyed / +45 salvage` (or `Fortress breached - 100% / Every gun silenced: +60`); the extraction message `3 of 4 guns destroyed (75%): +45`; map intel `+15 a gun destroyed (4), up to +60` (`objectiveReward` in MapScene, the per-target share once the strength is known); the battle report `Breach: 3/4 guns 75% +45`. Modes are drawn per battle node (Assault 2 : Breach 1 : Chase 1; the opening battle is Assault).
+- **Objective as a percentage** (`7dfa568`, `playtest: pending`; user request: the objective should be a percentage destroyed, more destroyed paying more): `objectiveTaken` banks each share at once through `paySalvage` (source `objective`, so it flies to the hull), and `completeBattle`'s `bonus` is the node's extraction reward alone; `BattleReport.objective.salvage` holds the shares (optional: older saves lack it). `objectivePercent` (sim/objective.ts). HUD `2/4 guns 50%`; banners `Gun destroyed - 50% / +30 salvage - 2 guns left`, `Fortress 75% destroyed / +45 salvage` (or `Fortress breached - 100% / Every gun silenced: +60`); the extraction message `3 of 4 guns destroyed (75%): +45`; map intel `+15 a gun destroyed (4), up to +60` (`objectiveReward` in MapScene, the per-target share once the strength is known); the battle report `Breach: 3/4 guns 75% +45`. Modes are drawn per battle node (Assault 2 : Breach 1 : Chase 1; the opening battle is Assault).
 - Content: `content/modes.ts` (`BattleModeId`, `MODE_IDS`, `MODES`: name, goal, weight, bonus, `posts` (multiplier on the doctrine's post size: breach 0.8, chase 0.6), `target` names, `fortress` {at, guns by strength 3/4/5, units, gates, gateWidth}, `convoy` {haulers 3/4/5, layers 1/1/2, escorts 2/3/3, escortMix, speed 1.15, hurt 0.5, spacing, lead 170, mineEvery 2.4, mines 6}). `OBJECTIVE` in tuning.ts (lostBehind 40, escapeBeyond 16, spawnSearch 5).
 - Sim: `sim/objective.ts`: `ObjectiveSpec {mode, strength}`, `ObjectiveState {mode, total, destroyed, lost, fortress, convoySpeed}`, `planFortress` (own stream `0xb7e4`; a column whose wall, trap belt, and bunkers clear every river's banks, nearest the wanted chunk), `createObjective`, `startObjective` (the convoy column on the lane via `laneSpot`, escorts from `escortMix`), `stepObjective` (fortress guns spawn when the wall is within `spawnDistance` of the frame's leading edge, facing π; losses; mine laying via `Terrain.layMine`), `objectiveTaken` (called from `destroyEnemy` for `e.objective`), `objectiveSettled`, `objectiveComplete`, `objectiveBonus`. `World.objective`; `WorldOptions.objective`; `createWorld` adds `recipe.fortress` for a Breach. Not stepped after extraction. Events `objective {what, enemy, x, y, done}` and `mineLaid`.
 - Terrain: `TerrainRecipe.fortress?: FortressSpec {col, guns, gates, gateWidth}`; `fortressFeature` lays the wall out as a sequence of guns (two-row gaps, `embrasures`) and gates with wall between (gates narrow to 3, then guns drop, only if the field is too narrow); a `fort` `Defense` with `embrasures`. `Terrain.fortress()` → `FortressPlan`, `Terrain.laneY(x)`, `Terrain.layMine(col, row, events)` (bare `ground` only, drawn swept).
@@ -530,7 +530,7 @@ User request (Nov 2026): the title screen plays short battles in the background.
 - **Gotcha:** a headless screenshot catches the clip's fade-in partway (the loop barely advances in virtual time), so it looks dark.
 
 ### Run save
-`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `3471074` (v11) → `75a116f` (v12) → `uncommitted` (v13) · `playtest: pending` · SPEC §2
+`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `3471074` (v11) → `75a116f` (v12) → `7dfa568` (v13) · `playtest: pending` · SPEC §2
 `src/save/runSave.ts`: versioned JSON in localStorage, structural validation, `StorageLike` for tests. Older versions migrate forward.
 
 | Version | Added |
@@ -550,7 +550,7 @@ User request (Nov 2026): the title screen plays short battles in the background.
 | v13 | One front Plate mod (`armor.front`) and the treads' `load` track. `fromV12` merges `armor.frontLeft`/`armor.frontRight` Plate levels into `armor.front` at the higher one (no refund) |
 
 ### Score list
-`M3` · `uncommitted` · `playtest: pending` · SPEC §10, §15 "Feedback batch (Nov 22, 2026)"
+`M3` · `7dfa568` · `playtest: pending` · SPEC §10, §15 "Feedback batch (Nov 22, 2026)"
 User request: a score list with the Behemoth's (demon) callsign on the title screen.
 - `sim/scores.ts`: `ScoreEntry {callsign, score, outcome, reached, sectors, directive, seed, date}`, `runScore(summary)` (`SCORE` in tuning.ts: kill 10, salvage 1, battle 100, objective taken 250, Directive complete 1000), `scoreEntry`, `addScore(list, entry, keep)` (best first; a tie goes below; `rank` or null).
 - `save/scores.ts`: key `behemoth-protocol/scores`, `{version: 1, scores}` (`SCORE.keep` 10), `parseScores` (drops entries that don't validate), `loadScores`, `recordScore(summary, storage, date)`. `browserStorage` and `safe` are exported from runSave.ts for it.
@@ -624,7 +624,7 @@ When the salvage left can't cover a full tread (any set) or armor repair, it pat
 ### Component upgrades (grades and mods)
 `M2` · `initial` · `playtest: pending` · SPEC §5.6, §8.2, §15 "Component upgrades (M2)", §16 Q15
 Core components come in Gen 1/2/3: a higher grade, found in the depot's stock, replaces the part (whole; the old one sells back) and is better but heavier. Parts take leveled mods (harden, traverse, plate, cap bank, load; up to 3, an action a level), always on offer. Run save v8.
-- **Nov 22, 2026** (`uncommitted`, `playtest: pending`; user requests): a treads **Load** track (`TRACKS.load`: +8% capacity a level, 3 t; `DEPOT_TRACKS.load` 40/60/90; `PartKind` `treads`, which also takes Harden; `fitChassis` multiplies `massCapacity` by it), and **one Plate for both front halves**: `armorPart(arc)` files both under `armor.front`, `armorArcsOf(part)`, `ARMOR_PARTS` (content/upgrades.ts); `partMax`/`scaleHp` (sim/depot.ts) cover every arc of a part; the depot's armor panel shows the two halves on one Plate button. Save v13. Tests in `tests/sim/upgrades.test.ts`.
+- **Nov 22, 2026** (`7dfa568`, `playtest: pending`; user requests): a treads **Load** track (`TRACKS.load`: +8% capacity a level, 3 t; `DEPOT_TRACKS.load` 40/60/90; `PartKind` `treads`, which also takes Harden; `fitChassis` multiplies `massCapacity` by it), and **one Plate for both front halves**: `armorPart(arc)` files both under `armor.front`, `armorArcsOf(part)`, `ARMOR_PARTS` (content/upgrades.ts); `partMax`/`scaleHp` (sim/depot.ts) cover every arc of a part; the depot's armor panel shows the two halves on one Plate button. Save v13. Tests in `tests/sim/upgrades.test.ts`.
 - Content: `content/upgrades.ts` (`GRADES` multipliers per core component and gen, `TRACKS` with `on: PartKind[]`, `Upgrades {grades, mods}`, `NO_UPGRADES`, `armorPart(arc)` = `armor.<arc>`, `gradeName`); prices in `DEPOT_GRADES` (with `minBattle`: Gen 3 from the second depot) and `DEPOT_TRACKS` (per level) in content/depot.ts; `DEPOT.gradeStock`, `DEPOT.maxModLevel` in tuning.ts. New optional chassis fields set only by grades and mods: `sensorReach`, `fireControl.spread`, `magazine.cookOff`, `HardpointSlotDef.traverse`.
 - Sim: `sim/upgrades.ts` `fitChassis(base, upgrades)` returns the chassis with everything applied (returns `base` itself with no upgrades); `upgradeMass`, `modLevel`, `modScale`, `CORE_COMPONENTS`. `createBehemoth(..., upgrades)` builds from the fitted chassis and keeps `b.upgrades`; `loadMass` adds `upgradeMass`; `autoReach(b)` (sensor damage × grade reach) replaces `sensorRangeScale` for auto weapons; `fireControlSpread` and `cookOff` apply their grade; `mountTraverse` applies `slot.traverse`. A ring's traverse mod is filed under its main slot id and speeds the `TurretDef`.
 - **Gotcha:** `b.chassis` is the *fitted* chassis. In depot and render code use `fittedChassis(s)` (sim/depot.ts), not `CHASSIS[s.chassis]`, for any maximum or rating; `CHASSIS[...]` is still right for geometry and for which add-ons fit.
@@ -703,7 +703,7 @@ Muzzle flash, recoil, screen shake, explosions, scorch/wreck decals, tread marks
 - **Gotcha:** Phaser's `cam.shake` intensity scales with camera size × zoom², so always shake via the scene's `shake(ms, gamePx)` helper.
 
 ### Salvage pickups
-`M3` · `uncommitted` · `playtest: pending` · SPEC §8.1, §15 "Feedback batch (Nov 22, 2026)"
+`M3` · `7dfa568` · `playtest: pending` · SPEC §8.1, §15 "Feedback batch (Nov 22, 2026)"
 User request: salvage travels from what was destroyed to the Behemoth, to show when it's gathered.
 - Sim: every payout goes through `paySalvage(w, x, y, amount, source)` (sim/salvage.ts), which banks it and pushes `salvage {x, y, amount, source: unit | tile | objective}`. `destroyEnemy` pays the unit's salvage; the world banks `Terrain.takeSalvageDrops()` (each razed tile at its center; `takeSalvage()` still sums them, for tests); `objectiveTaken` pays the objective share.
 - Render: `SalvageMotes` (render/salvageView.ts, ADD-blended Graphics at depth 6.4): one mote per ~4 salvage (1–8), a short scatter, then homing on the hull's interpolated center at up to 420 units/s; a `+N` tag rises over pickups of 5 or more (objective shares in hot amber). `inFlight()` is held back from the HUD's Salvage line until it lands (`Hud.update(w, dt, pending)`); landing plays `pickup` (a small bright tink; `BattleAudio.pickup`). With the hull gone they drift and fade. The attract mode shows them too.

@@ -46,6 +46,8 @@ export type SoundId =
   | 'incoming'
   | 'horn'
   | 'radio'
+  | 'lockOn'
+  | 'pickup'
   | 'detonation';
 
 /** Sustained sounds that keep going while their events keep coming, and fade once they stop. */
@@ -84,6 +86,7 @@ export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: nu
   heavyTankGun: { sound: 'cannon', size: 0.55 },
   infantryRockets: { sound: 'rocket', size: 0.4 },
   launcherMissiles: { sound: 'missile', size: 0.5 },
+  guidedMissile: { sound: 'missile', size: 0.7 },
   emplacementGun: { sound: 'cannon', size: 0.75 },
   bunkerRockets: { sound: 'rocket', size: 0.5 },
   towerGuns: { sound: 'autocannon', size: 0.4 },
@@ -207,6 +210,9 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
     // A mini-boss in view: the call over the radio.
     case 'sighted':
       return [{ sound: 'radio', size: 1 }];
+    // A heavy weapons team painting the hull: the cab's lock warning, from the team's side.
+    case 'lockOn':
+      return [{ sound: 'lockOn', size: 1, x: ev.x, y: ev.y }];
     case 'detonation':
       return [{ sound: 'detonation', size: 2, x: ev.x, y: ev.y }];
     default:
@@ -298,6 +304,8 @@ export const MIN_GAP: Record<SoundId, number> = {
   incoming: 0.3,
   horn: 2,
   radio: 1,
+  lockOn: 0.5,
+  pickup: 0.05,
   detonation: 1,
 };
 
@@ -339,6 +347,8 @@ export const PITCH_SPREAD: Record<SoundId, number> = {
   incoming: 1,
   horn: 0.4,
   radio: 0,
+  lockOn: 0,
+  pickup: 1.5,
   detonation: 0.6,
 };
 

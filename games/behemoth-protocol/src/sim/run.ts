@@ -99,13 +99,16 @@ export interface BattleReport {
   /** 1-based battle number. */
   battle: number;
   kills: number;
-  /** Salvage from kills, and the bonus for reaching the extraction line. */
+  /** Salvage earned in the battle (kills, structures, objective shares), and the bonus for reaching the extraction line. */
   salvage: number;
   bonus: number;
   /** Seconds from start to extraction. */
   time: number;
-  /** A Breach or Chase battle's targets destroyed out of all of them (SPEC §4.4); absent for an Assault. */
-  objective?: { mode: BattleModeId; destroyed: number; total: number };
+  /**
+   * A Breach or Chase battle's targets destroyed out of all of them (SPEC §4.4), and the salvage
+   * their shares paid (already in `salvage`; missing in older saves); absent for an Assault.
+   */
+  objective?: { mode: BattleModeId; destroyed: number; total: number; salvage?: number };
   /** A sector's objective battle: whether it was taken, by the Directive's rule (SPEC §3). */
   taken?: boolean;
 }
@@ -455,9 +458,9 @@ export function completeBattle(run: RunState, w: World): RunState {
     battle: run.battle + 1,
     kills: w.stats.kills,
     salvage: w.stats.salvage,
-    // The node's reward for extracting, plus the objective's share for each target destroyed.
-    bonus: intel.salvage + objectiveBonus(o),
-    ...(o.total > 0 ? { objective: { mode: o.mode, destroyed: o.destroyed, total: o.total } } : {}),
+    // The node's reward for extracting (the objective's shares were banked as each target fell).
+    bonus: intel.salvage,
+    ...(o.total > 0 ? { objective: { mode: o.mode, destroyed: o.destroyed, total: o.total, salvage: objectiveBonus(o) } } : {}),
     ...(taken !== undefined ? { taken } : {}),
     time,
   };

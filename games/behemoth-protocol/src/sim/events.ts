@@ -16,6 +16,9 @@ export type Owner = 'player' | 'enemy';
 /** `friendly`: the enemy's own artillery (SPEC §7). */
 export type KillCause = 'shot' | 'crushed' | 'blast' | 'trailer' | 'hazard' | 'friendly';
 
+/** Where banked salvage came from: a unit destroyed, a structure knocked down, or a mode's target (its objective share). */
+export type SalvageSource = 'unit' | 'tile' | 'objective';
+
 /**
  * Things that happened during sim steps, for the renderer (effects, sound) to consume.
  * The sim only appends; whoever renders drains the list.
@@ -56,6 +59,11 @@ export type SimEvent =
   /** A direct hit on a vehicle's flank or rear, where its armor is thinner (SPEC §7). */
   | { type: 'facingHit'; facing: Exclude<Facing, 'front'>; x: number; y: number }
   | { type: 'enemyDestroyed'; id: number; enemy: EnemyId; x: number; y: number; cause: KillCause }
+  /**
+   * Salvage banked (SPEC §8.1): a kill, a structure knocked down, or a battle mode's target's share
+   * of the objective bonus, at the world point it came from (the renderer flies it to the hull).
+   */
+  | { type: 'salvage'; x: number; y: number; amount: number; source: SalvageSource }
   /** `mat` is what the tile was: a bridge that fell has already turned into the river under it. */
   | { type: 'tileChanged'; col: number; row: number; state: TileState; mat: MaterialId }
   /** A whole bridge span came down (shot out, or overloaded). */
@@ -83,6 +91,10 @@ export type SimEvent =
   | { type: 'objective'; what: 'destroyed' | 'lost'; enemy: EnemyId; x: number; y: number; done: boolean }
   /** A convoy's mine layer dropped a mine (world point of the tile's center). */
   | { type: 'mineLaid'; x: number; y: number }
+  /** A unit started painting the hull for a guided missile (`EnemyDef.lockOn`); it fires in `time` s unless the lock breaks. */
+  | { type: 'lockOn'; id: number; x: number; y: number; time: number }
+  /** A lock-on was thrown off (the unit was hit, or lost sight of the hull). */
+  | { type: 'lockBroken'; id: number; x: number; y: number }
   /** A mini-boss came into view for the first time (`EnemyDef.callout`). */
   | { type: 'sighted'; enemy: EnemyId; x: number; y: number }
   /** A battery's volley went up: its target zone is marked, the first round lands in `flight` s (SPEC §7). */

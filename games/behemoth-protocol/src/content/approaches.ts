@@ -39,7 +39,7 @@ export const APPROACHES: Record<ApproachId, ApproachDef> = {
     id: 'plain',
     name: 'Open plain',
     scale: { forests: 0.35, towns: 0.3, rock: 0.4, hedgerows: 0.5, farms: 1.3, factories: 0.4, tankFarms: 0.6, craterFields: 0.6, fortLines: 0.5, wrecks: 0.6 },
-    forces: { infantry: 0.5, missileLauncher: 1.4, heavyTank: 1.2 },
+    forces: { infantry: 0.5, weaponsTeam: 0.6, missileLauncher: 1.4, heavyTank: 1.2 },
   },
   forest: {
     // Thick woods: infantry ambushes everywhere; flamethrowers and mortars shine.
@@ -47,7 +47,7 @@ export const APPROACHES: Record<ApproachId, ApproachDef> = {
     name: 'Forest line',
     scale: { forests: 2.2, towns: 0.5, farms: 0.4, factories: 0.5, tankFarms: 0.5, snowdrifts: 0.6, lakes: 0.6, dunes: 0.6, oilfields: 0.6 },
     forestSize: 1.3,
-    forces: { infantry: 1.6, missileLauncher: 0.7 },
+    forces: { infantry: 1.6, weaponsTeam: 1.4, missileLauncher: 0.7 },
   },
   urban: {
     // Dense blocks: constant demolition, garrisoned infantry, ram plating pays. A main avenue runs
@@ -58,7 +58,7 @@ export const APPROACHES: Record<ApproachId, ApproachDef> = {
     scale: { towns: 2.2, factories: 1.5, forests: 0.4, farms: 0.2, hedgerows: 0.3, craterFields: 1.6, lakes: 0.3, snowdrifts: 0.5, dunes: 0.4, oilfields: 0.5, wrecks: 1.3, blastSites: 1.3 },
     townSize: 1.4,
     avenue: 3,
-    forces: { infantry: 1.6, lightTank: 0.8 },
+    forces: { infantry: 1.6, weaponsTeam: 1.4, lightTank: 0.8 },
   },
   river: {
     // Rivers every other chunk or so, nearly all bridged: a bridge fight.
@@ -76,7 +76,7 @@ export const APPROACHES: Record<ApproachId, ApproachDef> = {
     cliffs: [1.5, 5],
     laneAmplitude: 2,
     // Little room to circle; launchers on the heights.
-    forces: { lightTank: 0.7, missileLauncher: 1.4 },
+    forces: { lightTank: 0.7, missileLauncher: 1.4, weaponsTeam: 1.3 },
   },
 };
 

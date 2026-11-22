@@ -62,7 +62,7 @@ export function fitChassis(base: ChassisDef, u: Upgrades): ChassisDef {
   return {
     ...base,
     treadHp: hp('treads', base.treadHp),
-    massCapacity: Math.round(base.massCapacity * (t?.capacity ?? 1)),
+    massCapacity: Math.round(base.massCapacity * (t?.capacity ?? 1) * modScale(u, 'treads', 'load')),
     sensorsHp: hp('sensors', base.sensorsHp),
     revealRadius: base.revealRadius * (s?.reveal ?? 1),
     sensorReach: (base.sensorReach ?? 1) * (s?.reach ?? 1),

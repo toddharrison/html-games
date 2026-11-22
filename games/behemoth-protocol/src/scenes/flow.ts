@@ -1,5 +1,6 @@
 import type Phaser from 'phaser';
 import { clearRun, saveRun } from '../save/runSave';
+import { recordScore } from '../save/scores';
 import { summarizeRun, type RunState, type RunSummary } from '../sim/run';
 
 /**
@@ -31,6 +32,13 @@ export interface SummaryData {
   summary: RunSummary;
   /** Texture key of the still frame of the blast (a destroyed run), if one was taken. */
   shot: string | null;
+  /** The run's place on the score list (1-based); null or missing if it didn't make it, or it was a practice run. */
+  rank?: number | null;
+}
+
+/** Puts a finished real run on the score list (practice runs never count). Returns its place, if it made the list. */
+export function recordRun(ctx: RunContext, summary: RunSummary): number | null {
+  return ctx.persist ? recordScore(summary) : null;
 }
 
 /**
@@ -41,7 +49,8 @@ export function enterNode(scene: Phaser.Scene, ctx: RunContext): void {
   const next = ctx.run.next;
   if (next === 'won' || next === 'failed') {
     endRun(ctx);
-    showSummary(scene, { summary: summarizeRun(ctx.run), shot: null });
+    const summary = summarizeRun(ctx.run);
+    showSummary(scene, { summary, shot: null, rank: recordRun(ctx, summary) });
     return;
   }
   scene.scene.start(next === 'battle' || next === 'depot' || next === 'event' ? next : 'map', ctx);

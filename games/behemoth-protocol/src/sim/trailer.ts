@@ -2,10 +2,10 @@ import { TRAILER_MINE } from '../content/tuning';
 import {
   applyHit,
   damageComponent,
-  footprint,
   hitArc,
   hitched,
   hitchPoint,
+  hullBox,
   placeTrailer,
   type BayState,
   type BehemothState,
@@ -16,6 +16,7 @@ import {
 import { blastDrones } from './drones';
 import { destroyEnemy } from './enemies';
 import { allocId, type Mine } from './entities';
+import { distanceToBox } from './math';
 import type { KillCause, SimEvent } from './events';
 import type { Rng } from './rng';
 import type { World } from './world';
@@ -247,10 +248,7 @@ function falloff(d: number, radius: number, edge: number = TRAILER_MINE.edge): n
 export function hullBlast(w: World, x: number, y: number, radius: number, damage: number, edge: number = TRAILER_MINE.edge): boolean {
   const b = w.behemoth;
   if (b.destroyed) return false;
-  const r = footprint(b);
-  const dx = Math.max(r.x0 - x, 0, x - r.x1);
-  const dy = Math.max(r.y0 - y, 0, y - r.y1);
-  const d = Math.hypot(dx, dy);
+  const d = distanceToBox(hullBox(b), x, y);
   if (d >= radius) return false;
   applyHit(b, hitArc(b, x - b.x, y - b.y, x, y), damage * falloff(d, radius, edge), w.rng, w.events, x, y);
   return true;

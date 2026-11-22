@@ -12,6 +12,7 @@ import { cutAlert } from './encounter';
 import { drawUnit, edgeSpot } from './spawner';
 import { chunkRiver, riverCenter, type FortressSpec, type Terrain, type TerrainRecipe } from './terrain';
 import type { World } from './world';
+import { paySalvage } from './salvage';
 
 /**
  * Battle-mode objectives (SPEC §4.4). Every battle ends at the extraction line; Breach and Chase
@@ -256,8 +257,11 @@ export function objectiveTaken(w: World, e: Enemy): void {
     w.events.push({ type: 'objective', what: 'destroyed', enemy: e.def.id, x: e.x, y: e.y, done: objectiveSettled(w.objective) });
     return;
   }
+  // Each target pays its share of the bonus as it falls (SPEC §4.4), so more destroyed is more salvage.
+  const before = objectiveBonus(w.objective);
   w.objective.destroyed++;
   w.events.push({ type: 'objective', what: 'destroyed', enemy: e.def.id, x: e.x, y: e.y, done: objectiveSettled(w.objective) });
+  paySalvage(w, e.x, e.y, objectiveBonus(w.objective) - before, 'objective');
 }
 
 /** Every target is accounted for, destroyed or lost. */
@@ -270,7 +274,16 @@ export function objectiveComplete(o: ObjectiveState): boolean {
   return o.total > 0 && o.destroyed >= o.total;
 }
 
-/** Salvage the objective pays at extraction: the mode's bonus, a share for each target destroyed. */
+/**
+ * Salvage the objective has paid so far: the mode's bonus times the share of targets destroyed. It's
+ * banked as each target falls (`objectiveTaken`), not at extraction.
+ */
 export function objectiveBonus(o: ObjectiveState): number {
   return o.total > 0 ? Math.round((MODES[o.mode].bonus * o.destroyed) / o.total) : 0;
 }
+
+/** The share of the targets destroyed, as a whole percentage (0 with no targets). */
+export function objectivePercent(o: { destroyed: number; total: number }): number {
+  return o.total > 0 ? Math.round((100 * o.destroyed) / o.total) : 0;
+}
+

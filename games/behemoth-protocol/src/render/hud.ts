@@ -28,6 +28,7 @@ import type { DirectiveGoal } from '../content/directives';
 import { FONT_KEY, fontText } from './pixelFont';
 import { hex, PAL } from './palette';
 import { damageLevel } from './statusFx';
+import { objectivePercent } from '../sim/objective';
 
 /**
  * Battle HUD in the side panels (SPEC §10). Left: speed, treads, reactor, power, the weapon strip
@@ -282,7 +283,8 @@ export class Hud {
     this.flashes.set(id, FLASH_TIME);
   }
 
-  update(w: World, dt: number): void {
+  /** `pending`: salvage earned but still flying to the hull (counted once it lands). */
+  update(w: World, dt: number, pending = 0): void {
     const b = w.behemoth;
     const g = this.g;
     g.clear();
@@ -332,7 +334,7 @@ export class Hud {
     // The condition under where it's fought; a storm says when a squall is on.
     const squall = (w.condition?.squall ?? 0) > 0.3 ? ' - squall' : '';
     const weather = this.run.condition ? `\n${this.run.condition}${squall}` : '';
-    let stats = `Battle ${this.run.battle}\n${this.run.where}${weather}\nKills ${w.stats.kills}\nSalvage ${this.run.salvage + w.stats.salvage}\n${exit}`;
+    let stats = `Battle ${this.run.battle}\n${this.run.where}${weather}\nKills ${w.stats.kills}\nSalvage ${this.run.salvage + w.stats.salvage - pending}\n${exit}`;
     const ls = w.lastStand;
     if (ls && !b.destroyed) stats += `\n\nLast stand\nWave ${ls.wave}  next ${Math.ceil(ls.nextWave)}s\nHeld ${Math.floor(ls.time)}s`;
     this.stats.setText(fontText(stats));
@@ -347,7 +349,7 @@ export class Hud {
       const open = o.total - o.destroyed - o.lost;
       this.objectiveLabel.setText(fontText(MODES[o.mode].name));
       this.objectiveText
-        .setText(fontText(`${o.destroyed}/${o.total} ${names[1]}${o.lost > 0 ? ` -${o.lost}` : ''}`))
+        .setText(fontText(`${o.destroyed}/${o.total} ${names[1]} ${objectivePercent(o)}%${o.lost > 0 ? ` -${o.lost}` : ''}`))
         .setTint(hex(open === 0 ? (o.destroyed === o.total ? PAL.glow : PAL.hudDim) : PAL.amber));
     }
 

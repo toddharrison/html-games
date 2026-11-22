@@ -89,4 +89,5 @@ export const DEPOT_TRACKS: Record<TrackId, readonly number[]> = {
   traverse: [35, 55, 80],
   plate: [30, 45, 70],
   capacitor: [45, 70, 100],
+  load: [40, 60, 90],
 };

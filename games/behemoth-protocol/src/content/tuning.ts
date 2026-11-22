@@ -261,6 +261,11 @@ export const CONCEALMENT = {
   afterFire: 2.5,
   /** Seconds visible after being hit. */
   afterHit: 1.5,
+  /**
+   * Minefields are swept out to this multiple of the reveal radius (SPEC §4.5): a mine shows up a
+   * little before the hull is on it, even on Gen 1 sensors (user's call, Nov 2026: +15%).
+   */
+  mineSweep: 1.15,
 };
 
 /**
@@ -504,6 +509,13 @@ export const CAMERA = {
 };
 
 // ── Run and depot ───────────────────────────────────────────────────────────────────────────────
+
+/**
+ * A finished run's score (`sim/scores.ts`; user request, Nov 2026: a score list on the title).
+ * Points per kill, per salvage earned, per battle won, per sector objective taken, and for a
+ * Directive complete. `keep` runs are saved, `shown` listed on the title.
+ */
+export const SCORE = { kill: 10, salvage: 1, battle: 100, objective: 250, won: 1000, keep: 10, shown: 5 };
 
 /** Run-level tuning (SPEC §3). What a battle pays and how hard it is come from its map node. */
 export const RUN = {

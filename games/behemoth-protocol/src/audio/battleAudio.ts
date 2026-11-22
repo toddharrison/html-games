@@ -59,6 +59,13 @@ export class BattleAudio {
     this.synth.update(engineState(b, cmd), wet(b.x, b.y), cruiseFrac, reactorState(b, this.fuseStart));
   }
 
+  /** Salvage reaching the hull (render-side: the motes land after the sim banks it). */
+  pickup(amount: number): void {
+    if (this.dead) return;
+    const items: { cue: Cue; at: Placement }[] = [{ cue: { sound: 'pickup', size: Math.min(1, 0.4 + amount / 30) }, at: { pan: 0, gain: 1, distance: 0 } }];
+    for (const { cue, at } of this.limiter.filter(items, this.synth.ctx.currentTime)) this.synth.play(cue.sound as SoundId, cue.size, at);
+  }
+
   setPaused(paused: boolean): void {
     if (paused === this.paused) return;
     this.paused = paused;

@@ -1,7 +1,7 @@
 import { BEARING, TERRAIN_BLAST } from '../content/tuning';
-import { damageTreads, footprint, groundFootprint, hitched, loadMass } from './behemoth';
+import { damageTreads, groundFootprint, hitched, hullBox, loadMass } from './behemoth';
 import { destroyEnemy } from './enemies';
-import { pointInRect } from './math';
+import { rectIntersectsBox } from './math';
 import type { TerrainBlast } from './terrain';
 import { blast, hitTrailer, hullBlast } from './trailer';
 import type { World } from './world';
@@ -49,10 +49,9 @@ function terrainBlast(w: World, bl: TerrainBlast): void {
   const b = w.behemoth;
   blast(w, bl.x, bl.y, bl.radius, bl.damage, 'hazard', TERRAIN_BLAST.edge);
   if (b.destroyed) return;
-  // Under the hull: its tile overlaps the footprint (a mine is set off the moment the treads reach it).
-  const fp = footprint(b);
-  const half = w.terrain.tileSize / 2;
-  const under = pointInRect(bl.x, bl.y, { x0: fp.x0 - half, y0: fp.y0 - half, x1: fp.x1 + half, y1: fp.y1 + half });
+  // Under the hull: its tile overlaps the turned hull (a mine is set off the moment the treads reach it).
+  const ts = w.terrain.tileSize;
+  const under = rectIntersectsBox(hullBox(b), { x0: bl.x - ts / 2, y0: bl.y - ts / 2, x1: bl.x + ts / 2, y1: bl.y + ts / 2 });
   if (under) damageTreads(b, bl.damage * TERRAIN_BLAST.under, w.events);
   else hullBlast(w, bl.x, bl.y, bl.radius, bl.damage * TERRAIN_BLAST.hull, TERRAIN_BLAST.edge);
   const tr = hitched(b);

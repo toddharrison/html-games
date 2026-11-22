@@ -1,9 +1,9 @@
 import { isWet } from '../content/terrain';
 import { POOL } from '../content/tuning';
 import type { PoolSpec, ShellSpec } from '../content/weapons';
-import { damageTreads, groundFootprint, hitched, type BehemothState } from './behemoth';
+import { damageTreads, groundBox, hitched, type BehemothState } from './behemoth';
 import { allocId, type Pool } from './entities';
-import { circleIntersectsRect, clamp } from './math';
+import { circleIntersectsBox, closestInBox, orientedBox } from './math';
 import { damageEnemy } from './projectiles';
 import { hitTrailer } from './trailer';
 import type { World } from './world';
@@ -38,7 +38,7 @@ export function stepPools(w: World, dt: number): void {
 
 /** True while a pool reaches into the Behemoth's ground box (for the HUD and the AI later). */
 export function poolUnder(b: BehemothState, p: Pool): boolean {
-  return circleIntersectsRect(p.x, p.y, p.pool.radius, groundFootprint(b));
+  return circleIntersectsBox(groundBox(b), p.x, p.y, p.pool.radius);
 }
 
 function burn(w: World, p: Pool, dt: number): void {
@@ -58,22 +58,16 @@ function burn(w: World, p: Pool, dt: number): void {
   if (b.destroyed) return;
   if (poolUnder(b, p)) {
     damageTreads(b, dps * POOL.treads * dt, w.events);
-    const fp = groundFootprint(b);
-    w.events.push({ type: 'plasmaBurn', x: clamp(p.x, fp.x0, fp.x1), y: clamp(p.y, fp.y0, fp.y1) });
+    const at = closestInBox(groundBox(b), p.x, p.y);
+    w.events.push({ type: 'plasmaBurn', x: at.x, y: at.y });
   }
   const t = hitched(b);
   if (t) {
-    // The pool's center in the trailer's own frame, against its box.
-    const c = Math.cos(t.heading);
-    const s = Math.sin(t.heading);
-    const lx = (p.x - t.x) * c + (p.y - t.y) * s;
-    const ly = -(p.x - t.x) * s + (p.y - t.y) * c;
-    const hl = t.def.length / 2;
-    const hw = t.def.width / 2;
-    if (circleIntersectsRect(lx, ly, radius, { x0: -hl, y0: -hw, x1: hl, y1: hw })) {
-      const cx = clamp(lx, -hl, hl);
-      const cy = clamp(ly, -hw, hw);
-      hitTrailer(b, t, dps * POOL.trailer * dt, w.rng, w.events, t.x + cx * c - cy * s, t.y + cx * s + cy * c);
+    // The trailer's own turned box.
+    const box = orientedBox(t.x, t.y, t.def.length / 2, t.def.width / 2, t.heading);
+    if (circleIntersectsBox(box, p.x, p.y, radius)) {
+      const at = closestInBox(box, p.x, p.y);
+      hitTrailer(b, t, dps * POOL.trailer * dt, w.rng, w.events, at.x, at.y);
     }
   }
 }

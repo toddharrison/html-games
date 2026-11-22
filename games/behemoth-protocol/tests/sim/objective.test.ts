@@ -6,7 +6,7 @@ import { viaFord } from '../../src/sim/ai/crossing';
 import { destroyEnemy, spawnEnemy } from '../../src/sim/enemies';
 import type { SimEvent } from '../../src/sim/events';
 import { frameRight } from '../../src/sim/frame';
-import { objectiveBonus, objectiveComplete, planFortress } from '../../src/sim/objective';
+import { objectiveBonus, objectiveComplete, objectivePercent, planFortress } from '../../src/sim/objective';
 import { battleObjective, completeBattle, enterMapNode, newRun } from '../../src/sim/run';
 import { generateMap } from '../../src/sim/sectorMap';
 import { hashSeed } from '../../src/sim/rng';
@@ -157,19 +157,31 @@ describe('breach', () => {
     expect(fired.length).toBeGreaterThan(0);
   });
 
-  it('every gun destroyed completes it and pays the whole bonus; some pay their share', () => {
+  it('every gun destroyed completes it and pays the whole bonus; some pay their share as they fall', () => {
     const w = world({ objective: { mode: 'breach', strength: 'normal' } });
     reachFortress(w);
     const guns = targets(w);
     const events: SimEvent[] = [];
+    const salvage0 = w.stats.salvage;
     destroyEnemy(w, guns[0]!, 'shot');
     events.push(...w.events.splice(0));
     expect(w.objective.destroyed).toBe(1);
+    expect(objectivePercent(w.objective)).toBe(Math.round(100 / guns.length));
     expect(objectiveBonus(w.objective)).toBe(Math.round(MODES.breach.bonus / guns.length));
+    // Banked at once, with the gun's own salvage, each flying from where the gun stood.
+    const share = Math.round(MODES.breach.bonus / guns.length);
+    expect(w.stats.salvage - salvage0).toBe(guns[0]!.def.salvage + share);
+    expect(events.filter((e) => e.type === 'salvage').map((e) => e.type === 'salvage' && [e.source, e.amount])).toEqual([
+      ['unit', guns[0]!.def.salvage],
+      ['objective', share],
+    ]);
     for (const g of guns.slice(1)) destroyEnemy(w, g, 'shot');
     events.push(...w.events.splice(0));
     expect(objectiveComplete(w.objective)).toBe(true);
     expect(objectiveBonus(w.objective)).toBe(MODES.breach.bonus);
+    expect(objectivePercent(w.objective)).toBe(100);
+    const paid = events.filter((e) => e.type === 'salvage' && e.source === 'objective').reduce((n, e) => n + (e.type === 'salvage' ? e.amount : 0), 0);
+    expect(paid).toBe(MODES.breach.bonus);
     const calls = events.filter((e) => e.type === 'objective');
     expect(calls).toHaveLength(guns.length);
     expect(calls.at(-1)).toMatchObject({ what: 'destroyed', done: true });
@@ -199,16 +211,20 @@ describe('breach', () => {
     expect(events.some((e) => e.type === 'objective' && e.what === 'lost')).toBe(true);
   });
 
-  it('a won battle reports the objective and adds its share to the bonus', () => {
+  it('a won battle reports the objective and the salvage its share paid', () => {
     const run0 = enterMapNode(newRun(3), { sector: 0, node: 0 });
     const w = world({ objective: { mode: 'breach', strength: 'normal' } });
     reachFortress(w);
     const guns = targets(w);
+    const before = w.stats.salvage;
     destroyEnemy(w, guns[0]!, 'shot');
     w.extractedAt = w.time;
     const won = completeBattle(run0, w);
-    expect(won.lastBattle!.objective).toEqual({ mode: 'breach', destroyed: 1, total: guns.length });
-    expect(won.lastBattle!.bonus).toBe(currentSalvage(run0) + Math.round(MODES.breach.bonus / guns.length));
+    const share = Math.round(MODES.breach.bonus / guns.length);
+    expect(won.lastBattle!.objective).toEqual({ mode: 'breach', destroyed: 1, total: guns.length, salvage: share });
+    // The share is in the battle's salvage (banked when the gun fell), not the extraction bonus.
+    expect(won.lastBattle!.bonus).toBe(currentSalvage(run0));
+    expect(won.lastBattle!.salvage - before).toBe(guns[0]!.def.salvage + share);
   });
 });
 

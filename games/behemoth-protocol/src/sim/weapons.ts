@@ -305,7 +305,7 @@ function autoLock(w: World, h: HardpointState, spec: MissileSpec): Lock | null {
 
 /**
  * Missiles: once `start` gives a lock (the trigger is pulled, or an auto target turns up), launch
- * a salvo. Missiles leave the rack in a spread and home in.
+ * a salvo. Missiles leave the rack in a spread and home in. The salvo is one shot of ammo.
  */
 function stepMissiles(w: World, h: HardpointState, weapon: WeaponDef, start: () => Lock | null, spreadMul: number, dt: number): void {
   const b = w.behemoth;
@@ -314,6 +314,8 @@ function stepMissiles(w: World, h: HardpointState, weapon: WeaponDef, start: () 
     const lock = start();
     if (!lock) return;
     h.salvo = { left: weapon.salvo?.count ?? 1, timer: 0, ...lock };
+    // Ammo counts shots (SPEC §6): a whole salvo is one round out of the rack.
+    if (h.ammo !== null) h.ammo = Math.max(0, h.ammo - 1);
   }
 
   const s = h.salvo;
@@ -333,10 +335,9 @@ function stepMissiles(w: World, h: HardpointState, weapon: WeaponDef, start: () 
     ty: s.y,
     slot: h.slot.id,
   });
-  if (h.ammo !== null) h.ammo = Math.max(0, h.ammo - 1);
   s.left--;
   s.timer = weapon.salvo?.interval ?? 0;
-  if (s.left <= 0 || h.ammo === 0) {
+  if (s.left <= 0) {
     h.salvo = null;
     h.cooldown = weapon.reload * reloadScale(h);
   }

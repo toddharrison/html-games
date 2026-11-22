@@ -20,6 +20,7 @@ export type EnemyId =
   | 'heavyTank'
   | 'missileLauncher'
   | 'infantry'
+  | 'weaponsTeam'
   | 'gunEmplacement'
   | 'rocketBunker'
   | 'weaponTower'
@@ -142,6 +143,12 @@ export interface EnemyDef {
   ramDamage?: number;
   /** A mini-boss: the banner called when it first comes into view. */
   callout?: string;
+  /**
+   * The aim telegraph is a lock-on (SPEC §7 heavy weapons team): a designator beam on the hull for
+   * the whole `aimTime`, with a lock tone. Breaking the line of sight, or a hit on the unit, breaks
+   * the lock, and it starts over after `relock` seconds.
+   */
+  lockOn?: { relock: number };
 }
 
 export const ENEMIES: Record<EnemyId, EnemyDef> = {
@@ -221,6 +228,33 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     spawn: 'ahead',
     threat: 1.5,
     salvage: 8,
+  },
+  weaponsTeam: {
+    // Two soldiers and a guided missile on a tripod: they dig into cover well off the Behemoth's
+    // path, out-range the squads, and paint the hull for a long lock before the missile goes.
+    id: 'weaponsTeam',
+    name: 'Heavy weapons team',
+    hp: 12,
+    targetClass: 'infantry',
+    reverseSpeed: 0,
+    radius: 5,
+    obstacle: 'trivial',
+    mobility: 'foot',
+    canHide: true,
+    maxSpeed: 14,
+    accel: 50,
+    turretDegPerSec: 120,
+    weapon: 'guidedMissile',
+    fireRange: 240,
+    // The lock: long enough to see it coming and do something about it.
+    aimTime: 2.2,
+    behavior: 'ambusher',
+    engage: { minRange: 0, maxRange: 100, angularSpeed: 0, rearInset: 0, arc: 180 },
+    siege: { minRange: 110, maxRange: 170 },
+    spawn: 'cover',
+    threat: 1.5,
+    salvage: 6,
+    lockOn: { relock: 1.5 },
   },
   infantry: {
     id: 'infantry',

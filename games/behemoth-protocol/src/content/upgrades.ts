@@ -1,4 +1,4 @@
-import type { ArmorArc, CoreComponent } from './chassis';
+import { ARMOR_ARCS, type ArmorArc, type CoreComponent } from './chassis';
 
 /**
  * Component upgrades (SPEC §5.6). Two kinds:
@@ -60,14 +60,15 @@ export const GRADES: Record<CoreComponent, Record<UpgradeGen, GradeDef>> = {
 };
 
 /** Mod tracks. */
-export type TrackId = 'harden' | 'traverse' | 'plate' | 'capacitor';
+export type TrackId = 'harden' | 'traverse' | 'plate' | 'capacitor' | 'load';
 
 /**
- * The kinds of part a mod can go on: the reactor, any other core component, a turret ring's main
- * slot (the ring itself), any other slot on a ring (a coax: no traverse of its own), a hull mount
- * that turns on its own, and an armor zone. Trailer pods and add-ons' own parts take none (yet).
+ * The kinds of part a mod can go on: the reactor, the treads, any other core component, a turret
+ * ring's main slot (the ring itself), any other slot on a ring (a coax: no traverse of its own), a
+ * hull mount that turns on its own, and an armor zone. Trailer pods and add-ons' own parts take none
+ * (yet).
  */
-export type PartKind = 'reactor' | 'core' | 'ring' | 'coax' | 'mount' | 'armor';
+export type PartKind = 'reactor' | 'treads' | 'core' | 'ring' | 'coax' | 'mount' | 'armor';
 
 export interface TrackDef {
   name: string;
@@ -83,10 +84,13 @@ export interface TrackDef {
 
 /** In the order the depot lists them. */
 export const TRACKS: Record<TrackId, TrackDef> = {
-  harden: { name: 'Harden', on: ['reactor', 'core', 'ring', 'coax', 'mount'], blurb: '+20% integrity', per: 0.2, mass: 2 },
+  harden: { name: 'Harden', on: ['reactor', 'treads', 'core', 'ring', 'coax', 'mount'], blurb: '+20% integrity', per: 0.2, mass: 2 },
   traverse: { name: 'Traverse', on: ['ring', 'mount'], blurb: '+25% traverse', per: 0.25, mass: 1 },
   plate: { name: 'Plate', on: ['armor'], blurb: '+20% armor', per: 0.2, mass: 4 },
   capacitor: { name: 'Cap bank', on: ['reactor'], blurb: '+20% capacitor', per: 0.2, mass: 3 },
+  // Carry more without a second tread set: three levels add +24% (67 t on a Class II), well short
+  // of outboard treads' +140 t (user's call, Nov 2026).
+  load: { name: 'Load', on: ['treads'], blurb: '+8% load capacity', per: 0.08, mass: 3 },
 };
 
 /** Grades fitted per core component (missing = Gen 1). */
@@ -101,10 +105,21 @@ export interface Upgrades {
 
 export const NO_UPGRADES: Upgrades = { grades: {}, mods: {} };
 
-/** The part id an armor zone's mods are filed under. */
+/**
+ * The part id an armor zone's mods are filed under. The two front halves share one, `armor.front`:
+ * a Plate level thickens the whole glacis (user's call, Nov 2026; they were bought apart before).
+ */
 export function armorPart(arc: ArmorArc): string {
-  return `armor.${arc}`;
+  return arc === 'frontLeft' || arc === 'frontRight' ? 'armor.front' : `armor.${arc}`;
 }
+
+/** The armor zones a part id covers (both halves for `armor.front`); empty for anything else. */
+export function armorArcsOf(part: string): ArmorArc[] {
+  return ARMOR_ARCS.filter((arc) => armorPart(arc) === part);
+}
+
+/** Every armor part id, in zone order (the front once). */
+export const ARMOR_PARTS: readonly string[] = [...new Set(ARMOR_ARCS.map(armorPart))];
 
 /** A core component's display name with its grade, e.g. "Gen 2 reactor". */
 export function gradeName(gen: Gen, name: string): string {

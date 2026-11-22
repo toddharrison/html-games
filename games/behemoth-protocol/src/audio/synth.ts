@@ -48,6 +48,8 @@ const LEVEL: Record<SoundId, number> = {
   incoming: 0.3,
   horn: 0.3,
   radio: 0.25,
+  lockOn: 0.22,
+  pickup: 0.12,
   detonation: 1,
 };
 
@@ -569,6 +571,14 @@ const RECIPES: Record<SoundId, Recipe> = {
     }
     v.end = Math.max(v.end, v.t + 3.5);
     v.send.gain.value = 0.9;
+  },
+  // A designator on the hull (heavy weapons team): the cab's lock warning, a rising three-note
+  // trill, lower and slower than the missile-launch beeps.
+  lockOn: (v) => beeps(v, [880, 1040, 1240, 880, 1040, 1240], 0.06, 0.1, 'triangle'),
+  // Salvage landing on the hull: a small bright tink.
+  pickup: (v, s) => {
+    v.tone({ type: 'triangle', f: vary(2300, 0.04), f1: 1900, glide: 0.06, peak: 0.4 + 0.3 * s, attack: 0.002, decay: 0.09 });
+    v.tone({ type: 'sine', f: vary(3450, 0.04), peak: 0.18, attack: 0.002, decay: 0.05 });
   },
   // Extraction confirmed over the radio: a squelch and a two-note chirp.
   radio: (v) => {

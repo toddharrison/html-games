@@ -33,6 +33,7 @@ import { stepHazards } from './hazards';
 import { DEFAULT_RECIPE, Terrain, type TerrainBlast, type TerrainRecipe } from './terrain';
 import { stepMines, stepTrailer } from './trailer';
 import { stepWeapons } from './weapons';
+import { paySalvage } from './salvage';
 
 /** The whole battle state plus the fixed-step update that advances it. */
 
@@ -236,7 +237,7 @@ export function stepWorld(w: World, cmd: PlayerCommand): void {
   stepMines(w, dt);
   stepConcealment(w, dt);
   // Buildings knocked down this step pay out (SPEC §8.1).
-  w.stats.salvage += w.terrain.takeSalvage();
+  for (const d of w.terrain.takeSalvageDrops()) paySalvage(w, d.x, d.y, d.amount, 'tile');
 
   const despawnX = w.frame.left - DESPAWN_BEHIND;
   w.enemies = w.enemies.filter((e) => e.alive && e.x > despawnX);

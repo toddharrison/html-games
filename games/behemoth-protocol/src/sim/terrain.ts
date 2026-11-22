@@ -964,6 +964,13 @@ export function generateChunk(seed: number, ci: number, rows: number, recipe: Te
   );
 }
 
+/** Salvage from one tile knocked down, at its center. */
+export interface SalvageDrop {
+  x: number;
+  y: number;
+  amount: number;
+}
+
 /** What a footprint has under it (SPEC §4.5 water, §4.6 drifts and ice): see `Terrain.groundAt`. */
 export interface Underfoot {
   /** Area share under each kind of speed cap. */
@@ -986,8 +993,8 @@ export class Terrain {
   private readonly rc: Resolved;
   private readonly chunks = new Map<number, Tile[][]>();
   private readonly rivers = new Map<number, River | null>();
-  /** Salvage from razed tiles not yet banked by the world (`takeSalvage`). */
-  private salvage = 0;
+  /** Salvage from razed tiles not yet banked by the world (`takeSalvageDrops`): where, and how much. */
+  private drops: SalvageDrop[] = [];
   /** Explosive tiles set off and not yet handed to the world (`takeBlasts`). */
   private blasts: TerrainBlast[] = [];
   /** Tiles that turned into another material (a bridge into water) since the last `takeBroken`. */
@@ -1196,9 +1203,14 @@ export class Terrain {
    * The world banks it every step.
    */
   takeSalvage(): number {
-    const s = this.salvage;
-    this.salvage = 0;
-    return s;
+    return this.takeSalvageDrops().reduce((sum, d) => sum + d.amount, 0);
+  }
+
+  /** The same, tile by tile (world point of each tile's center), for the pickup the renderer shows. */
+  takeSalvageDrops(): SalvageDrop[] {
+    const d = this.drops;
+    this.drops = [];
+    return d;
   }
 
   /** Explosive tiles set off since the last call (SPEC §4.6); the world sets them off after their fuse. */
@@ -1342,7 +1354,7 @@ export class Terrain {
    */
   private knockDown(col: number, row: number, t: Tile, state: 'destroyed' | 'flattened', events: SimEvent[], credit: boolean): void {
     const def = MATERIALS[t.mat];
-    if (credit) this.razed(t, t.state);
+    if (credit) this.razed(col, row, t, t.state);
     if (def.explodes) this.blasts.push({ x: (col + 0.5) * TS, y: (row + 0.5) * TS, ...def.explodes });
     const next = def.breaksTo === 'under' ? t.under : def.breaksTo;
     if (next) {
@@ -1367,7 +1379,8 @@ export class Terrain {
   }
 
   /** Pays out a tile's salvage when it's knocked down from standing. */
-  private razed(t: Tile, from: TileState): void {
-    if (from === 'intact' || from === 'damaged') this.salvage += MATERIALS[t.mat].salvage ?? 0;
+  private razed(col: number, row: number, t: Tile, from: TileState): void {
+    const amount = from === 'intact' || from === 'damaged' ? (MATERIALS[t.mat].salvage ?? 0) : 0;
+    if (amount > 0) this.drops.push({ x: (col + 0.5) * TS, y: (row + 0.5) * TS, amount });
   }
 }

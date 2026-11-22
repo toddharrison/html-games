@@ -14,6 +14,8 @@ import { ThreatIndicators } from '../render/threatIndicators';
 import { TrailerView } from '../render/trailerView';
 import { DroneViews } from '../render/droneView';
 import { PoolViews } from '../render/poolView';
+import { SalvageMotes } from '../render/salvageView';
+import { LockViews } from '../render/lockView';
 import { BarrageViews } from '../render/barrageView';
 import { WeatherView } from '../render/weatherView';
 import { CONDITIONS, conditionName } from '../content/conditions';
@@ -45,15 +47,16 @@ import {
   recipeName,
   requiredTargets,
   summarizeRun,
+  type RunSummary,
 } from '../sim/run';
 import { DIRECTIVES } from '../content/directives';
 import { ENEMIES, type EnemyId } from '../content/enemies';
 import { isFinalNode } from '../sim/sectorMap';
 import { MODES } from '../content/modes';
-import { objectiveComplete } from '../sim/objective';
+import { objectiveBonus, objectiveComplete, objectivePercent } from '../sim/objective';
 import { FONT_KEY, fontText } from '../render/pixelFont';
 import { hex, PAL } from '../render/palette';
-import { checkpoint, endRun, enterNode, randomSeed, showSummary, type RunContext } from './flow';
+import { checkpoint, endRun, enterNode, randomSeed, recordRun, showSummary, type RunContext } from './flow';
 import { DEMO, demoClip, type DemoClip } from './demo';
 import { demoCommand } from '../input/demoBot';
 import { newRun } from '../sim/run';
@@ -80,6 +83,10 @@ export class TopDownBattleScene extends Phaser.Scene {
   private units!: UnitViews;
   private drones!: DroneViews;
   private pools!: PoolViews;
+  /** Salvage flying to the hull: the HUD counts it as it lands. */
+  private salvage!: SalvageMotes;
+  /** Heavy weapons teams' lock-ons: the designator, the team's ring, the brackets on the hull. */
+  private locks!: LockViews;
   private barrages!: BarrageViews;
   /** The condition's veil and weather (SPEC §4.6); null for a clear battle. */
   private weather: WeatherView | null = null;
@@ -117,6 +124,8 @@ export class TopDownBattleScene extends Phaser.Scene {
   private shot: string | null = null;
   /** Scene time (ms) the reactor went; the death message waits until the still is taken. */
   private detonatedAt: number | null = null;
+  /** The run as it ended in the blast, summed up and put on the score list right then (so closing the tab keeps it). */
+  private final: { summary: RunSummary; rank: number | null } | null = null;
   /** The title's attract mode (`DemoBattleScene`): the clip being shown, and seconds left of it. */
   protected demo: DemoClip | null = null;
   private demoLeft = 0;
@@ -132,6 +141,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.outro = 0;
     this.shot = null;
     this.detonatedAt = null;
+    this.final = null;
   }
 
   create(): void {
@@ -172,6 +182,8 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.units = new UnitViews(this);
     this.drones = new DroneViews(this);
     this.pools = new PoolViews(this);
+    this.salvage = new SalvageMotes(this);
+    this.locks = new LockViews(this);
     this.barrages = new BarrageViews(this);
     this.weather = WeatherView.create(this, this.layout, this.world);
     this.fx = new Effects(this);
@@ -243,9 +255,15 @@ export class TopDownBattleScene extends Phaser.Scene {
 
   /** The run summary for a destroyed run: the run so far plus this battle, and the blast's still. */
   private toSummary(): void {
+    const final = this.final ?? { summary: this.blastSummary(), rank: null };
+    showSummary(this, { summary: final.summary, shot: this.shot, rank: final.rank });
+  }
+
+  /** The run summed up with the battle the reactor went up in. */
+  private blastSummary(): RunSummary {
     const w = this.world;
     const stand = w.lastStand ? { time: w.lastStand.time, wave: w.lastStand.wave } : null;
-    showSummary(this, { summary: summarizeRun(this.ctx.run, { stats: w.stats, time: w.time, stand }), shot: this.shot });
+    return summarizeRun(this.ctx.run, { stats: w.stats, time: w.time, stand });
   }
 
   /** A still of the battlefield column as the blast fills it (SPEC §5.1: the summary's replay frame). */
@@ -346,7 +364,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     }
 
     const hud = this.hud!;
-    hud.update(this.world, this.paused ? 0 : dt);
+    hud.update(this.world, this.paused ? 0 : dt, this.salvage.inFlight());
     // The last stand's messages, and the alert banner, sit at the top of the field, out of the fight's way.
     const top =
       (this.world.lastStand !== null || this.alertBanner() !== null || this.objectiveBanner() !== null || this.conditionBanner() !== null) &&
@@ -439,7 +457,7 @@ export class TopDownBattleScene extends Phaser.Scene {
               : `Extracted\nBattle ${r.battle} won`;
       const o = r.lastBattle?.objective;
       const names = MODES[w.objective.mode].target;
-      return o && names ? `${head}\n${o.destroyed} of ${o.total} ${names[1]} destroyed` : head;
+      return o && names ? `${head}\n${o.destroyed} of ${o.total} ${names[1]} destroyed (${objectivePercent(o)}%): +${o.salvage ?? 0}` : head;
     }
     const blink = Math.floor(w.time * 6) % 2 === 0;
     if (b.reactorFuse !== null) return blink ? 'Reactor critical!' : ' ';
@@ -510,13 +528,17 @@ export class TopDownBattleScene extends Phaser.Scene {
       const left = o.total - o.destroyed - o.lost;
       return `Convoy stopped\nObjective taken - ${left} ${left === 1 ? names[0] : names[1]} left`;
     }
+    // The objective is a share (SPEC §4.4): each target down raises the percentage and pays its part.
+    const pct = objectivePercent(o);
+    const paid = objectiveBonus(o);
     if (done) {
-      if (objectiveComplete(o)) return o.mode === 'breach' ? 'Fortress breached\nEvery gun silenced' : 'Convoy destroyed\nNothing got away';
-      return o.destroyed === 0 ? `Objective failed\nNo ${names[1]} destroyed` : `Objective over\n${o.destroyed} of ${o.total} ${names[1]} destroyed`;
+      if (objectiveComplete(o)) return o.mode === 'breach' ? `Fortress breached - 100%\nEvery gun silenced: +${paid}` : `Convoy destroyed - 100%\nNothing got away: +${paid}`;
+      const whole = o.mode === 'breach' ? 'Fortress' : 'Convoy';
+      return o.destroyed === 0 ? `Objective failed\nNo ${names[1]} destroyed` : `${whole} ${pct}% destroyed\n+${paid} salvage`;
     }
     const left = o.total - o.destroyed - o.lost;
     const tail = `${left} ${left === 1 ? names[0] : names[1]} left`;
-    if (what === 'destroyed') return `${names[0][0]!.toUpperCase()}${names[0].slice(1)} destroyed\n${tail}`;
+    if (what === 'destroyed') return `${names[0][0]!.toUpperCase()}${names[0].slice(1)} destroyed - ${pct}%\n+${paid} salvage - ${tail}`;
     return o.mode === 'chase' ? `A ${names[0]} got away\n${tail}` : `A ${names[0]} left behind\n${tail}`;
   }
 
@@ -589,6 +611,10 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.drones.update(w.drones, this.interp, dt, w.time, this.fx);
     this.pools.update(w.pools, dt, w.time, this.fx);
     this.barrages.update(w.barrages, w.time);
+    this.locks.update(w.enemies, b, this.interp, w.time);
+    // Salvage flies to the hull (a gone hull: it scatters and fades).
+    const landed = this.salvage.update(dt, b.destroyed ? null : bp);
+    if (landed > 0) this.audio?.pickup(landed);
     this.weather?.update(w, this.interp, this.cameras.main, dt);
     this.threats?.update(w.enemies, w.frame, w.time);
     this.updateLockMark();
@@ -777,6 +803,8 @@ export class TopDownBattleScene extends Phaser.Scene {
         case 'detonation':
           if (!this.demo) {
             endRun(this.ctx);
+            const summary = this.blastSummary();
+            this.final = { summary, rank: recordRun(this.ctx, summary) };
             this.detonatedAt = this.time.now;
             // Nothing left to aim: the reticle goes, and stays out of the summary's still.
             this.reticle.setVisible(false);
@@ -852,6 +880,9 @@ export class TopDownBattleScene extends Phaser.Scene {
           break;
         case 'mineLaid':
           this.fx.smokePuff(ev.x, ev.y);
+          break;
+        case 'salvage':
+          this.salvage.add(ev.x, ev.y, ev.amount, ev.source);
           break;
         case 'sighted':
           this.objectiveShown = { at: w.time, text: ENEMIES[ev.enemy].callout ?? ENEMIES[ev.enemy].name };

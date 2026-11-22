@@ -182,7 +182,7 @@ export const CHASSIS: Record<ChassisId, ChassisDef> = {
     brake: 22,
     // maxRatio 0.87 lets the hull angle up to ~41° off forward; maxSpeed 32 keeps that reachable
     // at cruise (36 × 0.87 ≈ 31).
-    lateral: { maxSpeed: 32, accel: 45, jerk: 150, maxRatio: 0.87 },
+    lateral: { maxSpeed: 32, accel: 45, jerk: 142, maxRatio: 0.87 },
     turrets: [{ id: 'main', pivot: { x: 4, y: 0 }, traverseDegPerSec: 75, slot: 'turret' }],
     treadHp: 100,
     // The starting loadout weighs 245 t (88%): room for a heavier gun or two, not a full refit.

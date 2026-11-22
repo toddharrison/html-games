@@ -75,6 +75,79 @@ export function circleIntersectsRect(cx: number, cy: number, r: number, rect: Re
   return (cx - nx) ** 2 + (cy - ny) ** 2 <= r * r;
 }
 
-export function pointInRect(x: number, y: number, rect: Rect): boolean {
-  return x >= rect.x0 && x <= rect.x1 && y >= rect.y0 && y <= rect.y1;
+/**
+ * A rectangle turned to a heading about its center (SPEC §4.2: the Behemoth's hull as it steers):
+ * `hl` half its length along the heading, `hw` half its width across, `c`/`s` the heading's cosine
+ * and sine.
+ */
+export interface Box {
+  x: number;
+  y: number;
+  hl: number;
+  hw: number;
+  c: number;
+  s: number;
+}
+
+export function orientedBox(x: number, y: number, hl: number, hw: number, heading: number): Box {
+  return { x, y, hl, hw, c: Math.cos(heading), s: Math.sin(heading) };
+}
+
+/** A point in the box's own frame: `u` along its heading, `v` across it (+ = to its right in sim terms). */
+export function toBox(box: Box, x: number, y: number): { u: number; v: number } {
+  const dx = x - box.x;
+  const dy = y - box.y;
+  return { u: dx * box.c + dy * box.s, v: -dx * box.s + dy * box.c };
+}
+
+/** Inside the box, grown by `pad` on every side. */
+export function pointInBox(box: Box, x: number, y: number, pad = 0): boolean {
+  const { u, v } = toBox(box, x, y);
+  return Math.abs(u) <= box.hl + pad && Math.abs(v) <= box.hw + pad;
+}
+
+/** The point of the box (edge or inside) nearest (x, y). */
+export function closestInBox(box: Box, x: number, y: number): { x: number; y: number } {
+  const { u, v } = toBox(box, x, y);
+  const cu = clamp(u, -box.hl, box.hl);
+  const cv = clamp(v, -box.hw, box.hw);
+  return { x: box.x + cu * box.c - cv * box.s, y: box.y + cu * box.s + cv * box.c };
+}
+
+/** Distance from (x, y) to the box (0 inside). */
+export function distanceToBox(box: Box, x: number, y: number): number {
+  const { u, v } = toBox(box, x, y);
+  return Math.hypot(Math.max(0, Math.abs(u) - box.hl), Math.max(0, Math.abs(v) - box.hw));
+}
+
+export function circleIntersectsBox(box: Box, cx: number, cy: number, r: number): boolean {
+  return distanceToBox(box, cx, cy) <= r;
+}
+
+/** The axis-aligned rect that just holds the box. */
+export function boxBounds(box: Box): Rect {
+  const ex = box.hl * Math.abs(box.c) + box.hw * Math.abs(box.s);
+  const ey = box.hl * Math.abs(box.s) + box.hw * Math.abs(box.c);
+  return { x0: box.x - ex, y0: box.y - ey, x1: box.x + ex, y1: box.y + ey };
+}
+
+/** Whether an axis-aligned rect overlaps the box (separating axes; rects that only touch don't count). */
+export function rectIntersectsBox(box: Box, rect: Rect): boolean {
+  const b = boxBounds(box);
+  if (rect.x1 <= b.x0 || rect.x0 >= b.x1 || rect.y1 <= b.y0 || rect.y0 >= b.y1) return false;
+  // The rect's corners projected onto the box's own axes.
+  let u0 = Infinity;
+  let u1 = -Infinity;
+  let v0 = Infinity;
+  let v1 = -Infinity;
+  for (const x of [rect.x0, rect.x1]) {
+    for (const y of [rect.y0, rect.y1]) {
+      const p = toBox(box, x, y);
+      u0 = Math.min(u0, p.u);
+      u1 = Math.max(u1, p.u);
+      v0 = Math.min(v0, p.v);
+      v1 = Math.max(v1, p.v);
+    }
+  }
+  return u1 > -box.hl && u0 < box.hl && v1 > -box.hw && v0 < box.hw;
 }

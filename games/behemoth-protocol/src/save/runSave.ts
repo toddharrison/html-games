@@ -29,9 +29,10 @@ export const RUN_SAVE_KEY = 'behemoth-protocol/run';
  * is, supply caches) and the depot's opening action count. 10: the Behemoth's callsign. 11: the
  * Directive, each sector's objective result, and the run's totals (salvage earned, time in battle).
  * 12: conditions on battle nodes, event nodes (and `next: 'event'`), and the last event's result.
- * Older saves are migrated on load.
+ * 13: one Plate mod for both front armor halves (`armor.front`), and the treads' Load mod (no
+ * migration needed for that: an older save has none). Older saves are migrated on load.
  */
-export const RUN_SAVE_VERSION = 12;
+export const RUN_SAVE_VERSION = 13;
 
 /** The slice of the Storage API the save needs, so tests can pass a plain map. */
 export interface StorageLike {
@@ -60,7 +61,7 @@ export function parseRun(text: string): RunState | null {
   }
   if (!isObject(file)) return null;
   const v = file['version'];
-  const migrations = [fromV1, fromV2, fromV3, fromV4, fromV5, fromV6, fromV7, fromV8, fromV9, fromV10, fromV11];
+  const migrations = [fromV1, fromV2, fromV3, fromV4, fromV5, fromV6, fromV7, fromV8, fromV9, fromV10, fromV11, fromV12];
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > RUN_SAVE_VERSION) return null;
   const run = migrations.slice(v - 1).reduce((r, migrate) => migrate(r), file['run']);
   return isRun(run) ? run : null;
@@ -215,6 +216,20 @@ function fromV11(run: unknown): unknown {
   return { ...run, map: { ...run['map'], sectors }, lastEvent: run['lastEvent'] ?? null };
 }
 
+/**
+ * Version 12 filed Plate mods on each front half (`armor.frontLeft`, `armor.frontRight`). They're one
+ * part now, `armor.front`, at the higher of the two levels (nothing is refunded: the depot already
+ * charged for what was bought).
+ */
+export function fromV12(run: unknown): unknown {
+  if (!isObject(run) || !isObject(run['behemoth']) || !isObject(run['behemoth']['mods'])) return run;
+  const { 'armor.frontLeft': left, 'armor.frontRight': right, ...mods } = run['behemoth']['mods'];
+  if (left === undefined && right === undefined) return run;
+  const level = (t: unknown) => (isObject(t) && typeof t['plate'] === 'number' ? t['plate'] : 0);
+  const plate = Math.max(level(left), level(right));
+  return { ...run, behemoth: { ...run['behemoth'], mods: plate > 0 ? { ...mods, 'armor.front': { plate } } : mods } };
+}
+
 export function loadRun(storage: StorageLike | null = browserStorage()): RunState | null {
   const text = safe(() => storage?.getItem(RUN_SAVE_KEY) ?? null, null);
   return text === null ? null : parseRun(text);
@@ -233,11 +248,13 @@ export function clearRun(storage: StorageLike | null = browserStorage()): void {
   safe(() => storage?.removeItem(RUN_SAVE_KEY), undefined);
 }
 
-function browserStorage(): StorageLike | null {
+/** The browser's localStorage, or null where there's none (or it's blocked). Shared with the scores save. */
+export function browserStorage(): StorageLike | null {
   return safe(() => (typeof localStorage === 'undefined' ? null : localStorage), null);
 }
 
-function safe<T>(fn: () => T, fallback: T): T {
+/** Runs a storage call, falling back when it throws (blocked or full storage). */
+export function safe<T>(fn: () => T, fallback: T): T {
   try {
     return fn();
   } catch {

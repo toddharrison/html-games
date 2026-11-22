@@ -13,7 +13,7 @@
  * `?shells=turret:ap,dorsalRing:canister` (also a practice run) loads main guns with those shells.
  * `?cookoff=N` (also a practice run) destroys the magazine N seconds in, so it cooks off.
  * `?grades=reactor:3,fireControl:2` (also a practice run) fits higher-grade core components, and
- * `?mods=turret.traverse:3,armor.frontLeft.plate:2,reactor.capacitor:1` buys mod levels (part id,
+ * `?mods=turret.traverse:3,armor.front.plate:2,reactor.capacitor:1` buys mod levels (part id,
  * then the track after the last dot). `?depot=N` (also a practice run) opens the depot after N
  * battles won, with salvage to spend, to try the depot without playing a battle.
  * `?biome=arctic&approach=pass` (also a practice run) fights every battle over that biome and

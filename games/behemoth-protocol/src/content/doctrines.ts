@@ -33,7 +33,7 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
     id: 'combined',
     name: 'Combined arms',
     intel: 'A balanced mix',
-    mix: { lightTank: 4, infantry: 3, heavyTank: 1.5, missileLauncher: 1.5, artillery: 0.5, siegeTank: 0.2 },
+    mix: { lightTank: 4, infantry: 3, heavyTank: 1.5, missileLauncher: 1.5, weaponsTeam: 1, artillery: 0.5, siegeTank: 0.2 },
     weight: 3,
   },
   armoredFist: {
@@ -47,7 +47,7 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
     id: 'entrenched',
     name: 'Entrenched',
     intel: 'Infantry, dug in',
-    mix: { infantry: 6, heavyTank: 1, lightTank: 1, missileLauncher: 0.5, artillery: 0.75 },
+    mix: { infantry: 6, weaponsTeam: 2, heavyTank: 1, lightTank: 1, missileLauncher: 0.5, artillery: 0.75 },
     weight: 2,
     posts: 1.1,
     waves: 0.5,
@@ -65,7 +65,7 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
     id: 'longGuns',
     name: 'Long guns',
     intel: 'Missiles and artillery',
-    mix: { missileLauncher: 3, artillery: 2.5, lightTank: 1.5, infantry: 1.5, heavyTank: 0.5 },
+    mix: { missileLauncher: 3, artillery: 2.5, lightTank: 1.5, infantry: 1.5, weaponsTeam: 1.5, heavyTank: 0.5 },
     weight: 2,
   },
 };

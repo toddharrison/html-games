@@ -3,9 +3,9 @@ import { DEFLECT, RAM } from '../content/tuning';
 import {
   damageArmor,
   damageTreads,
-  footprint,
   frontHalf,
   groundFootprint,
+  hullBox,
   hullSide,
   hullWidth,
   lateralLimit,
@@ -18,7 +18,7 @@ import {
 import { destroyEnemy } from './enemies';
 import type { Enemy } from './entities';
 import type { SimEvent } from './events';
-import { circleIntersectsRect, clamp, type Rect } from './math';
+import { boxBounds, circleIntersectsBox, clamp, rectIntersectsBox, type Box, type Rect } from './math';
 import type { Terrain } from './terrain';
 import type { World } from './world';
 
@@ -33,17 +33,19 @@ export function resolveBehemothCollisions(w: World, dt: number, steer: -1 | 0 | 
   deflectOffRock(w, dt, steer);
 
   const b = w.behemoth;
-  const fp = footprint(b);
+  // The turned hull (it follows the machine's shape as it steers): only tiles it really covers are crushed.
+  const box = hullBox(b);
   const ts = w.terrain.tileSize;
-  for (const [c, r] of tilesUnder(w.terrain, fp)) {
+  for (const [c, r] of tilesUnder(w.terrain, boxBounds(box))) {
+    if (!rectIntersectsBox(box, { x0: c * ts, y0: r * ts, x1: (c + 1) * ts, y1: (r + 1) * ts })) continue;
     const cls = w.terrain.crush(c, r, w.events);
     if (cls !== 'none') applyObstacle(b, cls, w.events, (c + 0.5) * ts, (r + 0.5) * ts);
   }
 
   for (const e of w.enemies) {
-    if (!e.alive || !circleIntersectsRect(e.x, e.y, e.def.radius * RAM.crushRadius, fp)) continue;
+    if (!e.alive || !circleIntersectsBox(box, e.x, e.y, e.def.radius * RAM.crushRadius)) continue;
     if (e.def.ramDamage) {
-      ramBig(w, e, fp, dt);
+      ramBig(w, e, box, dt);
       continue;
     }
     applyObstacle(b, e.def.obstacle, w.events, e.x, e.y);
@@ -59,7 +61,7 @@ export function resolveBehemothCollisions(w: World, dt: number, steer: -1 | 0 | 
  * (the gear "adds damage to whatever you hit", SPEC §4.2). A survivor slides off the prow, shoved
  * to the nearer side, and can't be rammed again until `RAM.again` has passed.
  */
-function ramBig(w: World, e: Enemy, fp: Rect, dt: number): void {
+function ramBig(w: World, e: Enemy, box: Box, dt: number): void {
   const b = w.behemoth;
   if (!e.ai.ramIn) {
     const impact = b.vx / b.chassis.speed.cruise;
@@ -72,7 +74,7 @@ function ramBig(w: World, e: Enemy, fp: Rect, dt: number): void {
       return;
     }
   }
-  const mid = (fp.y0 + fp.y1) / 2;
+  const mid = box.y;
   // Off the nearer side, or (dead center) away from the field's nearer edge.
   const side = e.y !== mid ? Math.sign(e.y - mid) : mid < w.terrain.height / 2 ? 1 : -1;
   e.y = clamp(e.y + side * RAM.shove * dt, e.def.radius, w.terrain.height - e.def.radius);

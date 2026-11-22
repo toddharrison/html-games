@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { CHASSIS } from '../../src/content/chassis';
 import { DEPOT_GRADES, DEPOT_TRACKS } from '../../src/content/depot';
 import { DEPOT } from '../../src/content/tuning';
-import { GRADES, NO_UPGRADES, TRACKS, type TrackId, type Upgrades } from '../../src/content/upgrades';
+import { ADDONS } from '../../src/content/addons';
+import { ARMOR_PARTS, armorArcsOf, GRADES, NO_UPGRADES, TRACKS, type TrackId, type Upgrades } from '../../src/content/upgrades';
 import { WEAPONS } from '../../src/content/weapons';
 import {
   autoReach,
@@ -19,8 +20,8 @@ import {
 import { applyAction, damageOf, openDepot, quote, tracksOf, type DepotAction } from '../../src/sim/depot';
 import type { SimEvent } from '../../src/sim/events';
 import { newRun, restoreBehemoth, snapshotBehemoth, type RunState } from '../../src/sim/run';
-import { fitChassis } from '../../src/sim/upgrades';
-import { parseRun, serializeRun } from '../../src/save/runSave';
+import { fitChassis, upgradeMass } from '../../src/sim/upgrades';
+import { fromV12, parseRun, serializeRun } from '../../src/save/runSave';
 
 /** Component upgrades (SPEC §5.6): Gen 2/3 core components and leveled part mods. */
 
@@ -185,15 +186,49 @@ describe('depot grades', () => {
 describe('depot mods', () => {
   const mod = (part: string, track: TrackId): DepotAction => ({ kind: 'mod', part, track });
 
-  it('offers harden and traverse on mounts and rings, only harden on a coax, plate on armor, a cap bank on the reactor', () => {
+  it('offers harden and traverse on mounts and rings, only harden on a coax, plate on armor, a cap bank on the reactor, load on the treads', () => {
     const run = newRun(1, 'class2', ['coax']);
     expect(tracksOf(run.behemoth, 'turret')).toEqual(['harden', 'traverse']);
     expect(tracksOf(run.behemoth, 'prow')).toEqual(['harden', 'traverse']);
     expect(tracksOf(run.behemoth, 'coax')).toEqual(['harden']);
-    expect(tracksOf(run.behemoth, 'armor.frontLeft')).toEqual(['plate']);
+    expect(tracksOf(run.behemoth, 'armor.front')).toEqual(['plate']);
+    expect(tracksOf(run.behemoth, 'armor.left')).toEqual(['plate']);
+    // The front halves are one part now.
+    expect(tracksOf(run.behemoth, 'armor.frontLeft')).toEqual([]);
     expect(tracksOf(run.behemoth, 'reactor')).toEqual(['harden', 'capacitor']);
+    expect(tracksOf(run.behemoth, 'treads')).toEqual(['harden', 'load']);
     expect(tracksOf(run.behemoth, 'sensors')).toEqual(['harden']);
     expect(tracksOf(run.behemoth, 'ramPlow')).toEqual([]);
+  });
+
+  it('one front plate thickens both front halves', () => {
+    expect(ARMOR_PARTS).toEqual(['armor.front', 'armor.rear', 'armor.left', 'armor.right']);
+    expect(armorArcsOf('armor.front')).toEqual(['frontLeft', 'frontRight']);
+    let run = atDepot();
+    run.behemoth.armor.frontLeft = 40;
+    run = applyAction(run, mod('armor.front', 'plate'));
+    const fitted = fitChassis(c, { grades: {}, mods: run.behemoth.mods });
+    expect(fitted.armor.frontLeft).toBe(Math.round(c.armor.frontLeft * (1 + TRACKS.plate.per)));
+    expect(fitted.armor.frontRight).toBe(Math.round(c.armor.frontRight * (1 + TRACKS.plate.per)));
+    expect(fitted.armor.left).toBe(c.armor.left);
+    // Each half keeps its own share of integrity.
+    expect(run.behemoth.armor.frontLeft).toBe(48);
+    expect(run.behemoth.armor.frontRight).toBe(fitted.armor.frontRight);
+    expect(run.depot!.actions).toBe(DEPOT.actions - 1);
+  });
+
+  it('the treads Load mod carries more, but three levels stay short of outboard treads', () => {
+    const per = (level: number) => fitChassis(c, { grades: {}, mods: { treads: { load: level } } }).massCapacity;
+    expect(per(1)).toBe(Math.round(c.massCapacity * (1 + TRACKS.load.per)));
+    const gain = per(DEPOT.maxModLevel) - c.massCapacity;
+    expect(gain).toBeGreaterThan(0);
+    const outboard = ADDONS.outerTreads;
+    expect(outboard.kind === 'treads' && gain < outboard.capacity).toBe(true);
+    // It stacks with a grade, and adds its tons.
+    expect(fitChassis(c, { grades: { treads: 2 }, mods: { treads: { load: 1 } } }).massCapacity).toBe(
+      Math.round(c.massCapacity * GRADES.treads[2].capacity! * (1 + TRACKS.load.per)),
+    );
+    expect(upgradeMass({ grades: {}, mods: { treads: { load: 2 } } })).toBe(2 * TRACKS.load.mass);
   });
 
   it('each level costs its price and an action, keeps the share of integrity, and stops at the max', () => {
@@ -223,9 +258,9 @@ describe('depot mods', () => {
 
   it('plating an armor zone keeps its share and adds to the re-plate', () => {
     let run = atDepot();
-    run.behemoth.armor.frontLeft = 40;
-    run = applyAction(run, mod('armor.frontLeft', 'plate'));
-    expect(run.behemoth.armor.frontLeft).toBe(48);
+    run.behemoth.armor.left = 40;
+    run = applyAction(run, mod('armor.left', 'plate'));
+    expect(run.behemoth.armor.left).toBe(48);
     expect(quote(run, { kind: 'repairArmor' })).toMatchObject({ ok: true, salvage: DEPOT.repairBase + Math.ceil(48 * DEPOT.perHp.armor) });
   });
 
@@ -273,5 +308,18 @@ describe('run save', () => {
     expect(parseRun(serializeRun({ ...run, behemoth: { ...run.behemoth, grades: { reactor: 4 as never } } }))).toBeNull();
     expect(parseRun(serializeRun({ ...run, behemoth: { ...run.behemoth, mods: { turret: { harden: 9 } } } }))).toBeNull();
     expect(parseRun(serializeRun({ ...run, behemoth: { ...run.behemoth, mods: { turret: { warp: 1 } as never } } }))).toBeNull();
+  });
+});
+
+describe('save v13: one front plate', () => {
+  it('merges the two front halves\' Plate mods at the higher level, leaving other mods alone', () => {
+    const run = newRun(1);
+    const old = { ...run, behemoth: { ...run.behemoth, mods: { 'armor.frontLeft': { plate: 1 }, 'armor.frontRight': { plate: 2 }, turret: { traverse: 1 } } } };
+    const migrated = fromV12(old) as RunState;
+    expect(migrated.behemoth.mods).toEqual({ 'armor.front': { plate: 2 }, turret: { traverse: 1 } });
+    // Through the loader, from a v12 file.
+    const loaded = parseRun(JSON.stringify({ version: 12, run: old }));
+    expect(loaded?.behemoth.mods['armor.front']).toEqual({ plate: 2 });
+    expect(fromV12(run)).toBe(run);
   });
 });

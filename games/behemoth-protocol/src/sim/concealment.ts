@@ -1,3 +1,4 @@
+import { CONCEALMENT } from '../content/tuning';
 import { revealRadius } from './behemoth';
 import { beyondSight } from './conditions';
 import type { Enemy } from './entities';
@@ -24,7 +25,7 @@ export function hiddenNow(w: World, e: Enemy): boolean {
 export function stepConcealment(w: World, dt: number): void {
   // Minefields show up as the sensors sweep them (SPEC §4.5), and stay marked.
   const b = w.behemoth;
-  if (!b.destroyed) w.terrain.reveal(b.x, b.y, revealRadius(b));
+  if (!b.destroyed) w.terrain.reveal(b.x, b.y, revealRadius(b) * CONCEALMENT.mineSweep);
   for (const e of w.enemies) {
     if (!e.alive) continue;
     e.exposed = Math.max(0, e.exposed - dt);

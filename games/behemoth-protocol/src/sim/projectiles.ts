@@ -1,11 +1,11 @@
 import { BARRAGE, CONCEALMENT } from '../content/tuning';
 import type { BeamSpec, ProjectileSpec, RoundSpec, ShellSpec, TargetClass, WeaponDef } from '../content/weapons';
-import { applyHit, footprint, hitArc, hitched, inTrailer } from './behemoth';
+import { applyHit, hitArc, hitched, hullBox, inTrailer } from './behemoth';
 import type { Enemy, Projectile } from './entities';
 import type { KillCause } from './events';
 import { damageDrone, droneAt } from './drones';
-import { destroyEnemy, hitFacing } from './enemies';
-import { clamp, pointInRect, rotateToward } from './math';
+import { breakLock, destroyEnemy, hitFacing } from './enemies';
+import { closestInBox, pointInBox, rotateToward } from './math';
 import { spawnPool } from './pools';
 import { hitTrailer, mineAt, triggerMine } from './trailer';
 import type { World } from './world';
@@ -209,7 +209,7 @@ function stepEnemyRound(w: World, p: Projectile): void {
     if (spec.kind !== 'bullet' && spec.blastRadius > 0) w.events.push({ type: 'explosion', x: p.x, y: p.y, radius: spec.blastRadius });
     return;
   }
-  if (!b.destroyed && pointInRect(p.x, p.y, footprint(b))) {
+  if (!b.destroyed && pointInBox(hullBox(b), p.x, p.y)) {
     applyHit(b, hitArc(b, -p.vx, -p.vy, p.x, p.y), spec.damage, w.rng, w.events, p.x, p.y, spec.strike);
     p.alive = false;
     if (spec.kind !== 'bullet' && spec.blastRadius > 0) w.events.push({ type: 'explosion', x: p.x, y: p.y, radius: spec.blastRadius });
@@ -243,8 +243,7 @@ function shellBurst(w: World, p: Projectile, spec: ShellSpec): void {
   const b = w.behemoth;
   w.events.push({ type: 'explosion', x: p.x, y: p.y, radius: r });
   if (!b.destroyed) {
-    const box = footprint(b);
-    const at = { x: clamp(p.x, box.x0, box.x1), y: clamp(p.y, box.y0, box.y1) };
+    const at = closestInBox(hullBox(b), p.x, p.y);
     const d = Math.hypot(p.x - at.x, p.y - at.y);
     if (d <= r) {
       applyHit(b, hitArc(b, -p.vx, -p.vy, at.x, at.y), spec.damage * (1 - (0.5 * d) / r), w.rng, w.events, at.x, at.y, spec.strike);
@@ -358,4 +357,6 @@ export function damageEnemy(w: World, e: Enemy, spec: RoundSpec, amount: number,
   e.hp -= amount * damageMultiplier(spec, e.def.targetClass) * facingMultiplier(w, e, spec, from) * (1 - coverProtection(w, e));
   e.exposed = Math.max(e.exposed, CONCEALMENT.afterHit);
   if (e.hp <= 0) destroyEnemy(w, e, cause);
+  // A hit throws a lock-on off its target (SPEC §7 heavy weapons team).
+  else if (amount > 0) breakLock(w, e);
 }

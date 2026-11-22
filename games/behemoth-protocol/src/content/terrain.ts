@@ -273,6 +273,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     conceals: NO_COVER,
     protection: standing(0.15, 0),
     debris: 'masonry',
+    salvage: 1,
   },
   wall: {
     // Fortification walls: tough, block fire, and the Behemoth plows through them at a cost.
@@ -288,7 +289,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     cover: { intact: false, damaged: false, destroyed: true, flattened: false },
     conceals: NO_COVER,
     protection: { intact: 0, damaged: 0, destroyed: 0.2, flattened: 0 },
-    salvage: 1,
+    salvage: 2,
     debris: 'masonry',
   },
   bunker: {
@@ -306,7 +307,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     cover: { intact: true, damaged: true, destroyed: true, flattened: false },
     conceals: standing(true, false),
     protection: { intact: 0.8, damaged: 0.65, destroyed: 0.25, flattened: 0 },
-    salvage: 4,
+    salvage: 8,
     debris: 'masonry',
   },
   mine: {
@@ -476,6 +477,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     explodes: { radius: 40, damage: 50, fuse: 0.25 },
     breaksTo: 'crater',
     debris: 'metal',
+    salvage: 2,
   },
   rail: {
     // Rail lines along the direction of travel (armored train routes in M4). The treads twist them.

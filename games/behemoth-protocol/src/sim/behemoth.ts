@@ -5,7 +5,7 @@ import { NO_UPGRADES, type Upgrades } from '../content/upgrades';
 import { DEGRADE, DETONATION, FIRE_CONTROL, MAGAZINE, MASS, MOVEMENT, RAM, WADING } from '../content/tuning';
 import { defaultBinding, shellsOf, WEAPONS, withShell, type Binding, type ShellType, type StrikeFocus, type WeaponDef } from '../content/weapons';
 import type { SimEvent } from './events';
-import { approach, clamp, easeToward, rotateToward, wrapAngle, type Rect } from './math';
+import { approach, boxBounds, clamp, easeToward, orientedBox, rotateToward, wrapAngle, type Box, type Rect } from './math';
 import type { Rng } from './rng';
 import type { Underfoot } from './terrain';
 import { fitChassis, upgradeMass } from './upgrades';
@@ -558,13 +558,30 @@ export function wadingCap(b: BehemothState): number {
   return shallow + (lim.min - shallow) * blend(w.min);
 }
 
-export function footprint(b: BehemothState): Rect {
-  const hl = b.chassis.length / 2;
-  const hw = hullWidth(b) / 2;
-  return { x0: b.x - hl, y0: b.y - hw, x1: b.x + hl, y1: b.y + hw };
+/**
+ * The hull's hit box: its length and width turned to its heading, so it follows the machine's shape
+ * as it steers (user's call, Nov 2026). Incoming fire, crushing and rams, units under it, blasts,
+ * mines, and plasma pools test against this.
+ */
+export function hullBox(b: BehemothState): Box {
+  return orientedBox(b.x, b.y, b.chassis.length / 2, hullWidth(b) / 2, b.heading);
 }
 
-/** The part of the footprint that meets the ground, for rock contact and fording (chassis `ground`). */
+/** The part of the hull that meets the ground (chassis `ground`), turned with it: plasma pools burn the treads under it. */
+export function groundBox(b: BehemothState): Box {
+  return orientedBox(b.x, b.y, (b.chassis.length * b.chassis.ground.length) / 2, (hullWidth(b) * b.chassis.ground.width) / 2, b.heading);
+}
+
+/** The axis-aligned rect around the turned hull: a broad test (the last stand's solid hull, placing wave units). */
+export function footprint(b: BehemothState): Rect {
+  return boxBounds(hullBox(b));
+}
+
+/**
+ * The part of the footprint that meets the ground, for rock contact, fording, and bridge and ice
+ * loads (chassis `ground`). Unturned on purpose: rock deflection is built on axis-aligned pushes
+ * (SPEC §4.2), and the hull is held to ~41° anyway.
+ */
 export function groundFootprint(b: BehemothState): Rect {
   const hl = (b.chassis.length * b.chassis.ground.length) / 2;
   const hw = (hullWidth(b) * b.chassis.ground.width) / 2;
@@ -1023,7 +1040,11 @@ export function magazineRounds(b: BehemothState): HardpointState[] {
   return b.hardpoints.filter((h) => h.weapon && h.ammo !== null && h.ammo > 0 && h.slot.position !== 'trailer');
 }
 
-/** Combined damage of the rounds left in the magazine: what a cook-off or the death blast has to work with. */
+/**
+ * Combined damage of the rounds left in the magazine: what a cook-off or the death blast has to work
+ * with. Each shot counts one round's damage, even a salvo weapon's (a rack's shot is a salvo now), so
+ * the cook-off kept its size when ammo moved to counting shots.
+ */
 export function magazineLoad(b: BehemothState): number {
   return magazineRounds(b).reduce((sum, h) => {
     const spec = h.weapon!.projectile;

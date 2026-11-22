@@ -4,6 +4,9 @@ import { FONT_KEY, fontText, wrapText } from '../render/pixelFont';
 import { hex, PAL } from '../render/palette';
 import { DIRECTIVES, DIRECTIVE_IDS } from '../content/directives';
 import { loadRun } from '../save/runSave';
+import { loadScores } from '../save/scores';
+import { SCORE } from '../content/tuning';
+import type { ScoreEntry } from '../sim/scores';
 import { newRun, runWhere, type RunState } from '../sim/run';
 import { checkpoint, enterNode, randomSeed, type RunContext } from './flow';
 import { fitCamera } from './screen';
@@ -53,6 +56,7 @@ export class TitleScene extends Phaser.Scene {
       this.add.rectangle(cx - 70, top + 62, 140, 1, hex(PAL.hudLine)).setOrigin(0, 0),
     ];
     this.prompt = text(Math.round(height * 0.62), '', PAL.hudText);
+    this.scoreList(loadScores().slice(0, SCORE.shown));
 
     // The run setup (SPEC §10): choose the Directive.
     this.picker.push(text(top, 'Choose your Directive', PAL.glow, 2));
@@ -89,6 +93,31 @@ export class TitleScene extends Phaser.Scene {
     for (const k of ['UP', 'W', 'LEFT', 'A']) kb.on(`keydown-${k}`, () => pick(-1));
     for (const k of ['DOWN', 'S', 'RIGHT', 'D']) kb.on(`keydown-${k}`, () => pick(1));
     DIRECTIVE_IDS.forEach((_, i) => kb.on(`keydown-${['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE'][i]}`, () => this.choosing !== null && this.choose(i)));
+  }
+
+  /**
+   * The score list (user request, Nov 2026): the best finished runs under the menu, each by its
+   * Behemoth's callsign, with how it ended and how far it got. Nothing until a run has ended.
+   */
+  private scoreList(scores: readonly ScoreEntry[]): void {
+    if (scores.length === 0) return;
+    const { width, height } = RESOLUTION;
+    const result: Record<ScoreEntry['outcome'], string> = { won: 'Complete', failed: 'Failed', destroyed: 'Destroyed' };
+    const row = (cells: string[]) =>
+      `${cells[0]!.padStart(2)}  ${cells[1]!.padEnd(14)} ${cells[2]!.padStart(7)}  ${cells[3]!.padEnd(9)}  ${cells[4]!.padEnd(10)}  ${cells[5]}`;
+    const lines = [
+      row(['#', 'Behemoth', 'Score', 'Result', 'Reached', 'Date']),
+      ...scores.map((e, i) => [String(i + 1), e.callsign, e.score.toLocaleString('en-US'), result[e.outcome], `Sector ${e.reached}/${e.sectors}`, e.date]).map(row),
+    ];
+    const top = Math.round(height * 0.74);
+    const rowH = 8;
+    this.add.rectangle(0, top - 4, width, (lines.length + 1) * rowH + 6, hex(PAL.hudBg), 0.6).setOrigin(0, 0);
+    this.add.bitmapText(width / 2, top, FONT_KEY, fontText('Top runs')).setTint(hex(PAL.glow)).setOrigin(0.5, 0);
+    lines.forEach((line, i) => {
+      // The header dim, the best run bright.
+      const color = i === 0 ? PAL.hudDim : i === 1 ? PAL.amber : PAL.hudText;
+      this.add.bitmapText(width / 2, top + (i + 1) * rowH + 2, FONT_KEY, fontText(line)).setTint(hex(color)).setOrigin(0.5, 0);
+    });
   }
 
   private openPicker(): void {

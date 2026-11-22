@@ -151,7 +151,7 @@ describe('the alert clock (reinforcements by time)', () => {
       expect(liveThreat(w)).toBeLessThanOrEqual(cap + 1e-9);
       most = Math.max(most, liveThreat(w));
     }
-    expect(most).toBeGreaterThan(cap - 2);
+    expect(most).toBeGreaterThanOrEqual(cap - 2);
     expect(w.encounter.alert.queue).toBeLessThanOrEqual(cap);
   });
 

@@ -90,6 +90,11 @@ export interface MissileSpec extends RoundBase {
   range: number;
   /** How close to the cursor a unit must be to get locked. */
   lockRadius: number;
+  /**
+   * Guided by its launcher's sight (SPEC §7 heavy weapons team): it needs a clear line to its
+   * target to lock on and to launch, where an ordinary homing missile flies over cover.
+   */
+  sight?: boolean;
 }
 
 /** Point defense: instant intercept of an incoming projectile, with a hit chance per kind. */
@@ -133,6 +138,7 @@ export type WeaponId =
   | 'lightTankGun'
   | 'heavyTankGun'
   | 'infantryRockets'
+  | 'guidedMissile'
   | 'launcherMissiles'
   | 'emplacementGun'
   | 'bunkerRockets'
@@ -179,7 +185,10 @@ export interface WeaponDef {
   projectile: ProjectileSpec | BeamSpec | InterceptSpec;
   /** Energy weapons: capacitor power per shot (SPEC §5.4). */
   power?: number;
-  /** Munitions weapons: rounds carried (refilled only at depots). */
+  /**
+   * Munitions weapons: shots carried (refilled only at depots). A salvo weapon's whole salvo is one
+   * shot, so a missile rack's 24 is 24 salvos of four (user's call, Nov 2026).
+   */
   ammo?: number;
   /** Fires several rounds per trigger. */
   salvo?: { count: number; interval: number };
@@ -503,7 +512,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     muzzle: 2,
     traverseDegPerSec: 720,
     autoGroup: 2,
-    power: 4,
+    power: 4.4,
     projectile: { kind: 'intercept', range: 85, chance: { shell: 0.4, missile: 0.85 } },
   },
   pdGuns: {
@@ -536,7 +545,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     muzzle: 4,
     traverseDegPerSec: 360,
     autoGroup: 1,
-    power: 1.5,
+    power: 1.65,
     projectile: { kind: 'beam', damage: 4, tileDamage: 2, range: 110, spread: 0.01, vs: { infantry: 1.4, heavy: 0.3 } },
   },
   beamLaser: {
@@ -548,11 +557,11 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     blurb: 'A precise beam on anything; drains power fast.',
     role: 'secondary',
     category: 'energy',
-    // Pulses fast enough to read as one continuous beam: 16 power/s against the reactor's 10.
+    // Pulses fast enough to read as one continuous beam: 17.6 power/s against the reactor's 10.
     reload: 0.1,
     muzzle: 9,
     traverseDegPerSec: 240,
-    power: 1.6,
+    power: 1.76,
     projectile: { kind: 'beam', damage: 2.4, tileDamage: 1.5, range: 260, spread: 0.004 },
   },
   heavyLaser: {
@@ -567,7 +576,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     reload: 1.3,
     muzzle: 28,
     traverseDegPerSec: 0,
-    power: 15,
+    power: 16.5,
     projectile: { kind: 'beam', damage: 42, tileDamage: 45, range: 420, spread: 0.002, vs: { infantry: 0.6, heavy: 1.15 } },
   },
   plasmaThrower: {
@@ -656,6 +665,29 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       spread: 0.06,
       // Aimed low at the running gear: ignores the armor (SPEC §5.1).
       strike: { target: 'treads', bypass: 1 },
+    },
+  },
+  guidedMissile: {
+    id: 'guidedMissile',
+    name: 'Guided missile',
+    short: 'Guided',
+    role: 'auto',
+    category: 'munitions',
+    reload: 8,
+    muzzle: 6,
+    traverseDegPerSec: 120,
+    projectile: {
+      kind: 'missile',
+      // One heavy warhead, flown in on the designator: point defense can still catch it.
+      speed: 150,
+      turnRate: 3.2,
+      damage: 22,
+      blastRadius: 0,
+      tileDamage: 30,
+      range: 320,
+      spread: 0.03,
+      lockRadius: 0,
+      sight: true,
     },
   },
   launcherMissiles: {

@@ -14,6 +14,7 @@ import { objectiveTaken } from './objective';
 import { roundSpec } from './projectiles';
 import { spawnProjectile } from './weapons';
 import type { World } from './world';
+import { paySalvage } from './salvage';
 
 /** Shared enemy systems: spawning an instance, movement over terrain, turret, and firing. */
 
@@ -73,8 +74,8 @@ export function destroyEnemy(w: World, e: Enemy, cause: KillCause): void {
     const best = w.stats.blastBest;
     if (!best || e.def.threat > ENEMIES[best].threat) w.stats.blastBest = e.def.id;
   }
-  w.stats.salvage += e.def.salvage;
   w.events.push({ type: 'enemyDestroyed', id: e.id, enemy: e.def.id, x: e.x, y: e.y, cause });
+  paySalvage(w, e.x, e.y, e.def.salvage, 'unit');
   if (e.objective) objectiveTaken(w, e);
 }
 
@@ -266,6 +267,11 @@ function aimGun(w: World, e: Enemy, g: EnemyGun, m: GunMount, dt: number): void 
   }
 
   if (g.windup > 0) {
+    // A lock-on needs its line of sight the whole way (SPEC §7 heavy weapons team).
+    if (e.def.lockOn && g === e && blocked(w, weapon, at, tgt)) {
+      breakLock(w, e);
+      return;
+    }
     // Telegraph in progress: the turret keeps tracking, then the shot (or volley) goes off.
     g.windup -= dt;
     if (g.windup > 0) return;
@@ -286,12 +292,27 @@ function aimGun(w: World, e: Enemy, g: EnemyGun, m: GunMount, dt: number): void 
   // In the dark or a squall the enemy can't line up on what it can't see (SPEC §4.6).
   if (!enemyCanSee(w, e)) return;
   g.windup = m.aimTime;
+  if (e.def.lockOn && g === e) w.events.push({ type: 'lockOn', id: e.id, x: e.x, y: e.y, time: m.aimTime });
 }
 
-/** Direct fire needs a clear line to its target; homing missiles fly around cover and lobbed shells over it. */
+/**
+ * A lock-on thrown off (SPEC §7 heavy weapons team): the unit was hit, or lost sight of the hull,
+ * while painting it. Nothing fires; it tries again after `relock`.
+ */
+export function breakLock(w: World, e: Enemy): void {
+  if (!e.def.lockOn || e.windup <= 0) return;
+  e.windup = 0;
+  e.cooldown = Math.max(e.cooldown, e.def.lockOn.relock);
+  w.events.push({ type: 'lockBroken', id: e.id, x: e.x, y: e.y });
+}
+
+/**
+ * Direct fire needs a clear line to its target; homing missiles fly around cover and lobbed shells
+ * over it. A guided missile (`sight`) needs the line too: its launcher steers it in.
+ */
 function blocked(w: World, weapon: WeaponDef, from: { x: number; y: number }, to: { x: number; y: number }): boolean {
   const spec = weapon.projectile;
-  if (spec.kind === 'missile' || (spec.kind === 'shell' && spec.lobbed)) return false;
+  if ((spec.kind === 'missile' && !spec.sight) || (spec.kind === 'shell' && spec.lobbed)) return false;
   return w.terrain.lineBlocked(from.x, from.y, to.x, to.y);
 }
 

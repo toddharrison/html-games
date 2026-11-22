@@ -3,7 +3,7 @@ import { ARMOR_ARCS, CHASSIS, type ChassisDef, type CoreComponent, type Hardpoin
 import { DEPOT_ADDONS, DEPOT_GRADES, DEPOT_MODULES, DEPOT_TRACKS, DEPOT_WEAPONS } from '../content/depot';
 import { moduleLoads, TRAILER_MODULES, type ModuleId } from '../content/trailer';
 import { DEPOT } from '../content/tuning';
-import { armorPart, TRACKS, type PartKind, type TrackId, type UpgradeGen } from '../content/upgrades';
+import { armorArcsOf, TRACKS, type PartKind, type TrackId, type UpgradeGen } from '../content/upgrades';
 import { shellsOf, WEAPONS, type Binding, type ShellType, type WeaponId } from '../content/weapons';
 import {
   allowedBindings,
@@ -181,8 +181,8 @@ function isCore(id: string): id is CoreComponent {
 
 /** What kind of part an id is, for mods (SPEC §5.6); null when nothing can be modded there. */
 export function partKind(s: BehemothSnapshot, id: string): PartKind | null {
-  if (isCore(id)) return id === 'reactor' ? 'reactor' : 'core';
-  if (ARMOR_ARCS.some((arc) => armorPart(arc) === id)) return 'armor';
+  if (isCore(id)) return id === 'reactor' || id === 'treads' ? id : 'core';
+  if (armorArcsOf(id).length > 0) return 'armor';
   const slot = slotDef(s, id);
   if (!slot || slot.position === 'trailer') return null;
   if (!slot.ring) return 'mount';
@@ -657,7 +657,8 @@ export function applyAction(run: RunState, action: DepotAction): RunState {
 /** A part's integrity (or armor) at full on a fitted chassis: core components, hardpoint slots, armor zones. */
 function partMax(c: ChassisDef, id: string): number | null {
   if (isCore(id)) return coreMax(c, id);
-  const arc = ARMOR_ARCS.find((a) => armorPart(a) === id);
+  // A shared front plate: both halves are the same size, so either gives the ratio.
+  const arc = armorArcsOf(id)[0];
   if (arc) return c.armor[arc];
   const slot = c.hardpoints.find((h) => h.id === id) ?? Object.values(c.addonMounts).find((m) => m?.hardpoint?.id === id)?.hardpoint;
   return slot?.hp ?? null;
@@ -665,8 +666,7 @@ function partMax(c: ChassisDef, id: string): number | null {
 
 function scaleHp(s: BehemothSnapshot, id: string, k: number): void {
   if (isCore(id)) s[id] *= k;
-  const arc = ARMOR_ARCS.find((a) => armorPart(a) === id);
-  if (arc) s.armor[arc] *= k;
+  for (const arc of armorArcsOf(id)) s.armor[arc] *= k;
   const h = hardpoint(s, id);
   if (h) h.hp *= k;
 }

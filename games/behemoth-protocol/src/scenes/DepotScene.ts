@@ -3,10 +3,10 @@ import Phaser from 'phaser';
 import { RESOLUTION } from '../config';
 import { BIOMES } from '../content/biomes';
 import { ADDONS, type AddonDef } from '../content/addons';
-import { ARC_NAMES, ARMOR_ARCS, CHASSIS, type ChassisDef, type CoreComponent, type HardpointSlotDef } from '../content/chassis';
+import { ARC_NAMES, CHASSIS, type ChassisDef, type CoreComponent, type HardpointSlotDef } from '../content/chassis';
 import { DEPOT_ADDONS, DEPOT_GRADES, DEPOT_MODULES, DEPOT_WEAPONS } from '../content/depot';
 import { moduleLoads, TRAILER_MODULES, type ModuleDef } from '../content/trailer';
-import { armorPart, GRADES, gradeName, TRACKS, type TrackId } from '../content/upgrades';
+import { ARMOR_PARTS, armorArcsOf, GRADES, gradeName, TRACKS, type TrackId } from '../content/upgrades';
 import { BINDINGS, defaultBinding, SHELL_TYPES, shellsOf, WEAPONS, withShell, type Binding, type WeaponDef } from '../content/weapons';
 import { cutawayRear, cutawaySize, drawCutaway, integrityColor, onHull, type CutawayPart } from '../render/cutaway';
 import { FONT_KEY, fontText } from '../render/pixelFont';
@@ -458,13 +458,16 @@ export class DepotScene extends Phaser.Scene {
       const together = s.trailer ? 'All zones and the trailer re-plate together.' : 'All zones re-plate together.';
       this.text(x, y, `Absorbs hits before they reach the parts\nbehind it. ${together}`, PAL.hudDim);
       y += 18;
-      // Each zone can be plated thicker on its own (an action a level).
-      for (const arc of ARMOR_ARCS) {
-        const f = s.armor[arc] / c.armor[arc];
-        this.text(x, y + 3, ARC_NAMES[arc], PAL.hudDim);
-        this.text(x + 80, y + 3, `${Math.round(f * 100)}%`, integrityColor(f)).setOrigin(1, 0);
-        this.modButton(x + 86, y, w - 86, armorPart(arc), 'plate');
-        y += 13;
+      // Each zone can be plated thicker (an action a level); the two front halves take one plate.
+      for (const part of ARMOR_PARTS) {
+        const arcs = armorArcsOf(part);
+        arcs.forEach((arc, i) => {
+          const f = s.armor[arc] / c.armor[arc];
+          this.text(x, y + 3 + i * 8, ARC_NAMES[arc], PAL.hudDim);
+          this.text(x + 80, y + 3 + i * 8, `${Math.round(f * 100)}%`, integrityColor(f)).setOrigin(1, 0);
+        });
+        this.modButton(x + 86, y + ((arcs.length - 1) * 8) / 2, w - 86, part, 'plate');
+        y += 13 + (arcs.length - 1) * 8;
       }
       const tdef = ADDONS.trailer;
       if (s.trailer && tdef.kind === 'trailer') {
@@ -546,7 +549,7 @@ export class DepotScene extends Phaser.Scene {
       y = this.weaponInfo(x, y, withShell(weapon, shellOf(s, id)), null);
       y = this.integrityLine(x, y, h.hp / slot.hp);
       if (h.ammo !== null && weapon.ammo !== undefined) {
-        this.text(x, y, 'Ammo', PAL.hudDim);
+        this.text(x, y, 'Shots', PAL.hudDim);
         this.text(x + 80, y, `${h.ammo}/${weapon.ammo}`, h.ammo === 0 ? PAL.bad : PAL.hudText).setOrigin(1, 0);
         y += 8;
       }
@@ -825,7 +828,7 @@ function moduleStats(def: ModuleDef): string {
   switch (def.kind) {
     case 'pod': {
       const w = WEAPONS[def.weapon];
-      return `${w.salvo?.count ?? 1}x missiles  ammo ${w.ammo ?? 0}  on Space by default`;
+      return `salvos of ${w.salvo?.count ?? 1}  ${w.ammo ?? 0} shots  on Space by default`;
     }
     case 'bunker':
       return `${def.loads} full loads  ${def.reload}s to pass one forward`;
@@ -858,7 +861,7 @@ function weaponStats(w: WeaponDef): string {
     parts.push(`reload ${w.reload}s`, `range ${p.kind === 'shell' ? p.maxRange : p.range}`);
     if (p.kind === 'shell' && p.pool) parts.push(`burns ${p.pool.dps}/s ${p.pool.duration}s`);
   }
-  if (w.ammo !== undefined) parts.push(`ammo ${w.ammo}`);
+  if (w.ammo !== undefined) parts.push(`${w.ammo} shots`);
   if (w.power !== undefined) parts.push(`power ${w.power}`);
   return parts.join('  ');
 }

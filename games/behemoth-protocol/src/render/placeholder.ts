@@ -72,6 +72,7 @@ export function generatePlaceholderArt(scene: Phaser.Scene): void {
   makeSiegeTank(scene);
   makeMissileLauncher(scene);
   makeInfantry(scene);
+  makeWeaponsTeam(scene);
   makeObjectiveUnits(scene);
   makeFx(scene);
 }
@@ -1025,6 +1026,41 @@ function makeInfantry(scene: Phaser.Scene): void {
   }
 }
 
+/**
+ * Heavy weapons team (SPEC §7): a gunner and a loader behind a guided missile launcher on a tripod.
+ * The long tube with its lit seeker lens, the sight box, and the splayed legs set it apart from a
+ * rifle squad at a glance. Frames for 1–2 still standing (the gunner is the last to fall).
+ */
+const TEAM = [
+  [1, 9],
+  [1, 2],
+] as const;
+export const WEAPONS_TEAM = { w: 18, h: 14, soldiers: TEAM.length };
+
+function makeWeaponsTeam(scene: Phaser.Scene): void {
+  for (let count = 1; count <= TEAM.length; count++) {
+    canvasTexture(scene, `hwt_${count}`, WEAPONS_TEAM.w, WEAPONS_TEAM.h, (p) => {
+      // Tripod legs splayed under the launcher.
+      for (const [x, y] of [[7, 9], [6, 10], [10, 9], [11, 10], [9, 9], [9, 10]] as const) p.px(x, y, PAL.outline);
+      // The tube: long, pale, two-tone, pointing forward, the seeker lens lit at the muzzle end.
+      p.rect(5, 4, 13, 4, PAL.outline);
+      p.rect(6, 5, 11, 1, PAL.tankHi);
+      p.rect(6, 6, 11, 1, PAL.tankShade);
+      p.px(17, 5, PAL.amberHot);
+      p.px(17, 6, PAL.amber);
+      // The sight box on top, and the mount under the tube.
+      p.rect(9, 2, 4, 3, PAL.outline);
+      p.rect(10, 3, 2, 1, PAL.enemyHi);
+      p.rect(8, 8, 3, 1, PAL.outline);
+      for (const [x, y] of TEAM.slice(TEAM.length - count)) {
+        p.rect(x, y, 4, 4, PAL.outline);
+        p.rect(x + 1, y + 1, 2, 2, PAL.enemy);
+        p.px(x + 1, y + 1, PAL.enemyHi);
+      }
+    });
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Fortress guns (Breach), the convoy (Chase), and hovercraft. Drawn facing +x like the rest.
 
@@ -1262,13 +1298,16 @@ export interface EnemyArt {
   wreck: string | null;
   /** Extra turrets, in `EnemyDef.turrets` order (SPEC §7 siege tank). */
   extra?: { key: string; pivotX: number; w: number }[];
+  /** Troops on foot: one frame per soldier still standing (`<prefix>1` … `<prefix><soldiers>`). */
+  squad?: { prefix: string; soldiers: number };
 }
 
 export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
   lightTank: { body: 'lt_body', turret: { key: 'lt_turret', pivotX: LT.pivotX, w: LT.turret.w }, wreck: 'lt_wreck' },
   heavyTank: { body: 'ht_body', turret: { key: 'ht_turret', pivotX: HT.pivotX, w: HT.turret.w }, wreck: 'ht_wreck' },
   missileLauncher: { body: 'ml_body', turret: { key: 'ml_turret', pivotX: ML.pivotX, w: ML.turret.w }, wreck: 'ml_wreck' },
-  infantry: { body: `inf_${SQUAD.length}`, turret: null, wreck: null },
+  infantry: { body: `inf_${SQUAD.length}`, turret: null, wreck: null, squad: { prefix: 'inf_', soldiers: SQUAD.length } },
+  weaponsTeam: { body: `hwt_${TEAM.length}`, turret: null, wreck: null, squad: { prefix: 'hwt_', soldiers: TEAM.length } },
   gunEmplacement: { body: 'emp_body', turret: { key: 'emp_turret', pivotX: EMP.pivotX, w: EMP.turret.w }, wreck: 'emp_wreck' },
   weaponTower: { body: 'tower_body', turret: { key: 'tower_turret', pivotX: TOWER.pivotX, w: TOWER.turret.w }, wreck: 'tower_wreck' },
   rocketBunker: { body: 'bunker_body', turret: { key: 'bunker_turret', pivotX: BUNKER.pivotX, w: BUNKER.turret.w }, wreck: 'bunker_wreck' },

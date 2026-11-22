@@ -1,4 +1,4 @@
-import { MODES } from '../content/modes';
+import { MODES, type BattleModeId } from '../content/modes';
 import Phaser from 'phaser';
 import { RESOLUTION } from '../config';
 import { APPROACHES } from '../content/approaches';
@@ -14,6 +14,7 @@ import { makeMapBackground, MAP_ICON, mapIconSheet, type MapIcon } from '../rend
 import { FONT_KEY, fontText, wrapText } from '../render/pixelFont';
 import { hex, PAL } from '../render/palette';
 import { openDepot } from '../sim/depot';
+import { objectivePercent } from '../sim/objective';
 import { hashSeed } from '../sim/rng';
 import { directiveAsk, enterMapNode, restoreBehemoth, type RunState } from '../sim/run';
 import { lastEventOutcome } from '../sim/mapEvents';
@@ -32,6 +33,7 @@ import {
   type IntelField,
   type MapNode,
   type MapPos,
+  type Strength,
 } from '../sim/sectorMap';
 import { checkpoint, enterNode, type RunContext } from './flow';
 import { fitCamera } from './screen';
@@ -400,7 +402,8 @@ export class MapScene extends Phaser.Scene {
       const names = o && MODES[o.mode].target;
       if (o && names) {
         y += 9;
-        this.text(x, y + 9, `${MODES[o.mode].name}: ${o.destroyed}/${o.total} ${names[1]}`, o.destroyed === o.total ? PAL.glow : PAL.amber);
+        const paid = o.salvage !== undefined ? ` +${o.salvage}` : '';
+        this.text(x, y + 9, `${MODES[o.mode].name}: ${o.destroyed}/${o.total} ${names[1]} ${objectivePercent(o)}%${paid}`, o.destroyed === o.total ? PAL.glow : PAL.amber);
       }
       if (r.taken !== undefined) {
         y += 9;
@@ -495,9 +498,21 @@ export class MapScene extends Phaser.Scene {
     field('Conditions', intel.condition ? conditionName(intel.condition, biome) : 'Clear', intel.condition ? PAL.amber : PAL.hudText);
     if (intel.condition) t(CONDITIONS[intel.condition].intel, PAL.hudDim, 4);
     field('Reward', fog('reward') ? '?' : `+${intel.salvage} salvage on extraction`, PAL.amber);
-    if (!fog('reward') && mode.bonus > 0) t(`+${mode.bonus} for destroying all ${mode.target?.[1] ?? 'targets'}`, PAL.amber, 4);
+    if (!fog('reward') && mode.bonus > 0) t(objectiveReward(intel.mode, fog('strength') ? null : intel.strength), PAL.amber, 4);
     if (!fog('reward') && intel.cache) t('Supply cache: +1 depot action', PAL.glow, 4);
   }
+}
+
+/**
+ * A battle mode's reward line (SPEC §4.4): a share of the bonus per target destroyed. With the
+ * strength known, the target count (and so each share) is too.
+ */
+function objectiveReward(mode: BattleModeId, strength: Strength | null): string {
+  const def = MODES[mode];
+  const names = def.target ?? ['target', 'targets'];
+  const count = strength && (def.fortress?.guns[strength] ?? def.convoy?.haulers[strength]);
+  if (!count) return `Up to +${def.bonus}: a share per ${names[0]} destroyed`;
+  return `+${Math.round(def.bonus / count)} a ${names[0]} destroyed (${count}), up to +${def.bonus}`;
 }
 
 /** The map sheet's area: between the side panels, above the key hints. */

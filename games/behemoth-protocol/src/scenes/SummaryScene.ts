@@ -7,6 +7,7 @@ import { ENEMIES } from '../content/enemies';
 import { FONT_KEY, fontText } from '../render/pixelFont';
 import { hex, PAL } from '../render/palette';
 import { clock, type RunSummary } from '../sim/run';
+import { runScore } from '../sim/scores';
 import type { SummaryData } from './flow';
 import { fitCamera } from './screen';
 
@@ -88,6 +89,12 @@ export class SummaryScene extends Phaser.Scene {
     row('Salvage earned', String(s.earned), PAL.amber);
     row('Time in battle', clock(s.time));
     row('Seed', String(s.seed), PAL.hudDim);
+    y += 4;
+    // The score list (on the title): this run's score and its place, if it made it.
+    const rank = this.summaryData.rank;
+    row('Score', runScore(s).toLocaleString('en-US'), PAL.glow);
+    if (rank) text(mx + colW, y, rank === 1 ? 'Best run yet' : `#${rank} on the list`, rank === 1 ? PAL.glowHot : PAL.amber).setOrigin(1, 0);
+    if (rank) y += 9;
     const b = s.blast;
     if (b) {
       y += 8;

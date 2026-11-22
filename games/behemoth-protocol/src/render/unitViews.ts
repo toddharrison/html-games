@@ -53,8 +53,9 @@ class EnemyView {
       this.body.setPosition(x, y).setRotation(viewAngle(at.heading));
     } else {
       // A squad thins out as it takes casualties.
-      const left = Math.max(1, Math.ceil((e.hp / e.def.hp) * INFANTRY.soldiers));
-      this.body.setTexture(`inf_${left}`).setPosition(x, y).setRotation(viewAngle(at.turret));
+      const squad = ENEMY_ART[e.def.id].squad ?? { prefix: 'inf_', soldiers: INFANTRY.soldiers };
+      const left = Math.max(1, Math.ceil((e.hp / e.def.hp) * squad.soldiers));
+      this.body.setTexture(`${squad.prefix}${left}`).setPosition(x, y).setRotation(viewAngle(at.turret));
     }
     // Telegraph: the glint grows and brightens as the shot approaches.
     showGlint(this.glint, e, e.def.aimTime, at.x, at.y, at.turret);

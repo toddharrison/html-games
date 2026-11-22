@@ -87,7 +87,8 @@ describe('missiles', () => {
     steps(w, 1, { fireMissile: true, aimX: e.x + 20, aimY: e.y - 10 });
     steps(w, 180);
     expect(fired(w, 'spine')).toBe(WEAPONS.missileRack.salvo!.count);
-    expect(rack.ammo).toBe(ammo - WEAPONS.missileRack.salvo!.count);
+    // Ammo counts shots: the whole salvo is one.
+    expect(rack.ammo).toBe(ammo - 1);
     expect(e.alive).toBe(false);
   });
 

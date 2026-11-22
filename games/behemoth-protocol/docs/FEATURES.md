@@ -369,7 +369,7 @@ Infantry in forest stay hidden outside the sensor reveal radius (sensor damage s
 - Autos and `missileLockTarget` skip hidden units. The renderer fades them out (0.5 s), flashes white when spotted, and hides threat arrows and the lock bracket.
 
 ### Conditions: night and storm
-`M3` · `uncommitted` · `playtest: pending` · SPEC §3.1, §4.6, §15 "Conditions and events (M3)", §16 Q27
+`M3` · `75a116f` · `playtest: pending` · SPEC §3.1, §4.6, §15 "Conditions and events (M3)", §16 Q27
 A battle can be fought at night or in a storm (30% of battle nodes, never the opening one). Both work through **sight**: past it a unit is hidden like a concealed squad (not drawn, no auto-target, no lock, no threat arrow) unless it's giving itself away; objective targets always show. The enemy can't open fire from past its own sight either. **Night:** sight 140 both ways, but for 2 s after the Behemoth fires anything but point defense every enemy in range can see it. **Storm** (rainstorm, blizzard, sandstorm, ash storm by biome): squalls close sight in to 110 for both sides, widen everyone's spread up to ×1.6, and slow hovercraft to 55%.
 - Content: `content/conditions.ts` (`ConditionId`, `CONDITION_IDS`, `CONDITIONS`: name, intel, banner, per-biome `weight`; `STORM_NAMES`, `conditionName(id, biome)`). Tuning: `CONDITION` in tuning.ts (`chance` 0.3; night `sight` 140, `enemySight` 140, `flashMark` 2; storm `first` [12, 22], `gap` [16, 28], `length` [8, 12], `ramp` 2.5, `sight` 110, `clearSight` 500, `spread` 1.6, `hover` 0.55).
 - Sim: `sim/conditions.ts`: `ConditionState {id, flashAt, squall, gust, rng}` (`World.condition`, `WorldOptions.condition`), `createCondition(id, seed)` (squall schedule on its own stream `hashSeed(seed, 0x57a4)`), `stepCondition` (first thing in `stepWorld`; events `squall {rising}`), `sightRadius(w)` (× `autoReach`; null = no limit), `beyondSight(w, e)`, `enemyCanSee(w, e)` (distance less half the hull's length; checked before an aim starts in `aimAndFire`), `behemothMarked`, `markFlash` (in `spawnProjectile` for player rounds and `shootBeam`), `conditionSpread(w)` (storm only), `hoverScale(w)` (in `moveEnemy`). `concealment.ts`: `hiddenNow(w, e)` = `concealed || beyondSight`, used by `stepConcealment` and `spawnEnemy`.
@@ -473,7 +473,7 @@ User request (Nov 2026): the title screen plays short battles in the background.
 - **Gotcha:** a headless screenshot catches the clip's fade-in partway (the loop barely advances in virtual time), so it looks dark.
 
 ### Run save
-`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `3471074` (v11) → `uncommitted` (v12) · `playtest: pending` · SPEC §2
+`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `3471074` (v11) → `75a116f` (v12) · `playtest: pending` · SPEC §2
 `src/save/runSave.ts`: versioned JSON in localStorage, structural validation, `StorageLike` for tests. Older versions migrate forward.
 
 | Version | Added |
@@ -508,7 +508,7 @@ User request (Nov 2026): the title screen plays short battles in the background.
 - **Gotcha:** the map is drawn for the sector of the reachable nodes, so after an objective it already shows the next sector.
 
 ### Events
-`M3` · `uncommitted` · `playtest: pending` · SPEC §3.1, §8.3, §15 "Conditions and events (M3)", §16 Q28
+`M3` · `75a116f` · `playtest: pending` · SPEC §3.1, §8.3, §15 "Conditions and events (M3)", §16 Q28
 Map nodes that are a short text choice instead of a battle: about 22% of battles that aren't an entry or an objective (about 2 on a route through a run). The event screen shows the scene, the Behemoth's state, and 2–3 options with hints; the drawn outcome is applied and saved at once, then shown. Six events: abandoned convoy, intercepted orders, derelict war machine, ammunition dump, stray supply drop, scavengers (details in SPEC §8.3).
 - Content: `content/mapEvents.ts` (`MapEventId`, `MAP_EVENT_IDS`, `MAP_EVENTS`: title, text, teaser, options {label, hint, cost?, outcomes {weight, text, effects}}; `EventEffect`: `salvage`, `damage`/`repair` {part treads/armor/sensors, share}, `rearm`, `cache`, `reveal`, `threat` {amount, scope next/sector}). Tuning: `SECTOR_MAP.eventChance` 0.22, `eventFog` 0.5.
 - Map: `NodeKind` adds `'event'`; `MapNode.event: EventIntel {id, seed, fog} | null` (null for every other kind); `placeEvents` in `generateMap` (own stream `hashSeed(seed, 0xe7e7)`, after every sector's intel, so other nodes are unchanged; a shuffled bag, siblings never the same); `hiddenEvent(intel, near, sensors)`, `revealSector(map, s)`; `BattleIntel.shift?` (threat an event moved).

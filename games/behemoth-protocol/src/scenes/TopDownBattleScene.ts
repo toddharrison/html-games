@@ -6,7 +6,7 @@ import { battleLayout, battleLengthFromUrl, cookOffAtFromUrl, immobilizeAtFromUr
 import { Controls } from '../input/controls';
 import { BehemothView, TrackMarks } from '../render/compositor';
 import { Effects } from '../render/effects';
-import { Hud } from '../render/hud';
+import { Hud, type HudRun } from '../render/hud';
 import { capturePose, Interp, pose } from '../render/interp';
 import { ENEMY_ART, TILE } from '../render/placeholder';
 import { TerrainView } from '../render/terrainView';
@@ -18,7 +18,7 @@ import { UnitViews } from '../render/unitViews';
 import { ComponentFx, componentAnchors, hullToSim, trailerPartAt, UnitFx, type UnitStatus } from '../render/statusFx';
 import { canSelfDestruct, damageComponent, damageTreads, firingBinding, hitched } from '../sim/behemoth';
 import { FixedStepper, SIM_DT } from '../sim/loop';
-import { createWorld, stepWorld, type World } from '../sim/world';
+import { createWorld, START_X, stepWorld, type World } from '../sim/world';
 import { OBSTACLE_CLASSES } from '../content/obstacles';
 import { isWet, MATERIALS } from '../content/terrain';
 import { WEAPONS } from '../content/weapons';
@@ -26,12 +26,29 @@ import { IDLE_COMMAND, type PlayerCommand } from '../sim/behemoth';
 import { missileLockTarget } from '../sim/weapons';
 import { roundSpec } from '../sim/projectiles';
 import { viewX, viewY } from '../render/viewTransform';
-import { battleEnemy, battleObjective, battleRecipe, battleSeed, completeBattle, recipeName } from '../sim/run';
+import {
+  battleAlertPace,
+  battleEnemy,
+  battleLength,
+  battleObjective,
+  battlePar,
+  battleRecipe,
+  battleSeed,
+  completeBattle,
+  directiveAsk,
+  isObjectiveBattle,
+  recipeName,
+  requiredTargets,
+  summarizeRun,
+} from '../sim/run';
+import { DIRECTIVES } from '../content/directives';
+import type { EnemyId } from '../content/enemies';
+import { isFinalNode } from '../sim/sectorMap';
 import { MODES } from '../content/modes';
 import { objectiveComplete } from '../sim/objective';
 import { FONT_KEY, fontText } from '../render/pixelFont';
 import { hex, PAL } from '../render/palette';
-import { checkpoint, endRun, enterNode, randomSeed, type RunContext } from './flow';
+import { checkpoint, endRun, enterNode, randomSeed, showSummary, type RunContext } from './flow';
 import { DEMO, demoClip, type DemoClip } from './demo';
 import { demoCommand } from '../input/demoBot';
 import { newRun } from '../sim/run';
@@ -86,6 +103,10 @@ export class TopDownBattleScene extends Phaser.Scene {
   /** Set once the Behemoth extracts: the run with this battle won, and seconds until the depot. */
   private won: RunContext | null = null;
   private outro = 0;
+  /** Texture key of the still frame taken as the reactor went, for the run summary; null until then. */
+  private shot: string | null = null;
+  /** Scene time (ms) the reactor went; the death message waits until the still is taken. */
+  private detonatedAt: number | null = null;
   /** The title's attract mode (`DemoBattleScene`): the clip being shown, and seconds left of it. */
   protected demo: DemoClip | null = null;
   private demoLeft = 0;
@@ -99,6 +120,8 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.demo = data.demo ?? null;
     this.won = null;
     this.outro = 0;
+    this.shot = null;
+    this.detonatedAt = null;
   }
 
   create(): void {
@@ -120,7 +143,7 @@ export class TopDownBattleScene extends Phaser.Scene {
       fieldRows: this.layout.fieldTiles,
       behemoth: run.behemoth,
       ...battleEnemy(run, recipe),
-      ...(demo ? { threat: demo.threat, battleLength: demo.battleLength } : { battleLength: battleLengthFromUrl() ?? undefined }),
+      ...(demo ? { threat: demo.threat, battleLength: demo.battleLength } : { battleLength: battleLengthFromUrl() ?? battleLength(run), alertPace: battleAlertPace(run) }),
       objective: demo ? { mode: demo.mode, strength: 'normal' } : battleObjective(run, modeFromUrl()),
     });
     if (demo) this.prerollDemo(demo);
@@ -141,7 +164,15 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.audio = demo ? null : BattleAudio.create(this);
     this.status = new ComponentFx();
     this.unitFx = new UnitFx();
-    this.hud = demo ? null : new Hud(this, this.layout, this.world.behemoth, { battle: run.battle + 1, salvage: run.salvage, where: recipeName(this.world.terrain.recipe), callsign: run.callsign });
+    this.hud = demo
+      ? null
+      : new Hud(this, this.layout, this.world.behemoth, {
+          battle: run.battle + 1,
+          salvage: run.salvage,
+          where: recipeName(this.world.terrain.recipe),
+          callsign: run.callsign,
+          ...(this.objectiveBattle() ? { directive: this.directiveInfo() } : {}),
+        });
     this.drawExtractionLine();
     this.threats = demo ? null : new ThreatIndicators(this, this.layout);
     this.reticle = this.add.image(0, 0, 'reticle').setScrollFactor(0).setDepth(200).setVisible(!demo);
@@ -157,9 +188,13 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.waveShownAt = null;
     this.alertShownAt = null;
     this.reviveShown = null;
-    // The mode's goal, called at the start (SPEC §4.4).
+    // The mode's goal, called at the start (SPEC §4.4); a sector's objective, the Directive's ask (SPEC §3).
     const mode = MODES[this.world.objective.mode];
     this.objectiveShown = this.world.objective.total > 0 ? { at: 0, text: `${mode.name}\n${mode.goal}` } : null;
+    if (this.objectiveBattle()) {
+      const head = run.at && isFinalNode(run.map, run.at) ? 'Final objective' : `Sector ${(run.at?.sector ?? 0) + 1} objective`;
+      this.objectiveShown = { at: 0, text: `${head}\n${directiveAsk(run.directive, run.behemoth.chassis, this.par())}` };
+    }
 
     this.game.events.on(Phaser.Core.Events.BLUR, this.onBlur, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.game.events.off(Phaser.Core.Events.BLUR, this.onBlur, this));
@@ -170,6 +205,51 @@ export class TopDownBattleScene extends Phaser.Scene {
 
   private onBlur(): void {
     this.paused = true;
+  }
+
+  /** A sector's objective battle in a real run (not the attract mode). */
+  private objectiveBattle(): boolean {
+    return !this.demo && isObjectiveBattle(this.ctx.run);
+  }
+
+  /** The battle's par (Breakthrough), from its actual length (a practice `?exit` changes it). */
+  private par(): number | null {
+    return battlePar(this.ctx.run, this.world.exitX - START_X);
+  }
+
+  /** The Directive's ask for the HUD. */
+  private directiveInfo(): NonNullable<HudRun['directive']> {
+    const goal = DIRECTIVES[this.ctx.run.directive].goal;
+    const total = this.world.objective.total;
+    return { goal, par: this.par(), need: goal.kind === 'share' && total > 0 ? requiredTargets(goal.share, total) : null };
+  }
+
+  /** The run summary for a destroyed run: the run so far plus this battle, and the blast's still. */
+  private toSummary(): void {
+    const w = this.world;
+    const stand = w.lastStand ? { time: w.lastStand.time, wave: w.lastStand.wave } : null;
+    showSummary(this, { summary: summarizeRun(this.ctx.run, { stats: w.stats, time: w.time, stand }), shot: this.shot });
+  }
+
+  /** A still of the battlefield column as the blast fills it (SPEC §5.1: the summary's replay frame). */
+  private takeShot(): void {
+    const scale = this.cameras.main.zoom;
+    const { fieldX, fieldW, height } = this.layout;
+    try {
+      this.game.renderer.snapshotArea(Math.round(fieldX * scale), 0, Math.round(fieldW * scale), Math.round(height * scale), (img) => {
+        if (!(img instanceof HTMLImageElement) || !this.sys.isActive()) return;
+        const add = () => {
+          if (this.textures.exists(SHOT_KEY)) this.textures.remove(SHOT_KEY);
+          this.textures.addImage(SHOT_KEY, img);
+          this.shot = SHOT_KEY;
+        };
+        // The image decodes asynchronously; the summary just goes without a still if it never does.
+        if (img.complete) add();
+        else img.onload = add;
+      });
+    } catch {
+      // No still on a renderer that can't take one.
+    }
   }
 
   /** Hazard stripes across the field at the extraction line, with a label. */
@@ -191,10 +271,14 @@ export class TopDownBattleScene extends Phaser.Scene {
       this.updateDemo(deltaMs / 1000);
       return;
     }
+    if (this.world.behemoth.destroyed && this.controls.summaryPressed()) {
+      this.toSummary();
+      return;
+    }
     if (this.controls.restartPressed()) {
-      // After the reactor goes, a real run is over: back to the title. Otherwise R retries this
+      // After the reactor goes, a real run is over: on to its summary. Otherwise R retries this
       // battle from its start (playtest convenience, like resuming a save mid-battle).
-      if (this.world.behemoth.destroyed && this.ctx.persist) this.scene.start('title');
+      if (this.world.behemoth.destroyed && this.ctx.persist) this.toSummary();
       else if (!this.won) this.scene.restart(this.ctx);
       return;
     }
@@ -313,15 +397,26 @@ export class TopDownBattleScene extends Phaser.Scene {
     if (this.paused) return 'Paused - Esc to resume';
     const ls = w.lastStand;
     if (b.destroyed) {
+      // Kept off the field until the summary's still has been taken.
+      if (this.detonatedAt !== null && this.time.now - this.detonatedAt < SHOT_DELAY_MS + 200) return null;
       const n = w.stats.blastKills;
       const stand = ls ? `\nHeld out ${Math.floor(ls.time)}s against ${ls.wave} ${ls.wave === 1 ? 'wave' : 'waves'}` : '';
       const battles = this.ctx.run.battle;
       const run = `\nRun over after ${battles} ${battles === 1 ? 'battle' : 'battles'} won`;
-      return `Reactor detonated\n${this.ctx.run.callsign} is lost\n${n} destroyed in the blast${stand}${run}\n${this.ctx.persist ? 'R - title' : 'R - restart'}`;
+      return `Reactor detonated\n${this.ctx.run.callsign} is lost\n${n} destroyed in the blast${stand}${run}\n${this.ctx.persist ? 'Enter - run summary' : 'Enter - run summary   R - restart'}`;
     }
     if (this.won) {
-      const head = this.won.run.next === 'won' ? `Extracted\nSector objective taken` : `Extracted\nBattle ${this.won.run.battle} won`;
-      const o = this.won.run.lastBattle?.objective;
+      const r = this.won.run;
+      const taken = r.lastBattle?.taken;
+      const head =
+        r.next === 'won'
+          ? 'Extracted\nDirective complete'
+          : r.next === 'failed'
+            ? 'Extracted\nDirective failed'
+            : taken !== undefined
+              ? `Extracted\nSector objective ${taken ? 'taken' : 'missed'}`
+              : `Extracted\nBattle ${r.battle} won`;
+      const o = r.lastBattle?.objective;
       const names = MODES[w.objective.mode].target;
       return o && names ? `${head}\n${o.destroyed} of ${o.total} ${names[1]} destroyed` : head;
     }
@@ -369,9 +464,16 @@ export class TopDownBattleScene extends Phaser.Scene {
   }
 
   /** The banner for an objective event (SPEC §4.4). */
-  private objectiveCall(what: 'destroyed' | 'lost', done: boolean): string {
+  private objectiveCall(what: 'destroyed' | 'lost', done: boolean, enemy: EnemyId): string {
     const o = this.world.objective;
     const names = MODES[o.mode].target ?? ['target', 'targets'];
+    if (enemy === 'commandPost') return what === 'destroyed' ? 'Command post destroyed\nReinforcements cut off' : 'Command post bypassed\nObjective missed';
+    // A sector objective's share of the convoy (Interdiction): the moment it's taken.
+    const goal = this.objectiveBattle() ? DIRECTIVES[this.ctx.run.directive].goal : null;
+    if (what === 'destroyed' && goal?.kind === 'share' && o.destroyed === requiredTargets(goal.share, o.total) && !done) {
+      const left = o.total - o.destroyed - o.lost;
+      return `Convoy stopped\nObjective taken - ${left} ${left === 1 ? names[0] : names[1]} left`;
+    }
     if (done) {
       if (objectiveComplete(o)) return o.mode === 'breach' ? 'Fortress breached\nEvery gun silenced' : 'Convoy destroyed\nNothing got away';
       return o.destroyed === 0 ? `Objective failed\nNo ${names[1]} destroyed` : `Objective over\n${o.destroyed} of ${o.total} ${names[1]} destroyed`;
@@ -634,7 +736,14 @@ export class TopDownBattleScene extends Phaser.Scene {
           this.outro = OUTRO_TIME;
           break;
         case 'detonation':
-          if (!this.demo) endRun(this.ctx);
+          if (!this.demo) {
+            endRun(this.ctx);
+            this.detonatedAt = this.time.now;
+            // Nothing left to aim: the reticle goes, and stays out of the summary's still.
+            this.reticle.setVisible(false);
+            // Once the flash has faded and the fireball fills the field.
+            this.time.delayedCall(SHOT_DELAY_MS, () => this.takeShot());
+          }
           this.fx.detonation(ev.x, ev.y, ev.radius);
           // A scorched crater: dense at the center, thinning out toward the blast's edge.
           for (let i = 0; i < 70; i++) {
@@ -697,7 +806,7 @@ export class TopDownBattleScene extends Phaser.Scene {
           this.alertShownAt = w.time;
           break;
         case 'objective':
-          this.objectiveShown = { at: w.time, text: this.objectiveCall(ev.what, ev.done) };
+          this.objectiveShown = { at: w.time, text: this.objectiveCall(ev.what, ev.done, ev.enemy) };
           break;
         case 'mineLaid':
           this.fx.smokePuff(ev.x, ev.y);
@@ -748,3 +857,7 @@ export class DemoBattleScene extends TopDownBattleScene {
     super.init({ run: newRun(clip.seed), persist: false, demo: clip });
   }
 }
+
+/** The run summary's still of the blast: its texture key, and how long after the detonation it's taken. */
+const SHOT_KEY = 'summary_shot';
+const SHOT_DELAY_MS = 450;

@@ -5,19 +5,21 @@ import { APPROACHES } from '../content/approaches';
 import { BIOMES } from '../content/biomes';
 import { ARMOR_ARCS } from '../content/chassis';
 import { DOCTRINES } from '../content/doctrines';
-import { DEPOT } from '../content/tuning';
+import { DEPOT, DIRECTIVE } from '../content/tuning';
 import { WEAPONS } from '../content/weapons';
 import { CALLSIGNS } from '../content/callsigns';
+import { DIRECTIVES } from '../content/directives';
 import { integrityColor } from '../render/cutaway';
 import { makeMapBackground, MAP_ICON, mapIconSheet, type MapIcon } from '../render/mapArt';
-import { FONT_KEY, fontText } from '../render/pixelFont';
+import { FONT_KEY, fontText, wrapText } from '../render/pixelFont';
 import { hex, PAL } from '../render/palette';
 import { openDepot } from '../sim/depot';
 import { hashSeed } from '../sim/rng';
-import { enterMapNode, restoreBehemoth, type RunState } from '../sim/run';
+import { directiveAsk, enterMapNode, restoreBehemoth, type RunState } from '../sim/run';
 import {
   depotKey,
   hiddenIntel,
+  isFinalNode,
   nodeAt,
   onRouteFrom,
   reachable,
@@ -27,14 +29,15 @@ import {
   type MapNode,
   type MapPos,
 } from '../sim/sectorMap';
-import { checkpoint, endRun, enterNode, type RunContext } from './flow';
+import { checkpoint, enterNode, type RunContext } from './flow';
 import { fitCamera } from './screen';
 
 /**
  * The sector map (SPEC §3, §3.1, §10): the current sector's routes drawn bottom to top (the way the
  * Behemoth drives), the run's condition on the left, and the intel for the node under the pointer
  * (or the one selected) on the right. Click a node the route reaches, or press its number, then
- * click it again or press Enter to roll out. A won run shows its result here and ends.
+ * click it again or press Enter to roll out. The run's Directive and its sector objectives so far
+ * head the left panel.
  */
 export class MapScene extends Phaser.Scene {
   private ctx!: RunContext;
@@ -71,12 +74,9 @@ export class MapScene extends Phaser.Scene {
     this.add.rectangle(0, 0, width, height, hex(PAL.hudBg)).setOrigin(0, 0);
     const kb = this.input.keyboard!;
 
-    if (this.run.next === 'won') {
-      this.drawWon();
-      // The run is over: its save goes (the summary and unlocks come with the profile, SPEC §9).
-      endRun(this.ctx);
-      kb.on('keydown-ENTER', () => this.scene.start('title'));
-      kb.on('keydown-SPACE', () => this.scene.start('title'));
+    if (this.run.next === 'won' || this.run.next === 'failed') {
+      // The run is over: on to its summary.
+      enterNode(this, this.ctx);
       return;
     }
 
@@ -302,7 +302,7 @@ export class MapScene extends Phaser.Scene {
     const later = map.sectors.slice(this.sector + 1).map((s) => BIOMES[s.biome].name);
     let y = 37;
     if (later.length > 0) {
-      for (const l of wrap(`Then: ${later.join(', ')}`, PANEL_CHARS)) {
+      for (const l of wrapText(`Then: ${later.join(', ')}`, PANEL_CHARS)) {
         this.text(x, y, l, PAL.hudDim);
         y += 9;
       }
@@ -314,6 +314,12 @@ export class MapScene extends Phaser.Scene {
       this.text(x + 120, y, value, color).setOrigin(1, 0);
       y += 9;
     };
+    // The run's orders, and each sector's objective so far: + taken, x missed, - ahead.
+    const def = DIRECTIVES[run.directive];
+    row('Directive', def.name, PAL.glow);
+    const marks = map.sectors.map((_, i) => (run.objectives[i] === true ? '+' : run.objectives[i] === false ? 'x' : '-')).join(' ');
+    row('Objectives', marks, run.objectives.includes(false) ? PAL.amber : PAL.hudText);
+    y += 4;
     row('Salvage', String(run.salvage), PAL.amber);
     row('Battles won', String(run.battle));
     row('Kills', String(run.kills));
@@ -358,6 +364,10 @@ export class MapScene extends Phaser.Scene {
         y += 9;
         this.text(x, y + 9, `${MODES[o.mode].name}: ${o.destroyed}/${o.total} ${names[1]}`, o.destroyed === o.total ? PAL.glow : PAL.amber);
       }
+      if (r.taken !== undefined) {
+        y += 9;
+        this.text(x, y + 9, r.taken ? `Objective taken: +${DIRECTIVE.sectorReward} action` : 'Objective missed', r.taken ? PAL.glow : PAL.amber);
+      }
     }
   }
 
@@ -394,7 +404,7 @@ export class MapScene extends Phaser.Scene {
     } else {
       const intel = node.battle!;
       const hidden = done ? [] : hiddenIntel(intel, near, this.run.behemoth.grades.sensors ?? 1);
-      this.drawBattleIntel(t, intel, hidden, () => (y += 4));
+      this.drawBattleIntel(t, intel, hidden, () => (y += 4), isFinalNode(this.run.map, pos));
       if (hidden.length > 0) {
         y += 6;
         t(near ? 'Deep fog. Better sensors' : 'Fogged: closer, or better', PAL.hudDim);
@@ -408,9 +418,11 @@ export class MapScene extends Phaser.Scene {
     else t(onRouteFrom(this.run.map, this.run.at, pos) ? 'Further along this route' : 'Off your route', PAL.hudDim);
   }
 
-  private drawBattleIntel(t: (s: string, color?: string, dx?: number) => void, intel: BattleIntel, hidden: IntelField[], gap: () => void): void {
+  private drawBattleIntel(t: (s: string, color?: string, dx?: number) => void, intel: BattleIntel, hidden: IntelField[], gap: () => void, final: boolean): void {
     const fog = (f: IntelField) => hidden.includes(f);
-    const title = intel.strength === 'objective' ? 'Sector objective' : intel.strength === 'strong' ? 'Battle: strong defenses' : 'Battle';
+    const objective = intel.strength === 'objective';
+    const def = DIRECTIVES[this.run.directive];
+    const title = objective ? `Objective: ${final ? def.final : def.objective}` : intel.strength === 'strong' ? 'Battle: strong defenses' : 'Battle';
     t(title, intel.strength === 'normal' ? PAL.enemyHi : PAL.amber);
     gap();
     const field = (label: string, value: string, color: string = PAL.hudText) => {
@@ -418,7 +430,11 @@ export class MapScene extends Phaser.Scene {
       t(value, color, 4);
     };
     const mode = MODES[intel.mode];
-    field('Mode', `${mode.name}: ${mode.goal.toLowerCase()}`, intel.mode === 'assault' ? PAL.hudText : PAL.amber);
+    if (objective) {
+      // The Directive's ask, and what rides on it (SPEC §3).
+      field('Directive', `${mode.name}: ${directiveAsk(this.run.directive, this.run.behemoth.chassis).toLowerCase()}`, PAL.amber);
+      t(final ? 'Decides the Directive' : `Taken: +${DIRECTIVE.sectorReward} depot action`, final ? PAL.glowHot : PAL.glow, 4);
+    } else field('Mode', `${mode.name}: ${mode.goal.toLowerCase()}`, intel.mode === 'assault' ? PAL.hudText : PAL.amber);
     field('Ground', fog('approach') ? '?' : intel.approach ? APPROACHES[intel.approach].name : `${BIOMES[this.run.map.sectors[this.sector]!.biome].name} mix`);
     field('Defenders', fog('doctrine') ? '?' : `${DOCTRINES[intel.doctrine].name}: ${DOCTRINES[intel.doctrine].intel.toLowerCase()}`);
     const strength = intel.strength === 'objective' ? 'Objective: heavy' : intel.strength === 'strong' ? 'Strong' : 'Normal';
@@ -426,17 +442,6 @@ export class MapScene extends Phaser.Scene {
     field('Reward', fog('reward') ? '?' : `+${intel.salvage} salvage on extraction`, PAL.amber);
     if (!fog('reward') && mode.bonus > 0) t(`+${mode.bonus} for destroying all ${mode.target?.[1] ?? 'targets'}`, PAL.amber, 4);
     if (!fog('reward') && intel.cache) t('Supply cache: +1 depot action', PAL.glow, 4);
-  }
-
-  private drawWon(): void {
-    const { width, height } = RESOLUTION;
-    const cx = width / 2;
-    const run = this.run;
-    const text = (y: number, s: string, color: string, scale = 1) => this.text(cx, y, s, color, scale).setOrigin(0.5, 0);
-    text(Math.round(height * 0.25), 'Run complete', PAL.glow, 3);
-    text(Math.round(height * 0.25) + 30, `${run.map.sectors.length} sectors taken`, PAL.hudText);
-    text(Math.round(height * 0.25) + 44, `${run.battle} battles won   ${run.kills} kills   ${run.salvage} salvage left`, PAL.hudDim);
-    text(Math.round(height * 0.7), 'Enter - title', PAL.hudText);
   }
 }
 
@@ -455,19 +460,6 @@ const INK_TEXT = '#1d1a16';
 /** Characters that fit across the left panel (the 3×5 font is 4 pixels a character). */
 const PANEL_CHARS = 30;
 
-/** Greedy word wrap to lines of at most `max` characters. */
-function wrap(s: string, max: number): string[] {
-  const lines: string[] = [];
-  let cur = '';
-  for (const word of s.split(' ')) {
-    if (cur && cur.length + 1 + word.length > max) {
-      lines.push(cur);
-      cur = word;
-    } else cur = cur ? `${cur} ${word}` : word;
-  }
-  if (cur) lines.push(cur);
-  return lines;
-}
 
 function dashed(g: Phaser.GameObjects.Graphics, x1: number, y1: number, x2: number, y2: number, width: number, color: number, alpha: number): void {
   const len = Math.hypot(x2 - x1, y2 - y1);

@@ -3,13 +3,14 @@ import { ADDONS } from '../content/addons';
 import { APPROACHES } from '../content/approaches';
 import { BIOMES } from '../content/biomes';
 import { ARMOR_ARCS, CHASSIS } from '../content/chassis';
+import { DIRECTIVES, type DirectiveId } from '../content/directives';
 import { DOCTRINES } from '../content/doctrines';
 import { DEPOT } from '../content/tuning';
 import { GRADES, TRACKS } from '../content/upgrades';
 import { TRAILER_MODULES } from '../content/trailer';
 import { BINDINGS, SHELL_TYPES, WEAPONS } from '../content/weapons';
 import { callsignFor, RUN_NEXT, type RunState } from '../sim/run';
-import { generateMap, INTEL_FIELDS, nodeAt, type MapPos } from '../sim/sectorMap';
+import { generateMap, INTEL_FIELDS, nodeAt, objectiveNode, setObjectiveModes, type MapPos, type SectorMap } from '../sim/sectorMap';
 
 /**
  * The run save (SPEC §2, §12): versioned JSON in localStorage, written only at node boundaries
@@ -23,10 +24,11 @@ export const RUN_SAVE_KEY = 'behemoth-protocol/run';
  * 4: hardpoint bindings and the fire-control component. 5: the front armor split into two halves,
  * and the armored prow became the ram plow. 6: main-gun shell types. 7: the ammo magazine.
  * 8: component grades and mods (and grades for sale). 9: the sector map (the route, where the run
- * is, supply caches) and the depot's opening action count. 10: the Behemoth's callsign. Older saves
- * are migrated on load.
+ * is, supply caches) and the depot's opening action count. 10: the Behemoth's callsign. 11: the
+ * Directive, each sector's objective result, and the run's totals (salvage earned, time in battle).
+ * Older saves are migrated on load.
  */
-export const RUN_SAVE_VERSION = 10;
+export const RUN_SAVE_VERSION = 11;
 
 /** The slice of the Storage API the save needs, so tests can pass a plain map. */
 export interface StorageLike {
@@ -55,7 +57,7 @@ export function parseRun(text: string): RunState | null {
   }
   if (!isObject(file)) return null;
   const v = file['version'];
-  const migrations = [fromV1, fromV2, fromV3, fromV4, fromV5, fromV6, fromV7, fromV8, fromV9];
+  const migrations = [fromV1, fromV2, fromV3, fromV4, fromV5, fromV6, fromV7, fromV8, fromV9, fromV10];
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > RUN_SAVE_VERSION) return null;
   const run = migrations.slice(v - 1).reduce((r, migrate) => migrate(r), file['run']);
   return isRun(run) ? run : null;
@@ -161,6 +163,33 @@ function fromV9(run: unknown): unknown {
   return { ...run, callsign: callsignFor(run['seed']) };
 }
 
+/**
+ * Version 10 predates Directives: the one matching the last sector's objective mode (so the run's
+ * goal is what its map already showed), every objective set to that mode, the sectors already
+ * behind it counted as taken, and the totals started from what's known (salvage in hand, no time).
+ */
+function fromV10(run: unknown): unknown {
+  if (!isObject(run) || !isObject(run['map']) || !Array.isArray(run['map']['sectors'])) return run;
+  const map = run['map'] as unknown as SectorMap;
+  const last = objectiveNode(map, map.sectors.length - 1)?.battle?.mode;
+  const named = run['directive'];
+  const directive: DirectiveId =
+    typeof named === 'string' && named in DIRECTIVES ? (named as DirectiveId) : last === 'chase' ? 'interdiction' : last === 'assault' ? 'breakthrough' : 'decapitation';
+  setObjectiveModes(map, directive);
+  // Objectives behind the Behemoth: every sector before its own, and its own once it's at (or past) the objective.
+  const at = run['at'];
+  const sector = isObject(at) && isNum(at['sector']) ? at['sector'] : 0;
+  const atObjective = isObject(at) && isNum(at['node']) && objectiveNode(map, sector)?.id === at['node'] && run['next'] !== 'battle';
+  const done = Math.min(map.sectors.length, sector + (atObjective ? 1 : 0));
+  return {
+    ...run,
+    directive,
+    objectives: Array<boolean>(Math.max(0, done)).fill(true),
+    earned: isNum(run['salvage']) ? run['salvage'] : 0,
+    time: 0,
+  };
+}
+
 export function loadRun(storage: StorageLike | null = browserStorage()): RunState | null {
   const text = safe(() => storage?.getItem(RUN_SAVE_KEY) ?? null, null);
   return text === null ? null : parseRun(text);
@@ -201,6 +230,9 @@ const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFin
 function isRun(v: unknown): v is RunState {
   if (!isObject(v)) return false;
   if (typeof v['callsign'] !== 'string') return false;
+  if (typeof v['directive'] !== 'string' || !(v['directive'] in DIRECTIVES)) return false;
+  if (!Array.isArray(v['objectives']) || !v['objectives'].every((t) => typeof t === 'boolean')) return false;
+  if (!isNum(v['earned']) || !isNum(v['time'])) return false;
   if (!isNum(v['seed']) || !isNum(v['battle']) || !isNum(v['salvage']) || !isNum(v['kills']) || !isNum(v['cache'])) return false;
   if (!(RUN_NEXT as readonly unknown[]).includes(v['next'])) return false;
   if (!isMap(v['map'])) return false;

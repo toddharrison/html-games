@@ -960,6 +960,7 @@ export const BUNKER = { body: 22, turret: { w: 11, h: 9 }, pivotX: 4 };
 export const HAUL = { body: { w: 24, h: 14 } };
 export const LAYER = { body: { w: 16, h: 11 } };
 export const HOVER = { body: { w: 15, h: 11 }, turret: { w: 10, h: 5 }, pivotX: 3 };
+export const POST = { body: 26 };
 
 function makeObjectiveUnits(scene: Phaser.Scene): void {
   // Gun emplacement: a round concrete revetment with sandbags, a long gun on a heavy mount.
@@ -1103,6 +1104,35 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
   };
   canvasTexture(scene, 'hover_body', HOVER.body.w, HOVER.body.h, (p) => hoverBody(p, false));
   canvasTexture(scene, 'hover_wreck', HOVER.body.w, HOVER.body.h, (p) => hoverBody(p, true));
+  // Command post (Decapitation): a big concrete blockhouse, a radar dish and two radio masts on
+  // the roof, a blast door at the back. No gun: it calls the guns in.
+  const postBody = (p: Painter, dead: boolean) => {
+    const n = POST.body;
+    p.rect(1, 1, n - 2, n - 2, PAL.outline);
+    p.rect(2, 2, n - 4, n - 4, dead ? PAL.ash : PAL.concreteDark);
+    p.rect(4, 4, n - 8, n - 8, dead ? PAL.hole : PAL.concrete);
+    p.rect(4, 4, n - 8, 1, dead ? PAL.ashLight : PAL.concreteHi);
+    p.rect(1, n / 2 - 3, 3, 6, PAL.outline); // blast door, rear (−x)
+    p.rect(2, n / 2 - 2, 1, 4, dead ? PAL.hole : PAL.enemyDark);
+    if (dead) {
+      p.px(9, 9, PAL.ember);
+      p.px(16, 14, PAL.ember);
+      p.px(12, 18, PAL.ember);
+      return;
+    }
+    // Dish toward the approach (+x), masts with red warning lights.
+    p.disc(16, 10, 4, PAL.outline);
+    p.disc(16, 10, 3, PAL.steelMid, PAL.steelGlint, PAL.steelDark);
+    p.px(17, 10, PAL.outline);
+    for (const [x, y] of [[8, 8], [9, 18]] as const) {
+      p.rect(x - 1, y - 1, 3, 3, PAL.outline);
+      p.px(x, y, PAL.enemyHi);
+    }
+    p.rect(13, 17, 6, 3, PAL.outline); // vents
+    p.rect(14, 18, 4, 1, PAL.enemyDark);
+  };
+  canvasTexture(scene, 'post_body', POST.body, POST.body, (p) => postBody(p, false));
+  canvasTexture(scene, 'post_wreck', POST.body, POST.body, (p) => postBody(p, true));
   canvasTexture(scene, 'hover_turret', HOVER.turret.w, HOVER.turret.h, (p) => {
     const tw = HOVER.turret.w;
     p.rect(4, 2, tw - 4, 1, PAL.outline);
@@ -1131,6 +1161,7 @@ export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
   hauler: { body: 'haul_body', turret: null, wreck: 'haul_wreck' },
   mineLayer: { body: 'layer_body', turret: null, wreck: 'layer_wreck' },
   hovercraft: { body: 'hover_body', turret: { key: 'hover_turret', pivotX: HOVER.pivotX, w: HOVER.turret.w }, wreck: 'hover_wreck' },
+  commandPost: { body: 'post_body', turret: null, wreck: 'post_wreck' },
 };
 
 // ---------------------------------------------------------------------------------------------

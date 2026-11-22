@@ -35,6 +35,10 @@ export interface AlertClock {
   queue: number;
   /** Seconds until the next queued unit may arrive. */
   trickle: number;
+  /** How fast the clock runs (×; a Directive's objective battle may hurry it, SPEC §3). */
+  pace: number;
+  /** The clock is stopped for good: no more waves, nothing more queued (a command post destroyed, SPEC §3). */
+  cut: boolean;
 }
 
 /** What a battle's enemy brings (SPEC §7): its size, its units, and how it splits them. */
@@ -46,6 +50,8 @@ export interface Forces {
   /** Multipliers on post size and wave threat (the doctrine's split, `DoctrineDef.posts/waves`). */
   postScale: number;
   waveScale: number;
+  /** How fast the alert clock runs (×, default 1). */
+  alertPace?: number;
 }
 
 export interface EncounterState {
@@ -101,11 +107,12 @@ export function planDefenders(seed: number, forces: Forces, startX: number, exit
 
 export function createEncounter(seed: number, forces: Forces, startX: number, exitX: number): EncounterState {
   const a = ENCOUNTER.alert;
+  const pace = forces.alertPace ?? 1;
   return {
     off: false,
     waveScale: forces.waveScale,
     posts: planDefenders(seed, forces, startX, exitX),
-    alert: { wave: 0, next: a.firstWave, span: a.firstWave, queue: 0, trickle: 0 },
+    alert: { wave: 0, next: a.firstWave / pace, span: a.firstWave / pace, queue: 0, trickle: 0, pace, cut: false },
   };
 }
 
@@ -118,6 +125,12 @@ export function alertWaveBudget(threat: number, wave: number): number {
 export function alertInterval(wave: number): number {
   const a = ENCOUNTER.alert;
   return Math.max(a.minInterval, a.interval - a.intervalShrink * (wave - 1));
+}
+
+/** Stops the alert clock for good: no more waves, and nothing still queued comes in. */
+export function cutAlert(a: AlertClock): void {
+  a.cut = true;
+  a.queue = 0;
 }
 
 /** Advances the defenders and the alert clock. Not called during the last stand or after extraction. */
@@ -146,11 +159,12 @@ function stepDefenders(w: World): void {
 
 function stepAlert(w: World, dt: number): void {
   const a = w.encounter.alert;
+  if (a.cut) return;
   const cap = w.threat * ENCOUNTER.alert.cap;
   a.next -= dt;
   if (a.next <= 0) {
     a.wave++;
-    a.span = a.next = alertInterval(a.wave);
+    a.span = a.next = alertInterval(a.wave) / a.pace;
     // Held-back units don't pile up without limit while the field is full.
     a.queue = Math.min(cap, a.queue + alertWaveBudget(w.threat, a.wave) * w.encounter.waveScale);
     w.events.push({ type: 'alert', wave: a.wave });

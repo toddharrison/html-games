@@ -176,13 +176,15 @@ describe('extraction', () => {
     const run = newRun(OPTS.seed);
     const last = run.map.sectors.length - 1;
     const objective = run.map.sectors[last]!.nodes.length - 1;
-    const atObjective: RunState = { ...run, at: { sector: last, node: objective } };
+    // Breakthrough: a short battle at cruise is well inside its par.
+    const atObjective: RunState = { ...run, directive: 'breakthrough', at: { sector: last, node: objective } };
     atObjective.map = structuredClone(run.map);
     atObjective.map.sectors[last]!.nodes[objective]!.battle!.cache = true;
-    const w = createWorld({ ...OPTS, behemoth: run.behemoth, battleLength: 100 });
+    const w = createWorld({ ...OPTS, behemoth: run.behemoth, battleLength: 400 });
     drive(w, 60 * 30, (w) => w.extractedAt !== null);
     const done = completeBattle(atObjective, w);
     expect(done.next).toBe('won');
+    expect(done.objectives).toEqual([true]);
     expect(done.cache).toBe(1);
     expect(done.salvage).toBe(RUN.extractionBonus + SECTOR_MAP.objective.salvage);
   });

@@ -1,13 +1,14 @@
 import { ENEMIES, type EnemyId } from '../content/enemies';
 import { MODES, type BattleModeId } from '../content/modes';
 import { isWet } from '../content/terrain';
-import { OBJECTIVE, SPAWNER, TERRAIN_GEN } from '../content/tuning';
+import { DIRECTIVE, OBJECTIVE, SPAWNER, TERRAIN_GEN } from '../content/tuning';
 import type { BehemothState } from './behemoth';
 import { spawnEnemy } from './enemies';
 import type { Enemy } from './entities';
 import { frameRight } from './frame';
 import { Rng, hashSeed } from './rng';
 import type { Strength } from './sectorMap';
+import { cutAlert } from './encounter';
 import { drawUnit } from './spawner';
 import { chunkRiver, riverCenter, type FortressSpec, type Terrain, type TerrainRecipe } from './terrain';
 import type { World } from './world';
@@ -23,14 +24,23 @@ import type { World } from './world';
  *   tail drop mines in the Behemoth's path; light tanks screen it. A hauler past the extraction line
  *   has escaped.
  * A target left behind the frame is lost. Each one destroyed pays its share of the mode's bonus
- * (`objectiveBonus`); missing some never stops the run.
+ * (`objectiveBonus`); missing some never stops the battle.
+ *
+ * A Decapitation objective (SPEC §3) adds a **command post** on a pad behind the fortress's bunkers.
+ * It's tallied on its own (`ObjectiveState.command`), not with the guns; destroying it stops the
+ * alert clock for the rest of the battle.
  */
 
 /** What the battle's node asks for: its mode and strength (which sizes the objective). */
 export interface ObjectiveSpec {
   mode: BattleModeId;
   strength: Strength;
+  /** Breach only: a command post stands behind the wall (a Decapitation objective, SPEC §3). */
+  command?: boolean;
 }
+
+/** A command post's fate: placed with the guns, then destroyed or left behind. */
+export type CommandState = 'waiting' | 'standing' | 'destroyed' | 'lost';
 
 export interface ObjectiveState {
   mode: BattleModeId;
@@ -42,6 +52,8 @@ export interface ObjectiveState {
   fortress: { x: number; guns: { id: EnemyId; x: number; y: number }[] } | null;
   /** Chase: the convoy's pace (world units/s). 0 outside a chase. */
   convoySpeed: number;
+  /** Decapitation: the command post, where it stands and what became of it; null without one. */
+  command: { x: number; y: number; state: CommandState } | null;
 }
 
 /**
@@ -50,18 +62,29 @@ export interface ObjectiveState {
  * (a river would cut them apart). Its own random stream, so a seed always puts its fortress in the
  * same place.
  */
-export function planFortress(seed: number, terrainSeed: number, rows: number, recipe: TerrainRecipe, startX: number, exitX: number, strength: Strength): FortressSpec {
+export function planFortress(
+  seed: number,
+  terrainSeed: number,
+  rows: number,
+  recipe: TerrainRecipe,
+  startX: number,
+  exitX: number,
+  strength: Strength,
+  keep = false,
+): FortressSpec {
   const f = MODES.breach.fortress!;
   const g = TERRAIN_GEN;
   const rng = new Rng(hashSeed(seed, 0xb7e4));
+  // Columns the fortress reaches behind its wall: the bunkers, and the command post's pad.
+  const behind = g.fortLine.bunkerBehind + (keep ? DIRECTIVE.keep.behind + DIRECTIVE.keep.cols - 1 : 0);
   const want = Math.floor((startX + (exitX - startX) * rng.range(f.at[0], f.at[1])) / g.tileSize / g.chunkCols);
-  const lastChunk = Math.max(1, Math.floor((exitX / g.tileSize - g.fortLine.bunkerBehind - 2) / g.chunkCols));
+  const lastChunk = Math.max(1, Math.floor((exitX / g.tileSize - behind - 2) / g.chunkCols));
   const lo = g.fortLine.trapsAhead + 2;
   const hi = g.chunkCols - g.fortLine.bunkerBehind - 1;
   const clear = (col: number) => {
     const ci = Math.floor(col / g.chunkCols);
     const a = col - g.fortLine.trapsAhead - 1;
-    const b = col + g.fortLine.bunkerBehind + 1;
+    const b = col + behind + 1;
     for (let c = ci - 1; c <= ci + 1; c++) {
       const rv = chunkRiver(terrainSeed, c, rows, recipe);
       if (!rv) continue;
@@ -81,15 +104,15 @@ export function planFortress(seed: number, terrainSeed: number, rows: number, re
     const start = rng.int(0, cols.length - 1);
     for (let k = 0; k < cols.length; k++) {
       const col = cols[(start + k) % cols.length]!;
-      if (clear(col)) return { col, guns: f.guns[strength], gates: f.gates, gateWidth: f.gateWidth };
+      if (clear(col)) return { col, guns: f.guns[strength], gates: f.gates, gateWidth: f.gateWidth, ...(keep ? { keep } : {}) };
     }
   }
-  return { col: first * g.chunkCols + rng.int(lo, hi), guns: f.guns[strength], gates: f.gates, gateWidth: f.gateWidth };
+  return { col: first * g.chunkCols + rng.int(lo, hi), guns: f.guns[strength], gates: f.gates, gateWidth: f.gateWidth, ...(keep ? { keep } : {}) };
 }
 
 export function createObjective(spec: ObjectiveSpec | null, terrain: Terrain, b: BehemothState): ObjectiveState {
   const mode = spec?.mode ?? 'assault';
-  const o: ObjectiveState = { mode, total: 0, destroyed: 0, lost: 0, fortress: null, convoySpeed: 0 };
+  const o: ObjectiveState = { mode, total: 0, destroyed: 0, lost: 0, fortress: null, convoySpeed: 0, command: null };
   const def = MODES[mode];
   if (def.fortress) {
     const plan = terrain.fortress();
@@ -99,6 +122,8 @@ export function createObjective(spec: ObjectiveSpec | null, terrain: Terrain, b:
       const guns = plan.embrasures.map(([a, z], i) => ({ id: def.fortress!.units[i % def.fortress!.units.length]!, x, y: ((a + z) / 2) * ts }));
       o.fortress = { x, guns };
       o.total = guns.length;
+      const k = plan.keep;
+      if (k) o.command = { x: (k.col + DIRECTIVE.keep.cols / 2) * ts, y: ((k.rows[0] + k.rows[1]) / 2) * ts, state: 'waiting' };
     }
   }
   if (def.convoy && spec) {
@@ -166,6 +191,13 @@ export function stepObjective(w: World, dt: number): void {
       e.heading = Math.PI;
       e.turret = Math.PI;
     }
+    const c = o.command;
+    if (c?.state === 'waiting') {
+      const e = spawnEnemy(w, 'commandPost', c.x, c.y);
+      e.objective = true;
+      e.heading = e.turret = Math.PI;
+      c.state = 'standing';
+    }
     o.fortress = null;
   }
   for (const e of w.enemies) {
@@ -195,12 +227,24 @@ function layMines(w: World, e: Enemy, dt: number): void {
 /** A target that's gone without being destroyed: it drops out of the battle. */
 function lose(w: World, e: Enemy): void {
   e.alive = false;
+  if (e.def.id === 'commandPost' && w.objective.command) {
+    w.objective.command.state = 'lost';
+    w.events.push({ type: 'objective', what: 'lost', enemy: e.def.id, x: e.x, y: e.y, done: objectiveSettled(w.objective) });
+    return;
+  }
   w.objective.lost++;
   w.events.push({ type: 'objective', what: 'lost', enemy: e.def.id, x: e.x, y: e.y, done: objectiveSettled(w.objective) });
 }
 
 /** Called by `destroyEnemy` for a target. */
 export function objectiveTaken(w: World, e: Enemy): void {
+  if (e.def.id === 'commandPost' && w.objective.command) {
+    // Its orders die with it: no more reinforcements this battle.
+    w.objective.command.state = 'destroyed';
+    cutAlert(w.encounter.alert);
+    w.events.push({ type: 'objective', what: 'destroyed', enemy: e.def.id, x: e.x, y: e.y, done: objectiveSettled(w.objective) });
+    return;
+  }
   w.objective.destroyed++;
   w.events.push({ type: 'objective', what: 'destroyed', enemy: e.def.id, x: e.x, y: e.y, done: objectiveSettled(w.objective) });
 }

@@ -55,6 +55,8 @@ export interface WorldOptions {
   battleLength?: number;
   /** The battle's mode and strength (SPEC §4.4); default a plain Assault. */
   objective?: ObjectiveSpec;
+  /** How fast the alert clock runs (×, default 1; a Directive's objective battle, SPEC §3). */
+  alertPace?: number;
 }
 
 export interface World {
@@ -97,11 +99,19 @@ export interface World {
   extractedAt: number | null;
   /** Set once the Behemoth is Immobilized (SPEC §5.1). */
   lastStand: LastStandState | null;
-  stats: { kills: number; blastKills: number; salvage: number };
+  stats: BattleStats;
+}
+
+export interface BattleStats {
+  kills: number;
+  blastKills: number;
+  salvage: number;
+  /** The biggest unit the final blast took out (by threat), for the run summary (SPEC §5.1); null for none. */
+  blastBest: EnemyId | null;
 }
 
 /** Where the Behemoth starts (world x). */
-const START_X = 70;
+export const START_X = 70;
 
 /** Enemies this far behind the frame's left edge are dropped. */
 const DESPAWN_BEHIND = 200;
@@ -114,7 +124,7 @@ export function createWorld(opts: WorldOptions): World {
   let recipe = opts.recipe ?? DEFAULT_RECIPE;
   const spec = opts.objective ?? null;
   if (spec?.mode === 'breach') {
-    recipe = { ...recipe, fortress: planFortress(opts.seed, terrainSeed, opts.fieldRows, recipe, START_X, exitX, spec.strength) };
+    recipe = { ...recipe, fortress: planFortress(opts.seed, terrainSeed, opts.fieldRows, recipe, START_X, exitX, spec.strength, spec.command ?? false) };
   }
   const terrain = new Terrain(terrainSeed, opts.fieldRows, recipe);
   const behemoth = restoreBehemoth(opts.behemoth ?? newRun(opts.seed).behemoth, START_X, terrain.height / 2);
@@ -141,7 +151,7 @@ export function createWorld(opts: WorldOptions): World {
     mix,
     encounter: createEncounter(
       opts.seed,
-      { threat, mix, postScale: (opts.postScale ?? 1) * MODES[spec?.mode ?? 'assault'].posts, waveScale: opts.waveScale ?? 1 },
+      { threat, mix, postScale: (opts.postScale ?? 1) * MODES[spec?.mode ?? 'assault'].posts, waveScale: opts.waveScale ?? 1, alertPace: opts.alertPace ?? 1 },
       START_X,
       exitX,
     ),
@@ -149,7 +159,7 @@ export function createWorld(opts: WorldOptions): World {
     exitX,
     extractedAt: null,
     lastStand: null,
-    stats: { kills: 0, blastKills: 0, salvage: 0 },
+    stats: { kills: 0, blastKills: 0, salvage: 0, blastBest: null },
   };
   ensureTerrain(world);
   if (spec) startObjective(world, spec.strength);

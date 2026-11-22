@@ -1,6 +1,6 @@
 import type Phaser from 'phaser';
 import { clearRun, saveRun } from '../save/runSave';
-import type { RunState } from '../sim/run';
+import { summarizeRun, type RunState, type RunSummary } from '../sim/run';
 
 /**
  * Scene-to-scene hand-off for a run: title → sector map → battle or depot → map … (SPEC §3).
@@ -26,8 +26,27 @@ export function endRun(ctx: RunContext): void {
   if (ctx.persist) clearRun();
 }
 
-/** Opens wherever the run picks up: the map (also for a won run), a battle, or a depot. */
+/** What the run summary scene shows (SPEC §5.1, §10). */
+export interface SummaryData {
+  summary: RunSummary;
+  /** Texture key of the still frame of the blast (a destroyed run), if one was taken. */
+  shot: string | null;
+}
+
+/**
+ * Opens wherever the run picks up: the map, a battle, or a depot; or, for a run over without a
+ * death (the Directive complete or failed), the run summary, which ends the run.
+ */
 export function enterNode(scene: Phaser.Scene, ctx: RunContext): void {
   const next = ctx.run.next;
+  if (next === 'won' || next === 'failed') {
+    endRun(ctx);
+    showSummary(scene, { summary: summarizeRun(ctx.run), shot: null });
+    return;
+  }
   scene.scene.start(next === 'battle' || next === 'depot' ? next : 'map', ctx);
+}
+
+export function showSummary(scene: Phaser.Scene, data: SummaryData): void {
+  scene.scene.start('summary', data);
 }

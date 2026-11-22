@@ -1,5 +1,20 @@
 import Phaser from 'phaser';
-import { addonsFromUrl, depotFromUrl, gradesFromUrl, mapFromUrl, modsFromUrl, PRACTICE, recipeFromUrl, seedFromUrl, shellsFromUrl, trailerFromUrl, weaponsFromUrl } from '../config';
+import {
+  addonsFromUrl,
+  depotFromUrl,
+  directiveFromUrl,
+  gradesFromUrl,
+  mapFromUrl,
+  modsFromUrl,
+  objectiveFromUrl,
+  PRACTICE,
+  recipeFromUrl,
+  seedFromUrl,
+  shellsFromUrl,
+  summaryFromUrl,
+  trailerFromUrl,
+  weaponsFromUrl,
+} from '../config';
 import { ADDONS, type AddonId } from '../content/addons';
 import { DEPOT } from '../content/tuning';
 import { TRAILER_MODULES, type ModuleId } from '../content/trailer';
@@ -9,9 +24,9 @@ import { applySavedMute } from '../audio/mute';
 import { generatePlaceholderArt } from '../render/placeholder';
 import { generatePixelFont } from '../render/pixelFont';
 import { openDepot } from '../sim/depot';
-import { enterMapNode, newRun, type RunState } from '../sim/run';
-import { reachable } from '../sim/sectorMap';
-import { enterNode, randomSeed, type RunContext } from './flow';
+import { enterMapNode, newRun, summarizeRun, type RunState } from '../sim/run';
+import { objectiveNode, reachable } from '../sim/sectorMap';
+import { enterNode, randomSeed, showSummary, type RunContext } from './flow';
 
 /**
  * Generates all placeholder textures in code, then opens the title screen (or, for a URL-parameter
@@ -34,7 +49,24 @@ export class BootScene extends Phaser.Scene {
       if (trailerFromUrl() && !addons.includes('trailer')) addons.push('trailer');
       const weapons = Object.fromEntries(Object.entries(weaponsFromUrl()).filter(([, id]) => id in WEAPONS)) as Record<string, WeaponId>;
       const guns: Record<string, WeaponId> = { sponsonL: 'autocannon', sponsonR: 'rotaryGun', dorsalRing: 'heavyCannon', coax: 'flakCannon', ...weapons };
-      let run: RunState = newRun(seedFromUrl() ?? randomSeed(), 'class2', addons, guns, bays, upgradesFromUrl());
+      const seed = seedFromUrl() ?? randomSeed();
+      let run: RunState = newRun(seed, 'class2', addons, guns, bays, upgradesFromUrl(), directiveFromUrl());
+      const summary = summaryFromUrl();
+      if (summary) {
+        showSummary(this, previewSummary(run, summary));
+        return;
+      }
+      const objective = objectiveFromUrl();
+      if (objective !== null) {
+        // Straight into sector N's objective battle (the Directive's battle).
+        const s = Math.min(objective, run.map.sectors.length) - 1;
+        const biome = recipeFromUrl().biome;
+        if (biome) run.map.sectors[s]!.biome = biome;
+        const at = { sector: s, node: objectiveNode(run.map, s)!.id };
+        run = { ...run, at, path: [at], next: 'battle', objectives: Array<boolean>(s).fill(true) };
+        enterNode(this, { run, persist: false });
+        return;
+      }
       const map = mapFromUrl();
       if (map !== null) {
         // The map, at the start of sector N (just past the objective before it).
@@ -63,6 +95,19 @@ export class BootScene extends Phaser.Scene {
       this.scene.start('title');
     }
   }
+}
+
+/** A made-up run summary for `?summary` (practice): a run that got to the last sector. */
+function previewSummary(run: RunState, outcome: 'won' | 'failed' | 'destroyed') {
+  const last = run.map.sectors.length - 1;
+  const at = { sector: outcome === 'destroyed' ? 1 : last, node: 0 };
+  const objectives = outcome === 'won' ? [true, false, true] : outcome === 'failed' ? [true, true, false] : [true];
+  const played: RunState = { ...run, at, battle: 9, kills: 212, earned: 1480, time: 1534, objectives, next: outcome === 'destroyed' ? 'map' : outcome };
+  const final =
+    outcome === 'destroyed'
+      ? { stats: { kills: 17, blastKills: 9, salvage: 64, blastBest: 'heavyTank' as const }, time: 141, stand: { time: 23, wave: 2 } }
+      : null;
+  return { summary: summarizeRun(played, final), shot: null };
 }
 
 /** Salvage a `?depot` practice run starts with. */

@@ -459,6 +459,16 @@ export const RUN = {
 };
 
 /**
+ * Directives (SPEC §3; per-Directive rules in content/directives.ts). Provisional (M3).
+ */
+export const DIRECTIVE = {
+  /** Extra actions at the next depot (the next sector's forward depot) for taking a sector's objective. */
+  sectorReward: 1,
+  /** Decapitation: the command post's pad behind the fortress wall (columns behind the bunker row, and its size in tiles). */
+  keep: { behind: 3, cols: 3, rows: 3 },
+};
+
+/**
  * The sector map (SPEC §3, §3.1; `sim/sectorMap.ts`). Each sector is a layered route up the screen:
  * an entry node (sector 1: a battle; later sectors: a forward depot), branching layers of battles and
  * depots, a depot layer, then the sector's objective battle. Provisional numbers (M3).

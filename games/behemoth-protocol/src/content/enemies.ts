@@ -25,7 +25,8 @@ export type EnemyId =
   | 'weaponTower'
   | 'hauler'
   | 'mineLayer'
-  | 'hovercraft';
+  | 'hovercraft'
+  | 'commandPost';
 
 /** Which side of a vehicle a hit lands on, relative to its hull heading (SPEC §7 "Facing armor"). */
 export type Facing = 'front' | 'flank' | 'rear';
@@ -283,6 +284,32 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     spawn: 'objective',
     threat: 3,
     salvage: 20,
+  },
+  commandPost: {
+    // Decapitation's target (SPEC §3): unarmed, but while it stands the fortress keeps calling in
+    // reinforcements; destroying it stops the alert clock (`sim/objective.ts`).
+    id: 'commandPost',
+    name: 'Command post',
+    hp: 220,
+    targetClass: 'heavy',
+    facing: BUNKER_FACING,
+    reverseSpeed: 0,
+    radius: 12,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 0,
+    weapon: null,
+    fireRange: 0,
+    aimTime: 0,
+    behavior: 'fixed',
+    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
+    siege: { minRange: 0, maxRange: 0 },
+    spawn: 'objective',
+    threat: 4,
+    salvage: 40,
   },
   hauler: {
     id: 'hauler',

@@ -58,7 +58,11 @@ export function destroyEnemy(w: World, e: Enemy, cause: KillCause): void {
   e.alive = false;
   w.stats.kills++;
   // Final-blast kills count toward progression like any other (SPEC §5.1).
-  if (cause === 'blast') w.stats.blastKills++;
+  if (cause === 'blast') {
+    w.stats.blastKills++;
+    const best = w.stats.blastBest;
+    if (!best || e.def.threat > ENEMIES[best].threat) w.stats.blastBest = e.def.id;
+  }
   w.stats.salvage += e.def.salvage;
   w.events.push({ type: 'enemyDestroyed', id: e.id, enemy: e.def.id, x: e.x, y: e.y, cause });
   if (e.objective) objectiveTaken(w, e);

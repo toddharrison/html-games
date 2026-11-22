@@ -1,12 +1,14 @@
-import type { BattleModeId } from '../content/modes';
+import { MODES, type BattleModeId } from '../content/modes';
 import type { AddonId } from '../content/addons';
 import { APPROACHES, type ApproachId } from '../content/approaches';
 import { BIOMES, type BiomeId } from '../content/biomes';
 import { ARMOR_ARCS, CHASSIS, type ArmorArc, type ChassisId } from '../content/chassis';
 import { CALLSIGNS } from '../content/callsigns';
+import { DIRECTIVES, DIRECTIVE_IDS, type DirectiveDef, type DirectiveId } from '../content/directives';
+import type { EnemyId } from '../content/enemies';
 import { battleForces, type Forces } from './encounter';
 import { moduleLoads, type ModuleId } from '../content/trailer';
-import { RUN } from '../content/tuning';
+import { DIRECTIVE, RUN } from '../content/tuning';
 import { NO_UPGRADES, type Grades, type Mods, type Upgrades } from '../content/upgrades';
 import { WEAPONS, type Binding, type ShellType, type WeaponId } from '../content/weapons';
 import {
@@ -25,8 +27,8 @@ import { openDepot, type DepotState } from './depot';
 import { depotKey, generateMap, isFinalNode, nodeAt, reachable, samePos, type BattleIntel, type MapNode, type MapPos, type SectorMap } from './sectorMap';
 import { Rng, hashSeed } from './rng';
 import type { TerrainRecipe } from './terrain';
-import type { World } from './world';
-import { objectiveBonus, type ObjectiveSpec } from './objective';
+import { START_X, type BattleStats, type World } from './world';
+import { objectiveBonus, objectiveComplete, type ObjectiveSpec, type ObjectiveState } from './objective';
 
 /**
  * Run state (SPEC §3): what carries from one node to the next. Damage, installed weapons, ammo,
@@ -101,19 +103,26 @@ export interface BattleReport {
   time: number;
   /** A Breach or Chase battle's targets destroyed out of all of them (SPEC §4.4); absent for an Assault. */
   objective?: { mode: BattleModeId; destroyed: number; total: number };
+  /** A sector's objective battle: whether it was taken, by the Directive's rule (SPEC §3). */
+  taken?: boolean;
 }
 
 /**
  * Where the run picks up: the sector map (choosing the next node), the battle or depot at `at`, or
- * the run won (the last sector's objective taken).
+ * the run over without a death: won (the Directive complete: the last sector's objective taken) or
+ * failed (extracted from the last objective battle without taking it).
  */
-export type RunNext = 'map' | 'battle' | 'depot' | 'won';
-export const RUN_NEXT: readonly RunNext[] = ['map', 'battle', 'depot', 'won'];
+export type RunNext = 'map' | 'battle' | 'depot' | 'won' | 'failed';
+export const RUN_NEXT: readonly RunNext[] = ['map', 'battle', 'depot', 'won', 'failed'];
 
 export interface RunState {
   seed: number;
   /** The Behemoth's callsign for this run (a name from `CALLSIGNS`), drawn from the seed. */
   callsign: string;
+  /** The run's orders (SPEC §3): what every sector's objective battle asks. */
+  directive: DirectiveId;
+  /** Each sector's objective so far, in order: taken or missed. */
+  objectives: boolean[];
   /** Battles won so far (= the index of the next battle). */
   battle: number;
   next: RunNext;
@@ -126,6 +135,9 @@ export interface RunState {
   cache: number;
   salvage: number;
   kills: number;
+  /** Salvage earned over the run (kills and bonuses), and seconds spent in battles won, for the summary. */
+  earned: number;
+  time: number;
   behemoth: BehemothSnapshot;
   /** The battle just won, for the depot screen. */
   lastBattle: BattleReport | null;
@@ -144,6 +156,7 @@ export function newRun(
   extra: Record<string, WeaponId> = {},
   bays: readonly (ModuleId | null)[] = [],
   upgrades: Upgrades = NO_UPGRADES,
+  directive: DirectiveId = directiveFor(seed),
 ): RunState {
   const chassis = CHASSIS[chassisId];
   const ids = { ...chassis.loadout, ...extra };
@@ -151,14 +164,18 @@ export function newRun(
   return {
     seed: seed >>> 0,
     callsign: callsignFor(seed),
+    directive,
+    objectives: [],
     battle: 0,
     next: 'map',
-    map: generateMap(seed >>> 0),
+    map: generateMap(seed >>> 0, directive),
     at: null,
     path: [],
     cache: 0,
     salvage: RUN.startSalvage,
     kills: 0,
+    earned: 0,
+    time: 0,
     behemoth: snapshotBehemoth(createBehemoth(chassis, loadout, 0, 0, addons, bays, upgrades)),
     lastBattle: null,
     depot: null,
@@ -168,6 +185,11 @@ export function newRun(
 /** The run's callsign: a devil's or demon's name (SPEC §3), drawn from the run seed on a stream of its own. */
 export function callsignFor(seed: number): string {
   return new Rng(hashSeed(seed >>> 0, 0xca11)).pick(CALLSIGNS).name;
+}
+
+/** A Directive drawn from the run seed (practice runs, and a run that doesn't name one). */
+export function directiveFor(seed: number): DirectiveId {
+  return new Rng(hashSeed(seed >>> 0, 0xd1ec)).pick(DIRECTIVE_IDS);
 }
 
 /** The Behemoth as it is now. A trailer that was jettisoned or wrecked is gone, with its pods. */
@@ -320,10 +342,89 @@ export function battleEnemy(run: RunState, recipe: TerrainRecipe = battleRecipe(
   return battleForces(b.threat, b.doctrine, recipe.biome, recipe.approach);
 }
 
-/** The battle's mode and strength (SPEC §4.4), which set its objective; `mode` overrides it (practice). */
+/**
+ * The battle's mode and strength (SPEC §4.4), which set its objective; `mode` overrides it (practice).
+ * A Decapitation objective's fortress holds a command post (SPEC §3).
+ */
 export function battleObjective(run: RunState, mode?: BattleModeId): ObjectiveSpec {
   const b = currentBattle(run);
-  return { mode: mode ?? b.mode, strength: b.strength };
+  const m = mode ?? b.mode;
+  const command = isObjectiveBattle(run) && m === 'breach' && DIRECTIVES[run.directive].goal.kind === 'command';
+  return { mode: m, strength: b.strength, ...(command ? { command } : {}) };
+}
+
+/** Whether the run's battle is a sector's objective (the Directive's battle, SPEC §3). */
+export function isObjectiveBattle(run: RunState): boolean {
+  return currentBattle(run).strength === 'objective';
+}
+
+/** The battle's length (to the extraction line): a Directive may stretch its objective battles. */
+export function battleLength(run: RunState): number {
+  return RUN.battleLength * (isObjectiveBattle(run) ? DIRECTIVES[run.directive].length : 1);
+}
+
+/** How fast the battle's alert clock runs: a Directive may hurry its objective battles. */
+export function battleAlertPace(run: RunState): number {
+  return isObjectiveBattle(run) ? DIRECTIVES[run.directive].alertPace : 1;
+}
+
+/**
+ * A Breakthrough objective's par time (seconds): the battle's length at the chassis' rated cruise,
+ * times the Directive's slack; null when the battle has none.
+ */
+export function battlePar(run: RunState, length: number = battleLength(run)): number | null {
+  return isObjectiveBattle(run) ? parFor(run.directive, run.behemoth.chassis, length) : null;
+}
+
+/** A Directive's par for an objective battle of `length` (default: its own objective length); null without one. */
+export function parFor(directive: DirectiveId, chassis: ChassisId, length: number = RUN.battleLength * DIRECTIVES[directive].length): number | null {
+  const goal = DIRECTIVES[directive].goal;
+  return goal.kind === 'par' ? Math.round((length / CHASSIS[chassis].speed.cruise) * goal.slack) : null;
+}
+
+/** Targets a share goal needs destroyed out of `total` (rounded up, at least one). */
+export function requiredTargets(share: number, total: number): number {
+  return Math.max(1, Math.ceil(share * total - 1e-9));
+}
+
+/**
+ * Whether a sector's objective battle was taken, by the Directive's rule (SPEC §3). Called when the
+ * Behemoth extracts. `time`: seconds to extraction; `par`: the battle's par (Breakthrough).
+ */
+export function objectiveTakenBy(def: DirectiveDef, o: ObjectiveState, time: number, par: number | null): boolean {
+  const goal = def.goal;
+  switch (goal.kind) {
+    case 'command':
+      // A fortress with no room for the post (none so far) falls back on every gun.
+      return o.command ? o.command.state === 'destroyed' : objectiveComplete(o);
+    case 'share':
+      return o.total > 0 && o.destroyed >= requiredTargets(goal.share, o.total);
+    case 'par':
+      return par === null || time <= par;
+  }
+}
+
+/** The Directive's ask for a sector's objective battle, for the map and the banners. */
+export function directiveAsk(directive: DirectiveId, chassis: ChassisId, par: number | null = parFor(directive, chassis)): string {
+  const def = DIRECTIVES[directive];
+  const goal = def.goal;
+  switch (goal.kind) {
+    case 'command':
+      return 'Destroy the command post';
+    case 'share': {
+      const mode = MODES[def.mode];
+      const total = mode.convoy?.haulers.objective ?? mode.fortress?.guns.objective ?? 0;
+      return `Stop ${requiredTargets(goal.share, total)} of ${total} ${MODES[def.mode].target?.[1] ?? 'targets'}`;
+    }
+    case 'par':
+      return par === null ? 'Break through' : `Extract within ${clock(par)}`;
+  }
+}
+
+/** Seconds as m:ss. */
+export function clock(seconds: number): string {
+  const s = Math.max(0, Math.floor(seconds));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 /** Folds a battle won (the Behemoth reached the extraction line) into the run. */
@@ -331,6 +432,10 @@ export function completeBattle(run: RunState, w: World): RunState {
   const behemoth = snapshotBehemoth(w.behemoth);
   const intel = currentBattle(run);
   const o = w.objective;
+  const time = w.extractedAt ?? w.time;
+  // A sector's objective battle: taken or missed, by the Directive's rule (SPEC §3).
+  const length = w.exitX - START_X;
+  const taken = isObjectiveBattle(run) ? objectiveTakenBy(DIRECTIVES[run.directive], o, time, battlePar(run, length)) : undefined;
   const report: BattleReport = {
     battle: run.battle + 1,
     kills: w.stats.kills,
@@ -338,15 +443,21 @@ export function completeBattle(run: RunState, w: World): RunState {
     // The node's reward for extracting, plus the objective's share for each target destroyed.
     bonus: intel.salvage + objectiveBonus(o),
     ...(o.total > 0 ? { objective: { mode: o.mode, destroyed: o.destroyed, total: o.total } } : {}),
-    time: w.extractedAt ?? w.time,
+    ...(taken !== undefined ? { taken } : {}),
+    time,
   };
+  const final = !!run.at && isFinalNode(run.map, run.at);
   return {
     ...run,
     battle: run.battle + 1,
-    next: run.at && isFinalNode(run.map, run.at) ? 'won' : 'map',
+    // The last sector's objective decides the Directive; missing an earlier one only costs its reward.
+    next: final ? (taken === false ? 'failed' : 'won') : 'map',
+    objectives: taken !== undefined ? [...run.objectives, taken] : run.objectives,
     salvage: run.salvage + report.salvage + report.bonus,
     kills: run.kills + report.kills,
-    cache: run.cache + (intel.cache ? 1 : 0),
+    earned: run.earned + report.salvage + report.bonus,
+    time: run.time + time,
+    cache: run.cache + (intel.cache ? 1 : 0) + (taken && !final ? DIRECTIVE.sectorReward : 0),
     behemoth,
     lastBattle: report,
     depot: null,
@@ -366,8 +477,71 @@ export function runWhere(run: RunState): string {
     case 'depot':
       return `at a depot, ${sector}`;
     case 'won':
-      return 'run complete';
+      return 'Directive complete';
+    case 'failed':
+      return 'Directive failed';
     default:
       return `on the map, ${sector}`;
   }
+}
+
+// ── The run summary (SPEC §5.1, §10) ─────────────────────────────────────────────────────────────
+
+/** How a run ended: the Directive complete, failed (the Behemoth survived), or the reactor gone. */
+export type RunOutcome = 'won' | 'failed' | 'destroyed';
+
+export interface RunSummary {
+  outcome: RunOutcome;
+  seed: number;
+  callsign: string;
+  directive: DirectiveId;
+  /** Sectors in the run, and how far it got (1-based). */
+  sectors: number;
+  reached: number;
+  /** Each sector's biome, and its objective's result so far (taken, missed). */
+  biomes: BiomeId[];
+  objectives: boolean[];
+  battles: number;
+  kills: number;
+  /** Salvage earned over the run; seconds in battle. */
+  earned: number;
+  time: number;
+  /** The final blast (a destroyed run): units it took out, the biggest of them, and any last stand. */
+  blast: { kills: number; best: EnemyId | null; stand: { time: number; waves: number } | null } | null;
+}
+
+/** What the reactor's last battle adds to a destroyed run's summary. */
+export interface FinalBattle {
+  stats: BattleStats;
+  time: number;
+  stand: { time: number; wave: number } | null;
+}
+
+/**
+ * The run summary. A run over without a death (`won`, `failed`) is summed up from its state alone;
+ * a destroyed run also counts the battle the reactor went up in (`final`).
+ */
+export function summarizeRun(run: RunState, final: FinalBattle | null = null): RunSummary {
+  const outcome: RunOutcome = final ? 'destroyed' : run.next === 'won' ? 'won' : 'failed';
+  return {
+    outcome,
+    seed: run.seed,
+    callsign: run.callsign,
+    directive: run.directive,
+    sectors: run.map.sectors.length,
+    reached: (run.at?.sector ?? 0) + 1,
+    biomes: run.map.sectors.map((s) => s.biome),
+    objectives: run.objectives,
+    battles: run.battle,
+    kills: run.kills + (final?.stats.kills ?? 0),
+    earned: run.earned + (final?.stats.salvage ?? 0),
+    time: run.time + (final?.time ?? 0),
+    blast: final
+      ? {
+          kills: final.stats.blastKills,
+          best: final.stats.blastBest,
+          stand: final.stand ? { time: final.stand.time, waves: final.stand.wave } : null,
+        }
+      : null,
+  };
 }

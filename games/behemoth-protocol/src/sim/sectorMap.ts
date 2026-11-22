@@ -1,5 +1,6 @@
 import { APPROACH_IDS, type ApproachId } from '../content/approaches';
 import { BIOMES, BIOME_IDS, type BiomeId } from '../content/biomes';
+import { DIRECTIVES, type DirectiveId } from '../content/directives';
 import { DOCTRINES, DOCTRINE_IDS, type DoctrineId } from '../content/doctrines';
 import { MODES, MODE_IDS, type BattleModeId } from '../content/modes';
 import { ENCOUNTER, RUN, SECTOR_MAP } from '../content/tuning';
@@ -11,7 +12,8 @@ import { Rng, hashSeed } from './rng';
  * forward depot), branches through battles and depots, passes a depot, and ends at the sector's
  * objective battle. Battle nodes carry intel (approach, defenders, strength, reward), some of it
  * fogged until the node is close. Generated once from the run seed and kept in the run save, so a
- * content change never reshapes a map mid-run. Plain data.
+ * content change never reshapes a map mid-run. Plain data. The run's Directive (SPEC §3) sets the
+ * mode of every sector's objective battle.
  */
 
 export type NodeKind = 'battle' | 'depot';
@@ -69,7 +71,8 @@ export interface MapPos {
   node: number;
 }
 
-export function generateMap(seed: number): SectorMap {
+/** @param directive sets every objective battle's mode; null draws it like any other battle's. */
+export function generateMap(seed: number, directive: DirectiveId | null = null): SectorMap {
   const biomes = sectorBiomes(seed);
   let offset = 0;
   const sectors = biomes.map((biome, s) => {
@@ -77,7 +80,23 @@ export function generateMap(seed: number): SectorMap {
     offset += sector.layers;
     return sector;
   });
-  return { sectors };
+  const map = { sectors };
+  if (directive) setObjectiveModes(map, directive);
+  return map;
+}
+
+/** Every sector's objective battle in the Directive's mode (everything else about the map stays). */
+export function setObjectiveModes(map: SectorMap, directive: DirectiveId): void {
+  for (const sector of map.sectors) {
+    const intel = sector.nodes.find((n) => n.layer === sector.layers - 1)?.battle;
+    if (intel) intel.mode = DIRECTIVES[directive].mode;
+  }
+}
+
+/** The sector's objective battle node. */
+export function objectiveNode(map: SectorMap, sector: number): MapNode | undefined {
+  const s = map.sectors[sector];
+  return s?.nodes.find((n) => n.layer === s.layers - 1);
 }
 
 /** A biome per sector, no repeats; each biome only from its `earliestSector`. */

@@ -22,7 +22,9 @@ import {
 } from '../sim/behemoth';
 import { poolUnder } from '../sim/pools';
 import { feedingInto } from '../sim/trailer';
+import { clock } from '../sim/run';
 import type { World } from '../sim/world';
+import type { DirectiveGoal } from '../content/directives';
 import { FONT_KEY, fontText } from './pixelFont';
 import { hex, PAL } from './palette';
 import { damageLevel } from './statusFx';
@@ -161,6 +163,9 @@ export class Hud {
   /** The battle mode's objective (SPEC §4.4): targets destroyed out of all, and lost, above the alert clock. */
   private readonly objectiveLabel: Phaser.GameObjects.BitmapText;
   private readonly objectiveText: Phaser.GameObjects.BitmapText;
+  /** A sector's objective battle (SPEC §3): the Directive's ask, above the mode's objective. */
+  private readonly directiveLabel: Phaser.GameObjects.BitmapText;
+  private readonly directiveText: Phaser.GameObjects.BitmapText;
   private readonly center: Phaser.GameObjects.BitmapText;
   private readonly centerBg: Phaser.GameObjects.Rectangle;
   private readonly debug: Phaser.GameObjects.BitmapText;
@@ -179,9 +184,9 @@ export class Hud {
   private readonly flashes = new Map<string, number>();
 
   /** The run so far: this battle's number, salvage banked before it, and where it's fought (biome, approach). */
-  private readonly run: { battle: number; salvage: number; where: string; callsign: string };
+  private readonly run: HudRun;
 
-  constructor(scene: Phaser.Scene, layout: BattleLayout, b: BehemothState, run: { battle: number; salvage: number; where: string; callsign: string }) {
+  constructor(scene: Phaser.Scene, layout: BattleLayout, b: BehemothState, run: HudRun) {
     this.run = run;
     const { width, height, fieldX, fieldW } = layout;
     const fixed = <T extends Fixed>(o: T) => o.setScrollFactor(0).setDepth(100);
@@ -250,6 +255,8 @@ export class Hud {
     this.alertText = text(this.lx + this.lw, this.alertY, '').setOrigin(1, 0);
     this.objectiveLabel = text(this.lx, this.alertY - 14, '', PAL.hudDim).setVisible(false);
     this.objectiveText = text(this.lx + this.lw, this.alertY - 14, '').setOrigin(1, 0).setVisible(false);
+    this.directiveLabel = text(this.lx, this.alertY - 23, '', PAL.hudDim).setVisible(false);
+    this.directiveText = text(this.lx + this.lw, this.alertY - 23, '').setOrigin(1, 0).setVisible(false);
 
     // The schematic is headed with the Behemoth's callsign.
     text(this.rx, 6, run.callsign, PAL.glow);
@@ -341,15 +348,64 @@ export class Hud {
         .setTint(hex(open === 0 ? (o.destroyed === o.total ? PAL.glow : PAL.hudDim) : PAL.amber));
     }
 
+    this.updateDirective(w);
+
     // The alert clock (SPEC §10): the next reinforcement wave, a bar filling toward it.
     const alert = w.encounter.alert;
     const clock = !ls && !b.destroyed && w.extractedAt === null && !w.encounter.off;
     this.alertLabel.setVisible(clock);
     this.alertText.setVisible(clock);
-    if (clock) {
+    if (clock && alert.cut) {
+      // A command post destroyed: no more waves this battle.
+      this.alertText.setText(fontText('Cut off')).setTint(hex(PAL.glow));
+    } else if (clock) {
       this.alertText.setText(fontText(`Wave ${alert.wave + 1} ${Math.ceil(alert.next)}s`)).setTint(hex(alert.next < 5 ? PAL.warn : PAL.hudText));
       bar(this.alertY + 8, 1 - alert.next / alert.span, hex(alert.next < 5 ? PAL.warn : PAL.amber));
     }
+  }
+
+  /** The Directive's ask in a sector's objective battle (SPEC §3): the command post, haulers stopped, or par. */
+  private updateDirective(w: World): void {
+    const d = this.run.directive;
+    const show = !!d && !w.behemoth.destroyed;
+    this.directiveLabel.setVisible(show);
+    this.directiveText.setVisible(show);
+    if (!d || !show) return;
+    const o = w.objective;
+    // Above the mode's target count, or in its place when there's none (Breakthrough).
+    const y = this.objectiveLabel.visible ? this.alertY - 23 : this.alertY - 14;
+    this.directiveLabel.setY(y);
+    this.directiveText.setY(y);
+    let label: string;
+    let value: string;
+    let color: string;
+    switch (d.goal.kind) {
+      case 'command': {
+        const state = o.command?.state ?? 'waiting';
+        label = 'Command post';
+        value = { waiting: 'ahead', standing: 'standing', destroyed: 'destroyed', lost: 'bypassed' }[state];
+        color = state === 'destroyed' ? PAL.glow : state === 'lost' ? PAL.bad : PAL.amber;
+        break;
+      }
+      case 'share': {
+        const need = d.need ?? o.total;
+        label = 'Stopped';
+        value = `${o.destroyed}/${need} needed`;
+        color = o.destroyed >= need ? PAL.glow : PAL.amber;
+        break;
+      }
+      case 'par': {
+        const par = d.par ?? 0;
+        const left = par - (w.extractedAt ?? w.time);
+        label = 'Par';
+        value = left >= 0 ? `${clock(left)} left` : 'over par';
+        color = left < 0 ? PAL.bad : left < 30 ? PAL.warn : PAL.amber;
+        if (w.extractedAt !== null && left >= 0) color = PAL.glow;
+        break;
+      }
+    }
+    this.directiveLabel.setText(fontText(label));
+    this.directiveText.setText(fontText(value)).setTint(hex(color));
   }
 
   private drawWeaponRow(b: BehemothState, row: WeaponRow, bar: (y: number, frac: number, color: number) => void): void {
@@ -497,4 +553,14 @@ export class Hud {
     this.debug.setVisible(lines !== null);
     if (lines) this.debug.setText(fontText(lines.join('\n')));
   }
+}
+
+/** What the HUD knows about the run: this battle's number, salvage banked, where it's fought, the callsign, and a sector objective's Directive ask. */
+export interface HudRun {
+  battle: number;
+  salvage: number;
+  where: string;
+  callsign: string;
+  /** Set only in a sector's objective battle (SPEC §3): the goal, its par (seconds), and targets it needs. */
+  directive?: { goal: DirectiveGoal; par: number | null; need: number | null };
 }

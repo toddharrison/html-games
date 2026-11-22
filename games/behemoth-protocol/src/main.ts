@@ -3,6 +3,7 @@ import { RESOLUTION, renderScale } from './config';
 import { BootScene } from './scenes/BootScene';
 import { DepotScene } from './scenes/DepotScene';
 import { MapScene } from './scenes/MapScene';
+import { SummaryScene } from './scenes/SummaryScene';
 import { TitleScene } from './scenes/TitleScene';
 import { DemoBattleScene, TopDownBattleScene } from './scenes/TopDownBattleScene';
 
@@ -19,7 +20,7 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.NONE,
     zoom: rs.cssZoom,
   },
-  scene: [BootScene, TitleScene, MapScene, TopDownBattleScene, DepotScene, DemoBattleScene],
+  scene: [BootScene, TitleScene, MapScene, TopDownBattleScene, DepotScene, SummaryScene, DemoBattleScene],
 });
 
 // Scenes listen for the scale manager's resize event and re-apply the camera zoom.

@@ -2,7 +2,7 @@ import { APPROACHES, type ApproachDef, type ApproachId } from '../content/approa
 import { BIOMES, type BiomeDef, type BiomeId, type MixKey } from '../content/biomes';
 import { hoverable, MATERIALS, type MaterialId, type TileState, type UnitMobility } from '../content/terrain';
 import type { ObstacleClass } from '../content/obstacles';
-import { BEARING, TERRAIN_GEN } from '../content/tuning';
+import { BEARING, DIRECTIVE, TERRAIN_GEN } from '../content/tuning';
 import type { SimEvent } from './events';
 import type { Rect } from './math';
 import { hashSeed, Rng } from './rng';
@@ -41,6 +41,8 @@ export interface FortressSpec {
   guns: number;
   gates: number;
   gateWidth: readonly [number, number];
+  /** Decapitation (SPEC §3): a paved pad behind the bunkers for the command post. */
+  keep?: boolean;
 }
 
 /** A fortress as generated: its wall column, gates, and the rows of each armed position. */
@@ -49,6 +51,8 @@ export interface FortressPlan {
   gates: [number, number][];
   /** [first, end) rows of each gap in the wall that holds a gun. */
   embrasures: [number, number][];
+  /** The command post's pad: its first column and [first, end) rows; null without one. */
+  keep: { col: number; rows: [number, number] } | null;
 }
 
 export const DEFAULT_RECIPE: TerrainRecipe = { biome: 'temperate', approach: null };
@@ -180,6 +184,8 @@ interface Defense {
   bunkers: number[];
   /** A Breach fortress: gaps in the wall, [first, end) rows, each holding a gun. */
   embrasures?: [number, number][];
+  /** A Breach fortress's command post pad (Decapitation): first column and [first, end) rows. */
+  keep?: { col: number; rows: [number, number] };
 }
 type Feature = ForestBlob | Town | Rock | Patch | Oval | Block | Hedge | Defense;
 
@@ -340,7 +346,18 @@ function chunkFeatures(seed: number, ci: number, rows: number, rc: Resolved): Fe
     return { kind: 'blast', id, col: anyCol(r), row: r.range(0, rows), rx: rad, ry: rad * r.range(0.85, 1.2) };
   });
   const fortress = rc.fortress;
-  if (fortress && Math.floor(fortress.col / CHUNK) === ci) out.push(fortressFeature(new Rng(hashSeed(seed, ci, SALT.fortress)), 900, fortress, rows));
+  if (fortress && Math.floor(fortress.col / CHUNK) === ci) {
+    const fort = fortressFeature(new Rng(hashSeed(seed, ci, SALT.fortress)), 900, fortress, rows);
+    if (fortress.keep) {
+      // The command post's pad sits in the guaranteed lane (no rock there), behind the bunkers.
+      const k = DIRECTIVE.keep;
+      const col = fortress.col + TERRAIN_GEN.fortLine.bunkerBehind + k.behind;
+      const mid = laneCenter(seed, col + k.cols / 2, rows, rc.approach?.laneAmplitude);
+      const first = Math.max(0, Math.min(rows - k.rows, Math.round(mid - k.rows / 2)));
+      fort.keep = { col, rows: [first, first + k.rows] };
+    }
+    out.push(fort);
+  }
   // Defenses never stand where a river crosses nearby (it would cut them apart).
   const riverNear = () => [ci - 1, ci, ci + 1].some((c) => riverOf(seed, c, rows, rc) !== null);
   if (defended) {
@@ -365,6 +382,12 @@ function chunkFeatures(seed: number, ci: number, rows: number, rc: Resolved): Fe
     each('mines', mixOf(rc, 'minefields'), (r, id) => ({ kind: 'mines', id, col: anyCol(r), row: r.range(0, rows), r: r.range(g.minefield.radius[0], g.minefield.radius[1]) }));
   }
   return out;
+}
+
+/** Whether a cell is on a fortress's command post pad (Decapitation, SPEC §3). */
+function inKeep(f: Defense, col: number, row: number): boolean {
+  const k = f.keep;
+  return !!k && col >= k.col && col < k.col + DIRECTIVE.keep.cols && row >= k.rows[0] && row < k.rows[1];
 }
 
 /**
@@ -574,6 +597,8 @@ function featurePaint(seed: number, ci: number, f: Feature, col: number, row: nu
       if (col === f.col && f.embrasures && inRanges(f.embrasures, row)) return 'ground';
       if (col === f.col) return inRanges(f.gates, row) ? (cur === 'forest' || SOFT.has(cur) ? null : 'ground') : 'wall';
       if (col === f.col + g.bunkerBehind) return f.bunkers.includes(row) ? 'bunker' : null;
+      // The command post's pad: paved, clearing whatever stood there.
+      if (inKeep(f, col, row)) return 'road';
       if (col === f.col - g.trapsAhead || col === f.col - g.trapsAhead - 1) return (col + row) % 2 === 0 && !inRanges(f.trapGates, row) ? 'tankTrap' : null;
       return null;
     }
@@ -707,7 +732,7 @@ function colSpan(f: Feature): [number, number] {
     case 'hedge':
       return f.across ? [f.col, f.col] : [f.col, f.col + f.len];
     case 'fort':
-      return [f.col - g.fortLine.trapsAhead - 1, f.col + g.fortLine.bunkerBehind];
+      return [f.col - g.fortLine.trapsAhead - 1, f.keep ? f.keep.col + DIRECTIVE.keep.cols - 1 : f.col + g.fortLine.bunkerBehind];
     case 'traps':
       return [f.col, f.col + 1];
   }
@@ -739,7 +764,7 @@ const CHUNK_CACHE_SIZE = 96;
 
 function neighborOf(seed: number, ci: number, rows: number, rc: Resolved): Neighbor {
   const fort = rc.fortress;
-  const key = `${seed}|${rows}|${rc.biome.id}|${rc.approach?.id ?? ''}|${fort ? `${fort.col}/${fort.guns}/${fort.gates}` : ''}|${ci}`;
+  const key = `${seed}|${rows}|${rc.biome.id}|${rc.approach?.id ?? ''}|${fort ? `${fort.col}/${fort.guns}/${fort.gates}/${fort.keep ? 'k' : ''}` : ''}|${ci}`;
   let n = chunkCache.get(key);
   if (!n) {
     n = { ci, features: chunkFeatures(seed, ci, rows, rc), river: riverOf(seed, ci, rows, rc) };
@@ -853,7 +878,8 @@ function paintColumn(seed: number, col: number, rows: number, neighbors: Neighbo
           if (paint) mat = paint;
         }
       }
-      if (rails.includes(row)) mat = 'rail';
+      // Rails run under everything but a command post's pad (Decapitation).
+      if (rails.includes(row) && !(reach.get('fort') ?? []).some(({ f }) => f.kind === 'fort' && inKeep(f, col, row))) mat = 'rail';
       // A main avenue runs through town along the lane (urban districts).
       const avenue = rc.approach?.avenue;
       if (avenue && mat === 'building' && Math.abs(row + 0.5 - laneCenter(seed, col + 0.5, rows, rc.approach?.laneAmplitude)) < avenue / 2) mat = 'road';
@@ -1078,7 +1104,7 @@ export class Terrain {
     const spec = this.rc.fortress;
     if (!spec) return null;
     const f = neighborOf(this.seed, Math.floor(spec.col / CHUNK), this.rows, this.rc).features.find((x) => x.kind === 'fort' && x.embrasures);
-    return f && f.kind === 'fort' ? { col: f.col, gates: f.gates, embrasures: f.embrasures ?? [] } : null;
+    return f && f.kind === 'fort' ? { col: f.col, gates: f.gates, embrasures: f.embrasures ?? [], keep: f.keep ?? null } : null;
   }
 
   /** World y of the guaranteed lane's center at world x (SPEC §4.2): rock-free, the way forward. */

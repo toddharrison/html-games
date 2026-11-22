@@ -24,6 +24,7 @@ import { MODES, type BattleModeId } from './content/modes';
 import { ADDONS } from './content/addons';
 import { APPROACHES, type ApproachId } from './content/approaches';
 import { BIOMES, type BiomeId } from './content/biomes';
+import { DIRECTIVES, type DirectiveId } from './content/directives';
 
 export interface Resolution {
   width: number;
@@ -41,7 +42,7 @@ const RESOLUTIONS: Record<string, Resolution> = {
 export const RESOLUTION: Resolution = RESOLUTIONS[params.get('res') ?? ''] ?? RESOLUTIONS['576']!;
 
 /** Playtest run from a URL parameter: straight into battle, nothing saved or deleted. */
-export const PRACTICE = ['seed', 'immobilize', 'addons', 'trailer', 'weapons', 'shells', 'cookoff', 'grades', 'mods', 'depot', 'biome', 'approach', 'map', 'mode'].some((k) => params.has(k));
+export const PRACTICE = ['seed', 'immobilize', 'addons', 'trailer', 'weapons', 'shells', 'cookoff', 'grades', 'mods', 'depot', 'biome', 'approach', 'map', 'mode', 'directive', 'objective', 'summary'].some((k) => params.has(k));
 
 /**
  * Playtest shortcut: the biome and approach every battle is fought over (`?biome=arctic`,
@@ -55,6 +56,26 @@ export function recipeFromUrl(): { biome?: BiomeId; approach?: ApproachId | null
   if (approach === 'none') out.approach = null;
   else if (approach && approach in APPROACHES) out.approach = approach as ApproachId;
   return out;
+}
+
+/** Playtest shortcut: the run's Directive (`?directive=decapitation`, `interdiction`, `breakthrough`); unknown ids are ignored. */
+export function directiveFromUrl(): DirectiveId | undefined {
+  const d = params.get('directive');
+  return d && d in DIRECTIVES ? (d as DirectiveId) : undefined;
+}
+
+/** Playtest shortcut: straight into sector N's objective battle (`?objective` = sector 1, `?objective=3` the last). */
+export function objectiveFromUrl(): number | null {
+  if (!params.has('objective')) return null;
+  const n = Math.floor(Number(params.get('objective') || 1));
+  return Number.isFinite(n) && n >= 1 ? n : 1;
+}
+
+/** Playtest shortcut: preview the run summary (`?summary=won`, `failed`, or `destroyed`). */
+export function summaryFromUrl(): 'won' | 'failed' | 'destroyed' | null {
+  const s = params.get('summary');
+  if (s === null) return null;
+  return s === 'failed' || s === 'destroyed' ? s : 'won';
 }
 
 /** Playtest shortcut: every battle in this mode (`?mode=breach`, `chase`, `assault`). */

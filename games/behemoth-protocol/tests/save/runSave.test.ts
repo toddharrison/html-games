@@ -35,7 +35,7 @@ describe('run save', () => {
     old.behemoth.treads = 40;
     const loaded = parseRun(JSON.stringify({ version: 8, run: old }))!;
     expect(loaded).toMatchObject({ next: 'map', at: null, path: [], cache: 0, battle: 3, salvage: 90, depot: null });
-    expect(loaded.map).toEqual(generateMap(21));
+    expect(loaded.map).toEqual(generateMap(21, loaded.directive));
     expect(loaded.behemoth.treads).toBe(40);
     const atDepot = parseRun(JSON.stringify({ version: 8, run: { ...old, next: 'depot', depot: { actions: 2, stock: [], addons: [], modules: [], grades: [] } } }))!;
     expect(atDepot.next).toBe('depot');

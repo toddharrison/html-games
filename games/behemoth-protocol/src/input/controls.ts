@@ -8,7 +8,7 @@ import type { PlayerCommand } from '../sim/behemoth';
  * rebinding comes in M5.
  */
 export class Controls {
-  private readonly keys: Record<'surge' | 'brake' | 'left' | 'right' | 'surge2' | 'brake2' | 'left2' | 'right2' | 'pause' | 'pause2' | 'restart' | 'debug' | 'selfDestruct' | 'missile' | 'jettison' | 'mute', Phaser.Input.Keyboard.Key>;
+  private readonly keys: Record<'surge' | 'brake' | 'left' | 'right' | 'surge2' | 'brake2' | 'left2' | 'right2' | 'pause' | 'pause2' | 'restart' | 'summary' | 'debug' | 'selfDestruct' | 'missile' | 'jettison' | 'mute', Phaser.Input.Keyboard.Key>;
 
   /** Auto-weapon group toggles, keys 1–4. */
   private readonly autoKeys: Phaser.Input.Keyboard.Key[];
@@ -36,6 +36,7 @@ export class Controls {
       pause: kb.addKey(K.ESC),
       pause2: kb.addKey(K.P),
       restart: kb.addKey(K.R),
+      summary: kb.addKey(K.ENTER),
       debug: kb.addKey(K.BACKTICK),
       selfDestruct: kb.addKey(K.X),
       missile: kb.addKey(K.SPACE),
@@ -84,6 +85,11 @@ export class Controls {
 
   restartPressed(): boolean {
     return Phaser.Input.Keyboard.JustDown(this.keys.restart);
+  }
+
+  /** Enter: on from a destroyed Behemoth to the run summary. */
+  summaryPressed(): boolean {
+    return Phaser.Input.Keyboard.JustDown(this.keys.summary);
   }
 
   debugPressed(): boolean {

@@ -1,5 +1,5 @@
 import { ENEMIES, type EnemyId, type EnemyTurretDef, type Facing, type GunTarget } from '../content/enemies';
-import { CONCEALMENT, ENEMY } from '../content/tuning';
+import { CONCEALMENT, ENEMY, TRAPDOOR } from '../content/tuning';
 import { WEAPONS, type WeaponDef } from '../content/weapons';
 import { BEHAVIORS } from './ai';
 import { besiege, joinSiege } from './ai/besiege';
@@ -8,8 +8,8 @@ import { enemyCanSee, hoverScale } from './conditions';
 import { allocId, type Enemy, type EnemyGun } from './entities';
 import type { KillCause } from './events';
 import { frameRight } from './frame';
-import { footprint, hitched } from './behemoth';
-import { angleDiff, circleIntersectsRect, clamp, rotateToward, type Rect } from './math';
+import { footprint, hitched, hullBox, revealRadius } from './behemoth';
+import { angleDiff, circleIntersectsRect, clamp, distanceToBox, rotateToward, type Rect } from './math';
 import { objectiveTaken } from './objective';
 import { roundSpec } from './projectiles';
 import { spawnProjectile } from './weapons';
@@ -29,7 +29,8 @@ export function spawnEnemy(w: World, id: EnemyId, x: number, y: number): Enemy {
     y,
     vx: Math.min(b.vx, def.maxSpeed),
     vy: 0,
-    heading: x < b.x ? 0 : Math.PI,
+    // A gun laid for crossfire faces across the field toward the Behemoth's line (SPEC §7.4).
+    heading: def.crossfire ? (y < b.y ? Math.PI / 2 : -Math.PI / 2) : x < b.x ? 0 : Math.PI,
     reversing: false,
     turret: Math.atan2(b.y - y, b.x - x),
     hp: def.hp,
@@ -75,6 +76,9 @@ export function destroyEnemy(w: World, e: Enemy, cause: KillCause): void {
     if (!best || e.def.threat > ENEMIES[best].threat) w.stats.blastBest = e.def.id;
   }
   w.events.push({ type: 'enemyDestroyed', id: e.id, enemy: e.def.id, x: e.x, y: e.y, cause });
+  // A bomb goes up however its carrier dies (SPEC §7.4 bomb truck); `stepHazards` sets it off.
+  const bomb = e.def.bomb;
+  if (bomb) w.blasts.push({ x: e.x, y: e.y, radius: bomb.radius, damage: bomb.damage, fuse: 0, bomb: true });
   paySalvage(w, e.x, e.y, e.def.salvage, 'unit');
   if (e.objective) objectiveTaken(w, e);
 }
@@ -85,14 +89,112 @@ export function stepEnemies(w: World, dt: number): void {
   for (const e of w.enemies) {
     if (!e.alive) continue;
     moveEnemy(w, e, dt);
-    aimAndFire(w, e, dt);
-    if (e.ai.ramIn) e.ai.ramIn = Math.max(0, e.ai.ramIn - dt);
-    // A mini-boss is called out the first time it comes into view.
-    if (e.def.callout && !e.ai.sighted && !e.hidden && e.x <= frameRight(w.frame) && e.x >= w.frame.left) {
-      e.ai.sighted = true;
-      w.events.push({ type: 'sighted', enemy: e.def.id, x: e.x, y: e.y });
+    // A bomb truck that reaches the hull goes up against it (a moving hull runs it down first, in
+    // collision.ts; this catches one driving into a stopped or slower hull, which it stops against
+    // at its own radius, so a little slack).
+    if (e.def.bomb && distanceToBox(hullBox(w.behemoth), e.x, e.y) <= e.def.radius + 1) {
+      destroyEnemy(w, e, 'crushed');
+      continue;
     }
+    // A trapdoor team only shoots with its lid up.
+    if (!e.def.trapdoor || stepLid(w, e, dt)) aimAndFire(w, e, dt);
+    if (e.ai.ramIn) e.ai.ramIn = Math.max(0, e.ai.ramIn - dt);
+    if (!e.ai.sighted && !e.hidden && e.x <= frameRight(w.frame) && e.x >= w.frame.left) sight(w, e);
   }
+}
+
+/**
+ * A trapdoor team's lid (SPEC §7.4): shut until the hull comes level within range and in sight,
+ * then it lifts (the telegraph), stays up while the team lines up and fires, lingers a moment, and
+ * shuts for a few seconds. The sensors sweeping the hole, or the lid lifting, mark it for good.
+ * Returns whether the team may aim and fire this step.
+ */
+function stepLid(w: World, e: Enemy, dt: number): boolean {
+  const td = e.def.trapdoor!;
+  const b = w.behemoth;
+  const ai = e.ai;
+  const d = Math.hypot(b.x - e.x, b.y - e.y);
+  if (!ai.marked && d - e.def.radius <= revealRadius(b) * CONCEALMENT.mineSweep) ai.marked = true;
+  ai.lidT = (ai.lidT ?? 0) - dt;
+  switch (ai.lid ?? 'shut') {
+    case 'shut': {
+      if (ai.lidT > 0 || w.extractedAt !== null) return false;
+      const margin = e.def.radius + 4;
+      const onScreen = e.x >= w.frame.left + margin && e.x <= frameRight(w.frame) - margin;
+      const level = b.x >= e.x - TRAPDOOR.lead;
+      if (!onScreen || !level || d > e.def.fireRange || !enemyCanSee(w, e) || w.terrain.lineBlocked(e.x, e.y, b.x, b.y)) return false;
+      ai.lid = 'lifting';
+      ai.lidT = td.lift;
+      ai.marked = true;
+      e.turret = Math.atan2(b.y - e.y, b.x - e.x);
+      w.events.push({ type: 'lidOpen', id: e.id, x: e.x, y: e.y });
+      return false;
+    }
+    case 'lifting':
+      if (ai.lidT > 0) return false;
+      ai.lid = 'open';
+      ai.lidT = td.maxOpen;
+      e.cooldown = 0;
+      return true;
+    case 'open':
+      if (incoming(w, e)) return duck(w, e);
+      // Fired (the shot set the reload going) or waited long enough: hold a moment, then down.
+      if ((e.cooldown > 0 && e.windup <= 0 && e.salvoLeft <= 0) || ai.lidT <= 0) {
+        ai.lid = 'lingering';
+        ai.lidT = td.linger;
+      }
+      return true;
+    case 'lingering':
+      if (incoming(w, e)) return duck(w, e);
+      if (ai.lidT > 0) return true;
+      ai.lid = 'shut';
+      ai.lidT = w.rng.range(td.shut[0], td.shut[1]);
+      e.windup = 0;
+      e.salvoLeft = 0;
+      return false;
+  }
+}
+
+/**
+ * Fire coming for a trapdoor team that it can see in time (`TRAPDOOR.duck`): a player round whose
+ * course passes within reach of the hole, arriving no sooner than the team can react.
+ */
+function incoming(w: World, e: Enemy): boolean {
+  const { react, look, margin } = TRAPDOOR.duck;
+  const reach = e.def.radius + margin;
+  for (const p of w.projectiles) {
+    if (!p.alive || p.owner !== 'player') continue;
+    const speed2 = p.vx * p.vx + p.vy * p.vy;
+    if (speed2 <= 0) continue;
+    // Closest approach along the round's course, and when.
+    const t = ((e.x - p.x) * p.vx + (e.y - p.y) * p.vy) / speed2;
+    if (t < react || t > look) continue;
+    if (Math.hypot(p.x + p.vx * t - e.x, p.y + p.vy * t - e.y) <= reach) return true;
+  }
+  return false;
+}
+
+/** Down with the lid: sealed again at once, the shot it was lining up dropped, and a full wait before the next lift. */
+function duck(w: World, e: Enemy): false {
+  const td = e.def.trapdoor!;
+  e.ai.lid = 'shut';
+  e.ai.lidT = w.rng.range(td.shut[0], td.shut[1]);
+  e.windup = 0;
+  e.salvoLeft = 0;
+  w.events.push({ type: 'lidDuck', id: e.id, x: e.x, y: e.y });
+  return false;
+}
+
+/**
+ * A unit comes into view for the first time: its kind joins the run's sighted list, and a callout
+ * is made for each mini-boss, or for the first of a biome unit's kind in the run (SPEC §7.4).
+ */
+function sight(w: World, e: Enemy): void {
+  e.ai.sighted = true;
+  const first = !w.sighted.includes(e.def.id);
+  if (first) w.sighted.push(e.def.id);
+  const call = e.def.callout;
+  if (call && (call.per === 'unit' || first)) w.events.push({ type: 'sighted', enemy: e.def.id, x: e.x, y: e.y });
 }
 
 function moveEnemy(w: World, e: Enemy, dt: number): void {
@@ -100,8 +202,9 @@ function moveEnemy(w: World, e: Enemy, dt: number): void {
   if (e.def.maxSpeed <= 0) return;
   const t = w.terrain;
   // In the last stand everyone drops their usual behavior and closes in, except a convoy, which
-  // keeps running for the far end.
-  const want = (w.lastStand && e.def.behavior !== 'convoy' ? besiege : BEHAVIORS[e.def.behavior])(e, w, dt);
+  // keeps running for the far end, and a bomb truck, which was closing in already.
+  const own = e.def.behavior === 'convoy' || e.def.behavior === 'charge';
+  const want = (w.lastStand && !own ? besiege : BEHAVIORS[e.def.behavior])(e, w, dt);
 
   const mob = e.def.mobility;
   // Terrain slows small units (forest, rubble). Never fully zero, so a unit pushed into a
@@ -200,7 +303,7 @@ const CENTER = { x: 0, y: 0 };
 /** Every gun on the unit: the main one (on its center), then any extra turrets. */
 function aimAndFire(w: World, e: Enemy, dt: number): void {
   const d = e.def;
-  aimGun(w, e, e, { turretDegPerSec: d.turretDegPerSec, fireRange: d.fireRange, aimTime: d.aimTime, pivot: CENTER, target: 'behemoth' }, dt);
+  aimGun(w, e, e, { turretDegPerSec: d.turretDegPerSec, fireRange: d.fireRange, aimTime: d.aimTime, pivot: CENTER, target: d.target ?? 'behemoth' }, dt);
   for (const g of e.guns) aimGun(w, e, g, g.def, dt);
 }
 
@@ -240,7 +343,11 @@ function aimGun(w: World, e: Enemy, g: EnemyGun, m: GunMount, dt: number): void 
   // battery lays its guns on the zone it will mark).
   const lead = weapon.barrage ? barrageLead(weapon) : spec.kind === 'missile' ? 0 : d / spec.speed;
   const want = Math.atan2(tgt.y + tgt.vy * lead - at.y, tgt.x + tgt.vx * lead - at.x);
-  g.turret = rotateToward(g.turret, want, ((m.turretDegPerSec * Math.PI) / 180) * dt);
+  // A gun laid for crossfire turns only so far either side of its hull (SPEC §7.4 hedge gun): it
+  // holds at the edge of its arc, and can't fire until the target comes into it.
+  const arc = g === e && e.def.crossfire ? (e.def.crossfire.arc * Math.PI) / 180 : null;
+  const lay = arc === null ? want : e.heading + Math.max(-arc, Math.min(arc, angleDiff(e.heading, want)));
+  g.turret = rotateToward(g.turret, lay, ((m.turretDegPerSec * Math.PI) / 180) * dt);
 
   g.cooldown -= dt;
   // The Behemoth has extracted: the battle is over, and so is any shot being lined up.

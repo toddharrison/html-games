@@ -1,4 +1,4 @@
-import { DEGRADE, RIPPLE_GAP } from '../content/tuning';
+import { DEGRADE, EVASION, RIPPLE_GAP } from '../content/tuning';
 import type { InterceptSpec, MissileSpec, RoundSpec, WeaponDef } from '../content/weapons';
 import {
   autoGroupOf,
@@ -18,7 +18,7 @@ import {
   type PlayerCommand,
   type Trigger,
 } from './behemoth';
-import { allocId, type Enemy, type Projectile } from './entities';
+import { allocId, sealed, type Enemy, type Projectile } from './entities';
 import type { Owner } from './events';
 import { frameRight } from './frame';
 import { angleDiff, clamp, dist, rotateToward, wrapAngle } from './math';
@@ -117,7 +117,7 @@ export function missileLockTarget(w: World, x: number, y: number, radius: number
   let best: Enemy | null = null;
   let bestD = Infinity;
   for (const e of w.enemies) {
-    if (!e.alive || e.hidden) continue;
+    if (!e.alive || e.hidden || sealed(e)) continue;
     const d = Math.hypot(e.x - x, e.y - y) - e.def.radius;
     if (d <= radius && d < bestD) {
       best = e;
@@ -355,7 +355,8 @@ function autoTarget(w: World, h: HardpointState, spec: RoundSpec, opts: { lineOf
   let target: Enemy | null = null;
   let bestScore = Infinity;
   for (const e of w.enemies) {
-    if (!e.alive || e.hidden) continue;
+    // A shut trapdoor is no target: the autos wait for the lid.
+    if (!e.alive || e.hidden || sealed(e)) continue;
     if (opts.onScreen && (e.x < w.frame.left || e.x > frameRight(w.frame))) continue;
     const d = Math.hypot(e.x - p.x, e.y - p.y) - e.def.radius;
     const score = Math.max(0, d) / Math.max(0.1, damageMultiplier(spec, e.def.targetClass));
@@ -384,9 +385,9 @@ function stepAutoGun(w: World, h: HardpointState, weapon: WeaponDef, dt: number)
   const lead = spec.kind === 'beam' ? 0 : Math.hypot(target.x - p.x, target.y - p.y) / spec.speed;
   const ax = target.x + target.vx * lead;
   const ay = target.y + target.vy * lead;
-  if (!aimMount(b, h, weapon, ax, ay, dt) || !ready(b, h, weapon)) return;
+  if (!aimMount(b, h, weapon, ax, ay, dt) || !ready(b, h, weapon) || !trackable(target)) return;
   const m = muzzleOf(b, h, weapon);
-  const spreadMul = spreadScale(h) * fireControlSpread(b);
+  const spreadMul = spreadScale(h) * fireControlSpread(b) * evasionSpread(target);
   if (spec.kind === 'beam') {
     shootBeam(w, weapon, m.x, m.y, m.angle, { spreadMul, slot: h.slot.id });
     spend(b, h, weapon);
@@ -396,6 +397,20 @@ function stepAutoGun(w: World, h: HardpointState, weapon: WeaponDef, dt: number)
   const fuse = spec.kind === 'shell' ? clamp(dist(m.x, m.y, ax, ay), spec.minRange, spec.maxRange) : undefined;
   spawnProjectile(w, 'player', weapon, m.x, m.y, m.angle, { spreadMul, slot: h.slot.id, ...(fuse !== undefined ? { fuse } : {}) });
   spend(b, h, weapon);
+}
+
+/**
+ * The fire control can't track a weaving unit (SPEC §7.4 ski troops): automatic fire at one waits
+ * for it to hold a line a moment (`trackable`), then spreads wider. The player's own aim takes no
+ * penalty.
+ */
+export function evasionSpread(e: Enemy): number {
+  return e.def.evasive ? EVASION.autoSpread : 1;
+}
+
+/** Whether the fire control has a solution on a unit: always, unless it jinked within `EVASION.settle`. */
+export function trackable(e: Enemy): boolean {
+  return !e.def.evasive || (e.ai.weaveAge ?? 0) >= EVASION.settle;
 }
 
 /**

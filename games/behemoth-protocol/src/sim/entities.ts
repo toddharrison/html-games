@@ -71,7 +71,20 @@ export interface AiMemory {
   minesLeft?: number;
   /** Too big to crush: seconds until it can be rammed again (`RAM.again`). */
   ramIn?: number;
-  /** A mini-boss: its callout has been made (it's been on screen). */
+  /** An evasive unit (ski troops): its sideways jink (±1) and seconds until it flips. */
+  weave?: 1 | -1;
+  weaveIn?: number;
+  /** Seconds since its last jink (the fire control needs `EVASION.settle` to track it). */
+  weaveAge?: number;
+  /** Trapdoor team: the lid's state, seconds left in it, and whether the hole has been seen (it stays marked). */
+  lid?: 'shut' | 'lifting' | 'open' | 'lingering';
+  lidT?: number;
+  marked?: boolean;
+  /** Bomb truck: its run has started (it's been in the frame), so the view strobes it (SPEC §7.4). */
+  charging?: boolean;
+  /** Bomb truck: within `BOMB.close` of the hull, the last stretch (its strobe quickens). */
+  close?: boolean;
+  /** It's been on screen (and its kind counted in `World.sighted`, its callout made if it has one). */
   sighted?: boolean;
 }
 
@@ -184,4 +197,14 @@ export interface Drone {
 /** Allocate a unique entity id from the world's counter. */
 export function allocId(w: { nextId: number }): number {
   return w.nextId++;
+}
+
+/**
+ * A trapdoor team with its lid down, or still lifting (SPEC §7.4): nothing touches it but the
+ * treads. Rounds pass over it, blasts and splash do nothing, and the autos and missile locks pass
+ * it by. It's exposed from the moment the team pops up to aim until the lid is down again.
+ */
+export function sealed(e: Enemy): boolean {
+  const lid = e.ai.lid ?? 'shut';
+  return !!e.def.trapdoor && (lid === 'shut' || lid === 'lifting');
 }

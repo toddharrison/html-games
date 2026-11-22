@@ -48,6 +48,11 @@ export function resolveBehemothCollisions(w: World, dt: number, steer: -1 | 0 | 
       ramBig(w, e, box, dt);
       continue;
     }
+    // Running down a bomb truck sets its bomb off under the nose: the bomb does the damage.
+    if (e.def.bomb) {
+      destroyEnemy(w, e, 'crushed');
+      continue;
+    }
     applyObstacle(b, e.def.obstacle, w.events, e.x, e.y);
     destroyEnemy(w, e, 'crushed');
   }

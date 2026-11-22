@@ -1,5 +1,6 @@
 import { CALLSIGNS } from '../../src/content/callsigns';
 import { DOCTRINES } from '../../src/content/doctrines';
+import { ENEMIES, type EnemyId } from '../../src/content/enemies';
 import { DEPOT, RUN, SECTOR_MAP } from '../../src/content/tuning';
 import { describe, expect, it } from 'vitest';
 import { IDLE_COMMAND, damageComponent } from '../../src/sim/behemoth';
@@ -79,7 +80,9 @@ describe('run state', () => {
     const objective = { ...run, at: { sector: last, node: run.map.sectors[last]!.nodes.length - 1 } };
     expect(battleThreat(objective)).toBeGreaterThan(battleThreat(run));
     expect(battleThreat(objective)).toBe(currentBattle(objective).threat);
-    expect(battleEnemy(run)).toEqual({ threat: battleThreat(run), mix: DOCTRINES.combined.mix, postScale: 1, waveScale: 1 });
+    // The opening battle is temperate: every unit of the doctrine but another biome's own (SPEC §7.4).
+    const home = Object.fromEntries(Object.entries(DOCTRINES.combined.mix).filter(([id]) => (ENEMIES[id as EnemyId].biome ?? 'temperate') === 'temperate'));
+    expect(battleEnemy(run)).toEqual({ threat: battleThreat(run), mix: home, postScale: 1, waveScale: 1 });
   });
 
   it('only a reachable node can be entered; a battle node opens the battle', () => {

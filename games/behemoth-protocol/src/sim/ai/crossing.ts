@@ -1,4 +1,4 @@
-import { MATERIALS } from '../../content/terrain';
+import { groundMobility, MATERIALS } from '../../content/terrain';
 import type { Enemy } from '../entities';
 import { clamp } from '../math';
 import { riverCenter, type River } from '../terrain';
@@ -12,8 +12,8 @@ import type { World } from '../world';
  */
 export function viaFord(e: Enemy, w: World, tx: number, ty: number): { x: number; y: number } | null {
   // Hovercraft go straight over.
-  const mobility = e.def.mobility;
-  if (mobility === 'hover') return null;
+  if (e.def.mobility === 'hover') return null;
+  const mobility = groundMobility(e.def.mobility);
   const t = w.terrain;
   const ts = t.tileSize;
   const rows = t.rows;

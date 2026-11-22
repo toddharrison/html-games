@@ -151,6 +151,11 @@ export interface RunState {
   lastEvent: EventReport | null;
   /** The depot the run is at (stock and actions left); null between depots. */
   depot: DepotState | null;
+  /**
+   * Unit kinds seen so far, in the order first met (SPEC §7.4: a biome unit's callout is made once
+   * a run; §9: the start of first-sight achievements). Battles won add to it.
+   */
+  sighted: EnemyId[];
 }
 
 /**
@@ -188,6 +193,7 @@ export function newRun(
     lastBattle: null,
     lastEvent: null,
     depot: null,
+    sighted: [],
   };
 }
 
@@ -479,6 +485,7 @@ export function completeBattle(run: RunState, w: World): RunState {
     behemoth,
     lastBattle: report,
     depot: null,
+    sighted: [...run.sighted, ...w.sighted.filter((id) => !run.sighted.includes(id))],
   };
 }
 

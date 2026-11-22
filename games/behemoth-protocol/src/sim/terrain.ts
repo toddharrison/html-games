@@ -1,8 +1,8 @@
 import { APPROACHES, type ApproachDef, type ApproachId } from '../content/approaches';
 import { BIOMES, type BiomeDef, type BiomeId, type MixKey } from '../content/biomes';
-import { hoverable, MATERIALS, type MaterialId, type TileState, type UnitMobility } from '../content/terrain';
+import { hoverable, MATERIALS, skiable, walkerSpeed, type MaterialId, type TileState, type UnitMobility } from '../content/terrain';
 import type { ObstacleClass } from '../content/obstacles';
-import { BEARING, DIRECTIVE, TERRAIN_GEN } from '../content/tuning';
+import { BEARING, DIRECTIVE, SKI, TERRAIN_GEN, WALKER } from '../content/tuning';
 import type { SimEvent } from './events';
 import type { Rect } from './math';
 import { hashSeed, Rng } from './rng';
@@ -64,6 +64,8 @@ export interface TerrainBlast {
   radius: number;
   damage: number;
   fuse: number;
+  /** A bomb truck's bomb (SPEC §7.4): hits the hull far harder at contact (`BOMB`). */
+  bomb?: boolean;
 }
 
 const TS = TERRAIN_GEN.tileSize;
@@ -1146,6 +1148,8 @@ export class Terrain {
     const t = this.tileAt(x, y);
     if (!t) return 1;
     if (mobility === 'hover') return hoverable(t.mat) ? 1 : MATERIALS[t.mat].speed.tracked[t.state];
+    if (mobility === 'ski') return skiable(t.mat) ? 1 : MATERIALS[t.mat].speed.foot[t.state] * SKI.offSnow;
+    if (mobility === 'walker') return walkerSpeed(t.mat, t.state, WALKER.climb);
     return MATERIALS[t.mat].speed[mobility][t.state];
   }
 

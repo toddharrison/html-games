@@ -5,7 +5,7 @@ import { ENEMIES, type EnemyId, type WaveSide } from '../content/enemies';
 import { ENCOUNTER, SPAWNER } from '../content/tuning';
 import { frameRight } from './frame';
 import { Rng, hashSeed } from './rng';
-import { cheapest, coverSpot, drawUnit, edgeSpot, entryPoint, liveThreat, openSpot } from './spawner';
+import { burrowSpot, cheapest, coverSpot, drawUnit, edgeSpot, entryPoint, hedgeSpot, liveThreat, openSpot } from './spawner';
 import { spawnEnemy } from './enemies';
 import type { World } from './world';
 
@@ -70,15 +70,23 @@ export function battleForces(threat: number, doctrine: DoctrineId, biome: BiomeI
   return { threat, mix: encounterMix(doctrine, biome, approach), postScale: d.posts ?? 1, waveScale: d.waves ?? 1 };
 }
 
-/** The units a battle draws on and their odds: the doctrine's mix, shaded by the ground (SPEC §7). */
+/**
+ * The units a battle draws on and their odds: the doctrine's mix, shaded by the ground (SPEC §7).
+ * A biome's own unit (SPEC §7.4) is dropped everywhere else.
+ */
 export function encounterMix(doctrine: DoctrineId, biome: BiomeId, approach: ApproachId | null): Partial<Record<EnemyId, number>> {
   const mix: Partial<Record<EnemyId, number>> = {};
   const biomeForces = BIOMES[biome].forces ?? {};
   const approachForces = approach ? (APPROACHES[approach].forces ?? {}) : {};
-  for (const [id, weight] of Object.entries(DOCTRINES[doctrine].mix) as [EnemyId, number][]) {
+  for (const [id, weight] of Object.entries(homeMix(DOCTRINES[doctrine].mix, biome)) as [EnemyId, number][]) {
     mix[id] = weight * (biomeForces[id] ?? 1) * (approachForces[id] ?? 1);
   }
   return mix;
+}
+
+/** A mix without the units that belong to other biomes (SPEC §7.4 biome units). */
+export function homeMix(mix: Partial<Record<EnemyId, number>>, biome: BiomeId): Partial<Record<EnemyId, number>> {
+  return Object.fromEntries(Object.entries(mix).filter(([id]) => (ENEMIES[id as EnemyId].biome ?? biome) === biome));
 }
 
 /**
@@ -147,9 +155,20 @@ function stepDefenders(w: World): void {
   const reach = frameRight(w.frame) + SPAWNER.spawnDistance;
   while (enc.posts.length > 0 && enc.posts[0]!.x <= reach) {
     const post = enc.posts.shift()!;
+    // A post's trapdoor holes lie close together, around the first.
+    let burrow: { x: number; y: number } | null = null;
     for (const id of post.units) {
       const def = ENEMIES[id];
-      let at = def.spawn === 'cover' ? coverSpot(w, reach - SPAWNER.spawnDistance, post.x + ENCOUNTER.defenders.coverDepth) : null;
+      const from = reach - SPAWNER.spawnDistance;
+      const to = post.x + ENCOUNTER.defenders.coverDepth;
+      let at = def.spawn === 'cover' ? coverSpot(w, from, to) : def.spawn === 'hedge' ? hedgeSpot(w, from, to) : null;
+      // A hedge gun with no hedge or wood to dig into isn't fielded.
+      if (!at && def.spawn === 'hedge') continue;
+      if (def.spawn === 'burrow') {
+        at = burrowSpot(w, reach, burrow ?? undefined) ?? (burrow ? burrowSpot(w, reach) : null);
+        if (!at) continue;
+        burrow ??= at;
+      }
       // Open ground at the post's line, or a little beyond (a river or rock across the line); a
       // battery near a side of the field.
       const spot = def.spawn === 'edge' ? edgeSpot : openSpot;
@@ -192,6 +211,11 @@ function arrival(w: World, id: EnemyId): { x: number; y: number } | null {
   const def = ENEMIES[id];
   // A battery can't drive in: it's found dug in ahead, near a side.
   if (def.spawn === 'edge') return edgeSpot(w, def, frameRight(w.frame) + SPAWNER.spawnDistance);
+  if (def.spawn === 'hedge') {
+    const ahead = frameRight(w.frame);
+    return hedgeSpot(w, ahead, ahead + SPAWNER.coverBand[1]);
+  }
+  if (def.spawn === 'burrow') return burrowSpot(w, frameRight(w.frame) + SPAWNER.coverBand[0]);
   if (def.spawn === 'cover') {
     const ahead = frameRight(w.frame);
     const spot = coverSpot(w, ahead, ahead + SPAWNER.coverBand[1]);

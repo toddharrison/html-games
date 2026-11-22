@@ -44,9 +44,34 @@ export type MobilityId = 'tracked' | 'foot';
 
 /**
  * How an enemy unit moves: a ground mobility, or a hovercraft's, which glides over water and ice
- * as if it were open ground and otherwise goes where tracked vehicles go (`Terrain.speedAt`).
+ * as if it were open ground and otherwise goes where tracked vehicles go, or skis (SPEC §7.4 ski
+ * troops): full speed over snow, drifts, and ice, and a slog on foot over anything else
+ * (`Terrain.speedAt`).
  */
-export type UnitMobility = MobilityId | 'hover';
+export type UnitMobility = MobilityId | 'hover' | 'ski' | 'walker';
+
+/** The ground mobility whose rules (fords, last-stand paths) a unit follows. */
+export function groundMobility(m: UnitMobility): MobilityId {
+  return m === 'hover' || m === 'walker' ? 'tracked' : m === 'ski' ? 'foot' : m;
+}
+
+/**
+ * A walker's pace on a tile (SPEC §7.4 spider walker): it strides over rock, wrecks, craters,
+ * rubble, trap belts, dunes, and drifts as if they were open ground, clambers over standing
+ * structures at `climb`, wades shallows like a tank, and can't cross deep water.
+ */
+export function walkerSpeed(mat: MaterialId, state: TileState, climb: number): number {
+  if (mat === 'water') return 0;
+  if (mat === 'shallows') return MATERIALS[mat].speed.tracked[state];
+  const standing = state === 'intact' || state === 'damaged';
+  const structure = mat === 'building' || mat === 'factory' || mat === 'wall' || mat === 'bunker' || mat === 'fuelTank' || mat === 'derrick';
+  return standing && structure ? climb : 1;
+}
+
+/** What skis glide over: open snow (an arctic field's open ground), drifts, and ice. */
+export function skiable(mat: MaterialId): boolean {
+  return mat === 'ground' || mat === 'snowdrift' || mat === 'ice' || mat === 'thinIce';
+}
 
 /** What a hovercraft skims over freely: open water and ice. */
 export function hoverable(mat: MaterialId): boolean {

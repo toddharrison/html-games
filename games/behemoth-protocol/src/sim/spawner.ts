@@ -1,5 +1,5 @@
 import { ENEMIES, type EnemyDef, type EnemyId, type WaveSide } from '../content/enemies';
-import { isWet } from '../content/terrain';
+import { isWet, MATERIALS } from '../content/terrain';
 import { LAST_STAND, SPAWNER } from '../content/tuning';
 import type { Rng } from './rng';
 import { frameRight } from './frame';
@@ -69,6 +69,56 @@ export function edgeSpot(w: World, def: EnemyDef, x: number): { x: number; y: nu
     const y = w.rng.chance(0.5) ? inset : t.height - inset;
     const tile = t.tileAt(x, y);
     if (t.speedAt(x, y, def.mobility) > 0 && !(tile && isWet(tile.mat)) && !t.blocksShotAt(x, y)) return { x, y };
+  }
+  return null;
+}
+
+/**
+ * Where a hedge gun (SPEC §7.4) is found dug in: an intact hedgerow tile between `from` and `to`
+ * (world x), ahead of the frame and at least `SPAWNER.hedgeOffset` across from the Behemoth's line,
+ * so it fires into the flank as the hull goes by. With no hedge in that stretch, a wood the same way
+ * (concealing ground that doesn't stop shots, so never a building); null if there's neither.
+ */
+export function hedgeSpot(w: World, from: number, to: number): { x: number; y: number } | null {
+  const t = w.terrain;
+  const ts = t.tileSize;
+  const c0 = Math.floor(Math.max(from, frameRight(w.frame) + SPAWNER.coverBand[0]) / ts);
+  const c1 = Math.floor(to / ts);
+  const hedges: { c: number; r: number }[] = [];
+  const woods: { c: number; r: number }[] = [];
+  for (let c = c0; c <= c1; c++) {
+    for (let r = 0; r < t.rows; r++) {
+      if (Math.abs((r + 0.5) * ts - w.behemoth.y) < SPAWNER.hedgeOffset) continue;
+      const tile = t.tile(c, r);
+      if (!tile || tile.state !== 'intact') continue;
+      const m = MATERIALS[tile.mat];
+      if (tile.mat === 'hedgerow') hedges.push({ c, r });
+      else if (m.conceals.intact && !m.blocksShots.intact) woods.push({ c, r });
+    }
+  }
+  const tiles = hedges.length > 0 ? hedges : woods;
+  if (tiles.length === 0) return null;
+  const { c, r } = w.rng.pick(tiles);
+  return { x: (c + 0.5) * ts, y: (r + 0.5) * ts };
+}
+
+/**
+ * Where a trapdoor team (SPEC §7.4) is found dug in: open sand (desert ground or dunes) at `x` or a
+ * little beyond, `SPAWNER.burrow.offset` across from the Behemoth's line, so the hull drives past
+ * it; within `cluster` of `near` when given (a post's holes lie close together). Null if none.
+ */
+export function burrowSpot(w: World, x: number, near?: { x: number; y: number }): { x: number; y: number } | null {
+  const t = w.terrain;
+  const { offset, cluster } = SPAWNER.burrow;
+  const by = w.behemoth.y;
+  for (let attempt = 0; attempt < 16; attempt++) {
+    const at = near
+      ? { x: near.x + w.rng.range(-cluster, cluster), y: near.y + w.rng.range(-cluster, cluster) }
+      : { x: x + w.rng.range(0, 4 * t.tileSize), y: by + w.rng.sign() * w.rng.range(offset[0], offset[1]) };
+    const tile = t.tileAt(at.x, at.y);
+    if (!tile || tile.state !== 'intact' || (tile.mat !== 'ground' && tile.mat !== 'dune')) continue;
+    if (Math.abs(at.y - by) < offset[0] || at.x <= frameRight(w.frame)) continue;
+    return at;
   }
   return null;
 }

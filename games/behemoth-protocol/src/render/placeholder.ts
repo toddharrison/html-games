@@ -73,6 +73,7 @@ export function generatePlaceholderArt(scene: Phaser.Scene): void {
   makeMissileLauncher(scene);
   makeInfantry(scene);
   makeWeaponsTeam(scene);
+  makeSkiTroops(scene);
   makeObjectiveUnits(scene);
   makeFx(scene);
 }
@@ -1027,6 +1028,39 @@ function makeInfantry(scene: Phaser.Scene): void {
 }
 
 /**
+ * Ski troops (SPEC §7.4): three skiers in snow smocks, rust-red helmets and packs so they still read
+ * as the enemy on the snow, each on a pair of long skis pointing along the course (+x), a rocket
+ * tube over the shoulder. Frames for 1–3 still standing.
+ */
+const SKIERS = [
+  [1, 1],
+  [7, 5],
+  [1, 9],
+] as const;
+export const SKI_TROOPS = { w: 15, h: 14, soldiers: SKIERS.length };
+
+function makeSkiTroops(scene: Phaser.Scene): void {
+  for (let count = 1; count <= SKIERS.length; count++) {
+    canvasTexture(scene, `ski_${count}`, SKI_TROOPS.w, SKI_TROOPS.h, (p) => {
+      for (const [x, y] of SKIERS.slice(SKIERS.length - count)) {
+        // Skis: two long dark runners either side of the skier, tips past the body.
+        p.rect(x, y, 7, 1, PAL.outline);
+        p.rect(x, y + 3, 7, 1, PAL.outline);
+        p.px(x + 6, y, PAL.steelMid);
+        p.px(x + 6, y + 3, PAL.steelMid);
+        // The skier: a pale smock with a dark outline, a red helmet, a red pack behind.
+        p.rect(x + 1, y + 1, 4, 2, PAL.outline);
+        p.rect(x + 2, y + 1, 2, 2, PAL.snow);
+        p.px(x + 3, y + 1, PAL.enemy);
+        p.px(x + 1, y + 2, PAL.enemyDark);
+        // Rocket tube over the shoulder, pointing forward.
+        p.px(x + 5, y + 1, PAL.outline);
+      }
+    });
+  }
+}
+
+/**
  * Heavy weapons team (SPEC §7): a gunner and a loader behind a guided missile launcher on a tripod.
  * The long tube with its lit seeker lens, the sight box, and the splayed legs set it apart from a
  * rifle squad at a glance. Frames for 1–2 still standing (the gunner is the last to fall).
@@ -1072,6 +1106,10 @@ export const LAYER = { body: { w: 16, h: 11 } };
 export const HOVER = { body: { w: 15, h: 11 }, turret: { w: 10, h: 5 }, pivotX: 3 };
 export const POST = { body: 26 };
 export const BATTERY = { body: 22, turret: { w: 20, h: 9 }, pivotX: 6 };
+export const HEDGE_GUN = { body: { w: 14, h: 12 }, turret: { w: 17, h: 7 }, pivotX: 4 };
+export const BOMB_TRUCK = { body: { w: 16, h: 10 } };
+export const TRAPDOOR = { size: 14 };
+export const WALKER = { body: 20, turret: { w: 13, h: 7 }, pivotX: 4 };
 
 function makeObjectiveUnits(scene: Phaser.Scene): void {
   // Gun emplacement: a round concrete revetment with sandbags, a long gun on a heavy mount.
@@ -1281,6 +1319,138 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
     p.rect(4, 2, 5, 1, PAL.enemyHi);
     p.rect(4, 6, 5, 1, PAL.enemyDark);
   });
+  // Hedge gun (SPEC §7.4): a towed anti-tank gun, its split trail spread behind (−x) under a
+  // camouflage net of cut branches, the wheels at the axle. The shield and long barrel are the turret.
+  const hedgeGunBody = (p: Painter, dead: boolean) => {
+    const { w, h } = HEDGE_GUN.body;
+    const c = h / 2;
+    // The trail legs, splayed back from the axle.
+    for (const [y0, dy] of [[c - 2, -1], [c + 1, 1]] as const) {
+      for (let i = 0; i < 7; i++) p.rect(w - 6 - i, y0 + Math.round((dy * i) / 2), 2, 1, PAL.outline);
+    }
+    // The wheels, either side of the axle.
+    for (const y of [0, h - 3]) {
+      p.rect(w - 6, y, 4, 3, PAL.outline);
+      p.rect(w - 5, y + 1, 2, 1, dead ? PAL.ash : PAL.tread);
+    }
+    if (dead) {
+      p.px(4, c, PAL.ember);
+      p.px(w - 4, c - 1, PAL.ember);
+      return;
+    }
+    // Netting: leafy sprigs over the trail (it's drawn where the hedge hides it anyway).
+    for (const [x, y, col] of [[1, c - 3, PAL.canopy], [2, c + 2, PAL.canopyLight], [4, c - 1, PAL.canopyHi], [5, c + 3, PAL.canopy], [6, c - 4, PAL.canopyLight], [3, c, PAL.canopyShadow]] as const) {
+      p.rect(x, y, 2, 2, col);
+    }
+  };
+  canvasTexture(scene, 'hedgegun_body', HEDGE_GUN.body.w, HEDGE_GUN.body.h, (p) => hedgeGunBody(p, false));
+  canvasTexture(scene, 'hedgegun_wreck', HEDGE_GUN.body.w, HEDGE_GUN.body.h, (p) => hedgeGunBody(p, true));
+  canvasTexture(scene, 'hedgegun_turret', HEDGE_GUN.turret.w, HEDGE_GUN.turret.h, (p) => {
+    const { w: tw, h: th } = HEDGE_GUN.turret;
+    // A long, thin barrel with a muzzle brake; a wide, thin shield across it at the pivot.
+    p.rect(5, 2, tw - 6, 3, PAL.outline);
+    p.rect(5, 3, tw - 7, 1, PAL.enemyDark);
+    p.rect(tw - 3, 1, 3, 5, PAL.outline);
+    p.rect(tw - 2, 2, 1, 3, PAL.enemy);
+    p.rect(2, 0, 4, th, PAL.outline);
+    p.rect(3, 1, 2, th - 2, PAL.enemy);
+    p.rect(3, 1, 1, th - 2, PAL.enemyHi);
+  });
+  // Bomb truck (SPEC §7.4): a stubby cab at the front (+x), the bed behind it filled by a fat bomb
+  // drum banded with hazard stripes, three axles.
+  const bombTruckBody = (p: Painter, dead: boolean) => {
+    const { w, h } = BOMB_TRUCK.body;
+    for (const x of [2, 7, w - 4]) {
+      p.rect(x, 0, 3, 2, PAL.outline);
+      p.rect(x, h - 2, 3, 2, PAL.outline);
+    }
+    p.rect(0, 1, w, h - 2, PAL.outline);
+    p.rect(1, 2, w - 6, h - 4, dead ? PAL.ash : PAL.enemyDark); // bed
+    p.rect(w - 5, 2, 4, h - 4, dead ? PAL.ash : PAL.enemy); // cab
+    p.rect(w - 5, 2, 4, 1, dead ? PAL.ashLight : PAL.enemyHi);
+    p.rect(w - 2, 3, 1, h - 6, dead ? PAL.hole : PAL.steelGlint); // windshield
+    if (dead) {
+      p.rect(3, 3, 6, h - 6, PAL.hole);
+      p.px(5, 4, PAL.ember);
+      p.px(8, 6, PAL.ember);
+      return;
+    }
+    // The bomb: a dark drum lying along the bed, two hazard bands, a fuse box on top.
+    p.rect(2, 3, w - 8, h - 6, PAL.outline);
+    p.rect(3, 3, w - 10, h - 6, PAL.steelDark);
+    p.rect(3, 3, w - 10, 1, PAL.steel);
+    for (const x of [4, 8]) {
+      p.rect(x, 3, 1, h - 6, PAL.amber);
+      p.px(x, 4 + ((x / 4) % 2), PAL.outline);
+    }
+    p.px(6, Math.floor(h / 2), PAL.enemyHi);
+  };
+  canvasTexture(scene, 'bombtruck_body', BOMB_TRUCK.body.w, BOMB_TRUCK.body.h, (p) => bombTruckBody(p, false));
+  canvasTexture(scene, 'bombtruck_wreck', BOMB_TRUCK.body.w, BOMB_TRUCK.body.h, (p) => bombTruckBody(p, true));
+  // Trapdoor team (SPEC §7.4): shut, a round sand-covered lid with a dark seam and a red pull ring
+  // (drawn once the hole is found); open, the dark pit with the lid propped up behind (−x) and two
+  // heads and a rocket tube pointing at the target (+x); a wreck is the caved-in pit.
+  const tn = TRAPDOOR.size;
+  const tc = tn / 2;
+  canvasTexture(scene, 'trap_shut', tn, tn, (p) => {
+    p.disc(tc, tc, 5, PAL.outline);
+    p.disc(tc, tc, 4, PAL.sand, PAL.sandHi, PAL.sandDark);
+    p.px(tc + 2, tc - 1, PAL.sandHi);
+    p.px(tc - 2, tc + 2, PAL.sandDark);
+    p.rect(tc - 1, tc, 2, 1, PAL.enemy);
+  });
+  canvasTexture(scene, 'trap_open', tn, tn, (p) => {
+    p.rect(0, tc - 5, 3, 10, PAL.outline);
+    p.rect(1, tc - 4, 1, 8, PAL.sand);
+    p.disc(tc, tc, 5, PAL.outline);
+    p.disc(tc, tc, 4, PAL.hole);
+    for (const y of [tc - 3, tc + 1]) {
+      p.rect(tc - 2, y, 3, 3, PAL.outline);
+      p.px(tc - 1, y + 1, PAL.enemy);
+    }
+    p.rect(tc, tc - 1, 6, 2, PAL.outline);
+    p.rect(tc + 1, tc - 1, 5, 1, PAL.tankShade);
+  });
+  canvasTexture(scene, 'trap_wreck', tn, tn, (p) => {
+    p.disc(tc, tc, 5, PAL.sandDark);
+    p.disc(tc, tc, 3, PAL.hole);
+    p.px(tc + 1, tc, PAL.ember);
+  });
+  // Spider walker (SPEC §7.4): a round armored carapace on six jointed legs splayed out (three a
+  // side, the feet dark), the twin-gun turret on top. A wreck is the carapace slumped on its legs.
+  const walkerBody = (p: Painter, dead: boolean) => {
+    const n = WALKER.body;
+    const c = n / 2;
+    const leg = dead ? PAL.ash : PAL.enemyDark;
+    for (const [dx, reach] of [[-5, 1], [0, 0], [5, 1]] as const) {
+      for (const side of [-1, 1]) {
+        // Upper leg out from the body, the lower leg bent down to a foot.
+        const kneeY = c + side * 6;
+        const footY = c + side * (9 - reach);
+        p.rect(c + dx, Math.min(c + side * 3, kneeY), 1, Math.abs(kneeY - (c + side * 3)) + 1, PAL.outline);
+        p.rect(c + dx + (dx < 0 ? -1 : dx > 0 ? 1 : 0), Math.min(kneeY, footY), 1, Math.abs(footY - kneeY) + 1, leg);
+        p.px(c + dx + (dx < 0 ? -1 : dx > 0 ? 1 : 0), footY, PAL.outline);
+      }
+    }
+    p.disc(c, c, 5, PAL.outline);
+    p.disc(c, c, 4, dead ? PAL.ash : PAL.enemy, dead ? PAL.ashLight : PAL.enemyHi, dead ? PAL.hole : PAL.enemyDark);
+    if (dead) {
+      p.px(c - 1, c, PAL.ember);
+      p.px(c + 2, c + 1, PAL.ember);
+    }
+  };
+  canvasTexture(scene, 'walker_body', WALKER.body, WALKER.body, (p) => walkerBody(p, false));
+  canvasTexture(scene, 'walker_wreck', WALKER.body, WALKER.body, (p) => walkerBody(p, true));
+  canvasTexture(scene, 'walker_turret', WALKER.turret.w, WALKER.turret.h, (p) => {
+    const { w: tw, h: th } = WALKER.turret;
+    // Two barrels side by side from a small domed mount.
+    for (const y of [1, th - 3]) {
+      p.rect(WALKER.pivotX, y, tw - WALKER.pivotX, 2, PAL.outline);
+      p.rect(WALKER.pivotX + 1, y, tw - WALKER.pivotX - 2, 1, PAL.steelMid);
+    }
+    p.disc(WALKER.pivotX, th / 2, 3, PAL.outline);
+    p.disc(WALKER.pivotX, th / 2, 2, PAL.enemy, PAL.enemyHi, PAL.enemyDark);
+  });
   canvasTexture(scene, 'hover_turret', HOVER.turret.w, HOVER.turret.h, (p) => {
     const tw = HOVER.turret.w;
     p.rect(4, 2, tw - 4, 1, PAL.outline);
@@ -1298,8 +1468,13 @@ export interface EnemyArt {
   wreck: string | null;
   /** Extra turrets, in `EnemyDef.turrets` order (SPEC §7 siege tank). */
   extra?: { key: string; pivotX: number; w: number }[];
-  /** Troops on foot: one frame per soldier still standing (`<prefix>1` … `<prefix><soldiers>`). */
-  squad?: { prefix: string; soldiers: number };
+  /**
+   * Troops on foot: one frame per soldier still standing (`<prefix>1` … `<prefix><soldiers>`).
+   * `faceCourse`: drawn along the way they're moving (skis), not turned toward their target.
+   */
+  squad?: { prefix: string; soldiers: number; faceCourse?: boolean };
+  /** A trapdoor team (SPEC §7.4): its texture with the lid shut, and open (turned to its target). */
+  lid?: { shut: string; open: string };
 }
 
 export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
@@ -1322,6 +1497,11 @@ export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
     extra: [{ key: 'siege_aux', pivotX: SIEGE.aux.pivotX, w: SIEGE.aux.w }],
   },
   artillery: { body: 'battery_body', turret: { key: 'battery_turret', pivotX: BATTERY.pivotX, w: BATTERY.turret.w }, wreck: 'battery_wreck' },
+  bombTruck: { body: 'bombtruck_body', turret: null, wreck: 'bombtruck_wreck' },
+  spiderWalker: { body: 'walker_body', turret: { key: 'walker_turret', pivotX: WALKER.pivotX, w: WALKER.turret.w }, wreck: 'walker_wreck' },
+  trapdoorTeam: { body: 'trap_shut', turret: null, wreck: 'trap_wreck', lid: { shut: 'trap_shut', open: 'trap_open' } },
+  skiTroops: { body: `ski_${SKI_TROOPS.soldiers}`, turret: null, wreck: null, squad: { prefix: 'ski_', soldiers: SKI_TROOPS.soldiers, faceCourse: true } },
+  hedgeGun: { body: 'hedgegun_body', turret: { key: 'hedgegun_turret', pivotX: HEDGE_GUN.pivotX, w: HEDGE_GUN.turret.w }, wreck: 'hedgegun_wreck' },
 };
 
 // ---------------------------------------------------------------------------------------------

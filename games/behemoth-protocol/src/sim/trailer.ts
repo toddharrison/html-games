@@ -15,7 +15,7 @@ import {
 } from './behemoth';
 import { blastDrones } from './drones';
 import { destroyEnemy } from './enemies';
-import { allocId, type Mine } from './entities';
+import { allocId, sealed, type Mine } from './entities';
 import { distanceToBox } from './math';
 import type { KillCause, SimEvent } from './events';
 import type { Rng } from './rng';
@@ -263,7 +263,8 @@ export function blast(w: World, x: number, y: number, radius: number, damage: nu
   w.events.push({ type: 'explosion', x, y, radius });
   let kills = 0;
   for (const e of w.enemies) {
-    if (!e.alive) continue;
+    // A shut trapdoor shrugs off any blast (SPEC §7.4, user's call).
+    if (!e.alive || sealed(e)) continue;
     const d = Math.hypot(e.x - x, e.y - y) - e.def.radius;
     if (d >= radius) continue;
     e.hp -= damage * falloff(d, radius, edge);

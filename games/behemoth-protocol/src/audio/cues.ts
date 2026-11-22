@@ -95,6 +95,10 @@ export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: nu
   batteryShells: { sound: 'cannon', size: 1 },
   siegeCannon: { sound: 'cannon', size: 0.95 },
   siegeAutocannon: { sound: 'autocannon', size: 0.4 },
+  // A sharp crack from the hedge, smaller than a tank's gun.
+  hedgeGunShot: { sound: 'cannon', size: 0.45 },
+  trapdoorRocket: { sound: 'rocket', size: 0.5 },
+  walkerGuns: { sound: 'autocannon', size: 0.45 },
 };
 
 const RAM_SIZE: Record<ObstacleClass, number> = { none: 0, soft: 0, trivial: 0, light: 0.3, medium: 0.6, heavy: 1, trap: 0.45, immovable: 0.8 };
@@ -208,6 +212,15 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
     case 'extracted':
       return [{ sound: 'radio', size: 1 }];
     // A mini-boss in view: the call over the radio.
+    // A trapdoor lid lifting: a dull thump in the sand.
+    case 'lidOpen':
+      return [{ sound: 'clank', size: 0.35, x: ev.x, y: ev.y }];
+    // Slammed shut at fire coming its way: a sharper thump.
+    case 'lidDuck':
+      return [{ sound: 'clank', size: 0.5, x: ev.x, y: ev.y }];
+    // A bomb truck starting its run: the same alarm as a reactor on its fuse, from the truck.
+    case 'charge':
+      return [{ sound: 'alarm', size: 0.5, x: ev.x, y: ev.y }];
     case 'sighted':
       return [{ sound: 'radio', size: 1 }];
     // A heavy weapons team painting the hull: the cab's lock warning, from the team's side.

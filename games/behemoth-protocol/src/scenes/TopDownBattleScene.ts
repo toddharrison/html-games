@@ -168,6 +168,7 @@ export class TopDownBattleScene extends Phaser.Scene {
       ...(demo ? { threat: demo.threat, battleLength: demo.battleLength } : { battleLength: battleLengthFromUrl() ?? battleLength(run), alertPace: battleAlertPace(run) }),
       objective: demo ? { mode: demo.mode, strength: 'normal' } : battleObjective(run, modeFromUrl()),
       condition: demo ? demo.condition : battleCondition(run, conditionFromUrl()),
+      sighted: run.sighted,
     });
     if (demo) this.prerollDemo(demo);
     this.stepper = new FixedStepper();
@@ -879,13 +880,15 @@ export class TopDownBattleScene extends Phaser.Scene {
           this.objectiveShown = { at: w.time, text: this.objectiveCall(ev.what, ev.done, ev.enemy) };
           break;
         case 'mineLaid':
+        case 'lidOpen':
+        case 'lidDuck':
           this.fx.smokePuff(ev.x, ev.y);
           break;
         case 'salvage':
           this.salvage.add(ev.x, ev.y, ev.amount, ev.source);
           break;
         case 'sighted':
-          this.objectiveShown = { at: w.time, text: ENEMIES[ev.enemy].callout ?? ENEMIES[ev.enemy].name };
+          this.objectiveShown = { at: w.time, text: ENEMIES[ev.enemy].callout?.text ?? ENEMIES[ev.enemy].name };
           break;
       }
     }

@@ -21,6 +21,8 @@ class EnemyView {
   private static readonly REVEAL_SECONDS = 0.12;
   private lastHp: number;
   private flash = 0;
+  /** Seconds this view has run, for a charging bomb truck's strobe. */
+  private clock = 0;
   /** 0 = hidden in the trees, 1 = fully visible; fades between the two. */
   private visibility: number;
   private wasHidden: boolean;
@@ -45,7 +47,12 @@ class EnemyView {
     const x = viewX(at.x, at.y);
     const y = viewY(at.x);
     this.heading = e.heading;
-    if (this.turret) {
+    const lid = ENEMY_ART[e.def.id].lid;
+    if (lid) {
+      // A trapdoor: the lid while it's down, the open pit (turned to its target) while it's up.
+      const shut = (e.ai.lid ?? 'shut') === 'shut';
+      this.body.setTexture(shut ? lid.shut : lid.open).setPosition(x, y).setRotation(shut ? 0 : viewAngle(at.turret));
+    } else if (this.turret) {
       this.body.setPosition(x, y).setRotation(viewAngle(at.heading));
       this.turret.setPosition(x, y).setRotation(viewAngle(at.turret));
     } else if (e.def.mobility !== 'foot') {
@@ -55,7 +62,8 @@ class EnemyView {
       // A squad thins out as it takes casualties.
       const squad = ENEMY_ART[e.def.id].squad ?? { prefix: 'inf_', soldiers: INFANTRY.soldiers };
       const left = Math.max(1, Math.ceil((e.hp / e.def.hp) * squad.soldiers));
-      this.body.setTexture(`${squad.prefix}${left}`).setPosition(x, y).setRotation(viewAngle(at.turret));
+      const facing = squad.faceCourse ? at.heading : at.turret;
+      this.body.setTexture(`${squad.prefix}${left}`).setPosition(x, y).setRotation(viewAngle(facing));
     }
     // Telegraph: the glint grows and brightens as the shot approaches.
     showGlint(this.glint, e, e.def.aimTime, at.x, at.y, at.turret);
@@ -72,11 +80,15 @@ class EnemyView {
     this.lastHp = e.hp;
     this.wasHidden = e.hidden;
     this.flash = Math.max(0, this.flash - dt);
+    this.clock += dt;
+    // A bomb truck on its run strobes white like a Behemoth on its reactor fuse (SPEC §7.4), faster
+    // in the last stretch.
+    const strobe = !!e.def.bomb && !!e.ai.charging && Math.floor(this.clock * (e.ai.close ? 20 : 8)) % 2 === 0;
     // Concealed units melt into the trees, and pop out quickly when spotted.
     const fade = e.hidden ? -dt / EnemyView.HIDE_SECONDS : dt / EnemyView.REVEAL_SECONDS;
     this.visibility = Phaser.Math.Clamp(this.visibility + fade, 0, 1);
     for (const img of [this.body, ...(this.turret ? [this.turret] : []), ...this.extra.map((v) => v.img)]) {
-      if (this.flash > 0) img.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
+      if (this.flash > 0 || strobe) img.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
       else img.clearTint().setTintMode(Phaser.TintModes.MULTIPLY);
       img.setAlpha(this.visibility).setVisible(this.visibility > 0);
     }

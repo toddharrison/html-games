@@ -6,6 +6,7 @@ import { ARMOR_ARCS, CHASSIS } from '../content/chassis';
 import { DIRECTIVES, type DirectiveId } from '../content/directives';
 import { CONDITIONS } from '../content/conditions';
 import { DOCTRINES } from '../content/doctrines';
+import { ENEMIES } from '../content/enemies';
 import { MAP_EVENTS, type MapEventId } from '../content/mapEvents';
 import { DEPOT } from '../content/tuning';
 import { GRADES, TRACKS } from '../content/upgrades';
@@ -30,9 +31,10 @@ export const RUN_SAVE_KEY = 'behemoth-protocol/run';
  * Directive, each sector's objective result, and the run's totals (salvage earned, time in battle).
  * 12: conditions on battle nodes, event nodes (and `next: 'event'`), and the last event's result.
  * 13: one Plate mod for both front armor halves (`armor.front`), and the treads' Load mod (no
- * migration needed for that: an older save has none). Older saves are migrated on load.
+ * migration needed for that: an older save has none). 14: the unit kinds seen so far in the run.
+ * Older saves are migrated on load.
  */
-export const RUN_SAVE_VERSION = 13;
+export const RUN_SAVE_VERSION = 14;
 
 /** The slice of the Storage API the save needs, so tests can pass a plain map. */
 export interface StorageLike {
@@ -61,7 +63,7 @@ export function parseRun(text: string): RunState | null {
   }
   if (!isObject(file)) return null;
   const v = file['version'];
-  const migrations = [fromV1, fromV2, fromV3, fromV4, fromV5, fromV6, fromV7, fromV8, fromV9, fromV10, fromV11, fromV12];
+  const migrations = [fromV1, fromV2, fromV3, fromV4, fromV5, fromV6, fromV7, fromV8, fromV9, fromV10, fromV11, fromV12, fromV13];
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > RUN_SAVE_VERSION) return null;
   const run = migrations.slice(v - 1).reduce((r, migrate) => migrate(r), file['run']);
   return isRun(run) ? run : null;
@@ -230,6 +232,12 @@ export function fromV12(run: unknown): unknown {
   return { ...run, behemoth: { ...run['behemoth'], mods: plate > 0 ? { ...mods, 'armor.front': { plate } } : mods } };
 }
 
+/** Version 13 predates the sighted list: nothing seen yet (so the next biome unit met is called out). */
+export function fromV13(run: unknown): unknown {
+  if (!isObject(run) || Array.isArray(run['sighted'])) return run;
+  return { ...run, sighted: [] };
+}
+
 export function loadRun(storage: StorageLike | null = browserStorage()): RunState | null {
   const text = safe(() => storage?.getItem(RUN_SAVE_KEY) ?? null, null);
   return text === null ? null : parseRun(text);
@@ -305,6 +313,7 @@ function isRun(v: unknown): v is RunState {
   const report = v['lastBattle'];
   if (report !== null && !(isObject(report) && ['battle', 'kills', 'salvage', 'bonus', 'time'].every((k) => isNum(report[k])))) return false;
   if (!isEventReport(v['lastEvent'])) return false;
+  if (!Array.isArray(v['sighted']) || !v['sighted'].every((id) => typeof id === 'string' && id in ENEMIES)) return false;
   // An event to decide needs an event node to be at.
   if (v['next'] === 'event' && !(at !== null && nodeAt(map, at as MapPos)?.kind === 'event')) return false;
   const b = v['behemoth'];

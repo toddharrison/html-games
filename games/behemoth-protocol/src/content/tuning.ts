@@ -167,6 +167,29 @@ export const SPAWNER = {
   coverBand: [20, 160] as const,
   /** `edge` spawns (field batteries): the share of the field's width at either side they dig in within. */
   edgeBand: 0.28,
+  /** `hedge` spawns (hedge guns, SPEC §7.4): at least this far across the field from the Behemoth's line. */
+  hedgeOffset: 50,
+  /**
+   * `burrow` spawns (trapdoor teams, SPEC §7.4): open sand this far across from the Behemoth's line
+   * (beside the path, so it drives past them), a post's later holes within `cluster` of its first.
+   */
+  burrow: { offset: [45, 100] as const, cluster: 36 },
+};
+
+/** Trapdoor teams (SPEC §7.4; the lid's timings in `EnemyDef.trapdoor`). Provisional (M3). */
+export const TRAPDOOR = {
+  /**
+   * The lid lifts once the hull is no more than this short of level with the hole: early enough
+   * for a second lift before the hole drops out of the frame. Shots strike any arc (user's call),
+   * about a third each front, flanks, and rear.
+   */
+  lead: 100,
+  /**
+   * They pull the lid down when they see fire coming (user's call): a player round that will pass
+   * within `margin` of the hole, arriving between `react` (any sooner and it's too late) and `look`
+   * seconds from now. Beams arrive at once and can't be seen coming.
+   */
+  duck: { react: 0.2, look: 0.8, margin: 3 },
 };
 
 /** Area fire (SPEC §7 artillery; per-weapon numbers in `WeaponDef.barrage`). Provisional (M3). */
@@ -462,6 +485,50 @@ export const BEARING = {
 };
 
 /** Explosive terrain (SPEC §4.6: fuel tanks, minefields) reaching the Behemoth. */
+/** Skis (SPEC §7.4 ski troops; `UnitMobility` 'ski'). Provisional (M3). */
+export const SKI = {
+  /** Off snow and ice, a skier's speed is its foot speed on that ground times this (about a squad's pace). */
+  offSnow: 0.3,
+  /** Skiers veer off the hull inside this distance of it, harder the closer they are (they're not there to be run over). */
+  clearance: 20,
+};
+
+/**
+ * Evasive units (SPEC §7.4 ski troops, `EnemyDef.evasive`): the Behemoth's fire control can't track
+ * one that's weaving. Its automatic weapons hold fire until the unit has held a line for `settle`
+ * seconds since its last jink, and then spread `autoSpread` times wider at it (beams too). Manual
+ * fire is the player's own aim, and takes no penalty.
+ */
+export const EVASION = {
+  settle: 0.55,
+  autoSpread: 8,
+};
+
+/** Spider walkers (SPEC §7.4; `UnitMobility` 'walker', behavior `stalker`). Provisional (M3). */
+export const WALKER = {
+  /** Its pace over standing structures (buildings, walls, bunkers, factory halls, tanks): it clambers over. */
+  climb: 0.4,
+  /** It keeps this far clear of the hull's side while it works round behind it. */
+  sideGap: 30,
+};
+
+/** A bomb truck's bomb (SPEC §7.4; its size and damage in `EnemyDef.bomb`). Provisional (M3). */
+export const BOMB = {
+  /**
+   * Within this far of the hull it's a contact (a truck's center is up to its radius off the hull
+   * when it touches): the arc it touches takes `contact` of the damage (the ram plow first, on the
+   * front) and the treads `treads`. Farther off, the hull takes a blast's usual share
+   * (`TERRAIN_BLAST.hull`).
+   */
+  reach: 8,
+  contact: 0.5,
+  treads: 0.15,
+  /** The charge leads the hull by at most this many seconds of its travel. */
+  maxLead: 1.5,
+  /** Within this far of the hull a charging truck's strobe quickens (the reactor fuse's last half second). */
+  close: 50,
+};
+
 export const TERRAIN_BLAST = {
   /** Share of the damage at the blast's edge (full at the center). */
   edge: 0.5,

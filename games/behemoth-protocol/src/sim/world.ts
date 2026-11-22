@@ -16,7 +16,7 @@ import { stepConcealment } from './concealment';
 import { createCondition, stepCondition, type ConditionState } from './conditions';
 import type { ConditionId } from '../content/conditions';
 import { stepDrones } from './drones';
-import { createEncounter, stepEncounter, type EncounterState } from './encounter';
+import { createEncounter, homeMix, stepEncounter, type EncounterState } from './encounter';
 import { stepReactor } from './detonation';
 import { stepEnemies } from './enemies';
 import { stepLastStand, type LastStandState } from './lastStand';
@@ -62,6 +62,8 @@ export interface WorldOptions {
   alertPace?: number;
   /** The battle's condition (SPEC §4.6); default none. */
   condition?: ConditionId | null;
+  /** Unit kinds already seen this run (`RunState.sighted`), so a once-a-run callout isn't made again. */
+  sighted?: readonly EnemyId[];
 }
 
 export interface World {
@@ -108,6 +110,8 @@ export interface World {
   lastStand: LastStandState | null;
   /** The battle's condition (SPEC §4.6: night, a storm); null for none. */
   condition: ConditionState | null;
+  /** Unit kinds seen so far this run, this battle's included (SPEC §7.4 callouts, §9 first sight). */
+  sighted: EnemyId[];
   stats: BattleStats;
 }
 
@@ -127,7 +131,7 @@ const DESPAWN_BEHIND = 200;
 
 export function createWorld(opts: WorldOptions): World {
   const threat = opts.threat ?? ENCOUNTER.baseThreat;
-  const mix = opts.mix ?? DOCTRINES.combined.mix;
+  const mix = opts.mix ?? homeMix(DOCTRINES.combined.mix, (opts.recipe ?? DEFAULT_RECIPE).biome);
   const exitX = START_X + (opts.battleLength ?? RUN.battleLength);
   const terrainSeed = hashSeed(opts.seed, 0x7e44);
   let recipe = opts.recipe ?? DEFAULT_RECIPE;
@@ -170,6 +174,7 @@ export function createWorld(opts: WorldOptions): World {
     extractedAt: null,
     lastStand: null,
     condition: createCondition(opts.condition ?? null, opts.seed),
+    sighted: [...(opts.sighted ?? [])],
     stats: { kills: 0, blastKills: 0, salvage: 0, blastBest: null },
   };
   ensureTerrain(world);

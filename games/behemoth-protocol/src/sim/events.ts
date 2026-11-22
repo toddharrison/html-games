@@ -95,6 +95,12 @@ export type SimEvent =
   | { type: 'lockOn'; id: number; x: number; y: number; time: number }
   /** A lock-on was thrown off (the unit was hit, or lost sight of the hull). */
   | { type: 'lockBroken'; id: number; x: number; y: number }
+  /** A trapdoor team's lid lifting (SPEC §7.4): the telegraph before it fires. */
+  | { type: 'lidOpen'; id: number; x: number; y: number }
+  /** A trapdoor team pulling its lid down at fire coming its way (SPEC §7.4). */
+  | { type: 'lidDuck'; id: number; x: number; y: number }
+  /** A bomb truck started its run at the Behemoth (SPEC §7.4). */
+  | { type: 'charge'; id: number; x: number; y: number }
   /** A mini-boss came into view for the first time (`EnemyDef.callout`). */
   | { type: 'sighted'; enemy: EnemyId; x: number; y: number }
   /** A battery's volley went up: its target zone is marked, the first round lands in `flight` s (SPEC §7). */

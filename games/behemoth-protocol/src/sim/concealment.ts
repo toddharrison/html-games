@@ -11,6 +11,8 @@ import type { World } from './world';
  */
 
 export function concealed(w: World, e: Enemy): boolean {
+  // A trapdoor team is hidden by its lid until the hole is found (SPEC §7.4); then it stays marked.
+  if (e.def.trapdoor) return !e.ai.marked;
   if (!e.def.canHide || e.exposed > 0 || e.windup > 0 || e.salvoLeft > 0) return false;
   if (!w.terrain.concealsAt(e.x, e.y)) return false;
   const b = w.behemoth;

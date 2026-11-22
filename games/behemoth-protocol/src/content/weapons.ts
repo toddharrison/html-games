@@ -146,6 +146,9 @@ export type WeaponId =
   | 'hoverGun'
   | 'batteryShells'
   | 'siegeCannon'
+  | 'hedgeGunShot'
+  | 'trapdoorRocket'
+  | 'walkerGuns'
   | 'siegeAutocannon';
 
 /**
@@ -715,6 +718,48 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       strike: { target: 'hardpoints', bypass: 0.5 },
     },
   },
+  trapdoorRocket: {
+    id: 'trapdoorRocket',
+    name: 'Anti-tank rocket',
+    short: 'AT rocket',
+    role: 'auto',
+    category: 'munitions',
+    // One rocket a lift of the lid (the lid's cycle paces it, not the reload).
+    reload: 1,
+    muzzle: 4,
+    traverseDegPerSec: 360,
+    projectile: {
+      kind: 'shell',
+      speed: 170,
+      damage: 12,
+      blastRadius: 0,
+      tileDamage: 10,
+      minRange: 0,
+      maxRange: 210,
+      spread: 0.04,
+    },
+  },
+  hedgeGunShot: {
+    id: 'hedgeGunShot',
+    name: 'Anti-tank gun',
+    short: 'AT gun',
+    role: 'auto',
+    category: 'ballistic',
+    // A high-velocity round: flat and fast, one hard hit, then a long reload.
+    reload: 4.5,
+    muzzle: 9,
+    traverseDegPerSec: 50,
+    projectile: {
+      kind: 'shell',
+      speed: 400,
+      damage: 16,
+      blastRadius: 0,
+      tileDamage: 20,
+      minRange: 0,
+      maxRange: 260,
+      spread: 0.02,
+    },
+  },
   emplacementGun: {
     id: 'emplacementGun',
     name: 'Fortress gun',
@@ -851,6 +896,28 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       minRange: 0,
       maxRange: 280,
       spread: 0.025,
+    },
+  },
+  walkerGuns: {
+    id: 'walkerGuns',
+    name: 'Walker cannons',
+    short: 'Twin cannon',
+    role: 'auto',
+    category: 'ballistic',
+    // Twin guns under the carapace: short bursts into the trailer or the rear plate.
+    reload: 2.2,
+    muzzle: 7,
+    traverseDegPerSec: 160,
+    salvo: { count: 4, interval: 0.1 },
+    projectile: {
+      kind: 'shell',
+      speed: 280,
+      damage: 3.5,
+      blastRadius: 0,
+      tileDamage: 4,
+      minRange: 0,
+      maxRange: 210,
+      spread: 0.05,
     },
   },
   siegeAutocannon: {

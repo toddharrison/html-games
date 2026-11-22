@@ -50,11 +50,14 @@ const threatOf = (ids: EnemyId[]) => ids.reduce((s, id) => s + ENEMIES[id].threa
 describe('encounter mix', () => {
   it('is the doctrine’s mix, shaded by the biome and approach; units the doctrine lacks stay out', () => {
     const plain = encounterMix('combined', 'temperate', null);
-    expect(plain).toEqual(DOCTRINES.combined.mix);
+    // The doctrine's own odds, but for another biome's own units (SPEC §7.4).
+    expect(plain).toEqual(Object.fromEntries(Object.entries(DOCTRINES.combined.mix).filter(([id]) => (ENEMIES[id as EnemyId].biome ?? 'temperate') === 'temperate')));
     const share = (m: Partial<Record<EnemyId, number>>, id: EnemyId) => m[id]! / Object.values(m).reduce((s, v) => s + v!, 0);
     expect(share(encounterMix('combined', 'temperate', 'urban'), 'infantry')).toBeGreaterThan(share(plain, 'infantry'));
     expect(share(encounterMix('combined', 'desert', 'plain'), 'infantry')).toBeLessThan(share(plain, 'infantry'));
-    expect(Object.keys(encounterMix('raiders', 'industrial', 'urban'))).toEqual(Object.keys(DOCTRINES.raiders.mix));
+    // Every unit of the doctrine but another biome's own (SPEC §7.4).
+    const home = (Object.keys(DOCTRINES.raiders.mix) as EnemyId[]).filter((id) => !ENEMIES[id].biome || ENEMIES[id].biome === 'industrial');
+    expect(Object.keys(encounterMix('raiders', 'industrial', 'urban'))).toEqual(home);
   });
 
   it('the doctrine splits the force: entrenched holds its posts, raiders keep it mobile', () => {

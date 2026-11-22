@@ -1,3 +1,4 @@
+import type { BiomeId } from './biomes';
 import type { ObstacleClass } from './obstacles';
 import type { UnitMobility } from './terrain';
 import type { TargetClass, WeaponId } from './weapons';
@@ -9,11 +10,17 @@ import type { TargetClass, WeaponId } from './weapons';
  * - holdAhead: keeps a spot ahead of the Behemoth within an arc, falling back as it advances
  *   (heavy tanks hold close and straight ahead; missile launchers far off and to the side)
  * - ambusher: walks to nearby cover and holds there as the Behemoth passes (infantry)
- * - fixed: never moves; only the turret turns (fortress guns, SPEC §4.4 Breach; field batteries)
+ * - fixed: never moves; only the turret turns (fortress guns, SPEC §4.4 Breach; field batteries;
+ *   hedge guns; trapdoor teams)
  * - convoy: drives up the lane toward the far end at the convoy's speed, slowing as it's damaged
  *   (SPEC §4.4 Chase)
+ * - charge: drives flat out at where the Behemoth will be, to ram it (SPEC §7.4 bomb truck)
+ * - skier: sweeps round the Behemoth like a skirmisher, weaving as it goes, firing on the move
+ *   (SPEC §7.4 ski troops)
+ * - stalker: steps out of the Behemoth's path, then works round behind it and holds there, well
+ *   inside the frame (SPEC §7.4 spider walker)
  */
-export type BehaviorId = 'skirmisher' | 'holdAhead' | 'ambusher' | 'fixed' | 'convoy';
+export type BehaviorId = 'skirmisher' | 'holdAhead' | 'ambusher' | 'fixed' | 'convoy' | 'charge' | 'skier' | 'stalker';
 
 export type EnemyId =
   | 'lightTank'
@@ -29,7 +36,12 @@ export type EnemyId =
   | 'hovercraft'
   | 'commandPost'
   | 'artillery'
-  | 'siegeTank';
+  | 'siegeTank'
+  | 'hedgeGun'
+  | 'bombTruck'
+  | 'skiTroops'
+  | 'trapdoorTeam'
+  | 'spiderWalker';
 
 /** Which side of a vehicle a hit lands on, relative to its hull heading (SPEC §7 "Facing armor"). */
 export type Facing = 'front' | 'flank' | 'rear';
@@ -54,10 +66,13 @@ const BUNKER_FACING: FacingArmor = { front: 0.6, flank: 0.8, rear: 1 };
 
 /**
  * Where a unit enters (`sim/spawner.ts`): ahead or behind the frame, ahead only, in cover ahead, or
- * dug in ahead near a side of the field ('edge': fixed units, which can't drive in from anywhere).
- * 'objective' units are placed by their battle mode (`sim/objective.ts`) and never drawn into a mix.
+ * dug in ahead near a side of the field ('edge': fixed units, which can't drive in from anywhere),
+ * or dug into a hedgerow ahead, off the Behemoth's line ('hedge', SPEC §7.4 hedge gun; a wood if
+ * there's no hedge), or dug into open sand beside the Behemoth's line ('burrow', SPEC §7.4
+ * trapdoor team; a post's holes close together). 'objective' units are placed by their battle mode
+ * (`sim/objective.ts`) and never drawn into a mix.
  */
-export type SpawnPlacement = 'edges' | 'ahead' | 'cover' | 'edge' | 'objective';
+export type SpawnPlacement = 'edges' | 'ahead' | 'cover' | 'edge' | 'hedge' | 'burrow' | 'objective';
 
 /**
  * What a unit's extra turret shoots at (SPEC §7 siege tank: each turret tracks its own target).
@@ -107,6 +122,8 @@ export interface EnemyDef {
   turretDegPerSec: number;
   /** Null: unarmed (convoy vehicles). */
   weapon: WeaponId | null;
+  /** What the main gun shoots at (default the hull; 'support': a drone that's out, then the trailer, then the hull). */
+  target?: GunTarget;
   /** Engagement range for opening fire. */
   fireRange: number;
   /**
@@ -141,8 +158,39 @@ export interface EnemyDef {
    * Missing = crushed outright, like everything else.
    */
   ramDamage?: number;
-  /** A mini-boss: the banner called when it first comes into view. */
-  callout?: string;
+  /**
+   * The banner called when it first comes into view: for each unit (`per: 'unit'`, a mini-boss), or
+   * only the first one of its kind in a run (`per: 'run'`, SPEC §7.4 biome units).
+   */
+  callout?: { text: string; per: 'unit' | 'run' };
+  /**
+   * Laid for crossfire (SPEC §7.4 hedge gun): dug in facing across the field toward the Behemoth's
+   * line, the gun turns only `arc` degrees either side of that, so it fires on the hull as it goes
+   * by, into its flank, and never at it head-on.
+   */
+  crossfire?: { arc: number };
+  /** A biome's own unit (SPEC §7.4): found only in that biome, whatever the doctrine's mix says. */
+  biome?: BiomeId;
+  /**
+   * It carries a bomb (SPEC §7.4 bomb truck): however it dies (shot, rammed, caught in a blast, or
+   * driving into the hull) it goes up in a blast of this size, and the hull takes far more from it
+   * at contact (`BOMB`). Enemy fire never sets it off: friendly fire passes it by.
+   */
+  bomb?: { radius: number; damage: number };
+  /**
+   * It weaves as it moves (SPEC §7.4 ski troops): a sideways jink of `weave` units/s that flips every
+   * `flip` seconds, which throws off a lead, and while it's moving the Behemoth's automatic weapons
+   * can't track it (`EVASION`).
+   */
+  evasive?: { weave: number; flip: readonly [number, number] };
+  /**
+   * A lidded hole (SPEC §7.4 trapdoor team): shut, nothing touches it but the treads (rounds pass
+   * over, blasts and splash do nothing, the autos and missile locks ignore it). It stays unseen until
+   * it first opens or the sensors sweep it, and is marked from then on. Once the hull comes level,
+   * the lid lifts for `lift` s (the telegraph), the team lines up and fires (`aimTime`), lingers
+   * `linger` s, and shuts for `shut` s; a lid that's had no shot after `maxOpen` s shuts anyway.
+   */
+  trapdoor?: { lift: number; linger: number; shut: readonly [number, number]; maxOpen: number };
   /**
    * The aim telegraph is a lock-on (SPEC §7 heavy weapons team): a designator beam on the hull for
    * the whole `aimTime`, with a lock tone. Breaking the line of sight, or a hit on the unit, breaks
@@ -493,7 +541,176 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     // The rear deck's autocannon: for the drones and the trailer while the main gun works the hull.
     turrets: [{ weapon: 'siegeAutocannon', pivot: { x: -9, y: 0 }, turretDegPerSec: 140, fireRange: 200, aimTime: 0.5, target: 'support' }],
     ramDamage: 90,
-    callout: 'Siege tank sighted\nGo for its flanks',
+    callout: { text: 'Siege tank sighted\nGo for its flanks', per: 'unit' },
+  },
+  hedgeGun: {
+    // Temperate's own unit (SPEC §7.4): a towed anti-tank gun dug into a hedgerow beside the path,
+    // facing across it. Unseen until it fires or the sensors sweep it; it waits for the hull to come
+    // level and puts a fast shot into its flank. Tear through the hedge and it goes under the treads.
+    id: 'hedgeGun',
+    name: 'Hedge gun',
+    // Small and light once found: two or three autocannon bursts at its shield, one main-gun shell.
+    hp: 24,
+    targetClass: 'light',
+    // The gun shield faces the path; the trail and crew behind it are open.
+    facing: EMPLACEMENT_FACING,
+    reverseSpeed: 0,
+    radius: 6,
+    obstacle: 'light',
+    mobility: 'tracked',
+    canHide: true,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 50,
+    weapon: 'hedgeGunShot',
+    fireRange: 240,
+    // A short glint: the ambush is that it's hidden, not that the shot is quick to come.
+    aimTime: 0.8,
+    behavior: 'fixed',
+    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
+    siege: { minRange: 0, maxRange: 0 },
+    spawn: 'hedge',
+    threat: 1.5,
+    salvage: 8,
+    callout: { text: 'Hedge guns\nThey hide in the hedgerows', per: 'run' },
+    // Within 45° of square on: from there its shots meet the hull's flank (SPEC §5.1 arcs).
+    crossfire: { arc: 45 },
+    biome: 'temperate',
+  },
+  spiderWalker: {
+    // The wasteland's own unit (SPEC §7.4): a six-legged walker that strides over the rubble,
+    // wrecks, craters, and rock that slow or stop everything else, works round behind the Behemoth,
+    // and goes for what's back there: a repair drone that's out, the trailer, the rear armor.
+    id: 'spiderWalker',
+    name: 'Spider walker',
+    // Tougher than a light tank, short of a heavy: it has to be dealt with, not brushed off.
+    hp: 55,
+    targetClass: 'light',
+    facing: VEHICLE_FACING,
+    // It turns to keep its guns on the hull rather than backing off.
+    reverseSpeed: 0,
+    radius: 8,
+    obstacle: 'medium',
+    mobility: 'walker',
+    canHide: false,
+    // Faster than the Behemoth's cruise (it catches up from behind), slower than its surge.
+    maxSpeed: 50,
+    accel: 60,
+    turretDegPerSec: 160,
+    weapon: 'walkerGuns',
+    target: 'support',
+    fireRange: 190,
+    aimTime: 0.6,
+    behavior: 'stalker',
+    // How far behind the hull's tail (or the trailer's) it holds, and how far inside the frame.
+    engage: { minRange: 45, maxRange: 85, angularSpeed: 0, rearInset: 0.12, arc: 180 },
+    siege: { minRange: 60, maxRange: 110 },
+    spawn: 'edges',
+    threat: 2.5,
+    salvage: 18,
+    callout: { text: 'Spider walkers\nThey hunt your rear', per: 'run' },
+    biome: 'wasteland',
+  },
+  trapdoorTeam: {
+    // Desert's own unit (SPEC §7.4, the user's idea): troops in a lidded hole in the sand, like a
+    // trapdoor spider. They let the hull come level, lift the lid, put a rocket into its flank or
+    // rear, and shut it again; shut, they can't be hurt (user's call: not even by a heavy blast).
+    // Shoot them while the lid is up, or drive over the hole.
+    id: 'trapdoorTeam',
+    name: 'Trapdoor team',
+    hp: 12,
+    targetClass: 'infantry',
+    reverseSpeed: 0,
+    radius: 5,
+    obstacle: 'trivial',
+    mobility: 'foot',
+    // Hidden by the lid, not by cover (`trapdoor`).
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 360,
+    weapon: 'trapdoorRocket',
+    // Long enough for a second lift as the hull draws away (user request: longer range).
+    fireRange: 200,
+    // A quick pop-up shot: the lid lifting is the telegraph, and they stay up a moment after.
+    aimTime: 0.35,
+    behavior: 'fixed',
+    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
+    siege: { minRange: 0, maxRange: 0 },
+    spawn: 'burrow',
+    threat: 1.25,
+    salvage: 5,
+    callout: { text: 'Trapdoor teams\nShoot while the lid is up', per: 'run' },
+    biome: 'desert',
+    trapdoor: { lift: 0.4, linger: 0.5, shut: [3, 4], maxOpen: 2 },
+  },
+  skiTroops: {
+    // Arctic's own unit (SPEC §7.4): the only fast troops. They sweep round the Behemoth over the
+    // snow, weaving so the automatic weapons can't track them, and fire rockets into the treads
+    // from the flanks and rear without stopping (user's calls). Aim at them yourself.
+    id: 'skiTroops',
+    name: 'Ski troops',
+    // Three skiers, a little lighter than a squad.
+    hp: 10,
+    targetClass: 'infantry',
+    reverseSpeed: 0,
+    radius: 5,
+    obstacle: 'trivial',
+    mobility: 'ski',
+    canHide: false,
+    // On snow, nearly a light tank's pace; off it (rock, rubble, towns), a squad's (`SKI.offSnow`).
+    maxSpeed: 62,
+    // Quick on their edges: the weave snaps from side to side.
+    accel: 140,
+    turretDegPerSec: 360,
+    weapon: 'infantryRockets',
+    fireRange: 125,
+    aimTime: 0.6,
+    behavior: 'skier',
+    // Wider than a light tank's circle: mostly out past the AP guns' reach (75), dipping into it.
+    engage: { minRange: 85, maxRange: 120, angularSpeed: 0.55, rearInset: 0.15, arc: 180 },
+    siege: { minRange: 45, maxRange: 90 },
+    spawn: 'edges',
+    threat: 1.25,
+    salvage: 4,
+    callout: { text: 'Ski troops\nToo quick for the autos', per: 'run' },
+    biome: 'arctic',
+    evasive: { weave: 34, flip: [0.35, 0.8] },
+  },
+  bombTruck: {
+    // Industrial's own unit (SPEC §7.4): a truck with a bomb on its bed that drives flat out at the
+    // Behemoth and goes up on contact. It strobes like a self-destructing Behemoth from the moment it
+    // starts its run (user's call), so the answer is to shoot it first, ideally beside its friends or
+    // a tank farm.
+    id: 'bombTruck',
+    name: 'Bomb truck',
+    // Fragile: one autocannon burst or a main-gun shell.
+    hp: 14,
+    targetClass: 'light',
+    facing: VEHICLE_FACING,
+    reverseSpeed: 0,
+    radius: 6,
+    obstacle: 'light',
+    mobility: 'tracked',
+    canHide: false,
+    // Faster than the Behemoth's cruise, slower than its surge: it closes about 2.5 s after it shows.
+    maxSpeed: 55,
+    accel: 70,
+    turretDegPerSec: 0,
+    weapon: null,
+    fireRange: 0,
+    aimTime: 0,
+    behavior: 'charge',
+    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
+    siege: { minRange: 0, maxRange: 0 },
+    // Never from behind the frame: a truck you can't see coming isn't fair.
+    spawn: 'ahead',
+    threat: 1.25,
+    salvage: 4,
+    callout: { text: 'Bomb trucks\nShoot them before they reach you', per: 'run' },
+    biome: 'industrial',
+    // A fuel tank's blast and then some (40 / 50).
+    bomb: { radius: 36, damage: 60 },
   },
   hovercraft: {
     id: 'hovercraft',

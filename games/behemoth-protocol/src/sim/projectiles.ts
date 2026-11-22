@@ -1,7 +1,7 @@
 import { BARRAGE, CONCEALMENT } from '../content/tuning';
 import type { BeamSpec, ProjectileSpec, RoundSpec, ShellSpec, TargetClass, WeaponDef } from '../content/weapons';
 import { applyHit, hitArc, hitched, hullBox, inTrailer } from './behemoth';
-import type { Enemy, Projectile } from './entities';
+import { sealed, type Enemy, type Projectile } from './entities';
 import type { KillCause } from './events';
 import { damageDrone, droneAt } from './drones';
 import { breakLock, destroyEnemy, hitFacing } from './enemies';
@@ -65,7 +65,7 @@ export function fireBeam(w: World, weapon: WeaponDef, x: number, y: number, angl
   let reach = spec.range;
   let target: Enemy | null = null;
   for (const e of w.enemies) {
-    if (!e.alive) continue;
+    if (!e.alive || sealed(e)) continue;
     const along = (e.x - x) * dx + (e.y - y) * dy;
     const across = Math.abs(-(e.x - x) * dy + (e.y - y) * dx);
     const r = e.def.radius + BEAM_WIDTH;
@@ -149,7 +149,8 @@ function stepPlayerRound(w: World, p: Projectile): void {
     return;
   }
   for (const e of w.enemies) {
-    if (e.alive && Math.hypot(e.x - p.x, e.y - p.y) <= e.def.radius + 1.5) {
+    // Rounds pass over a shut trapdoor.
+    if (e.alive && !sealed(e) && Math.hypot(e.x - p.x, e.y - p.y) <= e.def.radius + 1.5) {
       if (spec.kind === 'bullet') {
         p.alive = false;
         const armor = e.def.facing ? hitFacing(e, p.vx, p.vy) : undefined;
@@ -354,6 +355,9 @@ export function facingMultiplier(w: World, e: Enemy, spec: RoundSpec, from: HitF
 }
 
 export function damageEnemy(w: World, e: Enemy, spec: RoundSpec, amount: number, from: HitFrom, cause: KillCause = 'shot'): void {
+  // Enemy fire never sets off a bomb truck (SPEC §7.4, user's call): only the Behemoth can. A
+  // trapdoor team's shut lid keeps everything out.
+  if ((cause === 'friendly' && e.def.bomb) || sealed(e)) return;
   e.hp -= amount * damageMultiplier(spec, e.def.targetClass) * facingMultiplier(w, e, spec, from) * (1 - coverProtection(w, e));
   e.exposed = Math.max(e.exposed, CONCEALMENT.afterHit);
   if (e.hp <= 0) destroyEnemy(w, e, cause);

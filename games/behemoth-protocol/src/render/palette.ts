@@ -103,6 +103,10 @@ export const PAL = {
   glass: '#2c3833',
   glassHi: '#94bcae',
   glassDark: '#19211e',
+  // Desert sand (the trapdoor team's lid)
+  sand: '#c6ad78',
+  sandHi: '#d8c290',
+  sandDark: '#9c7f52',
   wreck: '#5e4535',
   wreckHi: '#86634a',
   wreckDark: '#241b16',

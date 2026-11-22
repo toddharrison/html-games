@@ -1,3 +1,4 @@
+import { groundMobility } from '../../content/terrain';
 import { hullWidth } from '../behemoth';
 import type { Enemy } from '../entities';
 import { angleDiff } from '../math';
@@ -44,8 +45,8 @@ export function besiege(e: Enemy, w: World, dt: number): { vx: number; vy: numbe
  */
 function route(e: Enemy, w: World, tx: number, ty: number): { x: number; y: number } {
   const t = aroundHull(e, w, tx, ty);
-  // Hovercraft follow the tracked field (a little cautious over water, but never stuck).
-  const flow = w.lastStand?.flow?.[e.def.mobility === 'hover' ? 'tracked' : e.def.mobility];
+  // Hovercraft follow the tracked field (a little cautious over water, but never stuck), skiers the foot one.
+  const flow = w.lastStand?.flow?.[groundMobility(e.def.mobility)];
   if (!flow || !pathBlocked(w.terrain, e.def.mobility, e.def.radius, e.x, e.y, t.x, t.y)) return t;
   const step = flowStep(flow, w.terrain.tileSize, e.x, e.y);
   return step ? aroundHull(e, w, step.x, step.y) : t;

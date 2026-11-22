@@ -19,7 +19,8 @@
  * `?biome=arctic&approach=pass` (also a practice run) fights every battle over that biome and
  * approach (see `recipeFromUrl`). `?condition=night|storm|none` (also a practice run) fights every
  * battle in that condition; `?event=convoy` (also a practice run) opens that event (or a random one).
- * `?doctrine=longGuns` (also a practice run) has every battle's defenders fight that doctrine.
+ * `?doctrine=longGuns` (also a practice run) has every battle's defenders fight that doctrine;
+ * `?mix=siegeTank:1,lightTank:2` (also a practice run) sets the units they field and their odds.
  */
 
 import { MODES, type BattleModeId } from './content/modes';
@@ -29,6 +30,7 @@ import { BIOMES, type BiomeId } from './content/biomes';
 import { DIRECTIVES, type DirectiveId } from './content/directives';
 import { CONDITIONS, type ConditionId } from './content/conditions';
 import { DOCTRINES, type DoctrineId } from './content/doctrines';
+import { ENEMIES, type EnemyId } from './content/enemies';
 import { MAP_EVENTS, type MapEventId } from './content/mapEvents';
 
 export interface Resolution {
@@ -47,7 +49,7 @@ const RESOLUTIONS: Record<string, Resolution> = {
 export const RESOLUTION: Resolution = RESOLUTIONS[params.get('res') ?? ''] ?? RESOLUTIONS['576']!;
 
 /** Playtest run from a URL parameter: straight into battle, nothing saved or deleted. */
-export const PRACTICE = ['seed', 'immobilize', 'addons', 'trailer', 'weapons', 'shells', 'cookoff', 'grades', 'mods', 'depot', 'biome', 'approach', 'map', 'mode', 'directive', 'objective', 'summary', 'condition', 'event', 'doctrine'].some((k) => params.has(k));
+export const PRACTICE = ['seed', 'immobilize', 'addons', 'trailer', 'weapons', 'shells', 'cookoff', 'grades', 'mods', 'depot', 'biome', 'approach', 'map', 'mode', 'directive', 'objective', 'summary', 'condition', 'event', 'doctrine', 'mix'].some((k) => params.has(k));
 
 /**
  * Playtest shortcut: the biome and approach every battle is fought over (`?biome=arctic`,
@@ -101,6 +103,19 @@ export function eventFromUrl(): MapEventId | 'random' | null {
 export function doctrineFromUrl(): DoctrineId | undefined {
   const d = params.get('doctrine');
   return d && d in DOCTRINES ? (d as DoctrineId) : undefined;
+}
+
+/**
+ * Playtest shortcut: every battle's enemy mix, as `unit:weight` pairs (`?mix=siegeTank:1,lightTank:2`);
+ * unknown units and bad weights are dropped. Undefined when not given (or nothing valid is left).
+ */
+export function mixFromUrl(): Partial<Record<EnemyId, number>> | undefined {
+  const mix: Partial<Record<EnemyId, number>> = {};
+  for (const [id, weight] of Object.entries(pairsFromUrl('mix'))) {
+    const n = Number(weight);
+    if (id in ENEMIES && ENEMIES[id as EnemyId].spawn !== 'objective' && n > 0) mix[id as EnemyId] = n;
+  }
+  return Object.keys(mix).length > 0 ? mix : undefined;
 }
 
 /** Playtest shortcut: every battle in this mode (`?mode=breach`, `chase`, `assault`). */

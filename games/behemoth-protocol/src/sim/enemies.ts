@@ -1,14 +1,14 @@
-import { ENEMIES, type EnemyId, type Facing } from '../content/enemies';
+import { ENEMIES, type EnemyId, type EnemyTurretDef, type Facing, type GunTarget } from '../content/enemies';
 import { CONCEALMENT, ENEMY } from '../content/tuning';
 import { WEAPONS, type WeaponDef } from '../content/weapons';
 import { BEHAVIORS } from './ai';
 import { besiege, joinSiege } from './ai/besiege';
 import { hiddenNow } from './concealment';
 import { enemyCanSee, hoverScale } from './conditions';
-import { allocId, type Enemy } from './entities';
+import { allocId, type Enemy, type EnemyGun } from './entities';
 import type { KillCause } from './events';
 import { frameRight } from './frame';
-import { footprint } from './behemoth';
+import { footprint, hitched } from './behemoth';
 import { angleDiff, circleIntersectsRect, clamp, rotateToward, type Rect } from './math';
 import { objectiveTaken } from './objective';
 import { roundSpec } from './projectiles';
@@ -36,6 +36,15 @@ export function spawnEnemy(w: World, id: EnemyId, x: number, y: number): Enemy {
     windup: 0,
     salvoLeft: 0,
     salvoTimer: 0,
+    guns: (def.turrets ?? []).map((t) => ({
+      def: t,
+      weapon: WEAPONS[t.weapon],
+      turret: Math.atan2(b.y - y, b.x - x),
+      cooldown: w.rng.range(...ENEMY.firstCooldown),
+      windup: 0,
+      salvoLeft: 0,
+      salvoTimer: 0,
+    })),
     alive: true,
     hidden: false,
     exposed: 0,
@@ -76,6 +85,12 @@ export function stepEnemies(w: World, dt: number): void {
     if (!e.alive) continue;
     moveEnemy(w, e, dt);
     aimAndFire(w, e, dt);
+    if (e.ai.ramIn) e.ai.ramIn = Math.max(0, e.ai.ramIn - dt);
+    // A mini-boss is called out the first time it comes into view.
+    if (e.def.callout && !e.ai.sighted && !e.hidden && e.x <= frameRight(w.frame) && e.x >= w.frame.left) {
+      e.ai.sighted = true;
+      w.events.push({ type: 'sighted', enemy: e.def.id, x: e.x, y: e.y });
+    }
   }
 }
 
@@ -176,24 +191,61 @@ function entersHull(hull: Rect, e: Enemy, x: number, y: number): boolean {
   return circleIntersectsRect(x, y, e.def.radius, hull) && !circleIntersectsRect(e.x, e.y, e.def.radius, hull);
 }
 
+/** How a gun is laid: its traverse, reach, telegraph, pivot, and what it shoots at. */
+type GunMount = Omit<EnemyTurretDef, 'weapon'>;
+
+const CENTER = { x: 0, y: 0 };
+
+/** Every gun on the unit: the main one (on its center), then any extra turrets. */
 function aimAndFire(w: World, e: Enemy, dt: number): void {
-  if (!e.weapon) return;
+  const d = e.def;
+  aimGun(w, e, e, { turretDegPerSec: d.turretDegPerSec, fireRange: d.fireRange, aimTime: d.aimTime, pivot: CENTER, target: 'behemoth' }, dt);
+  for (const g of e.guns) aimGun(w, e, g, g.def, dt);
+}
+
+/** Where a gun's turret turns, in the world, for a hull at (x, y) facing `heading`. */
+export function gunPivot(e: { x: number; y: number; heading: number }, pivot: { x: number; y: number }): { x: number; y: number } {
+  const c = Math.cos(e.heading);
+  const s = Math.sin(e.heading);
+  return { x: e.x + pivot.x * c - pivot.y * s, y: e.y + pivot.x * s + pivot.y * c };
+}
+
+/**
+ * What a gun shoots at, and how it's moving. A 'support' gun goes for a repair drone that's out,
+ * then the trailer, then the hull (SPEC §7 siege tank).
+ */
+export function gunTarget(w: World, at: { x: number; y: number }, target: GunTarget): { x: number; y: number; vx: number; vy: number } {
   const b = w.behemoth;
-  const spec = roundSpec(e.weapon);
-  const d = Math.hypot(b.x - e.x, b.y - e.y);
+  if (target === 'support') {
+    let best: { x: number; y: number } | null = null;
+    for (const dr of w.drones) {
+      if (dr.alive && (!best || Math.hypot(dr.x - at.x, dr.y - at.y) < Math.hypot(best.x - at.x, best.y - at.y))) best = dr;
+    }
+    if (best) return { x: best.x, y: best.y, vx: b.vx, vy: b.vy };
+    const t = hitched(b);
+    if (t) return { x: t.x, y: t.y, vx: b.vx, vy: b.vy };
+  }
+  return { x: b.x, y: b.y, vx: b.vx, vy: b.vy };
+}
+
+function aimGun(w: World, e: Enemy, g: EnemyGun, m: GunMount, dt: number): void {
+  if (!g.weapon) return;
+  const weapon = g.weapon;
+  const spec = roundSpec(weapon);
+  const at = gunPivot(e, m.pivot);
+  const tgt = gunTarget(w, at, m.target);
+  const d = Math.hypot(tgt.x - at.x, tgt.y - at.y);
   // Lead the target by the round's flight time (missiles home, so they just point at it; a
   // battery lays its guns on the zone it will mark).
-  const lead = e.weapon.barrage ? barrageLead(e.weapon) : spec.kind === 'missile' ? 0 : d / spec.speed;
-  const ax = b.x + b.vx * lead;
-  const ay = b.y + b.vy * lead;
-  const want = Math.atan2(ay - e.y, ax - e.x);
-  e.turret = rotateToward(e.turret, want, ((e.def.turretDegPerSec * Math.PI) / 180) * dt);
+  const lead = weapon.barrage ? barrageLead(weapon) : spec.kind === 'missile' ? 0 : d / spec.speed;
+  const want = Math.atan2(tgt.y + tgt.vy * lead - at.y, tgt.x + tgt.vx * lead - at.x);
+  g.turret = rotateToward(g.turret, want, ((m.turretDegPerSec * Math.PI) / 180) * dt);
 
-  e.cooldown -= dt;
+  g.cooldown -= dt;
   // The Behemoth has extracted: the battle is over, and so is any shot being lined up.
   if (w.extractedAt !== null) {
-    e.windup = 0;
-    e.salvoLeft = 0;
+    g.windup = 0;
+    g.salvoLeft = 0;
     return;
   }
   // Fairness: never fire from off-screen. Leaving the frame mid-aim cancels the shot (and the
@@ -202,45 +254,45 @@ function aimAndFire(w: World, e: Enemy, dt: number): void {
   const onScreen =
     e.x >= w.frame.left + margin && e.x <= frameRight(w.frame) - margin && e.y >= 0 && e.y <= w.terrain.height;
   if (!onScreen) {
-    e.windup = 0;
-    e.salvoLeft = 0;
+    g.windup = 0;
+    g.salvoLeft = 0;
     return;
   }
 
-  if (e.salvoLeft > 0) {
-    e.salvoTimer -= dt;
-    if (e.salvoTimer <= 0) fireRound(w, e);
+  if (g.salvoLeft > 0) {
+    g.salvoTimer -= dt;
+    if (g.salvoTimer <= 0) fireRound(w, e, g, at);
     return;
   }
 
-  if (e.windup > 0) {
+  if (g.windup > 0) {
     // Telegraph in progress: the turret keeps tracking, then the shot (or volley) goes off.
-    e.windup -= dt;
-    if (e.windup > 0) return;
-    e.windup = 0;
-    e.cooldown = e.weapon.reload * w.rng.range(...ENEMY.reloadJitter);
-    if (blocked(w, e)) return;
-    if (e.weapon.barrage && !markBarrage(w, e)) return;
-    e.salvoLeft = e.weapon.salvo?.count ?? 1;
-    fireRound(w, e);
+    g.windup -= dt;
+    if (g.windup > 0) return;
+    g.windup = 0;
+    g.cooldown = weapon.reload * w.rng.range(...ENEMY.reloadJitter);
+    if (blocked(w, weapon, at, tgt)) return;
+    if (weapon.barrage && !markBarrage(w, g, at)) return;
+    g.salvoLeft = weapon.salvo?.count ?? 1;
+    fireRound(w, e, g, at);
     return;
   }
 
-  if (e.cooldown > 0 || d > e.def.fireRange) return;
+  if (g.cooldown > 0 || d > m.fireRange) return;
   // Lobbed fire can't be laid on anything inside its minimum range.
   if (spec.kind === 'shell' && spec.lobbed && d < spec.minRange) return;
-  if (Math.abs(angleDiff(e.turret, want)) > ENEMY.aimTolerance) return;
-  if (blocked(w, e)) return;
+  if (Math.abs(angleDiff(g.turret, want)) > ENEMY.aimTolerance) return;
+  if (blocked(w, weapon, at, tgt)) return;
   // In the dark or a squall the enemy can't line up on what it can't see (SPEC §4.6).
   if (!enemyCanSee(w, e)) return;
-  e.windup = e.def.aimTime;
+  g.windup = m.aimTime;
 }
 
-/** Direct fire needs a clear line to the Behemoth; homing missiles fly around cover and lobbed shells over it. */
-function blocked(w: World, e: Enemy): boolean {
-  const spec = e.weapon?.projectile;
-  if (spec?.kind === 'missile' || (spec?.kind === 'shell' && spec.lobbed)) return false;
-  return w.terrain.lineBlocked(e.x, e.y, w.behemoth.x, w.behemoth.y);
+/** Direct fire needs a clear line to its target; homing missiles fly around cover and lobbed shells over it. */
+function blocked(w: World, weapon: WeaponDef, from: { x: number; y: number }, to: { x: number; y: number }): boolean {
+  const spec = weapon.projectile;
+  if (spec.kind === 'missile' || (spec.kind === 'shell' && spec.lobbed)) return false;
+  return w.terrain.lineBlocked(from.x, from.y, to.x, to.y);
 }
 
 /**
@@ -257,8 +309,8 @@ export function barrageLead(weapon: WeaponDef): number {
  * the ground for as long as the volley is on its way. The zone stays inside the guns' range band.
  * False if there's nowhere in range to lay it (the Behemoth has closed inside the minimum range).
  */
-function markBarrage(w: World, e: Enemy): boolean {
-  const weapon = e.weapon!;
+function markBarrage(w: World, g: EnemyGun, at: { x: number; y: number }): boolean {
+  const weapon = g.weapon!;
   const bar = weapon.barrage!;
   const spec = roundSpec(weapon);
   if (spec.kind !== 'shell') return false;
@@ -266,13 +318,13 @@ function markBarrage(w: World, e: Enemy): boolean {
   const lead = barrageLead(weapon);
   let x = b.x + b.vx * lead;
   let y = clamp(b.y + b.vy * lead, 0, w.terrain.height);
-  const d = Math.hypot(x - e.x, y - e.y);
+  const d = Math.hypot(x - at.x, y - at.y);
   if (d < spec.minRange) return false;
   if (d > spec.maxRange) {
-    x = e.x + ((x - e.x) * spec.maxRange) / d;
-    y = e.y + ((y - e.y) * spec.maxRange) / d;
+    x = at.x + ((x - at.x) * spec.maxRange) / d;
+    y = at.y + ((y - at.y) * spec.maxRange) / d;
   }
-  e.ai.zone = { x, y, radius: bar.radius };
+  g.zone = { x, y, radius: bar.radius };
   const salvo = weapon.salvo ?? { count: 1, interval: 0 };
   const now = w.time;
   w.barrages.push({ x, y, radius: bar.radius, from: now, lands: now + bar.flight, until: now + bar.flight + (salvo.count - 1) * salvo.interval });
@@ -280,11 +332,11 @@ function markBarrage(w: World, e: Enemy): boolean {
   return true;
 }
 
-function fireRound(w: World, e: Enemy): void {
-  if (!e.weapon) return;
-  const mx = e.x + Math.cos(e.turret) * e.weapon.muzzle;
-  const my = e.y + Math.sin(e.turret) * e.weapon.muzzle;
-  const zone = e.weapon.barrage ? e.ai.zone : undefined;
+function fireRound(w: World, e: Enemy, g: EnemyGun, at: { x: number; y: number }): void {
+  if (!g.weapon) return;
+  const mx = at.x + Math.cos(g.turret) * g.weapon.muzzle;
+  const my = at.y + Math.sin(g.turret) * g.weapon.muzzle;
+  const zone = g.weapon.barrage ? g.zone : undefined;
   if (zone) {
     // Somewhere in the zone, landing `flight` seconds from now.
     const a = w.rng.range(0, Math.PI * 2);
@@ -292,15 +344,15 @@ function fireRound(w: World, e: Enemy): void {
     const tx = zone.x + Math.cos(a) * r;
     const ty = zone.y + Math.sin(a) * r;
     const reach = Math.max(1, Math.hypot(tx - mx, ty - my));
-    spawnProjectile(w, 'enemy', e.weapon, mx, my, Math.atan2(ty - my, tx - mx), { fuse: reach, speed: reach / e.weapon.barrage!.flight, tx, ty });
+    spawnProjectile(w, 'enemy', g.weapon, mx, my, Math.atan2(ty - my, tx - mx), { fuse: reach, speed: reach / g.weapon.barrage!.flight, tx, ty });
   } else {
     // Out of a building's windows: the round ignores the walls of the tile the unit stands in.
     const ts = w.terrain.tileSize;
     const col = Math.floor(e.x / ts);
     const row = Math.floor(e.y / ts);
-    spawnProjectile(w, 'enemy', e.weapon, mx, my, e.turret, w.terrain.blocksShot(col, row) ? { shelter: { col, row } } : {});
+    spawnProjectile(w, 'enemy', g.weapon, mx, my, g.turret, w.terrain.blocksShot(col, row) ? { shelter: { col, row } } : {});
   }
-  e.salvoLeft--;
+  g.salvoLeft--;
   e.exposed = CONCEALMENT.afterFire;
-  e.salvoTimer = e.weapon.salvo?.interval ?? 0;
+  g.salvoTimer = g.weapon.salvo?.interval ?? 0;
 }

@@ -1,14 +1,36 @@
-import type { EnemyDef } from '../content/enemies';
+import type { EnemyDef, EnemyTurretDef } from '../content/enemies';
 import type { PoolSpec, ProjectileKind, ShellSpec, WeaponDef } from '../content/weapons';
 import type { Owner } from './events';
 
 /** Plain-data entities. Systems in other modules operate on them. */
 
-export interface Enemy {
-  id: number;
-  def: EnemyDef;
+/**
+ * One of a unit's guns: its weapon, where its turret points, and its firing cycle. The unit itself
+ * is its main gun (turning on its center); extra turrets (`EnemyDef.turrets`) are in `Enemy.guns`.
+ */
+export interface EnemyGun {
   /** Null: unarmed (convoy vehicles). */
   weapon: WeaponDef | null;
+  /** Turret angle in world space. */
+  turret: number;
+  cooldown: number;
+  /** Seconds left in the aim telegraph before a shot; 0 = not aiming. */
+  windup: number;
+  /** Salvo weapons: rounds left in the volley being fired, and time to the next one. */
+  salvoLeft: number;
+  salvoTimer: number;
+  /** Area fire: the zone the volley being fired is laid on (SPEC §7 artillery). */
+  zone?: { x: number; y: number; radius: number };
+}
+
+/** An extra turret (SPEC §7 siege tank). */
+export interface TurretGun extends EnemyGun {
+  def: EnemyTurretDef;
+}
+
+export interface Enemy extends EnemyGun {
+  id: number;
+  def: EnemyDef;
   x: number;
   y: number;
   vx: number;
@@ -17,15 +39,9 @@ export interface Enemy {
   heading: number;
   /** Backing away from the Behemoth, front armor toward it (SPEC §7 "Facing armor"). */
   reversing: boolean;
-  /** Turret angle in world space. */
-  turret: number;
   hp: number;
-  cooldown: number;
-  /** Seconds left in the aim telegraph before a shot; 0 = not aiming. */
-  windup: number;
-  /** Salvo weapons: rounds left in the volley being fired, and time to the next one. */
-  salvoLeft: number;
-  salvoTimer: number;
+  /** Extra turrets, in `def.turrets` order; empty for most units. */
+  guns: TurretGun[];
   alive: boolean;
   /** Concealed from the player (SPEC §4.5): not drawn, not auto-targeted, can't be locked on to. */
   hidden: boolean;
@@ -53,8 +69,10 @@ export interface AiMemory {
   /** Mine layer: seconds until its next mine, and mines left. */
   mineIn?: number;
   minesLeft?: number;
-  /** Area fire: the zone the volley being fired is laid on (SPEC §7 artillery). */
-  zone?: { x: number; y: number; radius: number };
+  /** Too big to crush: seconds until it can be rammed again (`RAM.again`). */
+  ramIn?: number;
+  /** A mini-boss: its callout has been made (it's been on screen). */
+  sighted?: boolean;
 }
 
 /**

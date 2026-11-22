@@ -138,7 +138,9 @@ export type WeaponId =
   | 'bunkerRockets'
   | 'towerGuns'
   | 'hoverGun'
-  | 'batteryShells';
+  | 'batteryShells'
+  | 'siegeCannon'
+  | 'siegeAutocannon';
 
 /**
  * Main-gun shells (SPEC §6.2), chosen per gun at the depot. The first one a gun lists is its
@@ -796,6 +798,48 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       lobbed: true,
       // Plunging fire: some of it finds the deck mounts.
       strike: { target: 'hardpoints', bypass: 0.25 },
+    },
+  },
+  siegeCannon: {
+    id: 'siegeCannon',
+    name: 'Siege cannon',
+    short: 'Siege gun',
+    role: 'auto',
+    category: 'ballistic',
+    // The biggest gun an enemy vehicle carries: slow to load, and every round a real hit.
+    reload: 5,
+    muzzle: 20,
+    traverseDegPerSec: 35,
+    projectile: {
+      kind: 'shell',
+      speed: 250,
+      damage: 26,
+      blastRadius: 8,
+      tileDamage: 60,
+      minRange: 0,
+      maxRange: 280,
+      spread: 0.025,
+    },
+  },
+  siegeAutocannon: {
+    id: 'siegeAutocannon',
+    name: 'Siege tank autocannon',
+    short: 'Rear gun',
+    role: 'auto',
+    category: 'ballistic',
+    reload: 2.6,
+    muzzle: 8,
+    traverseDegPerSec: 140,
+    salvo: { count: 3, interval: 0.12 },
+    projectile: {
+      kind: 'shell',
+      speed: 280,
+      damage: 3,
+      blastRadius: 0,
+      tileDamage: 4,
+      minRange: 0,
+      maxRange: 220,
+      spread: 0.05,
     },
   },
 };

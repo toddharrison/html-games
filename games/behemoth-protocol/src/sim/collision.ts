@@ -16,6 +16,7 @@ import {
   type BehemothState,
 } from './behemoth';
 import { destroyEnemy } from './enemies';
+import type { Enemy } from './entities';
 import type { SimEvent } from './events';
 import { circleIntersectsRect, clamp, type Rect } from './math';
 import type { Terrain } from './terrain';
@@ -40,13 +41,42 @@ export function resolveBehemothCollisions(w: World, dt: number, steer: -1 | 0 | 
   }
 
   for (const e of w.enemies) {
-    if (e.alive && circleIntersectsRect(e.x, e.y, e.def.radius * RAM.crushRadius, fp)) {
-      applyObstacle(b, e.def.obstacle, w.events, e.x, e.y);
-      destroyEnemy(w, e, 'crushed');
+    if (!e.alive || !circleIntersectsRect(e.x, e.y, e.def.radius * RAM.crushRadius, fp)) continue;
+    if (e.def.ramDamage) {
+      ramBig(w, e, fp, dt);
+      continue;
     }
+    applyObstacle(b, e.def.obstacle, w.events, e.x, e.y);
+    destroyEnemy(w, e, 'crushed');
   }
 
   ford(w, dt);
+}
+
+/**
+ * A unit too big to crush (SPEC §7 siege tank, `EnemyDef.ramDamage`): the first contact costs the
+ * Behemoth a ram of the unit's class and deals the unit damage by impact speed, more with ram gear
+ * (the gear "adds damage to whatever you hit", SPEC §4.2). A survivor slides off the prow, shoved
+ * to the nearer side, and can't be rammed again until `RAM.again` has passed.
+ */
+function ramBig(w: World, e: Enemy, fp: Rect, dt: number): void {
+  const b = w.behemoth;
+  if (!e.ai.ramIn) {
+    const impact = b.vx / b.chassis.speed.cruise;
+    const damage = e.def.ramDamage! * impact * (1 + RAM.gearDamage * ramRating(b));
+    applyObstacle(b, e.def.obstacle, w.events, e.x, e.y);
+    e.ai.ramIn = RAM.again;
+    e.hp -= damage;
+    if (e.hp <= 0) {
+      destroyEnemy(w, e, 'crushed');
+      return;
+    }
+  }
+  const mid = (fp.y0 + fp.y1) / 2;
+  // Off the nearer side, or (dead center) away from the field's nearer edge.
+  const side = e.y !== mid ? Math.sign(e.y - mid) : mid < w.terrain.height / 2 ? 1 : -1;
+  e.y = clamp(e.y + side * RAM.shove * dt, e.def.radius, w.terrain.height - e.def.radius);
+  e.vy = side * RAM.shove * 0.25;
 }
 
 /**

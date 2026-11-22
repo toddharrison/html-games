@@ -27,7 +27,8 @@ export type EnemyId =
   | 'mineLayer'
   | 'hovercraft'
   | 'commandPost'
-  | 'artillery';
+  | 'artillery'
+  | 'siegeTank';
 
 /** Which side of a vehicle a hit lands on, relative to its hull heading (SPEC §7 "Facing armor"). */
 export type Facing = 'front' | 'flank' | 'rear';
@@ -44,6 +45,9 @@ const VEHICLE_FACING: FacingArmor = { front: 0.75, flank: 1, rear: 1.5 };
 /** Fixed emplacements: armored on the front only (SPEC §7), open behind. */
 const EMPLACEMENT_FACING: FacingArmor = { front: 0.5, flank: 1, rear: 1.5 };
 
+/** A superheavy: a glacis plate few guns get through, and the usual soft engine deck behind. */
+const SUPERHEAVY_FACING: FacingArmor = { front: 0.5, flank: 1, rear: 1.6 };
+
 /** A concrete bunker: thick all round, a little thinner at the back door. */
 const BUNKER_FACING: FacingArmor = { front: 0.6, flank: 0.8, rear: 1 };
 
@@ -53,6 +57,24 @@ const BUNKER_FACING: FacingArmor = { front: 0.6, flank: 0.8, rear: 1 };
  * 'objective' units are placed by their battle mode (`sim/objective.ts`) and never drawn into a mix.
  */
 export type SpawnPlacement = 'edges' | 'ahead' | 'cover' | 'edge' | 'objective';
+
+/**
+ * What a unit's extra turret shoots at (SPEC §7 siege tank: each turret tracks its own target).
+ * 'behemoth': the hull. 'support': the Behemoth's support first: a repair drone that's out, then
+ * the trailer, then the hull.
+ */
+export type GunTarget = 'behemoth' | 'support';
+
+/** A turret beyond the unit's main one (which turns on the unit's center with `EnemyDef.weapon`). */
+export interface EnemyTurretDef {
+  weapon: WeaponId;
+  /** Where it turns, in hull space (x forward, y to the right). */
+  pivot: { x: number; y: number };
+  turretDegPerSec: number;
+  fireRange: number;
+  aimTime: number;
+  target: GunTarget;
+}
 
 export interface EnemyDef {
   id: EnemyId;
@@ -110,6 +132,16 @@ export interface EnemyDef {
   /** What it costs from a battle's threat budget (posts, alert waves, last-stand waves). */
   threat: number;
   salvage: number;
+  /** More turrets, each with its own weapon, aim, and target (SPEC §7 siege tank). Missing = just the main one. */
+  turrets?: readonly EnemyTurretDef[];
+  /**
+   * Too big to crush (SPEC §7 siege tank): a ram at cruise speed deals this much damage (ram gear
+   * adds to it, `RAM.gearDamage`) and shoves it aside, and it only dies if that finishes it.
+   * Missing = crushed outright, like everything else.
+   */
+  ramDamage?: number;
+  /** A mini-boss: the banner called when it first comes into view. */
+  callout?: string;
 }
 
 export const ENEMIES: Record<EnemyId, EnemyDef> = {
@@ -394,6 +426,40 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     spawn: 'edge',
     threat: 2,
     salvage: 14,
+  },
+  siegeTank: {
+    // Mini-boss (SPEC §7): a superheavy that holds the line ahead with two turrets, each tracking
+    // its own target. Its front is nearly proof against the guns, so it pays to angle in for a
+    // flank, or drive it down: it's too big to crush, but a ram hurts it badly.
+    id: 'siegeTank',
+    name: 'Siege tank',
+    // A mini-boss: about 20 s under everything a stock Behemoth has, head-on.
+    hp: 360,
+    targetClass: 'heavy',
+    facing: SUPERHEAVY_FACING,
+    // Backs up at its full (slow) speed, so its glacis stays toward the Behemoth until it's passed.
+    reverseSpeed: 30,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    // Slower than the Behemoth's cruise: it can't hold its distance for long.
+    maxSpeed: 30,
+    accel: 16,
+    turretDegPerSec: 35,
+    weapon: 'siegeCannon',
+    fireRange: 260,
+    aimTime: 1,
+    behavior: 'holdAhead',
+    engage: { minRange: 100, maxRange: 150, angularSpeed: 0.15, rearInset: 0.2, arc: 20 },
+    siege: { minRange: 80, maxRange: 130 },
+    spawn: 'ahead',
+    threat: 4,
+    salvage: 45,
+    // The rear deck's autocannon: for the drones and the trailer while the main gun works the hull.
+    turrets: [{ weapon: 'siegeAutocannon', pivot: { x: -9, y: 0 }, turretDegPerSec: 140, fireRange: 200, aimTime: 0.5, target: 'support' }],
+    ramDamage: 90,
+    callout: 'Siege tank sighted\nGo for its flanks',
   },
   hovercraft: {
     id: 'hovercraft',

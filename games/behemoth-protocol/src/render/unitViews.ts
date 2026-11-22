@@ -1,5 +1,6 @@
 import Phaser from 'phaser';
-import type { Enemy, Projectile } from '../sim/entities';
+import { gunPivot } from '../sim/enemies';
+import type { Enemy, EnemyGun, Projectile } from '../sim/entities';
 import { pose, type Interp } from './interp';
 import { ENEMY_ART, INFANTRY } from './placeholder';
 import { viewAngle, viewX, viewY } from './viewTransform';
@@ -12,6 +13,8 @@ class EnemyView {
   readonly turret: Phaser.GameObjects.Image | null;
   /** Aim telegraph: glows at the muzzle while the unit lines up a shot. */
   private readonly glint: Phaser.GameObjects.Image;
+  /** Extra turrets (SPEC §7 siege tank), each with its own glint, in `def.turrets` order. */
+  private readonly extra: { img: Phaser.GameObjects.Image; glint: Phaser.GameObjects.Image }[];
   /** Last sim heading, so the wreck can be oriented after the entity is gone. */
   heading: number;
   private static readonly HIDE_SECONDS = 0.5;
@@ -27,6 +30,10 @@ class EnemyView {
     this.body = scene.add.image(0, 0, art.body).setDepth(3);
     this.turret = art.turret ? scene.add.image(0, 0, art.turret.key).setOrigin(art.turret.pivotX / art.turret.w, 0.5).setDepth(3.1) : null;
     this.glint = scene.add.image(0, 0, 'glint').setDepth(6.5).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
+    this.extra = (art.extra ?? []).map((t) => ({
+      img: scene.add.image(0, 0, t.key).setOrigin(t.pivotX / t.w, 0.5).setDepth(3.05),
+      glint: scene.add.image(0, 0, 'glint').setDepth(6.5).setBlendMode(Phaser.BlendModes.ADD).setVisible(false),
+    }));
     this.heading = e.heading;
     this.lastHp = e.hp;
     this.visibility = e.hidden ? 0 : 1;
@@ -50,18 +57,15 @@ class EnemyView {
       this.body.setTexture(`inf_${left}`).setPosition(x, y).setRotation(viewAngle(at.turret));
     }
     // Telegraph: the glint grows and brightens as the shot approaches.
-    if (e.windup > 0 && e.weapon) {
-      const progress = 1 - e.windup / e.def.aimTime;
-      const mx = at.x + Math.cos(at.turret) * e.weapon.muzzle;
-      const my = at.y + Math.sin(at.turret) * e.weapon.muzzle;
-      this.glint
-        .setPosition(viewX(mx, my), viewY(mx))
-        .setScale(progress < 0.5 ? 1 : 2)
-        .setAlpha(0.5 + 0.5 * progress)
-        .setVisible(true);
-    } else {
-      this.glint.setVisible(false);
-    }
+    showGlint(this.glint, e, e.def.aimTime, at.x, at.y, at.turret);
+    // Extra turrets ride the hull at their pivots (their angles aren't interpolated).
+    e.guns.forEach((g, i) => {
+      const v = this.extra[i];
+      if (!v) return;
+      const p = gunPivot(at, g.def.pivot);
+      v.img.setPosition(viewX(p.x, p.y), viewY(p.x)).setRotation(viewAngle(g.turret));
+      showGlint(v.glint, g, g.def.aimTime, p.x, p.y, g.turret);
+    });
     // Being hit or spotted flashes white.
     if (e.hp < this.lastHp || (this.wasHidden && !e.hidden)) this.flash = 0.06;
     this.lastHp = e.hp;
@@ -70,7 +74,7 @@ class EnemyView {
     // Concealed units melt into the trees, and pop out quickly when spotted.
     const fade = e.hidden ? -dt / EnemyView.HIDE_SECONDS : dt / EnemyView.REVEAL_SECONDS;
     this.visibility = Phaser.Math.Clamp(this.visibility + fade, 0, 1);
-    for (const img of this.turret ? [this.body, this.turret] : [this.body]) {
+    for (const img of [this.body, ...(this.turret ? [this.turret] : []), ...this.extra.map((v) => v.img)]) {
       if (this.flash > 0) img.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
       else img.clearTint().setTintMode(Phaser.TintModes.MULTIPLY);
       img.setAlpha(this.visibility).setVisible(this.visibility > 0);
@@ -81,7 +85,27 @@ class EnemyView {
     this.body.destroy();
     this.turret?.destroy();
     this.glint.destroy();
+    for (const v of this.extra) {
+      v.img.destroy();
+      v.glint.destroy();
+    }
   }
+}
+
+/** A gun's aim telegraph at its muzzle: grows and brightens as the shot approaches; hidden otherwise. */
+function showGlint(glint: Phaser.GameObjects.Image, g: EnemyGun, aimTime: number, x: number, y: number, turret: number): void {
+  if (!(g.windup > 0 && g.weapon)) {
+    glint.setVisible(false);
+    return;
+  }
+  const progress = 1 - g.windup / aimTime;
+  const mx = x + Math.cos(turret) * g.weapon.muzzle;
+  const my = y + Math.sin(turret) * g.weapon.muzzle;
+  glint
+    .setPosition(viewX(mx, my), viewY(mx))
+    .setScale(progress < 0.5 ? 1 : 2)
+    .setAlpha(0.5 + 0.5 * progress)
+    .setVisible(true);
 }
 
 function roundTexture(p: Projectile): string {

@@ -61,7 +61,7 @@ Fixed 60 Hz stepper, a world/entity store, and the seeded RNG (`sim/rng.ts`), al
 
 ### Practice URL parameters
 `M0`–`M2` · various · `playtest: n/a`
-Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`, `trailer`, `weapons`, `shells`, `cookoff`, `grades`, `mods`, `depot`, `biome`, `approach`, `map`, `mode`, `directive`, `objective`, `summary`, `condition`, `event`, `doctrine`) skips the title screen and never saves.
+Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`, `trailer`, `weapons`, `shells`, `cookoff`, `grades`, `mods`, `depot`, `biome`, `approach`, `map`, `mode`, `directive`, `objective`, `summary`, `condition`, `event`, `doctrine`, `mix`) skips the title screen and never saves.
 
 | Param | Effect |
 |---|---|
@@ -82,6 +82,7 @@ Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`
 | `?map` or `?map=N` | Opens the sector map at the start of sector N (default 1) instead of a battle; with `?biome`, that sector is drawn in that biome (for looking at the map art) |
 | `?condition=night` | Every battle in that condition (`night`, `storm`; `none` = clear) |
 | `?doctrine=longGuns` | Every battle's defenders fight that doctrine (`combined`, `armoredFist`, `entrenched`, `raiders`, `longGuns`; `longGuns` for field batteries) |
+| `?mix=siegeTank:1,lightTank:2` | Every battle's enemy mix (`unit:weight` pairs, replacing the doctrine's; objective-only units are dropped). For trying a new unit: `?seed=3&mix=siegeTank:1` |
 | `?event=convoy` | Opens that event (`convoy`, `orders`, `hulk`, `dump`, `drop`, `scavengers`; `?event` alone, one drawn from the seed) on the first layer of sector 1, with a worn Behemoth (treads 60%, armor 50%, sensors 80%, munitions half) and 120 salvage |
 | `?res=480\|576\|640` | Internal resolution (default 576×324) |
 
@@ -377,6 +378,18 @@ A fixed battery dug in near a side of the field. After a 1.2 s aim glint it mark
 - **Gotcha:** the zone leads with the Behemoth's *lateral* velocity too, so steering steadily doesn't dodge; a *change* of steering or speed does.
 - Bot (8 seeds, T 7, firing at the nearest enemy): long guns ~5.7 batteries and ~4.5 volleys a battle (most die before a second); armor left ~240 holding course vs ~290 steering out of zones. Combined arms: ~0.7 batteries a battle.
 - Tests: `tests/sim/artillery.test.ts` (telegraph and zone placement, rounds in the zone and on time, cover doesn't stop them, a dodge misses, minimum range, friendly fire, extraction, edge placement, posts, `mobileMix`, Breach batteries).
+
+### Siege tank (two turrets, survives a ram)
+`M3` · `uncommitted` · `playtest: pending` · SPEC §7, §15 "Siege tank (M3)", §16 Q30
+A slow superheavy mini-boss that holds the line ahead. Its main turret is a huge cannon; a twin autocannon on the rear deck picks its own target (a repair drone that's out, then the trailer, then the hull). Too big to crush: a ram hurts it and shoves it aside. A banner and a radio call announce it the first time it's in view.
+- **Unit** `siegeTank` (content/enemies.ts): 360 HP, heavy, `SUPERHEAVY_FACING` (0.5 / 1 / 1.6), radius 13, obstacle `heavy`, max speed 30 (reverse 30), `holdAhead` (arc 20, 100–150), threat 4, salvage 45, `ramDamage` 90, `callout`. **Weapons**: `siegeCannon` (26 dmg, blast 8, 280 range, reload 5) on the main turret, `siegeAutocannon` (3 × 3 dmg bursts, 220 range, reload 2.6) on `turrets[0]` (pivot x −9, 140°/s, aim 0.5 s, target `support`). Doctrines: armored fist 0.8, combined 0.2.
+- **Multiple turrets** (general, `EnemyDef.turrets: EnemyTurretDef[]`): `EnemyGun` (entities.ts) is a gun's state (weapon, turret, cooldown, windup, salvo, zone). `Enemy` *is* its main gun (it extends `EnemyGun`; it turns on the unit's center), and extra turrets are `Enemy.guns: TurretGun[]` (built in `spawnEnemy`). `aimAndFire` runs `aimGun` for the main gun (a `GunMount` from the def's fields) and for each extra gun. Each has its own traverse, telegraph, reload, line-of-fire check from its pivot (`gunPivot`), and target (`gunTarget`: `behemoth`, or `support` = nearest live drone, then the hitched trailer, then the hull).
+- **Survives a ram** (`EnemyDef.ramDamage`; `ramBig` in sim/collision.ts): on first contact it deals `ramDamage × impact × (1 + RAM.gearDamage × ramRating)`, applies the unit's obstacle class to the Behemoth (speed dip, front armor, treads), and sets `ai.ramIn = RAM.again` (0.8 s). While overlapping, it's shoved to the nearer side of the hull at `RAM.shove` (120/s). A ram that finishes it kills it as `crushed`.
+- **Callout**: `stepEnemies` pushes `sighted` once (`ai.sighted`) when a unit with `callout` is in the frame and not hidden. The scene shows the callout through the objective banner slot; the audio cues `radio`.
+- **Render**: `makeSiegeTank` (placeholder.ts: `siege_body` 32×24 on doubled tracks, `siege_turret` 32×13, `siege_aux` 12×7, `siege_wreck`); `EnemyArt.extra` lists extra turret textures. `EnemyView` positions each at its pivot (rotated by the interpolated heading; its angle isn't interpolated) with its own glint (`showGlint`).
+- **Gotcha:** code that needs every gun of a unit must walk `[e, ...e.guns]`: `e.windup`, `e.cooldown`, `e.turret`, and `e.salvoLeft` are only the main gun's. `beyondSight` (conditions.ts) still looks only at the main gun's windup and salvo (firing any gun sets `exposed`, which covers it).
+- Bot (armored fist, 8 seeds, firing everything at the nearest unit): T 7 one shows up in 2 battles of 8, T 10 in 6 of 8; it lasts ~14 s from first sight (5–24) and lands 1–3 main-gun hits.
+- Tests: `tests/sim/siegeTank.test.ts` (two guns firing on their own cycles, the rear pivot, `support` targeting, a ram at cruise and its damage, a finishing ram, the callout once, doctrines and facing).
 
 ### Concealment
 `M1` · `initial` · `playtest: approved` · SPEC §4.5, §7, §15 "Concealment"

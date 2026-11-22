@@ -69,6 +69,14 @@ export const RAM = {
   speedDipCut: 0.6,
   /** An enemy is crushed once the hull overlaps this share of its radius. */
   crushRadius: 0.6,
+  /**
+   * Units too big to crush (`EnemyDef.ramDamage`): full ram gear adds this share again to the
+   * damage a ram deals; a rammed unit is shoved aside at `shove` units/s and can't be rammed
+   * again for `again` seconds (it's still sliding off the prow).
+   */
+  gearDamage: 1,
+  shove: 120,
+  again: 0.8,
 };
 
 // ── Damage ──────────────────────────────────────────────────────────────────────────────────────

@@ -5,7 +5,7 @@ import type { EnemyId } from './enemies';
  * different fights. The sector map shows a battle's doctrine as its defender intel (SPEC §3.1), and
  * the battle's defenders and waves draw from the doctrine's mix (`sim/encounter.ts`), so the intel is accurate. M3 first pass: the
  * four M1 units, plus hovercraft for the raiders and field batteries for the long guns (a few for
- * the entrenched and combined arms); later units (AT guns, rocket artillery, …) join the mixes as they arrive.
+ * the entrenched and combined arms), and siege tanks for the armored fist (rarely, combined arms); later units (AT guns, rocket artillery, …) join the mixes as they arrive.
  */
 
 export type DoctrineId = 'combined' | 'armoredFist' | 'entrenched' | 'raiders' | 'longGuns';
@@ -33,14 +33,14 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
     id: 'combined',
     name: 'Combined arms',
     intel: 'A balanced mix',
-    mix: { lightTank: 4, infantry: 3, heavyTank: 1.5, missileLauncher: 1.5, artillery: 0.5 },
+    mix: { lightTank: 4, infantry: 3, heavyTank: 1.5, missileLauncher: 1.5, artillery: 0.5, siegeTank: 0.2 },
     weight: 3,
   },
   armoredFist: {
     id: 'armoredFist',
     name: 'Armored fist',
     intel: 'Heavy armor',
-    mix: { heavyTank: 4, lightTank: 2, missileLauncher: 0.5, infantry: 0.5 },
+    mix: { heavyTank: 4, lightTank: 2, missileLauncher: 0.5, infantry: 0.5, siegeTank: 0.8 },
     weight: 2,
   },
   entrenched: {

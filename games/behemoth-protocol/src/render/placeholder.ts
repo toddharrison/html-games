@@ -69,6 +69,7 @@ export function generatePlaceholderArt(scene: Phaser.Scene): void {
   makeStatusArt(scene);
   makeLightTank(scene);
   makeHeavyTank(scene);
+  makeSiegeTank(scene);
   makeMissileLauncher(scene);
   makeInfantry(scene);
   makeObjectiveUnits(scene);
@@ -811,6 +812,79 @@ function makeLightTank(scene: Phaser.Scene): void {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Siege tank (mini-boss): a superheavy hull on doubled tracks, a huge main turret on the center,
+// and a small twin-gun turret on the rear deck.
+
+export const SIEGE = {
+  body: { w: 32, h: 24 },
+  turret: { w: 32, h: 13 },
+  pivotX: 10,
+  aux: { w: 12, h: 7, pivotX: 4 },
+};
+
+function makeSiegeTank(scene: Phaser.Scene): void {
+  const { w, h } = SIEGE.body;
+  const body = (p: Painter, dead: boolean) => {
+    const main = dead ? PAL.ash : PAL.enemy;
+    const hi = dead ? PAL.ashLight : PAL.enemyHi;
+    const dark = dead ? PAL.hole : PAL.enemyDark;
+    const tread = dead ? PAL.hole : PAL.enemyTread;
+    // Doubled tracks: two runs a side.
+    for (const y0 of [0, h - 6]) {
+      p.rect(0, y0, w, 6, PAL.outline);
+      p.rect(1, y0 + 1, w - 2, 4, tread);
+      for (let x = 1; x < w - 1; x += 2) {
+        p.px(x, y0 + 1, dead ? PAL.ash : PAL.treadLink);
+        p.px(x, y0 + 4, dead ? PAL.ash : PAL.treadLink);
+      }
+      p.rect(1, y0 + 3, w - 2, 1, PAL.outline);
+    }
+    // The hull: slab sides, a thick glacis toward the front (+x), the engine deck at the back.
+    p.rect(1, 5, w - 2, h - 10, PAL.outline);
+    p.rect(2, 6, w - 4, h - 12, main);
+    p.rect(2, 6, w - 4, 1, hi);
+    p.rect(2, h - 7, w - 4, 1, dark);
+    p.rect(w - 6, 6, 4, h - 12, hi);
+    p.rect(w - 6, 6, 1, h - 12, PAL.outline);
+    p.rect(2, 7, 7, h - 14, dark); // engine deck
+    for (let y = 8; y < h - 8; y += 2) p.rect(3, y, 5, 1, PAL.outline); // grilles
+    if (dead) {
+      for (const [x, y] of [[8, 9], [15, 13], [22, 10], [12, 15]] as const) p.px(x, y, PAL.ember);
+    }
+  };
+  canvasTexture(scene, 'siege_body', w, h, (p) => body(p, false));
+  canvasTexture(scene, 'siege_wreck', w, h, (p) => body(p, true));
+  canvasTexture(scene, 'siege_turret', SIEGE.turret.w, SIEGE.turret.h, (p) => {
+    const tw = SIEGE.turret.w;
+    const th = SIEGE.turret.h;
+    // A huge, thick barrel with a fume extractor and a muzzle brake.
+    p.rect(15, 4, tw - 17, 5, PAL.outline);
+    p.rect(15, 5, tw - 18, 3, PAL.enemy);
+    p.rect(15, 5, tw - 18, 1, PAL.enemyHi);
+    p.rect(21, 3, 4, 7, PAL.outline);
+    p.rect(22, 4, 2, 5, PAL.enemyDark);
+    p.rect(tw - 4, 2, 4, 9, PAL.outline);
+    p.rect(tw - 3, 3, 2, 7, PAL.enemyDark);
+    // Wide cast turret.
+    p.rect(1, 0, 16, th, PAL.outline);
+    p.rect(2, 1, 14, th - 2, PAL.enemy);
+    p.rect(2, 1, 14, 1, PAL.enemyHi);
+    p.rect(2, th - 2, 14, 1, PAL.enemyDark);
+    p.rect(13, 1, 3, th - 2, PAL.enemyHi); // the mantlet
+    p.disc(SIEGE.pivotX - 4, 4, 1.6, PAL.enemyDark); // hatches
+    p.disc(SIEGE.pivotX - 4, th - 4, 1.6, PAL.enemyDark);
+  });
+  canvasTexture(scene, 'siege_aux', SIEGE.aux.w, SIEGE.aux.h, (p) => {
+    const tw = SIEGE.aux.w;
+    // Twin autocannon barrels on a small round turret.
+    p.rect(5, 1, tw - 5, 2, PAL.outline);
+    p.rect(5, 4, tw - 5, 2, PAL.outline);
+    p.disc(SIEGE.aux.pivotX, 3.5, 3.4, PAL.outline);
+    p.disc(SIEGE.aux.pivotX, 3.5, 2.6, PAL.enemy, PAL.enemyHi, PAL.enemyDark);
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
 // Heavy tank: wide tracks, side skirts, big turret with a long gun
 
 export const HT = {
@@ -1186,6 +1260,8 @@ export interface EnemyArt {
   turret: { key: string; pivotX: number; w: number } | null;
   /** Ground decal left behind; null = none. */
   wreck: string | null;
+  /** Extra turrets, in `EnemyDef.turrets` order (SPEC §7 siege tank). */
+  extra?: { key: string; pivotX: number; w: number }[];
 }
 
 export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
@@ -1200,6 +1276,12 @@ export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
   mineLayer: { body: 'layer_body', turret: null, wreck: 'layer_wreck' },
   hovercraft: { body: 'hover_body', turret: { key: 'hover_turret', pivotX: HOVER.pivotX, w: HOVER.turret.w }, wreck: 'hover_wreck' },
   commandPost: { body: 'post_body', turret: null, wreck: 'post_wreck' },
+  siegeTank: {
+    body: 'siege_body',
+    turret: { key: 'siege_turret', pivotX: SIEGE.pivotX, w: SIEGE.turret.w },
+    wreck: 'siege_wreck',
+    extra: [{ key: 'siege_aux', pivotX: SIEGE.aux.pivotX, w: SIEGE.aux.w }],
+  },
   artillery: { body: 'battery_body', turret: { key: 'battery_turret', pivotX: BATTERY.pivotX, w: BATTERY.turret.w }, wreck: 'battery_wreck' },
 };
 

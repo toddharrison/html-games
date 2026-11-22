@@ -83,6 +83,8 @@ export type SimEvent =
   | { type: 'objective'; what: 'destroyed' | 'lost'; enemy: EnemyId; x: number; y: number; done: boolean }
   /** A convoy's mine layer dropped a mine (world point of the tile's center). */
   | { type: 'mineLaid'; x: number; y: number }
+  /** A mini-boss came into view for the first time (`EnemyDef.callout`). */
+  | { type: 'sighted'; enemy: EnemyId; x: number; y: number }
   /** A battery's volley went up: its target zone is marked, the first round lands in `flight` s (SPEC §7). */
   | { type: 'barrage'; x: number; y: number; radius: number; flight: number }
   /** The Behemoth crossed the extraction line: battle won (SPEC §4.4). */

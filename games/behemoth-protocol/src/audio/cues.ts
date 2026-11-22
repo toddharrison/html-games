@@ -90,6 +90,8 @@ export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: nu
   hoverGun: { sound: 'autocannon', size: 0.3 },
   // Big guns well off: a deep boom per gun, the volley rippling along the battery.
   batteryShells: { sound: 'cannon', size: 1 },
+  siegeCannon: { sound: 'cannon', size: 0.95 },
+  siegeAutocannon: { sound: 'autocannon', size: 0.4 },
 };
 
 const RAM_SIZE: Record<ObstacleClass, number> = { none: 0, soft: 0, trivial: 0, light: 0.3, medium: 0.6, heavy: 1, trap: 0.45, immovable: 0.8 };
@@ -201,6 +203,9 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
     case 'alert':
       return [{ sound: 'horn', size: 0.6 }];
     case 'extracted':
+      return [{ sound: 'radio', size: 1 }];
+    // A mini-boss in view: the call over the radio.
+    case 'sighted':
       return [{ sound: 'radio', size: 1 }];
     case 'detonation':
       return [{ sound: 'detonation', size: 2, x: ev.x, y: ev.y }];

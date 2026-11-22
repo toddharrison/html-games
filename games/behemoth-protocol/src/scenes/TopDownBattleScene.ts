@@ -2,7 +2,7 @@ import { DETONATION, TRAILER_MINE } from '../content/tuning';
 import Phaser from 'phaser';
 import { BattleAudio } from '../audio/battleAudio';
 import { toggleMute } from '../audio/mute';
-import { battleLayout, battleLengthFromUrl, conditionFromUrl, doctrineFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
+import { battleLayout, battleLengthFromUrl, conditionFromUrl, doctrineFromUrl, mixFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
 import { Controls } from '../input/controls';
 import { BehemothView, TrackMarks } from '../render/compositor';
 import { Effects } from '../render/effects';
@@ -47,7 +47,7 @@ import {
   summarizeRun,
 } from '../sim/run';
 import { DIRECTIVES } from '../content/directives';
-import type { EnemyId } from '../content/enemies';
+import { ENEMIES, type EnemyId } from '../content/enemies';
 import { isFinalNode } from '../sim/sectorMap';
 import { MODES } from '../content/modes';
 import { objectiveComplete } from '../sim/objective';
@@ -146,6 +146,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     // The sim's frame runs along the direction of travel (screen height); its lateral rows span
     // the battlefield column.
     const recipe = demo ? { biome: demo.biome, approach: demo.approach } : battleRecipe(run, recipeFromUrl());
+    const urlMix = demo ? undefined : mixFromUrl();
     this.world = createWorld({
       seed: battleSeed(run),
       recipe,
@@ -153,6 +154,7 @@ export class TopDownBattleScene extends Phaser.Scene {
       fieldRows: this.layout.fieldTiles,
       behemoth: run.behemoth,
       ...battleEnemy(run, recipe, demo ? undefined : doctrineFromUrl()),
+      ...(urlMix ? { mix: urlMix } : {}),
       ...(demo ? { threat: demo.threat, battleLength: demo.battleLength } : { battleLength: battleLengthFromUrl() ?? battleLength(run), alertPace: battleAlertPace(run) }),
       objective: demo ? { mode: demo.mode, strength: 'normal' } : battleObjective(run, modeFromUrl()),
       condition: demo ? demo.condition : battleCondition(run, conditionFromUrl()),
@@ -850,6 +852,9 @@ export class TopDownBattleScene extends Phaser.Scene {
           break;
         case 'mineLaid':
           this.fx.smokePuff(ev.x, ev.y);
+          break;
+        case 'sighted':
+          this.objectiveShown = { at: w.time, text: ENEMIES[ev.enemy].callout ?? ENEMIES[ev.enemy].name };
           break;
       }
     }

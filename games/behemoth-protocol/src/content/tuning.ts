@@ -584,10 +584,11 @@ export const SECTOR_MAP = {
  *
  * Sim bot reference (M2): a battle won firing every trigger pays about 250–400 salvage and
  * typically leaves the treads at 10–65%, the front armor near zero, and the missile rack empty, so
- * patching up the usual damage costs about 260 and all three actions.
+ * patching up the usual damage costs about 260 and three actions. Raised from 3 to 5 (user's call,
+ * Nov 2026): with 3, a depot was nearly all repairs and left no room to refit.
  */
 export const DEPOT = {
-  actions: 3,
+  actions: 5,
   /** Weapons for sale per depot (inclusive range). */
   stock: [4, 5] as const,
   /** Add-ons for sale per depot (inclusive range), besides the weapons. */

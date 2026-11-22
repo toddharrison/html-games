@@ -14,6 +14,7 @@ Open work and the hand-off between sessions. See CLAUDE.md for how to maintain i
 
 ## Playtest queue
 Built but not yet seen by the user. Check each one off by setting its FEATURES.md entry to `playtest: approved`, then remove it here.
+- [ ] Depot actions 3 → 5: does a depot now leave room to refit after repairs? Check the action pips fit with supply caches (`?exit=40`)
 - [ ] Public build: open https://toddharrison.github.io/html-games/ and play from there (audio, saves, fullscreen scaling)
 - [ ] M0 feel pass + tuning notes; pick the internal resolution: 480×270, 576×324 (default), or 640×360 (`?res=480|576|640`; SPEC §16 Q8)
 - [ ] Eased steering (any seed)

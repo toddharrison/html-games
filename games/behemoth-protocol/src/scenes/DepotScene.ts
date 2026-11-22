@@ -305,9 +305,12 @@ export class DepotScene extends Phaser.Scene {
     const right = RESOLUTION.width - 12;
     this.text(right, 10, `Salvage ${run.salvage}`, PAL.amber).setOrigin(1, 0);
     const left = run.depot?.actions ?? 0;
-    this.text(right - 26, 19, 'Actions', PAL.hudText).setOrigin(1, 0);
-    for (let i = 0; i < (run.depot?.total ?? DEPOT.actions); i++) {
-      const pip = this.add.rectangle(right - 22 + i * 8, 19, 6, 6, hex(i < left ? PAL.glow : PAL.hudLine)).setOrigin(0, 0);
+    // Pips end at the right edge, so a depot with more actions (or caches) grows leftward.
+    const total = run.depot?.total ?? DEPOT.actions;
+    const pipsX = right - (total * 8 - 2);
+    this.text(pipsX - 4, 19, 'Actions', PAL.hudText).setOrigin(1, 0);
+    for (let i = 0; i < total; i++) {
+      const pip = this.add.rectangle(pipsX + i * 8, 19, 6, 6, hex(i < left ? PAL.glow : PAL.hudLine)).setOrigin(0, 0);
       this.ui.push(pip);
     }
     for (const p of this.parts) if (p.label) this.text(this.cut.x + p.box.x + p.box.w / 2, this.cut.y + p.box.y + p.box.h + 2, p.label, PAL.hudDim).setOrigin(0.5, 0);

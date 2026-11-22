@@ -156,7 +156,8 @@ function fromV8(run: unknown): unknown {
     at: null,
     path: [],
     cache: 0,
-    depot: next === 'depot' && isObject(depot) ? { ...depot, total: DEPOT.actions } : null,
+    // A version 8 depot opened with the 3 actions depots had then (before `DEPOT.actions` went to 5).
+    depot: next === 'depot' && isObject(depot) ? { ...depot, total: 3 } : null,
   };
 }
 

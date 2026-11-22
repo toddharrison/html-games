@@ -186,6 +186,7 @@ describe('depot actions', () => {
 
   it('runs out of actions, and refuses what the salvage can not cover', () => {
     let run = atDepot(1000);
+    run.depot!.actions = 3; // three jobs to use them up, whatever DEPOT.actions is
     run.behemoth.treads = 10;
     run.behemoth.sensors = 10;
     run.behemoth.reactor = 10;

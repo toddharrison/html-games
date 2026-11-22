@@ -572,7 +572,7 @@ User request (Nov 2026): every run's Behemoth gets a callsign, a true historical
 
 ### Depot
 `M2` · `initial` · `playtest: pending` · SPEC §8.2, §15 "Depot (M2)"
-Actions (repair, rearm, install/remove from a seeded stock of 4–5) cost salvage plus one of 3 actions. Full repair per action, priced by damage; armor is one action for every zone; install costs an action, remove is free. A side-on cutaway with clickable parts.
+Actions (repair, rearm, install/remove from a seeded stock of 4–5) cost salvage plus one of 5 actions (`DEPOT.actions`; was 3 until Nov 2026, uncommitted, playtest: pending). Full repair per action, priced by damage; armor is one action for every zone; install costs an action, remove is free. A side-on cutaway with clickable parts.
 - `content/depot.ts` (`DEPOT_WEAPONS` pool with price/weight/roundPrice; `DEPOT` tuning in tuning.ts). `sim/depot.ts`: `openDepot` (seeded per depot), `quote` → cost or reason, `applyAction` (pure), `fits` = exact size match. `RunState.depot` is opened by `completeBattle`, cleared by `leaveDepot`, and validated in the save.
 - `render/cutaway.ts` draws the cutaway (per-chassis `LAYOUTS`, `onHull` → armor). `DepotScene`: priced buttons with reasons, undo (Z), Enter twice to leave with actions unused, saves after every action.
 

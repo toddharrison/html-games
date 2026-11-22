@@ -23,6 +23,8 @@ class EnemyView {
   private flash = 0;
   /** Seconds this view has run, for a charging bomb truck's strobe. */
   private clock = 0;
+  /** World units walked, for a walker's leg frames. */
+  private walked = 0;
   /** 0 = hidden in the trees, 1 = fully visible; fades between the two. */
   private visibility: number;
   private wasHidden: boolean;
@@ -47,6 +49,12 @@ class EnemyView {
     const x = viewX(at.x, at.y);
     const y = viewY(at.x);
     this.heading = e.heading;
+    // Legs step through their frames as it walks, and hold their pose when it stops.
+    const gait = ENEMY_ART[e.def.id].gait;
+    if (gait) {
+      this.walked += Math.hypot(e.vx, e.vy) * dt;
+      this.body.setTexture(gait.frames[Math.floor(this.walked / gait.stride) % gait.frames.length]!);
+    }
     const lid = ENEMY_ART[e.def.id].lid;
     if (lid) {
       // A trapdoor: the lid while it's down, the open pit (turned to its target) while it's up.

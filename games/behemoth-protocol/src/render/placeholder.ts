@@ -1109,7 +1109,8 @@ export const BATTERY = { body: 22, turret: { w: 20, h: 9 }, pivotX: 6 };
 export const HEDGE_GUN = { body: { w: 14, h: 12 }, turret: { w: 17, h: 7 }, pivotX: 4 };
 export const BOMB_TRUCK = { body: { w: 16, h: 10 } };
 export const TRAPDOOR = { size: 14 };
-export const WALKER = { body: 20, turret: { w: 13, h: 7 }, pivotX: 4 };
+/** `gait`: the body frames a stride cycles through, and the world units walked per frame. */
+export const WALKER = { body: 20, turret: { w: 13, h: 7 }, pivotX: 4, gait: { frames: ['walker_step_a', 'walker_body', 'walker_step_b', 'walker_body'], stride: 6 } };
 
 function makeObjectiveUnits(scene: Phaser.Scene): void {
   // Gun emplacement: a round concrete revetment with sandbags, a long gun on a heavy mount.
@@ -1418,20 +1419,28 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
   });
   // Spider walker (SPEC §7.4): a round armored carapace on six jointed legs splayed out (three a
   // side, the feet dark), the twin-gun turret on top. A wreck is the carapace slumped on its legs.
-  const walkerBody = (p: Painter, dead: boolean) => {
+  // `step` poses the legs for the walking cycle (`WALKER.gait`): two alternating tripods (front and
+  // rear on one side with the middle on the other) swing forward (+x) or back by 2 px.
+  const walkerBody = (p: Painter, dead: boolean, step: -1 | 0 | 1 = 0) => {
     const n = WALKER.body;
     const c = n / 2;
     const leg = dead ? PAL.ash : PAL.enemyDark;
-    for (const [dx, reach] of [[-5, 1], [0, 0], [5, 1]] as const) {
+    ([[-5, 1], [0, 0], [5, 1]] as const).forEach(([dx, reach], i) => {
       for (const side of [-1, 1]) {
-        // Upper leg out from the body, the lower leg bent down to a foot.
+        const tripod = (i + (side > 0 ? 1 : 0)) % 2 === 0 ? 1 : -1;
+        const swing = step * tripod * 2;
+        const root = c + dx;
+        const knee = root + swing;
+        const foot = knee + (dx < 0 ? -1 : dx > 0 ? 1 : 0);
+        // Upper leg out from the body, swung along to the knee; the lower leg bent down to a foot.
         const kneeY = c + side * 6;
         const footY = c + side * (9 - reach);
-        p.rect(c + dx, Math.min(c + side * 3, kneeY), 1, Math.abs(kneeY - (c + side * 3)) + 1, PAL.outline);
-        p.rect(c + dx + (dx < 0 ? -1 : dx > 0 ? 1 : 0), Math.min(kneeY, footY), 1, Math.abs(footY - kneeY) + 1, leg);
-        p.px(c + dx + (dx < 0 ? -1 : dx > 0 ? 1 : 0), footY, PAL.outline);
+        p.rect(root, Math.min(c + side * 3, kneeY), 1, Math.abs(kneeY - (c + side * 3)) + 1, PAL.outline);
+        p.rect(Math.min(root, knee), kneeY, Math.abs(swing) + 1, 1, PAL.outline);
+        p.rect(foot, Math.min(kneeY, footY), 1, Math.abs(footY - kneeY) + 1, leg);
+        p.px(foot, footY, PAL.outline);
       }
-    }
+    });
     p.disc(c, c, 5, PAL.outline);
     p.disc(c, c, 4, dead ? PAL.ash : PAL.enemy, dead ? PAL.ashLight : PAL.enemyHi, dead ? PAL.hole : PAL.enemyDark);
     if (dead) {
@@ -1440,6 +1449,8 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
     }
   };
   canvasTexture(scene, 'walker_body', WALKER.body, WALKER.body, (p) => walkerBody(p, false));
+  canvasTexture(scene, 'walker_step_a', WALKER.body, WALKER.body, (p) => walkerBody(p, false, -1));
+  canvasTexture(scene, 'walker_step_b', WALKER.body, WALKER.body, (p) => walkerBody(p, false, 1));
   canvasTexture(scene, 'walker_wreck', WALKER.body, WALKER.body, (p) => walkerBody(p, true));
   canvasTexture(scene, 'walker_turret', WALKER.turret.w, WALKER.turret.h, (p) => {
     const { w: tw, h: th } = WALKER.turret;
@@ -1475,6 +1486,8 @@ export interface EnemyArt {
   squad?: { prefix: string; soldiers: number; faceCourse?: boolean };
   /** A trapdoor team (SPEC §7.4): its texture with the lid shut, and open (turned to its target). */
   lid?: { shut: string; open: string };
+  /** Legs (SPEC §7.4 spider walker): body frames stepped through as it moves, one per `stride` world units walked. */
+  gait?: { frames: readonly string[]; stride: number };
 }
 
 export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
@@ -1498,7 +1511,7 @@ export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
   },
   artillery: { body: 'battery_body', turret: { key: 'battery_turret', pivotX: BATTERY.pivotX, w: BATTERY.turret.w }, wreck: 'battery_wreck' },
   bombTruck: { body: 'bombtruck_body', turret: null, wreck: 'bombtruck_wreck' },
-  spiderWalker: { body: 'walker_body', turret: { key: 'walker_turret', pivotX: WALKER.pivotX, w: WALKER.turret.w }, wreck: 'walker_wreck' },
+  spiderWalker: { body: 'walker_body', turret: { key: 'walker_turret', pivotX: WALKER.pivotX, w: WALKER.turret.w }, wreck: 'walker_wreck', gait: WALKER.gait },
   trapdoorTeam: { body: 'trap_shut', turret: null, wreck: 'trap_wreck', lid: { shut: 'trap_shut', open: 'trap_open' } },
   skiTroops: { body: `ski_${SKI_TROOPS.soldiers}`, turret: null, wreck: null, squad: { prefix: 'ski_', soldiers: SKI_TROOPS.soldiers, faceCourse: true } },
   hedgeGun: { body: 'hedgegun_body', turret: { key: 'hedgegun_turret', pivotX: HEDGE_GUN.pivotX, w: HEDGE_GUN.turret.w }, wreck: 'hedgegun_wreck' },

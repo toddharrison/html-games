@@ -175,6 +175,8 @@ export interface BehemothState {
    * 100 units driven, the traction, and the HUD's tag.
    */
   wading: Underfoot;
+  /** Dev console god mode: hits land (sparks, sounds) but take nothing off. Never saved. */
+  invulnerable?: boolean;
 }
 
 /** Per-tick player intent. The scene turns raw input into this. */
@@ -930,6 +932,7 @@ export function applyHit(
 
 /** Damages an arc's armor zone. Returns the damage that gets through it. */
 export function damageArmor(b: BehemothState, arc: ArmorArc, amount: number): number {
+  if (b.invulnerable) return 0;
   const left = Math.max(0, amount);
   const zone = b.armor[arc];
   const absorbed = Math.min(zone.hp, left);
@@ -942,6 +945,7 @@ export function damageArmor(b: BehemothState, arc: ArmorArc, amount: number): nu
  * Returns what the plow couldn't take, for the front armor.
  */
 export function wearPlow(b: BehemothState, amount: number, events: SimEvent[]): number {
+  if (b.invulnerable) return 0;
   let left = Math.max(0, amount);
   for (const a of b.addons) {
     if (a.def.kind !== 'plow' || !a.integrity || a.integrity.hp <= 0 || left <= 0) continue;
@@ -1019,7 +1023,7 @@ export function pickHardpoint(b: BehemothState, arc: ArmorArc, rng: Rng): Compon
 /** Damage one component directly (also used by attacks that bypass armor, e.g. on the treads). */
 export function damageComponent(b: BehemothState, id: ComponentId, amount: number, events: SimEvent[]): void {
   const c = component(b, id);
-  if (!c || amount <= 0 || c.hp <= 0 || b.destroyed) return;
+  if (!c || amount <= 0 || c.hp <= 0 || b.destroyed || b.invulnerable) return;
   c.hp = Math.max(0, c.hp - amount);
   events.push({ type: 'componentDamaged', component: id, amount });
   if (c.hp > 0) return;

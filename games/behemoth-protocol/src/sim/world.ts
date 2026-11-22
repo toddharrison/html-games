@@ -113,6 +113,13 @@ export interface World {
   /** Unit kinds seen so far this run, this battle's included (SPEC §7.4 callouts, §9 first sight). */
   sighted: EnemyId[];
   stats: BattleStats;
+  /** Dev console switches (`sim/dev.ts`); all off in a normal battle. */
+  dev: DevFlags;
+}
+
+export interface DevFlags {
+  /** Enemies hold still and hold fire: `stepEnemies` is skipped. */
+  frozen: boolean;
 }
 
 export interface BattleStats {
@@ -176,6 +183,7 @@ export function createWorld(opts: WorldOptions): World {
     condition: createCondition(opts.condition ?? null, opts.seed),
     sighted: [...(opts.sighted ?? [])],
     stats: { kills: 0, blastKills: 0, salvage: 0, blastBest: null },
+    dev: { frozen: false },
   };
   ensureTerrain(world);
   if (spec) startObjective(world, spec.strength);
@@ -235,7 +243,7 @@ export function stepWorld(w: World, cmd: PlayerCommand): void {
 
   if (!b.destroyed && !w.lastStand && w.extractedAt === null) stepEncounter(w, dt);
   if (!b.destroyed && w.extractedAt === null) stepObjective(w, dt);
-  stepEnemies(w, dt);
+  if (!w.dev.frozen) stepEnemies(w, dt);
   stepProjectiles(w, dt);
   stepPools(w, dt);
   stepHazards(w, dt);

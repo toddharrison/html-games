@@ -27,10 +27,11 @@ export interface ConditionState {
   rng: Rng;
 }
 
-export function createCondition(id: ConditionId | null, seed: number): ConditionState | null {
+/** `firstSquall`: sim time the first squall starts building (default: `CONDITION.storm.first` into the battle). */
+export function createCondition(id: ConditionId | null, seed: number, firstSquall?: number): ConditionState | null {
   if (!id) return null;
   const c: ConditionState = { id, flashAt: -Infinity, squall: 0, gust: null, rng: new Rng(hashSeed(seed, 0x57a4)) };
-  if (id === 'storm') c.gust = nextGust(c, c.rng.range(...CONDITION.storm.first));
+  if (id === 'storm') c.gust = nextGust(c, firstSquall ?? c.rng.range(...CONDITION.storm.first));
   return c;
 }
 

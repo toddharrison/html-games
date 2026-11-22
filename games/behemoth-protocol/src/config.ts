@@ -21,6 +21,7 @@
  * battle in that condition; `?event=convoy` (also a practice run) opens that event (or a random one).
  * `?doctrine=longGuns` (also a practice run) has every battle's defenders fight that doctrine;
  * `?mix=siegeTank:1,lightTank:2` (also a practice run) sets the units they field and their odds.
+ * `?dev` turns on the dev console (`src/dev/console.ts`) outside the dev server; it isn't a practice run.
  */
 
 import { MODES, type BattleModeId } from './content/modes';

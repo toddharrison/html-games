@@ -48,6 +48,7 @@ export function stepTrailer(w: World, cmd: PlayerCommand, dt: number): void {
  */
 export function hitTrailer(b: BehemothState, t: TrailerState, damage: number, rng: Rng, events: SimEvent[], x: number, y: number): void {
   events.push({ type: 'trailerHit', damage, x, y });
+  if (b.invulnerable) return;
   const absorbed = Math.min(Math.max(0, t.armor.hp), damage);
   t.armor.hp -= absorbed;
   const through = damage - absorbed;

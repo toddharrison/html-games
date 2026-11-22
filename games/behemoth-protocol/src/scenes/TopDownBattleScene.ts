@@ -62,7 +62,25 @@ import { demoCommand } from '../input/demoBot';
 import { newRun } from '../sim/run';
 import { APPROACHES } from '../content/approaches';
 import { BIOMES } from '../content/biomes';
+import type { ConditionId } from '../content/conditions';
+import { devCondition } from '../sim/dev';
 import { fitCamera } from './screen';
+
+/** The dev console's levers on the battle scene (`src/dev/console.ts`): the sim world itself, plus the scene's own state. */
+export interface BattleDev {
+  readonly world: World;
+  paused: boolean;
+  /** Sim speed multiplier (1 = real time). */
+  timeScale: number;
+  /** The debug readout (backtick). */
+  debug: boolean;
+  /** Runs one sim step (1/60 s) while paused. */
+  step(): void;
+  /** Switches the condition, veil and weather included. */
+  setCondition(id: ConditionId | null): void;
+  /** Starts this battle over from its start. */
+  restart(): void;
+}
 
 /** Seconds the battle keeps running after extraction before the depot opens. */
 const OUTRO_TIME = 2.5;
@@ -103,6 +121,9 @@ export class TopDownBattleScene extends Phaser.Scene {
   private layout!: BattleLayout;
   private paused = false;
   private showDebug = false;
+  /** Dev console: sim speed multiplier, and a single step asked for while paused. */
+  private devTimeScale = 1;
+  private devStep = false;
   private readonly interp = new Interp();
   private smokeTimer = 0;
   /** Sim time the latest last-stand wave was announced. */
@@ -335,8 +356,10 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.reticle.setPosition(Math.round(p.x / zoom), Math.round(p.y / zoom));
 
     const dt = deltaMs / 1000;
-    if (!this.paused) {
-      const steps = this.stepper.advance(dt * this.simTimeScale());
+    const stepOnce = this.paused && this.devStep;
+    this.devStep = false;
+    if (!this.paused || stepOnce) {
+      const steps = stepOnce ? 1 : this.stepper.advance(dt * this.simTimeScale());
       const cmd = this.controls.command(this.cameras.main);
       this.lastCmd = cmd;
       const wreckAt = immobilizeAtFromUrl();
@@ -428,7 +451,45 @@ export class TopDownBattleScene extends Phaser.Scene {
   /** Slow-motion beat in the last moments before the reactor goes (SPEC §5.1). */
   private simTimeScale(): number {
     const fuse = this.world.behemoth.reactorFuse;
-    return fuse !== null && fuse < 0.5 ? 0.3 : 1;
+    return (fuse !== null && fuse < 0.5 ? 0.3 : 1) * this.devTimeScale;
+  }
+
+  /** The dev console's handle on this battle; null in the attract mode or before the battle is built. */
+  devHooks(): BattleDev | null {
+    if (this.demo || !this.world || !this.sys.isActive()) return null;
+    const scene = this;
+    return {
+      get world() {
+        return scene.world;
+      },
+      get paused() {
+        return scene.paused;
+      },
+      set paused(on) {
+        scene.paused = on;
+      },
+      get timeScale() {
+        return scene.devTimeScale;
+      },
+      set timeScale(k) {
+        scene.devTimeScale = k;
+      },
+      get debug() {
+        return scene.showDebug;
+      },
+      set debug(on) {
+        scene.showDebug = on;
+      },
+      step: () => {
+        this.devStep = true;
+      },
+      setCondition: (id) => {
+        devCondition(this.world, id);
+        this.weather?.destroy();
+        this.weather = WeatherView.create(this, this.layout, this.world);
+      },
+      restart: () => this.scene.restart(this.ctx),
+    };
   }
 
   private statusMessage(): string | null {

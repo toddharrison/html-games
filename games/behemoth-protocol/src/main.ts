@@ -7,6 +7,10 @@ import { SummaryScene } from './scenes/SummaryScene';
 import { EventScene } from './scenes/EventScene';
 import { TitleScene } from './scenes/TitleScene';
 import { DemoBattleScene, TopDownBattleScene } from './scenes/TopDownBattleScene';
+import { DevConsole, devEnabled } from './dev/console';
+
+// Before the game is made: it puts saved tuning tweaks back first.
+const dev = devEnabled() ? new DevConsole() : null;
 
 const rs = renderScale(RESOLUTION);
 const game = new Phaser.Game({
@@ -23,6 +27,7 @@ const game = new Phaser.Game({
   },
   scene: [BootScene, TitleScene, MapScene, TopDownBattleScene, DepotScene, EventScene, SummaryScene, DemoBattleScene],
 });
+dev?.attach(game);
 
 // Scenes listen for the scale manager's resize event and re-apply the camera zoom.
 window.addEventListener('resize', () => {

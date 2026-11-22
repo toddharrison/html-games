@@ -74,6 +74,13 @@ export class WeatherView {
     return c ? new WeatherView(scene, layout, c.id, w.terrain.recipe.biome) : null;
   }
 
+  /** Removes the veil and weather (the dev console switching the condition mid-battle). */
+  destroy(): void {
+    this.rt.destroy();
+    this.g?.destroy();
+    for (const img of this.lights) img.destroy();
+  }
+
   /** Flashes and blasts light the dark for a moment. */
   handle(events: readonly SimEvent[]): void {
     if (this.id !== 'night') return;

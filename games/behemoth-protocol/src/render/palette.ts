@@ -1,0 +1,124 @@
+/**
+ * Placeholder palette. The player is cool gunmetal with amber accents; enemies are rust red so
+ * they pop against both the Behemoth and the green ground (SPEC §11.1: strong contrast).
+ */
+export const PAL = {
+  // Ground
+  grass: '#3f5b2c',
+  grassLight: '#4b6a33',
+  grassDark: '#354d26',
+  dirt: '#5e5436',
+  dirtDark: '#4a422b',
+  // Forest
+  canopyShadow: '#1f3519',
+  canopy: '#2f5426',
+  canopyLight: '#447233',
+  canopyHi: '#5b8a3f',
+  trunk: '#4e3a26',
+  ash: '#2c2a25',
+  ashLight: '#3b362e',
+  ember: '#d8662a',
+  // Buildings
+  wall: '#6f6a60',
+  roofA: '#8a4f3d',
+  roofAHi: '#a5654f',
+  roofADark: '#6b3a2d',
+  roofB: '#7d7f84',
+  roofBHi: '#9b9da1',
+  roofBDark: '#5e6064',
+  pavement: '#55534c',
+  rubble: '#7a756b',
+  rubbleDark: '#55514a',
+  hole: '#1a1714',
+  // Rock
+  stone: '#76736c',
+  stoneHi: '#9c978c',
+  stoneDark: '#4d4a45',
+  gravel: '#3e3b36',
+  // Water
+  waterDeep: '#1f3a4a',
+  water: '#2a4d60',
+  waterLight: '#3c6578',
+  shallow: '#3f6a6a',
+  shallowLight: '#558080',
+  silt: '#56624a',
+  foam: '#a8c8cc',
+  // Player Behemoth
+  steelDark: '#232b33',
+  steel: '#4c5d6c',
+  steelMid: '#62778a',
+  steelHi: '#8fa4b6',
+  steelGlint: '#c9d6e0',
+  tread: '#1c1f22',
+  treadLink: '#3a4047',
+  treadLinkHi: '#4d555d',
+  amber: '#ffb347',
+  amberHot: '#fff0b0',
+  glow: '#5ff2ff',
+  glowDim: '#2c8c9c',
+  glowHot: '#e0ffff',
+  // Plasma: violet, so it never reads as fire (orange) or water (blue)
+  plasmaDim: '#5a2a8a',
+  plasma: '#b45cff',
+  plasmaHot: '#f2d6ff',
+  outline: '#12161a',
+  // Enemies
+  enemy: '#b04a35',
+  enemyHi: '#d4694c',
+  enemyDark: '#7a2e22',
+  enemyTread: '#2a1d1a',
+  // Common terrain features
+  concrete: '#8e8b84',
+  concreteHi: '#b0ada5',
+  concreteDark: '#5f5d58',
+  mineBody: '#3b3a2f',
+  mineHi: '#6e6c58',
+  deck: '#6d6a62',
+  girder: '#4d555d',
+  girderHi: '#7d8892',
+  plank: '#7a5d3e',
+  plankDark: '#56412b',
+  // Temperate crops
+  cropA: '#8c8f3c',
+  cropB: '#6e8a36',
+  cropDark: '#535f2b',
+  // Arctic ice and snow
+  ice: '#a9c9d8',
+  iceHi: '#e2f1f7',
+  iceDark: '#86aec1',
+  iceCrack: '#33607a',
+  thinIce: '#6f9cb2',
+  snow: '#e6edf1',
+  snowHi: '#ffffff',
+  snowShade: '#bccbd5',
+  // Industrial
+  rust: '#7a4a2e',
+  rustHi: '#99633f',
+  tankWhite: '#c8c5bc',
+  tankHi: '#e2dfd6',
+  tankShade: '#8e8b83',
+  sleeper: '#4b3b2b',
+  railSteel: '#a4abb2',
+  // Blasted wasteland
+  glass: '#2c3833',
+  glassHi: '#94bcae',
+  glassDark: '#19211e',
+  wreck: '#5e4535',
+  wreckHi: '#86634a',
+  wreckDark: '#241b16',
+  // FX / UI
+  white: '#ffffff',
+  shellPlayer: '#fff3a6',
+  shellEnemy: '#ff6a3d',
+  hudBg: '#121518',
+  hudLine: '#2c343b',
+  hudText: '#c9d6e0',
+  hudDim: '#6b7a87',
+  good: '#6fcf57',
+  warn: '#e3b23c',
+  bad: '#d64933',
+} as const;
+
+export function hex(color: string): number {
+  return parseInt(color.slice(1), 16);
+}

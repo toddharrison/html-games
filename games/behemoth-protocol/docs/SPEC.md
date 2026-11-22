@@ -1,0 +1,770 @@
+# Behemoth Protocol — Game Specification, Draft v0
+
+> Status: brainstorm draft. Items marked **[DECIDE]** are open; see §16. Settled decisions are logged in §15.
+> Title: **Behemoth Protocol**. The player's unit is **the Behemoth**; its mission orders are **Directives**.
+>
+> **Inspiration:** an homage to Steve Jackson Games' *Ogre* (lone cybernetic supertank vs. a combined-arms force). This is our own game: original title, unit names, setting, and art. We don't use *Ogre*'s name, unit designations, factions, or terminology. A credits line can say "Inspired by *Ogre*."
+
+## 1. Pitch
+
+You are the boss. A colossal autonomous war machine — treads the size of buildings, bristling with guns — grinds across a scrolling battlefield to carry out a single directive. An entire battalion throws everything it has at you. You can't dodge like a fighter jet; you're too big. You survive by choosing what to shoot, what to sacrifice, what to repair, and what to bolt on before the next fight.
+
+### Design pillars
+1. **Feel enormous, then grow bigger.** Slow acceleration, relentless forward momentum (nothing stops you; stopping means death), crushing small units under the treads, plowing through forests and buildings. Over a run, the machine physically grows as you bolt on modules, extra treads, and a trailer.
+2. **Damage is degradation, not a health bar.** Losing tread integrity makes you slower, and the whole battlefield scrolls slower with you. Losing a weapon removes it. You get worse gradually and can see why.
+3. **Three triggers, many guns.** You fire the main gun, the secondaries, and the missiles yourself; everything else is automatic. Your skill is in positioning, aim, timing, and managing finite ammo and power.
+4. **Every choice costs something.** Pick the route, the approach, the loadout, and what to repair. You can never have everything.
+5. **The machine shows its state.** Armor plates shake when hit, barrels glow with heat, damaged parts smoke and spark. You should be able to read the Behemoth's condition by looking at it, not only at the HUD.
+6. **Lots of variety.** Many terrain types, weapons, and enemies, which multiply with each other (biome × approach × enemy doctrine × mode × conditions × weapon modifiers). No two runs, and few battles, should play the same.
+
+## 2. Platform & tech stack
+
+**Browser game: TypeScript, Vite, Phaser.**
+
+| Concern | Choice | Why |
+|---|---|---|
+| Language | TypeScript (strict) | The game is data-heavy (weapons, units, components, add-ons); types catch content and logic bugs early. Compiles to plain JS. |
+| Build/dev | Vite | Instant hot reload, trivial static build for deployment. |
+| Engine | Phaser (WebGL with Canvas fallback) | Provides scenes, input, asset loading, camera, tweens, particles, and audio. Has a built-in pixel-art mode (`pixelArt: true`, nearest-neighbor scaling). |
+| Simulation | Engine-agnostic TS module | Game rules live in pure TS with no Phaser imports, so they can be unit-tested and stay deterministic. Phaser only renders and reads input. |
+| Tests | Vitest | Unit tests for the simulation, damage model, power/mass rules, terrain, and procgen. |
+| Persistence | `localStorage` (versioned JSON) | Two saves: the **run** (deleted on death) and the **profile** (unlocks and NG+ progress, kept permanently). No backend. |
+| Deployment | GitHub Pages, from the html-games monorepo | No server needed. Every push to `main` deploys https://toddharrison.github.io/html-games/behemoth-protocol/. |
+
+Engine-level rules:
+- **Fixed timestep** simulation (60 Hz) separate from render frame rate.
+- **Seeded RNG** for all procedural generation and combat randomness. Every run has a seed, which makes bugs reproducible and allows daily-seed runs later.
+- **Data-driven content:** weapons, enemies, chassis, add-ons, terrain, and encounters are defined as typed data tables, not hard-coded classes.
+
+## 3. Run structure
+
+```
+Run start: pick a Directive + chassis (+ starting loadout); NG+ level applies modifiers
+  └─► Sector map (branching route of nodes, each showing intel)
+        ├─► Battle node  ──► salvage, damage carried forward
+        ├─► Depot node   ──► repair / rearm / refit / bolt on add-ons (limited actions)
+        ├─► Event node   ──► risk/reward choice (provisional, see §8.3)
+        └─► ... ──► Objective battle (the Directive target; often an enemy Behemoth)
+  Win: Directive complete → unlocks + next NG+ level. Lose: reactor destroyed. Permadeath.
+```
+
+- **Run length:** about 3 sectors × 6–10 nodes, **30–45 minutes**.
+- **Directives** frame each run and set the final objective, e.g. *destroy the enemy Behemoth*, *destroy the command bunker*, *reach the coast*, *seize the bridge before the defenders blow it*.
+- Damage, ammo, installed systems, and add-ons carry forward between nodes.
+- **Callsign:** each run's Behemoth gets a callsign drawn from the run seed: a true historical name of a devil or demon (the *Ars Goetia*'s spirits, scripture and lore, the *Dictionnaire Infernal*, older Mesopotamian, Persian, Egyptian, and Japanese traditions), with a line on who it was. It heads the map, the HUD, and the depot, and the death screen mourns it.
+
+### 3.1 Route choice is the main strategic decision
+Each battle node on the sector map shows **intel** so that choosing a route means choosing how you approach the fight:
+
+| Intel field | Examples |
+|---|---|
+| **Approach** (where you break in) | River crossing, forest line, urban district, open plain, mountain pass |
+| **Terrain** | What dominates the strip: forest, buildings, water, ridges, open ground |
+| **Defender makeup** | "Heavy armor + artillery", "Infantry-heavy, entrenched", "Hovercraft raiders" |
+| **Battle mode** | Assault, Breach, Chase, Pursuit, Duel (§4.4) |
+| **Reward** | Salvage amount, depot access next, a guaranteed weapon or add-on |
+
+- Intel can be **partial or fogged** ("unknown armor"). Better sensors, events, and some add-ons reveal more.
+- Approaches reward different builds. Urban favors demolition weapons and ram plating; forest favors flamethrowers and mortars; open plain is fast but exposes you to long-range missile launchers and artillery; a river crossing means a bridge fight and hovercraft.
+- **The map** (M3, implemented; numbers provisional, `sim/sectorMap.ts`, `SECTOR_MAP` in tuning.ts, `scenes/MapScene.ts`): 3 sectors, each a biome (sector 1 is always Temperate; the others are drawn without repeats, and the Blasted wasteland never comes first). A sector is a layered route of **6–8 nodes**, drawn bottom to top the way the Behemoth drives: an **entry** (sector 1: the opening battle; later sectors: a forward depot), branching layers of battles and depots across 4 lanes (the union of 3 random walks that never cross), a **depot layer** right before the end, then the sector's **objective battle**. On every route: never two depots in a row, never more than 2 battles in a row. A run is about 21 nodes: ~12.5 battles and ~8.5 depots. Picking a node shows its intel on the right; the player's condition and the battle just won are on the left.
+  - **Battle intel:** ground (the approach, or the biome's mix), **defenders** (the doctrine, §7.2, which is the battle's actual mix, shaded by the ground, §7), **strength** (normal; **strong**, 30% of battles: +2 threat, +40 salvage; **objective**: +3 threat, +100 salvage), **mode** (Assault, Breach, or Chase, §4.4; never fogged), and **reward** (extraction salvage, and a **supply cache** on 20% of battles: +1 action at the next depot). Threat starts at 7 and climbs 0.3 per layer over the whole run (it sizes the battle's defenders and alert waves, §7; 0.6 before the alert clock made it matter). Battles side by side never share an approach.
+  - **Fog:** a node two or more steps away hides each field by chance (approach 25%, defenders 60%, strength 40%, reward 50%); 12% of those stay hidden one step away (deep fog). **Gen 2 sensors** see through deep fog, **Gen 3** through all of it. A fogged strong battle shows as a plain one; an objective always shows as one. Depots one step away list the weapons they sell (sibling depots stock different goods); farther ones don't.
+  - Winning the last sector's objective wins the run (a placeholder "Run complete" screen until Directives and the run summary). The opening battle keeps the run seed, so `?seed=N` still names a known battlefield.
+- **As terrain** (M3, implemented; numbers provisional): a battle's strip is its sector's **biome** (§4.6) × the node's **approach**. Each approach scales the biome's feature mix and may add a set piece (`content/approaches.ts`). **Open plain:** forests, towns, and rock thinned out (×0.3–0.4), more farmland. **Forest line:** forests ×2.2 and 1.3× bigger. **Urban district:** towns ×2.2 at 1.4× the size, factories ×1.5, more craters, and a **main avenue** 3 tiles wide through every town along the way forward (the quick road, overlooked from every window, or the blocks either side). **River crossing:** rivers about every other chunk, nearly all bridged. **Mountain pass:** cliffs 1.5–5 tiles deep along both field edges (rock, wandering), the lane held near mid-field, more fortified lines. A node can also be fought on the biome's own balanced mix (no approach).
+
+## 4. Battle gameplay
+
+### 4.1 Camera and view: hybrid, rolled out in phases
+
+| View | Used for | When it's built |
+|---|---|---|
+| **Top-down / ¾, vertical scroll** | All standard battles. The Behemoth drives up the screen and moves in 2D within the frame. | M0 onward (core) |
+| **Side-on profile, static** | The depot/refit screen: a large cutaway of the Behemoth with its hardpoints, add-ons, and damage. Also battle intros and the run summary. | M2 (it's a UI screen, so it's cheap) |
+| **Side-on profile, playable** | Set-piece battles: assaulting a fortified wall, a bridge crossing, an enemy Behemoth duel. | Stretch, M4+ |
+
+**Why phase it.** Each playable view effectively adds a second game: controls, AI movement, terrain, collision, balancing, and above all **art**. The static side view gets most of the visual impact for little cost.
+
+**Keeping the door open.** The sim follows these rules:
+- **Shared:** damage model, weapons, power, ammo, targeting priorities, encounter budgets, run state. None of these may assume a camera.
+- **Hit direction is abstract:** a hit reports an *arc* (front-left/front-right/rear/left/right/top), not a screen angle.
+- **Per-view:** movement/physics, enemy movement AI, terrain, and rendering live in separate battle modes (`TopDownBattle`, later `SideBattle`). Both run on the same `world` and systems.
+- **Side-view movement model (when built):** throttle forward/back along the ground. Enemies sit in 2–3 depth lanes, and elevation plays the role that open space plays in top-down.
+
+**Why vertical.** With the Behemoth driving up the screen, screen directions match the machine's own: W is forward, A/D steer to its left and right, and the armor schematic reads front-up. On a landscape screen the battlefield is a centered column with the HUD in side panels (§10). The cost is forward visibility, since the screen is shorter than it is wide. The Behemoth sits low in the frame to compensate, and enemy engagement ranges are tuned to what's visible.
+
+The rest of §4 describes the top-down mode.
+
+### 4.2 Movement and scrolling: the scroll is the Behemoth's speed
+There is **no independent auto-scroll**. The camera follows the Behemoth's forward progress, so **the scroll speed is the Behemoth's ground speed**.
+
+- **Cruise:** with no input, the Behemoth rolls forward at its cruise speed. Holding **W** pushes toward top speed. Holding **S** brakes, but **only down to a minimum speed**: the Behemoth never stops by choice and never reverses. **A/D** steer left and right; a turn builds up and settles smoothly (the hull swings onto its new angle rather than snapping), and the hull straightens out before it reaches the field edge.
+- **Camera:** keeps the Behemoth about ¼ of the way up from the bottom (at cruise), with smoothing lag. When you surge forward, the tank pulls ahead in the frame before the camera catches up; when you brake, it drifts back. The camera **never scrolls backward**, with one exception: in the last stand it eases to center the stopped Behemoth (§5.1).
+- **Threat-aware framing:** while enemies are behind the Behemoth, the camera slows its scroll so the Behemoth drifts up to about 40% of the frame, showing more of the rear. When the threat is gone it eases back. It never scrolls backward to do this.
+- **Speed and agility** (top, cruise, and minimum speed, acceleration, lateral agility, turret traverse) are calculated from tread integrity, mass against tread capacity (§5.3), and terrain.
+- **Damage slows the battle down.** When the treads fail, the whole battlefield visibly slows with you. You feel the damage in the pacing, not just in a number. Losing all tread integrity stops the Behemoth, and that's a death sentence (§5.1).
+- **Why not just brake? The alert clock.** Terrain and fixed defenses are placed **by distance**. Reinforcement waves arrive **by time**. The slower you go, the more reinforcements reach you before you hit the exit. Each mode adds its own time pressure (§4.4).
+
+#### Momentum and collisions: always pushing forward
+Forward momentum is central to the game's flavor and pacing. **Nothing on the battlefield stops the Behemoth outright.** Everything is crushed, plowed through, or deflected. What changes is **how much it costs you**.
+
+| Obstacle class | Examples | Outcome without ram gear |
+|---|---|---|
+| **Trivial** | Infantry, fences, hedges, forest | Crushed. No slowdown; negligible tread wear. |
+| **Light** | Light tanks, trucks, hovercraft, rubble | Crushed. Tiny speed dip; light tread and front-armor wear. |
+| **Medium** | Heavy tanks, AT guns, small buildings, tank traps | Plowed through. Noticeable speed dip; moderate front-armor and tread damage. |
+| **Heavy** | Large buildings, bunkers, walls, siege tanks, train cars | Plowed through (the obstacle is destroyed), but a big speed dip and heavy damage to front armor and treads. Can knock out front hardpoints. |
+| **Immovable** | Ridges, rock, cliff faces | Glancing deflection: the Behemoth slides along it, scraping armor on that side, but keeps moving. |
+| **Enemy Behemoth** | — | Both take heavy damage and shove apart. The heavier machine loses less speed. |
+
+- **Collision damage** scales with the obstacle's toughness and the impact speed. The speed dip is brief: the Behemoth then recovers at its normal acceleration.
+- **Ram gear** (ram plow, ram plating, ram boost) sharply cuts the damage you take, adds damage to whatever you hit, and shrinks the speed dip. With ram gear, plowing through a town is a strategy. Without it, you shoot buildings down first or pay in treads and armor.
+- **Chassis class shifts the table:** a Colossal chassis treats medium obstacles as light, and a Class I treats medium as heavy.
+- **The terrain generator guarantees a way forward.** No terrain fully blocks the route; there is always something passable or destructible (see rivers in §4.5).
+
+### 4.3 Controls (keyboard + mouse; gamepad later)
+The player fires **three triggers**; every weapon is bound to one of them or to **Auto** (§5.2). Everything else is automatic.
+
+| Input | Action |
+|---|---|
+| WASD | W surge, S brake (down to minimum speed, never a stop), A/D steer left/right |
+| Mouse | Aim. Turrets rotate toward the cursor at their **traverse speed** (heavy feel; slower when damaged). |
+| **LMB** (hold) | Weapons bound to LMB (by default the main guns; two or more L guns on one trigger ripple, §5.2) |
+| **RMB** (hold) | Weapons bound to RMB (by default the secondaries, which fire at the cursor) |
+| **Space** | Weapons bound to Space (by default the missiles: lock on to the target under the cursor and fire a salvo) |
+| 1–4 | Toggle auto-weapon groups on/off (to save power or ammo, or hold fire). Built-in autos have their own group (1 anti-personnel, 2 point defense, 3 mortars); weapons the player puts on Auto are group 4. |
+| Tab | Cycle auto-target priority (nearest / most dangerous / infantry / vehicles) |
+| F | Active ability (smoke, EMP, ram boost); costs power or ammo |
+| X (hold) | **Final protocol**: self-destruct. Only available when Immobilized or with the reactor critical (§5.1). |
+| Q (hold) | **Jettison** the trailer (§5.5): it drops into the track as a mine. |
+| Esc | Pause (also pauses automatically when the tab loses focus) |
+| M | Mute sound (remembered per browser) |
+
+**Right-click in a browser** works reliably once it's handled:
+- Suppress the context menu over the game canvas (Phaser: `input.mouse.disableContextMenu()`).
+- On a Mac, Ctrl+click produces a right-click event. Treat it as RMB.
+- Trackpad users without easy right-click get an alternative binding (Shift+LMB), and all keys are **rebindable** in settings (M5).
+
+### 4.4 Battle modes
+Battles are procedurally assembled from a seed: a terrain strip (§4.5) based on the node's approach, plus defenders and reinforcement waves drawn from a threat budget. Length is about **2–4 minutes**.
+
+| Mode | Goal | Time pressure | Notes |
+|---|---|---|---|
+| **Assault** | Reach the extraction line | Alert clock (reinforcements) | The standard battle |
+| **Breach** | Destroy a fortification or structure, then exit | Alert clock | Walls, bunkers, and gun emplacements. Demolition matters. |
+| **Chase** | Catch and destroy a fleeing enemy Behemoth or convoy | The target pulls away if you're slower and escapes off the far end | Shoot its treads to slow it. Escorts screen it and lay mines. Your speed is everything. |
+| **Pursuit** | Escape: reach the exit | An enemy Behemoth or strike group closes in **from behind** | Rear armor, rear mounts, and the trailer matter. Blow the bridge behind you. |
+| **Duel** | Destroy an enemy Behemoth head-on | Its reinforcements keep arriving | A boss fight. Candidate for the playable side view later. |
+
+*(A "hold position" mode was dropped because it conflicts with constant forward momentum.)*
+
+*M3 (implemented, numbers provisional; `content/modes.ts`, `sim/objective.ts`):* Assault, Breach, and Chase. Every mode still ends at the extraction line; Breach and Chase add **targets**. Each target destroyed pays its share of the mode's bonus (+60 salvage for all of them, on top of the node's extraction reward), and its own kill salvage (20 a fortress gun, 25 a hauler). A target **left behind** the frame, or a hauler that **escapes** past the extraction line, is lost; missing targets never stops the run, it just pays less. The HUD shows the targets destroyed (left panel, above the alert clock), banners call each one destroyed or lost and the outcome, and off-screen targets get **amber** edge arrows at any distance.
+- **Breach:** a **fortress** stands across the field 55–70% of the way to the extraction line, at a column clear of any river: a fortified line (wall, a trap belt in front, garrisoned bunkers behind) with **2 gates** and **3/4/5 guns** (normal/strong/objective) set into gaps in the wall, a gate sometimes right beside a gun. The guns cycle through the **gun emplacement** (a heavy fortress gun at the front armor; front ×0.5), the **weapon tower** (autocannon bursts plunging into the weapon mounts), and the **rocket bunker** (rocket pairs at the treads; thick all round). All are fixed, face the approach (the thick front toward you; flank and rear are softer), and are **heavy obstacles**: plowing through one destroys it at a heavy ram's cost. Posts are 0.8× the doctrine's size.
+- **Chase:** a **convoy** starts ahead, just out of sight (amber arrows), driving up the guaranteed lane at **1.15× the Behemoth's rated cruise**: a cruising Behemoth loses ground, a surge catches it. **3/4/5 armored haulers** (the targets; medium obstacles, so they can be run down) slow as they're damaged (down to half speed at 0 HP). A **mine layer** (1/1/2) at the tail drops up to 6 mines in plain sight behind it on bare ground, and **2/3/3 escorts** (light tanks, hovercraft) screen it. Posts are 0.6× size. A convoy keeps running during the last stand.
+- **Map:** past the opening battle (always Assault), each battle node draws its mode: Assault 2, Breach 1, Chase 1 (weights; its own random stream). The map marks Breach and Chase nodes with their initial on the icon's shoulder (never fogged); the intel panel shows the goal and the bonus.
+
+### 4.5 Destructible terrain
+Terrain is a **tile grid**. Each tile has a material, hit points, and a state (intact → damaged → destroyed). Destroying terrain is a core tactic, not decoration.
+
+| Terrain | Effect | Destruction |
+|---|---|---|
+| **Forest** | Hides infantry (invisible until revealed by sensors at close range or by clearing the trees) and gives them some protection | Shooting or burning leaves a cleared, burnt patch that reveals hidden units. Crushing flattens it. |
+| **Buildings / town blocks** | Block line of fire; infantry **garrison** them: hidden like in forest, better protected, firing out of the windows | Shoot them down to rubble first, or plow through and take collision damage (medium or heavy, see §4.2). Rubble is light. Knocking one down pays a little salvage. |
+| **Walls / bunkers** | Fortifications with high hit points that block fire. Walls stop all ground units; bunkers are garrisoned by infantry (80% protection, hidden). Armed emplacements come with Breach. | Need heavy weapons (wall 200 HP, bunker 360). Plowing a wall is a heavy obstacle; gates are free. Appear as **fortified lines** (§4.6). |
+| **Bridges** | A road across a river (3 tiles wide): the fast, dry crossing, and with fords the only one for tracked units | The whole span comes down when shot out (girder bridge 120 HP, light road bridge 50) and falls into the river: blow it behind you to strand pursuers. **Weight limits:** a girder bridge holds 400 t, a light bridge 300 t (a stock Class II is 245 t), and a Behemoth over the limit collapses the span under itself (a 4-HP tread jolt, then it fords). Vehicles on a span that falls are lost. |
+| **Craters** | Rough going for small units (tracked ×0.75), a scrape for infantry to hide in (25% protection) | Indestructible. Crater fields are generated, and any single blast hit of 100+ tile damage (heavy shells, missiles, detonations) or a mine or fuel tank going up leaves a new one. |
+| **Tank traps** (dragon's teeth) | Stop tracked vehicles; the Behemoth plows them as a **trap** obstacle (small speed dip, 4 tread damage a tile at cruise, barely any armor) | 60 HP each: shoot a gap first. Belts 2 columns deep in a checkerboard, with gates. |
+| **Minefields** | Hidden: they look like open ground until the Behemoth's sensors sweep them (the reveal radius), then stay marked. Under the treads a mine blows into them (30 × 0.3 = 9 tread damage); enemies never set off their own. | Any hit sets one off; it leaves a crater. |
+| **Rivers** | Shallows along the banks, a deep channel between, and a **ford** or two where it's shallow all the way across. The Behemoth can always **ford**: shallows hold it to cruise speed; in deep water it drops to minimum speed and the treads wear while it churns through. A ford (or a bridge) is the fast, safe crossing, and the only one for tracked enemies. Infantry wade slowly. Hovercraft cross freely. | Indestructible. Shells splash instead of scorching. |
+| **Ridges / rock** | Block direct fire, not indirect fire. Impassable to other ground units. Glancing collisions scrape armor (§4.2). | Indestructible; steer around them. (Only a Behemoth boxed in with no way around grinds through, see §15.) |
+| **Open ground** | — | A heavy blast leaves a crater (above) |
+
+*Stretch:* fire spreading through forests.
+
+### 4.6 Biomes and conditions
+Each sector has a **biome**, which sets the tile palette and brings its own special terrain on top of the common terrain above.
+
+| Biome | Special terrain | Gameplay character |
+|---|---|---|
+| **Temperate** | Farmland, hedgerows, villages | The baseline; balanced mix |
+| **Desert** | Dunes (slow), dry wadis, oil derricks | Long sightlines favor missile launchers and artillery. Sandstorms. |
+| **Arctic** | Ice sheets (momentum slides), **thin ice** (breaks under heavy mass, dropping you into icy water: minimum speed plus tread damage until you climb out), snowdrifts | Weight and momentum matter even more |
+| **Marsh / delta** | Bog (treads sink and slow), reeds (hide infantry), many channels | A hovercraft paradise; bridges are critical |
+| **Industrial** | Refineries and **fuel tanks (chain explosions)**, factories, rail yards | Explosive terrain used as a weapon by either side; armored trains |
+| **Urban ruins** | Dense blocks, collapsed overpasses, rubble fields | Constant demolition; garrisoned infantry |
+| **Badlands / volcanic** | Canyons, mesas (ridges), lava fissures (hazard), ash fields | Narrow choke points, ambush from the heights |
+| **Coastal** | Beaches, sea walls, harbors, cliffs | Gunboats offshore; seawall breaches |
+| **Blasted wasteland** | An old battlefield: craters everywhere, ruined towns and works, burnt-out wrecks, glassed blast sites, old minefields and trap belts | Cover everywhere for infantry, scrap for the taking; the hardest going (user request, Nov 2026) |
+
+Extra terrain features that can appear in several biomes: **minefields** (hidden; revealed by sensors), **craters**, **rail lines** (armored train routes), **power pylons** (destroy them to black out bunkers and turrets), **ammo dumps** (big explosion, bonus salvage), **fortified trenches**, **tank traps / dragon's teeth** (medium obstacles that chew up the treads unless you shoot them first), **radar towers** (destroy them to reduce artillery accuracy). *Built in M3:* minefields, craters, tank traps, rail lines (cosmetic until trains), and **fortified lines** (a wall across the field with 2–3 gates, bunkers behind it, a tank-trap belt with its own gates in front).
+
+**M3 biomes** (user's picks, Nov 2026: Temperate, Arctic, Industrial first, then Desert and Blasted wasteland; implemented, numbers provisional, `content/biomes.ts`). Each biome has its own tile palette and feature mix; the common features turn up in all of them.
+- **Temperate:** the baseline mix, plus **farmland** (crop rows the treads flatten, cosmetic) often boxed in by **hedgerows** (banked hedges: they slow vehicles to 0.35, hide infantry with 25% protection, and the Behemoth tears through them like trees).
+- **Arctic:** snow palette, more drifts and rock, fewer towns. **Snowdrifts** hold the Behemoth to cruise (no surge, tagged DRIFT) and bog small units down. **Ice sheets** (frozen lakes, river banks) take away grip: the Behemoth's acceleration, braking, and steering drop to 30% (blended by how much of the ground box is on it), so it keeps sliding the way it was going (tagged ICE). **Thin ice** (lake hearts, and every river channel, which is frozen over) holds 200 t: a heavier Behemoth cracks it, faster the heavier it is (a stock Class II in under a second), and drops into icy water (minimum speed and tread wear, as fording). Enemy armor drives across frozen rivers anywhere, and drowns when the ice breaks under it; shells break holes in it too.
+- **Industrial:** cinder palette, little cover but buildings. **Factory halls** (big, 260 HP, 5 salvage, garrisoned like buildings; some inside a walled compound with a gate front and back), **tank farms** of **fuel tanks** (25 HP: a hole sets one off after 0.25 s, a 40-radius, 50-damage blast that sets off the next tank, so a farm goes up in a chain; plowed into, it blows under the hull or at the nose), and **rail lines** along the direction of travel (cosmetic until armored trains, M4; the treads twist them). Compounds and tank farms always stand beside the way forward, never across it.
+- **Desert:** sand palette, long sightlines (few trees, few towns, adobe roofs), more sandstone mesas. **Dune seas**: long sand ridges across the field that hold the Behemoth to cruise and bog small units down (like drifts, tagged SAND). **Wadis**: its rivers are dry (no water, no bridges); vehicles drive the sandy bed at 0.85, infantry lie hidden in it with 30% protection. **Oilfields**: derricks on a 3-tile grid beside the way forward; a derrick (40 HP, a lattice tower shots pass through) holed goes up after 0.4 s (radius 44, 60 damage; spaced so they don't chain) and pays 3 salvage. A few fuel tanks and wrecks. *Sandstorms* come with conditions.
+- **Blasted wasteland:** ash palette, dead trees, a toxic-green river. **Ruins**: 40% of the buildings, factory halls, walls, and bunkers start as rubble and 35% damaged (so fortified lines have breaches). **Craters** everywhere (crater fields ×8 the temperate rate). **Wrecks**: burnt-out hulks (150 HP, block fire, medium obstacle, impassable to vehicles) that hide infantry (50% protection) and pay 4 salvage scrap when cut apart. **Blast sites**: glass (fused ground, grip 0.5, tagged GLASS) ringed by craters, wiping out whatever stood there. More minefields and trap belts than elsewhere.
+
+**Conditions** (a per-battle modifier, shown in the node intel):
+
+| Condition | Effect |
+|---|---|
+| Night | Short vision; muzzle flashes reveal shooters (including you); searchlights |
+| Fog / rain | Shorter auto-target and lock-on range; rain stops forest fires |
+| Sandstorm / blizzard | Periodically drops visibility; slows hovercraft |
+| Ion storm | Random power surges and drains; disrupts missile lock-on |
+| Clear | Long range for everyone, which favors artillery |
+
+## 5. The Behemoth (player unit)
+
+### 5.1 Components
+There is **no single HP bar**. The Behemoth is made up of components, each with its own integrity:
+
+| Component | Effect when damaged | Effect when destroyed |
+|---|---|---|
+| **Treads** (one or more sets) | Lower speed and agility, so the battle scrolls slower | That set adds nothing. When **all** sets are gone, the Behemoth is **Immobilized** (below). |
+| **Armor zones** (front-left, front-right, rear, left, right) | Absorb damage before it reaches the internals behind them | Damage passes straight through |
+| **Hardpoints** (each mounted weapon) | Reduced fire rate or accuracy; turret traverse slows | Weapon offline until repaired at a depot |
+| **Sensors** | Shorter auto-target range and hidden-unit reveal radius | Auto-weapons only engage at close range |
+| **Fire control** | Auto-fire grows less accurate | Weapons the player bound to Auto fall back to their default trigger; built-in autos keep firing under **local control**, less accurately still |
+| **Reactor** | Lower power output (§5.4) | **Reactor detonation**, which ends the run (below) |
+| **Ammo magazine** | Nothing until it's destroyed (below) | Cooks off if it still holds rounds, using up every hull munitions weapon's ammo |
+| **Add-ons / trailer** (§5.5) | Varies by module | Module lost; the trailer can be jettisoned first |
+
+**Immobilized means doom.** When total tread integrity reaches zero, the Behemoth grinds to a halt and the camera eases to center it (the only time the camera moves backward). The alert clock jumps to continuous, escalating reinforcement waves from every side (ahead, behind, and across both edges of the field), and every enemy on the map converges. You can still fire every weapon, so it plays out as a dramatic last stand. But you can't reach the exit or the objective, so the run ends when the reactor falls. This is why tread integrity is the stat players watch most closely. Infantry rockets, sappers, mines, tank traps, and collisions all target it.
+
+**Minimum speed drops toward zero.** Minimum, cruise, and top speed all scale down with tread integrity. A healthy Behemoth's minimum speed is a steady roll, while a badly damaged one barely creeps, and at zero integrity it stops. The slide toward Immobilized is gradual and visible, never a sudden cliff.
+
+#### Tread recovery
+Some components let you claw tread integrity back during a battle. Recovery is **slow, limited, or costly**, so tread damage still matters, but a good build can survive a bad moment.
+
+| Component | Type | Effect |
+|---|---|---|
+| **Repair drone bay** | Trailer module | Drones fly out and patch the most-damaged tread set over time, from a repair pool that refills between battles, draining power while they're out. Drones can be shot down; lost ones are replaced at depots. Once per battle, they can **revive an Immobilized Behemoth** to a fraction of tread integrity. |
+| **Nanite tread weave** | Add-on | Slow, continuous tread regeneration while the capacitor has spare power. Competes with energy weapons. |
+| **Spare track segments** | Munitions (ability) | Spend a charge for an instant chunk of tread integrity. Limited charges; restocked at depots. |
+| **Emergency welders** | Add-on | When a tread set drops below a threshold, automatically restores it once per battle |
+| **Redundant tread sets** | Add-on (extra tread set, §5.5) | More total integrity, and losing one set isn't fatal |
+| **Reactive tread skirts** | Add-on | Armor over the treads: absorbs mine, sapper, and collision damage before the treads take it |
+
+Recovering from Immobilized is **only** possible through the repair drone bay's once-per-battle revive (or future unlocks), so being stopped stays nearly always fatal.
+
+#### Reactor detonation: failure that pays off
+When the reactor is destroyed, the Behemoth doesn't just fade out. It **goes up in a massive explosion**, and that's meant to be a reward in itself.
+
+- **Death sequence:** reactor alarms, the casing glows white-hot and cracks spread across the hull. Then a slow-motion beat, a screen flash, and a huge chunky pixel-art blast with a shockwave ring, flying debris, and secondary explosions as each ammo store and weapon cooks off.
+- **The blast is a weapon.** It destroys everything within a large radius. The radius and damage grow with **reactor size, the remaining munitions, and the remaining power**, so a fully loaded Behemoth makes the biggest boom. Fuel and ammo trailers add their own detonation.
+- **It counts.** Kills from the death blast count toward salvage tallies, milestones, and unlocks. Some milestones are specifically about the blast: *take an enemy Behemoth down with you*, *destroy 50 units in your final explosion*, *level an entire town block*. Failure still moves your progression forward.
+- **Final protocol (self-destruct):** once Immobilized, or with the reactor critical, the player can hold a key to **trigger detonation deliberately**. Time it so the converging enemies (or an enemy Behemoth) are packed close, for a last-stand payoff.
+- **Run summary** opens with the blast: units vaporized, the biggest thing taken out, and a replay-style still frame of the moment.
+
+#### Ammo magazine: the munitions build's risk
+In real tanks, a hit on the ammo store is the classic catastrophic kill. The Behemoth gets the same weakness, so munitions builds carry a risk that energy and ballistic builds don't.
+
+- The **magazine** is an internal component, like the sensors. It sits deep in the hull, with low exposure on every arc. It's where the hull's munitions weapons keep their ammo (missiles, howitzer and mortar shells, flamethrower fuel), so the ammo counts on the weapon strip are what's in it. Energy and ballistic weapons don't use it.
+- **Cook-off.** When the magazine is destroyed while it still holds rounds, they go off inside the hull. The blast damages the components next to it and the armor around it from the inside. The damage grows with the rounds left, so a magazine you've fired empty is safe. It cooks off only when it's destroyed, never on a hit before that (user's call, Nov 2026). The cost is the rounds: the weapons it feeds are otherwise untouched, and a trailer ammo bunker can still refill them.
+- **Blowout panels** (add-on): a cook-off vents outward through the deck instead. The rounds are still lost, but the components next to it and the armor are spared; the panels blow off and protect nothing until they're repaired at a depot. It's the munitions build's insurance.
+- The trailer's ammo bunker already cooks off on its own (§15 "Trailer (M2)"), outside the hull; the magazine is the risk you carry inside it.
+- **Death blast:** the rounds left in the magazine add to the reactor detonation, as "the remaining munitions" (above) already does.
+
+- The **direction a hit comes from** determines which armor zone it strikes, so facing matters. The front is split at the hull's centerline: a front hit lands on the half on the side where it struck, so angling the hull decides which front corner takes fire from ahead.
+- An intact armor zone absorbs the whole hit. Only the damage that gets through it reaches an internal component, chosen by weighted random (seeded) from a per-chassis exposure table: each arc has weights for the treads, sensors, and reactor, and each hardpoint has its own per-arc exposure (the reactor sits at the rear, sensors at the front, tread pods along the flanks). Destroyed components and empty slots are skipped.
+- Some attacks bypass armor and strike a component directly: ramming strains the treads, infantry rockets hit the treads, and enemy missiles send half their damage into a hardpoint exposed on the struck arc (the rest hits the armor). Later: mines and sappers.
+- **Reactor destroyed → detonation:** a short fuse (about 2 s, with a slow-motion beat at the end) during which the Behemoth coasts to a stop and its weapons go dead, then the blast. Units inside the radius are vaporized and a fringe beyond it takes falling-off damage; terrain inside is levelled.
+- **Enemy Behemoths use exactly the same component model** (§7.1).
+
+### 5.2 Hardpoints, turrets, and bindings
+- The chassis has hardpoint slots with **sizes** (S / M / L) and **positions** (turret, hull-front, flanks, rear). Position determines firing arc. A weapon fits only a slot of **its own size** (M2, provisional): L weapons are main guns, so every turret ring's main slot carries one.
+- Each hardpoint has a mount point on the hull and a **firing arc** (turrets and the spine rack cover 360°; the prow covers about ±70° forward; flank mounts cover their side). Own-mount weapons swing toward their target inside the arc and only fire when lined up.
+- **Turret rings.** A turret is a ring with its own pivot, traverse rate, and mount slots. A chassis declares its rings, and add-ons (the dorsal ring) or trailer modules can add more. Every ring traverses toward the cursor at its own rate (a heavy main ring lags while a lighter one snaps on), and its guns fire along the ring's current facing. The ring's main (L) slot sets its integrity: damage slows its traverse, and destroyed, it's stuck. A **coaxial** slot is an extra slot on a ring that fires along the ring's facing with no traverse of its own: full 360° coverage, but only where the turret points.
+- **Bindings.** A weapon's *behavior* (shell at the cursor, homing missile salvo, intercept) belongs to the weapon; its *trigger* is the player's choice per hardpoint: **LMB**, **RMB**, **Space**, or **Auto**, set at the depot for free. Each weapon type has a default binding (main guns LMB, secondaries RMB, missiles Space, the rest Auto), so new weapons work without setup, and lists which bindings it allows: L guns and coax weapons are never Auto; point defense is Auto only. Everything on a trigger fires together, except that **two or more L guns on one trigger ripple**: each pull fires the next ready gun in turn, at most one every ~0.25 s, so holding ripples and clicking alternates. Splitting the main guns over LMB and RMB fires them independently.
+- **Fire control** is a core component, like the sensors. Anything firing on its own uses it: a shot's spread is the weapon's own spread × the fire-control spread, which widens with damage. It has **channels** (2 on Class II): each weapon the player binds to Auto uses one, while weapons that are Auto by default don't. Destroyed, player-bound weapons fall back to their default trigger, and the built-in autos keep firing under local control at a further accuracy penalty (start around 2.5×; tune in playtest). Keys 1–4 still toggle auto groups (player-bound autos are group 4).
+- **Missiles** lock on to the unit nearest the cursor (within a small radius) when the salvo starts, then home in. With nothing to lock on to, the salvo flies to the cursor point and bursts there.
+- **Autos** engage the nearest valid target in range, in arc, and in line of fire; reach shrinks with sensor damage. **Point defense** shoots down incoming missiles first, then shells.
+
+### 5.3 Mass and tread capacity
+- Every installed system and add-on has **mass** (tons). A wrecked weapon still weighs until it's removed at a depot.
+- Each tread set has a **mass capacity**. Up to that capacity, speed drops gently as mass increases. Above it, speed drops steeply.
+- More guns therefore means slower, unless you also add treads. This is the core loadout trade-off, and it ties directly into growth (§5.5).
+- Mass scales the minimum, cruise, and top speeds, acceleration, and lateral speed, on top of tread integrity (the two multiply). The chassis' listed speeds are its speeds **at rated capacity**: an empty machine is 15% faster, and every 10% over capacity costs 20%, down to a floor of 40%.
+- With several tread sets, capacity is the sum over the sets that still work, so losing one can tip the Behemoth into overload. Add-ons weigh too (§5.5).
+- Class II (M2): capacity 280 t; the starting loadout weighs 245 t (88%). Weapons: S 12–16 t, M 40–70 t, L 110–150 t. Swapping in the siege howitzer alone puts it just over (285 t, about 4% slower); the heaviest refit the current slots allow is about 20% over. The depot shows the load and the resulting cruise, and install and remove buttons preview the change; the battle HUD's speed label reads OVERLOAD while over capacity.
+
+### 5.4 Power
+The reactor generates **power per second** into a **capacitor** (maximum storage). Weapons fall into three categories:
+
+| Category | Cost to fire | Trade-off |
+|---|---|---|
+| **Ballistic** | Nothing | Reliable baseline, lower damage |
+| **Munitions** | Finite ammo, refilled only at depots | High burst damage, but you need to plan depot stops |
+| **Energy** | Power from the capacitor | Unlimited ammo, limited by reactor output. Competes with shields and abilities. |
+
+- When the capacitor runs dry, energy weapons and abilities stop until it recharges.
+- **Reactor damage lowers output**, so a damaged Behemoth running an energy build gets weaker quickly.
+- Toggling auto groups off (1–4) is how you route power to what matters.
+- This makes builds meaningfully different. An energy build is self-sufficient but power-starved. A munitions build hits hard but depends on depots. A ballistic build is steady and needs nothing.
+
+### 5.5 Growth: getting bigger
+Size progresses on three layers:
+
+**Within a run: add-ons** (bought or found at depots) physically enlarge the Behemoth:
+
+| Add-on | Effect |
+|---|---|
+| **Extra tread set** | More mass capacity and tread integrity; wider footprint |
+| **Sponsons** | Additional side hardpoints, sold one side at a time (a lopsided build is allowed) |
+| **Dorsal turret ring** | A second turret ring with an L slot, on the aft deck above the spine; arrives empty |
+| **Coaxial mount** | An M slot on the main turret that fires along its facing (§5.2) |
+| **Ram plow** | Ram gear; a blade over the nose that takes ram and plowing damage before the front armor (incoming fire skips it) |
+| **Blowout panels** | A magazine cook-off vents outward instead of wrecking the components next to it (§5.1) |
+| **Trailer** | A towed, articulated unit with its own slots and armor. Options: **missile pod** (extra missile capacity/salvos), **ammo bunker**, **auxiliary generator** (more power), **drone bay** (repair drones). It takes rear hits first, which makes it a target for hovercraft raiders. It can be **jettisoned** in an emergency and detonates like a mine. Limit one in v1. Details in §15 "Trailer (M2)". |
+
+**Between runs: chassis classes** (unlocked, chosen at run start):
+
+| Class | Size | Character |
+|---|---|---|
+| Class I | Large | Fastest, fewest slots, limited add-on capacity |
+| Class II | Huge | Balanced (the starting chassis) |
+| Class III | Colossal | Slow, many slots, heavy add-on capacity. Breaks bridges and crushes buildings. |
+
+**Trade-offs of size:** more slots, more armor, and a bigger crush footprint, but also a bigger target, more mass, a slower turn rate, and trouble with narrow passes and bridge weight limits.
+
+Because components are drawn separately (§11), add-ons appear on the sprite as they're installed. *[DECIDE]* whether the camera zooms out as the Behemoth grows.
+
+### 5.6 Component upgrades
+Parts get better in two ways, both bought at depots (user's calls, Nov 2026):
+
+- **Grades.** Every core component (reactor, sensors, fire control, magazine, and the chassis' own treads) comes in **Gen 1** (what the chassis is built with), **Gen 2**, and **Gen 3**. A higher grade **replaces** the component: it arrives whole, the old one sells back (§8.2), and any mods on the old one go with it. Higher grades are **better but heavier**, so they compete with guns for tread capacity (§5.3). Grades turn up in the depot's seeded stock (0–2 a depot, only grades above what's fitted; Gen 3 from the second depot on), so they're finds.
+- **Mods.** Leveled tracks bought on one part, up to **level 3**, each level costing salvage and one depot action. They're **always on offer** on any part that takes them, so a build can be planned. Each level adds a little mass. A part keeps the share of integrity it had when a mod raises its maximum, so hardening a wreck doesn't repair it.
+
+| Grade | Gen 2 | Gen 3 |
+|---|---|---|
+| Reactor | +15 t: output ×1.3, capacitor ×1.25, integrity ×1.15, detonation ×1.15 | +30 t: output ×1.6, capacitor ×1.5, integrity ×1.3, detonation ×1.3 |
+| Sensors | +3 t: reveal radius ×1.3, auto reach ×1.1, integrity ×1.25 | +6 t: reveal ×1.6, auto reach ×1.2, integrity ×1.5 |
+| Fire control | +4 t: +1 channel, auto spread ×0.8, integrity ×1.25 | +8 t: +2 channels, spread ×0.6, integrity ×1.5 |
+| Magazine | +8 t: cook-off ×0.7, integrity ×1.5 | +16 t: cook-off ×0.45, integrity ×2 |
+| Treads | +10 t: capacity ×1.15, integrity ×1.2 | +20 t: capacity ×1.3, integrity ×1.4 |
+
+| Mod track | Goes on | A level |
+|---|---|---|
+| **Harden** | Core components and hardpoint mounts | +20% integrity, 2 t |
+| **Traverse** | A turret ring (via its main slot) or a mount that turns on its own | +25% traverse, 1 t |
+| **Plate** | One armor zone | +20% armor, 4 t |
+| **Cap bank** | The reactor | +20% capacitor, 3 t |
+
+Mods on **hull fixtures** (mounts, rings, armor zones) stay when the weapon in the slot is swapped; removing a mount add-on (a sponson, the dorsal ring) takes its mods with it, and they add to its resale. Mods on a **core component** go with it when it's replaced by a higher grade. A coax has no traverse of its own (it turns with its ring), and a traverse mod is refused on a mount whose weapon is fixed. Trailer modules and add-ons' own parts (plow, panels, outboard treads, the trailer frame) take no mods yet. Weapon tiers (§6) are separate and still to come. *Numbers are provisional; see §16 Q15.*
+
+## 6. Weapons
+
+| Weapon | Category | Role | Best against | Notes |
+|---|---|---|---|---|
+| Heavy cannon | Ballistic | Main | Tanks, structures | The baseline main gun, slow reload |
+| Railgun | Energy | Main | Heavy armor; pierces through lines | Charges up; large power cost per shot |
+| Autocannon | Ballistic | Secondary | Light/medium vehicles | |
+| Pulse laser | Energy | Auto (S) | Infantry, light vehicles | Instant beam, short reach; a little power per pulse |
+| Beam laser | Energy | Secondary (M) | Anything; precise | Pulses so fast it reads as one steady beam; drains power faster than the reactor refills it. *Later:* ignites forests (§16 Q6) |
+| Heavy laser | Energy | Main (L) | Tanks, long range | Instant, pinpoint strikes; no splash; large power cost per shot |
+| Missile rack | Munitions | Missile | Anything; big damage | Lock-on salvos; the README's "refill missile launchers" |
+| Anti-personnel guns | Ballistic | Auto | Infantry | Many small mounts; short range |
+| Point-defense guns | Ballistic | Auto | Incoming missiles and shells | |
+| Point-defense laser | Energy | Auto | Incoming missiles and shells | More reliable than PD guns; costs power per intercept |
+| Mortar | Munitions | Auto | Units behind cover or in forests | Indirect fire over ridges |
+| Flamethrower | Munitions (fuel) | Auto | Infantry, forests, buildings | Burns away cover |
+| Shield projector | Energy (module) | Passive | Absorbs hits on one armor arc | Constant power drain |
+| Ram plating | Module | Passive | Anything you drive into | Turns crushing into a weapon |
+| Siege howitzer | Munitions | Main | Fortifications, groups behind ridges | Indirect, lobbed shells aimed at the cursor; large area of effect |
+| Coilgun | Energy + ballistic | Main | Everything in a line | Fast, flat, penetrating; moderate power cost |
+| Flak cannon | Ballistic | Secondary | Air, hovercraft, infantry groups | Airburst shells |
+| Rotary gun | Ballistic | Secondary | Infantry, light vehicles | Spins up; barrels heat fast |
+| Plasma thrower | Energy | Secondary (M) | Short-range everything; melts buildings | Very hungry for power. Globs splash at the cursor and leave a **plasma pool** burning for a few seconds that hurts everything in it, **the Behemoth included** (don't drive over it) |
+| Cluster missiles | Munitions | Missile | Groups, infantry in the open | Splits into submunitions |
+| Bunker-buster missiles | Munitions | Missile | Buildings, bunkers, enemy Behemoth armor | Slow; armor-piercing |
+| Swarm rockets | Munitions | Missile | Many light targets | Locks on to several targets at once |
+| Tesla coil | Energy | Auto | Infantry and light vehicles in clusters | Lightning that chains between targets |
+| Mine layer | Munitions | Auto (rear) | Pursuers | Drops mines behind you. Built for Pursuit. |
+| Drone launcher | Munitions | Auto | Anything | Launches short-lived attack drones |
+| Harpoon tether | Ballistic | Secondary (alt) | Enemy Behemoths, heavy tanks | Harpoons a target and reels it in or drags it. Built for Chase. |
+| ECM jammer | Energy (module) | Passive | Missiles, artillery | Lowers enemy accuracy and lock-on nearby |
+| Decoy launcher | Munitions | Auto | Incoming missiles | Flares and chaff |
+
+Abilities (F): **smoke** (munitions), **EMP pulse** (power; stuns vehicles and missiles), **ram boost** (power), **shockwave stomp** (power; knocks back and stuns nearby infantry), **overcharge** (sacrifice reactor integrity for a burst of power).
+
+Weapons upgrade in tiers at depots (damage, rate of fire, range, capacity, power efficiency).
+
+### 6.1 Weapon modifiers (affixes)
+Every weapon found at a depot or salvaged can roll **0–2 modifiers**. This turns ~30 base weapons into hundreds of combinations.
+
+| Modifier | Effect |
+|---|---|
+| Incendiary | Sets targets and terrain on fire |
+| Armor-piercing | Ignores part of the armor; better against bunkers and Behemoths |
+| Twin-linked | Two barrels: more damage, more heat, more mass |
+| Long-barrel | More range, slower traverse |
+| Overcharged | Energy only: more damage, more power cost |
+| Efficient | Less power or ammo per shot |
+| Concussive | Stuns or slows on hit |
+| Seeking | Projectiles curve slightly toward targets |
+| Salvaged | Cheap, but its integrity starts low |
+| Lightweight | Less mass |
+| Autoloader | Faster reload; ammo runs out faster |
+
+Modifiers are data (stat changes plus optional on-hit hooks), so new ones are cheap to add.
+
+### 6.2 Main-gun shells
+Choosing the right round for the target is the defining real-tank decision. Main guns that fire shells take a choice of **shell type**:
+
+| Shell | Flight | Best against | Weak against |
+|---|---|---|---|
+| **High-explosive** | Bursts at the aim point with splash; clears forest and knocks down buildings | Infantry, light vehicles, structures | Heavy armor |
+| **Armor-piercing** | Fast and flat; flies until it hits something, no splash; ignores part of the armor | Heavy tanks, bunkers, enemy Behemoths (§7.1) | Infantry, terrain clearing |
+| **Canister** | A short-range cone of pellets straight out of the muzzle | Infantry swarms, sappers, and boarders up close | Anything past short range or armored |
+
+- It builds on the per-class damage multipliers every round already carries (§15 "Target classes"), plus the arc multipliers on enemies (§7). Each shell is a projectile kind plus a multiplier table, so it's data.
+- Each gun lists the shells it can take (the heavy cannon all three; the siege howitzer high-explosive and later cluster). Energy main guns (railgun, coilgun) don't use shells.
+- **Chosen at the depot**, per gun, for free like a binding (§5.2). The heavy cannon's current round is the high-explosive shell, and it stays the default. No key to swap shells in battle for now (user's call, Nov 2026; §16 Q11).
+- *Provisional numbers (heavy cannon):* high-explosive as before (40 damage, 18 blast). Armor-piercing: speed 720, 55 damage, range 420, ×1.5 vs heavy and ×0.4 vs infantry, and it ignores half of a vehicle's front armor (×0.75 becomes ×0.875). Canister: 10 pellets of 6 damage in a ±11° cone out to 120, ×2 vs infantry, ×0.6 vs light, ×0.15 vs heavy. Same reload for all three.
+- Shells for ballistic guns cost nothing to fire, so the choice is about the targets ahead, not about ammo.
+
+## 7. Enemies
+
+All enemies are small next to the Behemoth. Variety comes from **role**, so the player has to prioritize targets.
+
+| Unit | Role | Behavior | Threat to |
+|---|---|---|---|
+| Infantry squad | Swarm / anti-armor | Spreads out, hides in forests and buildings, fires short-range rockets at the treads | Treads |
+| Light tank | Skirmisher | Circles and harasses, fast | Flank/rear armor |
+| Heavy tank | Line unit | Slow, frontal assault, high armor | Front armor |
+| Missile launcher | Glass cannon | Long range, volleys | Hardpoints |
+| Hovercraft | Raider | Very fast, crosses water, hit-and-run from the rear | Rear armor, trailer |
+| Artillery | Area denial | Stays at the edge; telegraphs a target zone, then shells it | Everything in the zone |
+| Engineers | Support | Lay mines, repair units, **blow bridges** | Treads |
+| Command post | Force multiplier | Static; buffs nearby units. Destroying it makes them panic. | — |
+| Gun emplacement / bunker | Fortification | Static, armored, sits in walls | Front armor |
+| Weapon tower | Fortification | Static; tall, so its bursts plunge onto the deck | Hardpoints |
+| Armored hauler | Convoy | Unarmed; flees up the field in a column (Chase targets) | — |
+| Mine layer | Convoy | Unarmed; drops mines in plain sight behind the convoy | Treads |
+| Sniper team | Precision | Hides at long range; targets sensors and weapon barrels | Sensors, hardpoints |
+| Sappers | Suicide / demolition | Sprint in to plant charges on the treads; explode | Treads |
+| Anti-tank gun (towed) | Ambush | Dug in, camouflaged; high-velocity shots at the flanks | Flank armor |
+| Rocket artillery | Saturation | Fires ripple salvos over a wide zone | Everything in the zone |
+| Mobile radar | Spotter | Boosts the accuracy of artillery and missiles; kill it first | — |
+| EW / jammer truck | Disruption | Blocks your missile lock-on and slows power regen nearby | Power, missiles |
+| Shield generator | Support | Projects a dome over nearby units | — |
+| Tank destroyer | Heavy hitter | Low, heavily armored front, one big gun | Front armor, hardpoints |
+| Mine-laying hovercraft | Area denial | Strews mines along your path | Treads |
+| Supply truck | Logistics | Destroy them to slow the reinforcement clock | — |
+| Gunboat | River / coast | Patrols water; you can't reach it with ram or crush | Flank armor |
+| Armored train | Mini-boss | Runs on rail lines; a chain of destructible cars (see §7.3) | Everything |
+| Spider walker | Assault | Climbs ridges and rubble that block other vehicles | Rear armor |
+| Siege tank | Mini-boss | Superheavy; slow; **two turrets** (a huge cannon and a second gun, each tracking its own target; user's call, Nov 2026) | Front armor |
+| Attack helicopter | Air | Fast strafing runs; only PD, flak, and AP can hit it | Hardpoints |
+| *Stretch:* Bomber | Air | High-altitude bombing runs along a telegraphed line | Everything in the line |
+| *Stretch:* Drone swarm | Air | Many tiny units; tesla and flak are good against them | Sensors |
+
+*Implemented by M3:* the four M1 units; the **hovercraft** (hover mobility: skims deep water and ice that stop tracked vehicles, never needs a ford, otherwise goes where tracks go; fast and fragile; for now it circles like the light tank, the rear hit-and-run behavior is still to come); and the battle modes' units (§4.4): **gun emplacement**, **weapon tower**, **rocket bunker** (Breach fortress guns) and the **armored hauler** and **mine layer** (the Chase convoy). Next, by user request (Nov 2026): **placed artillery** (telegraphed target zones), the **superheavy dual-turret tank**, and **a unique unit for each biome**.
+
+**Fairness rules** (every enemy, every view):
+- **No fire from off-screen.** A unit must be inside the visible frame to open fire. Leaving the frame mid-aim cancels the shot. Off-screen units show as edge arrows (§10).
+- **Telegraphed shots.** Before each shot a unit visibly lines up (a muzzle glint for direct fire, for M0 about 0.45 s). Big attacks get longer, louder telegraphs (artillery zones, missile locks).
+- **Rear attackers stay in view.** Units attacking from behind hold position well inside the frame, not at its edge.
+
+**Facing armor.** Enemy vehicles are tougher from the front than from behind, as in nearly every tank game, so steering and turret aim pay off on the attack too. Each vehicle has a damage multiplier per arc (front / flank / rear), worked out from the direction the round arrives from relative to the hull's heading (front and rear within 45° of the hull's axis). A vehicle falling back from the Behemoth backs up with its front toward it, up to its own reverse speed; a faster retreat turns tail and shows its rear. Line units (heavy tanks) back up at full speed; light tanks circle too fast to reverse, so they show their tails while orbiting ahead. *Provisional:* front ×0.75, flank ×1, rear ×1.5 for most vehicles. The tank destroyer's front is much harder (around ×0.4) and its rear soft, and fixed emplacements are armored on the front only. Infantry have no facing. Splash damage counts as a flank hit, and top hits (lobbed shells, bombs) as a rear hit. A rear or flank hit gets a distinct spark and sound so players learn it. Enemy Behemoths and train cars use their full component model instead (§7.1, §7.3).
+
+Encounters use a **threat budget**, shaped by the node's approach, biome, and the defenders' **doctrine** (§7.2). Defender makeup on the map comes from the same data, so the intel is accurate. *M3 (implemented, `sim/encounter.ts`):* each battle node has a **threat** (its strength on the map). **Defenders** are placed by distance: posts along the strip (every 550–850 units, ~7 a battle), each a group worth about half to two-thirds of the threat, met as the camera reaches it (troops already dug into cover, vehicles just beyond the top of the screen). **Reinforcements** come by time on the **alert clock**: the first wave at 30 s, then every 28 s, 1.5 s sooner each wave down to 15 s, each worth 0.3 × threat plus 0.4 more per wave. A wave's units roll in one at a time (troops dropped into cover ahead, vehicles from ahead, behind, or across a field edge; heavy tanks and launchers never from behind), held back while the field already holds 1.75 × threat. Each unit costs its own threat (light tank 1, infantry 1, missile launcher 1.5, heavy tank 2). The mix is the doctrine's, shaded by the ground: troops are commoner in forests, towns, and factory districts and rarer on open plains, snow, and sand; launchers favor plains and passes. Numbers are provisional.
+
+### 7.2 Doctrines and elite variants
+- **Doctrines** weight which units a defending force fields, so the same roster produces very different fights:
+
+| Doctrine | Favors |
+|---|---|
+| Armored fist | Heavy tanks, tank destroyers, siege tanks |
+| Entrenched | Infantry, AT guns, bunkers, minefields, trenches |
+| Mobile raiders | Hovercraft, light tanks, helicopters |
+| Long guns | Artillery, rocket artillery, radar, snipers |
+| Electronic warfare | Jammers, shield generators, drones |
+| Combined arms | A balanced mix; usually defends objectives |
+
+- *M3 first pass (implemented, `content/doctrines.ts`):* combined arms, armored fist, entrenched, mobile raiders, and long guns, each a weighted mix of the four M1 units (heavy tanks; infantry; light tanks; missile launchers) plus hovercraft for the raiders (a river crossing doubles their odds again), and the map's defender intel names it. Objectives and the opening battle are combined arms. A doctrine also **splits its force** between posts and alert waves (§7): entrenched holds bigger posts but reinforces at half strength; raiders hold smaller posts and send bigger waves. Later units join the mixes as they arrive; doctrines don't shape terrain yet (entrenched could bring more minefields and fortified lines).
+- **Elite variants** roll on units more often in later sectors and at higher Protocol levels: *veteran* (accurate), *armored*, *shielded*, *camouflaged*, *volatile* (explodes on death), *commander* (buffs nearby units). They get a visual marker such as a colored outline or pennant.
+
+### 7.1 Enemy Behemoths
+The signature enemy and a frequent Directive target.
+- They are built from the **same component, hardpoint, power, and mass systems** as the player's, using content-defined loadouts scaled by sector. This means very little new code.
+- **Target their components.** Shoot the treads to slow it (essential in Chase), knock out its main gun to reduce the threat, or break through an armor zone to hit the reactor.
+- **Salvage:** weapons on hardpoints you destroy without wrecking can sometimes be recovered and installed.
+- They appear in Chase, Pursuit, and Duel modes, and as the final objective of some Directives.
+- **Archetypes** (content-defined loadouts, each with modifiers): *Brawler* (ram prow, flamethrowers), *Artillery platform* (howitzers, slow, heavily escorted), *Sprinter* (light, fast; Chase target), *Fortress* (shields, point defense, slow), *Carrier* (drone launchers, trailer), *Hunter* (coilgun, harpoon; Pursuit mode).
+
+### 7.3 Armored trains
+A second kind of boss alongside enemy Behemoths. Where a Behemoth is one big machine, a train is **long and segmented**, and it moves on a fixed, predictable path.
+
+**Composition.** A locomotive plus 3–8 cars assembled from content data, so trains vary as much as Behemoths do:
+
+| Car | Role |
+|---|---|
+| **Locomotive** | Drives the train. Destroy it and the train coasts to a stop and becomes a static fortress. Heavily armored front. |
+| **Gun car** | One heavy turret; the main threat |
+| **Flak / AA car** | Point defense against your missiles and drones |
+| **Rocket car** | Artillery salvos while the train moves |
+| **Troop car** | Releases infantry squads and sappers when you get close or when it's damaged |
+| **Command car** | Buffs the whole train; destroying it disables the turrets' coordinated fire for a while |
+| **Ammo / fuel car** | Explodes violently when destroyed, damaging the neighboring cars (and you, if you're close) |
+| **Armored flatbed** | Carries a tank or AT guns that dismount |
+| **Shield car** | Projects a shield over nearby cars |
+
+**Behavior and counterplay:**
+- Trains follow **rail lines** placed by the terrain generator. They cross the battlefield (often diagonally or alongside your route), may stop, and can reverse.
+- **Each car is its own entity** with armor and integrity. The train is a chain of linked cars, structurally similar to the Behemoth's trailer, so the code can be shared.
+- **Destroying track** ahead of the train derails it: cars pile up and take heavy damage, and the wreck becomes cover and rubble terrain. Track tiles are destructible terrain (§4.5).
+- **Ramming** a car from the side can push it off the rails if your chassis is heavy enough.
+- **Pick your targets:** blow up the ammo car next to the gun cars for a chain reaction, or take out the locomotive first to pin it in place.
+- **Salvage:** destroyed gun cars can yield turret weapons.
+
+**Where trains appear:**
+- As a **mini-boss** in Industrial, Desert, and Arctic biomes (anywhere with rail lines).
+- **Intercept** (a Chase variant): stop a supply or troop train before it leaves the map. Derail it or kill the locomotive.
+- **Escort** (a Directive variant): the enemy is moving a Behemoth or a superweapon on a heavy rail transport. Destroy it before it reaches the depot.
+- As **moving cover for defenders** in Assault and Breach, with a train parked or running along a defended line.
+
+Rail lines also affect your Behemoth: crossing a track is fine, but driving *along* rails damages them (and therefore disables train routes). That's a deliberate way to shut down the trains in an area.
+
+## 8. Between battles
+
+### 8.1 Resources
+- **Salvage** (currency): earned from destroyed enemies and buildings, with bonuses for objectives and speed.
+- **Ammo** (missiles, mortar shells, fuel): stored per weapon or in the trailer's ammo bunker.
+- **Power** refills fully between battles. It's an in-battle resource only.
+- **Depot actions:** the limit that forces choices.
+
+### 8.2 Depot actions (each costs salvage and an action)
+- Repair treads, an armor zone, the reactor, or an add-on
+- Repair or reactivate a destroyed hardpoint
+- Rearm one munitions weapon
+- Install a weapon from the depot's (random) stock, or swap/remove one
+- Upgrade a weapon tier
+- Replace a core component with a higher grade from the stock, or buy a mod level on a part (§5.6)
+- Bolt on an **add-on** or **trailer module** (§5.5)
+
+A typical depot offers **3 actions** (plus one per supply cache picked up since the last depot, §3.1). Decided in M2 (user's calls): a repair restores one component **fully**, priced by the damage it fixes, except that treads (any tread set) and armor can be **patched partway** when the salvage left won't cover the full job: the repair spends what it can (the flat fee plus as many whole integrity points as the rest buys) and still uses an action, and partial armor gives every zone (and the trailer) the same share of what it's missing; the armor zones are re-plated together as **one** action; **removing** a part takes no action and sells it back for **65%** of its depot price when whole, scaled by the integrity it has left (rounded down; a wreck is worth nothing); each depot stocks **4–5** random weapons (installing one replaces whatever is in the slot, arrives whole, and comes fully loaded) and **1–2** random add-ons it can take and doesn't have yet (bolting one on is an action; taking one off sells it back, with a mount's weapon or the trailer's modules). With a trailer fitted (or one for sale), it also stocks **1–2** trailer modules (an action each to put in a bay, replacing what's there; taking one out sells it back). A part an install displaces sells back too, so a swap costs the difference. Actions can be undone until the Behemoth rolls out.
+
+The depot is shown as the **side-on cutaway** of the Behemoth. Hardpoints are clickable slots on the silhouette, damage is visible on the hull, and new weapons and add-ons appear on the model.
+
+### 8.3 Events (provisional)
+Short text choices with seeded outcomes, e.g. *an abandoned supply convoy (salvage, possibly mined)*, *intercepted orders (reveals the intel on the next nodes)*. **These are kept provisional.** Build a few in M3, playtest, and expand or cut them. Route and approach choices (§3.1) are the main strategic layer either way.
+
+## 9. Progression
+
+- **Permadeath.** Losing the reactor ends the run in a reactor detonation (§5.1), and the run save is deleted. Kills from the blast still count toward milestones, so a good death is still progress.
+- **Persistent unlocks** (profile save) are earned by meeting **milestones** during runs, e.g. *destroy 3 enemy Behemoths → unlock the railgun*, or *win with a trailer → unlock the drone bay*. Unlocks add to the depot pools and the starting options: weapons, add-ons, trailer modules, chassis classes, Directives, starting loadouts. Unlocks **give you more options rather than raw stats**, so skill stays the main thing that carries a run.
+- **New Game Plus (Protocol levels).** Winning a run unlocks the next Protocol level (NG+1, NG+2, …). Each level adds a cumulative modifier: more enemy Behemoths, fewer depot actions, less intel, tougher defender mixes, a faster alert clock. All unlocks carry into every level, and some can only be earned at higher levels.
+
+## 10. UI / HUD
+
+- **Layout:** the battlefield is a centered vertical column; the HUD lives in the side panels on either side of it.
+- **Schematic panel:** top-down outline (front up) of the Behemoth (including add-ons and the trailer) with components colored by integrity (green → amber → red → offline).
+- **Power gauge:** capacitor level and reactor output.
+- **Speed gauge:** current and maximum ground speed (shows the tread damage effect).
+- **Weapon strip:** grouped by binding (LMB / RMB / Space / Auto), showing reload, ammo or power cost, and on/off state.
+- **Alert clock:** an indicator for the next reinforcement wave. In Chase and Pursuit, a distance meter to the target or the pursuer.
+- **Threat indicators:** edge arrows for off-screen enemies; telegraphed artillery zones drawn on the ground.
+- **Progress bar:** distance to the exit or objective.
+- Screens: title, profile/unlocks, run setup (Directive, chassis, Protocol level), sector map with intel, battle, depot (side-on cutaway), event, run summary.
+- **Title attract mode** (user request, Nov 2026; implemented): behind the title, an autopilot fights short battles across the whole screen, dimmed under the menu: about 10 s per clip, a biome per clip in turn (a random approach), the modes rotating so every biome shows each in three passes, fading between clips. Each clip is simulated ahead before it's shown so it opens mid-fight; it's silent, and its biome, approach, and mode are captioned in a corner.
+- **Sector map look:** a field map of the sector's biome (paper, contour lines, woods, lakes, a river, a grid with references, map symbols, a north arrow), with each node a large terrain icon: the battle's approach (or the biome's own mix), a depot, or fog where the ground isn't known yet. A badge on each battle shows the defenders' strength.
+
+## 11. Art & audio direction
+
+### 11.1 Style
+- **Chunky old-school pixel art.** Rendered at a low internal resolution (currently trying 576×324; 480×270 and 640×360 also considered) and integer-scaled in physical screen pixels with nearest-neighbor filtering (Phaser `pixelArt: true`, `roundPixels`).
+- **Smooth motion over the chunky art.** The canvas is backed by physical pixels and the camera zooms by the integer scale, so art stays chunky but scrolling and movement step one *screen* pixel at a time (one game pixel per step made slow scrolling choppy). Rendering interpolates between the fixed 60 Hz sim steps. Static scenery sits on whole game pixels so it never shimmers against the scroll.
+- **Placeholder art is generated in code** at boot (simple pixel shapes drawn into textures). No external assets are needed to play the game early on. Real pixel art replaces it later without code changes.
+- **The Behemoth looks futuristic; the enemy looks conventional.** The Behemoth is sleek, angular, high-tech machinery: a wedge prow, faceted plating, armored tread pods, a visible reactor core, and thin glowing power conduits and sensor eyes (cyan on gunmetal). The defenders are conventional armor and infantry in rust red and drab tones. The era gap makes the player instantly readable and fits a "cybernetic war machine" against an ordinary army.
+- Strong palette contrast between the player and enemies; big chunky explosion particles.
+
+### 11.2 Modular sprites
+The Behemoth (and every enemy Behemoth) is **composed of independent component sprites**: hull, each tread set, each armor plate, each turret and barrel, the add-ons, and the trailer. Each sprite reflects its own component's state. This supports growth (add-ons simply appear) and makes it visually clear which part was hit.
+
+### 11.3 Status feedback: the machine shows its state
+| Status | Visual |
+|---|---|
+| Armor hit | That plate shakes 1–2 px and flashes white. Dents and scorch marks build up as its integrity drops. |
+| Firing | Muzzle flash, barrel recoil (slides back and returns), smoke puffs drifting off the barrel |
+| Barrel heat | Barrels glow from dull red to bright orange under sustained fire, then cool. *[DECIDE]* cosmetic only, or overheating as a mechanic. |
+| Damaged component | Amber: sparks and wisps of smoke. Red: pouring black smoke. Critical: fire with embers lifting off. Destroyed weapon: a charred, smoldering stub. Hits throw sparks and chips of plating, more the harder they hit. |
+| Damaged enemy vehicles | The same escalation on a smaller scale (sparks, smoke, black smoke, fire), so you can see which tank is nearly done. Troops thin out instead. |
+| Treads | Animation speed matches ground speed. They leave track marks and kick up dust; damaged treads judder. |
+| Reactor / power | A reactor glow that pulses with capacitor level and flickers when it's empty or damaged |
+| Big events | Screen shake on main-gun fire and heavy hits; a brief hit-stop when a big unit is destroyed |
+| Reactor critical / detonation | Hull cracks glowing white, venting plasma, alarms. Then slow motion, a white flash, a shockwave ring, a chunky fireball, debris, and chained cook-offs (§5.1). This should be the single most spectacular effect in the game. |
+
+### 11.4 Audio
+A heavy, low engine rumble whose pitch follows ground speed, plus a reactor hum. Each weapon category has a distinct sound, and an alarm sounds when a component goes critical.
+
+**Realistic, not arcade.** Sounds are built the way real ones are layered: a sharp transient (a muzzle crack, a shock front), a filtered body (the blast's roar sweeping down), a sub-bass drop (concussion), and a tail (the report rolling back off the land). Struck armor rings at inharmonic frequencies like a plate, not a bell. Energy weapons stay grounded: an electrical snap and the sizzle of ionized air, and the heavy laser cracks like close thunder. Everything is heard **from the Behemoth**: louder and brighter up close, quieter and duller with distance (air soaks up the highs), panned by screen side, with more outdoor reverb on far sounds. Each play shifts pitch and level a little, so no two shots or hits sound the same; cab alarms stay fixed so they're always recognizable.
+
+**What makes noise (first pass, M2).** Every weapon's report, explosions sized by blast radius (splashes in rivers), hull hits weighted by damage, vehicles brewing up (with cook-offs), crushing, trees and buildings giving way, rams, armor grinding on rock, plasma burning the treads, point-defense kills, the trailer and drones. Loops: the engine (pitch and filter follow speed and throttle), track clatter at ground speed (judders on worn treads), churned water when fording, the reactor hum (low, flutters with damage; the capacitor bank only whines in a meltdown). The drive stays deep and dark, with nothing high or whiny on top (user feedback). Cab: a two-tone alarm when a component goes critical (higher and faster for the reactor), a lock tone for incoming enemy missiles, the reactor-critical siren, the enemy's attack siren for each last-stand wave, an extraction chirp. The detonation is the biggest sound in the game.
+
+## 12. Architecture sketch
+
+```
+src/
+  sim/              # pure TS, no Phaser — deterministic, unit-tested
+    world.ts          # entity store, fixed-step update
+    rng.ts            # seeded PRNG (e.g. mulberry32 / sfc32)
+    behemoth.ts       # components, damage routing, mass/capacity, speed calc
+                      #   (shared by player and enemy Behemoths)
+    power.ts          # reactor output, capacitor, draw priority
+    weapons.ts        # roles, firing, targeting, projectiles, lock-on
+    terrain.ts        # destructible tile grid, concealment, bridge weight limits; biome × approach generation
+    hazards.ts        # explosive terrain, bridges and thin ice giving way, units lost with the ground
+    frame.ts          # camera-follow frame + alert clock (spawns depend on it)
+    ai/               # reusable behavior pieces combined per unit; enemy Behemoth AI
+    projectiles.ts    # projectile/targeting types: direct, lobbed, beam, chain, homing, area, tether
+    modifiers.ts      # weapon affixes + elite variants (stat changes + on-hit hooks)
+    modes/            # assault, breach, chase (+ intercept), pursuit, duel
+    collision.ts      # obstacle classes, plow-through damage, speed dip, deflection
+    encounter.ts      # threat-budget wave generation from node intel
+    run.ts            # run state: node progress, salvage, ammo
+    sectorMap.ts      # sector map generation, routes, node intel and fog
+    progression.ts    # milestones, unlocks, Protocol (NG+) levels
+  content/          # typed data tables
+    tuning.ts         # every game-wide tuning knob (movement, damage falloff, encounters, camera, depot prices, …)
+    weapons.ts  weaponMods.ts  enemies.ts  elites.ts  doctrines.ts
+    behemothArchetypes.ts  trainCars.ts  chassis.ts  addons.ts  terrain.ts  biomes.ts
+    conditions.ts  approaches.ts  directives.ts  events.ts  protocolLevels.ts  callsigns.ts
+  scenes/           # Phaser: Boot, Title, Profile, RunSetup, Map,
+                    #   TopDownBattle, (SideBattle), Depot, Event, Summary
+  audio/            # procedural Web Audio: cues.ts (pure: events → placed cues), synth.ts (recipes, loops)
+  render/
+    compositor.ts     # assembles modular Behemoth sprites from components
+    statusFx.ts       # shake, heat glow, smoke, sparks, recoil
+    placeholder.ts    # procedural pixel-art texture generation
+    mapArt.ts         # sector map icons and the field-map background
+    hud/
+  input/            # bindings (rebindable), context-menu suppression, Ctrl+click → RMB
+  save/             # run save + profile save, versioned JSON
+tests/
+```
+
+- Entities are plain data plus systems (a lightweight ECS-style split); a full ECS library isn't needed.
+- Phaser scenes read sim state each frame and render it. Input becomes commands that the sim consumes on the next tick.
+- Saves happen only at node boundaries (no mid-battle saves in v1).
+
+## 13. Milestones
+
+| # | Milestone | Done when |
+|---|---|---|
+| M0 | **Feel prototype** | A modular placeholder Behemoth drives with momentum and camera-follow scrolling; turret traverse; main gun; one enemy type; a few destructible tiles (forest, building). **Is it fun to drive and shoot?** |
+| M1 | **Combat core** | Component damage + schematic HUD; power system; all three manual triggers plus autos (cannon, autocannon, missiles, AP, PD); 4 enemies; destructible terrain with concealment; collisions (crush, plow through, deflect); speed scaling with tread integrity; Immobilized state; reactor detonation + self-destruct; status visuals (plate shake, heat glow, smoke, recoil). |
+| M2 | **The loop** | Battle → depot → battle with persistent damage and ammo, salvage, depot actions, add-ons including the trailer. Side-on depot cutaway. Run save/load. |
+| M3 | **Roguelike structure** | Seeded sector map with intel and approaches; procedural battles; alert clock; Assault + Breach + Chase modes; Directives; win/lose; permadeath; run summary; a first handful of events to playtest. |
+| M4 | **Bosses & content** | Enemy Behemoths; armored trains (rail lines, cars, derailing, Intercept); Duel and Pursuit modes; the rest of the energy weapons (railgun, coilgun, tesla coil; lasers and plasma arrived in M2); chassis classes; full roster; weapon upgrade tiers (component upgrades arrived in M2, §5.6); 3 sectors; balance pass. *Stretch:* one playable side-on set-piece battle. |
+| M5 | **Progression & polish** | Milestone unlocks, profile save, Protocol levels (NG+); real pixel-art pass; audio polish (a first pass came in M2) and music; juice; key rebinding; gamepad; settings. |
+
+### 13.1 Content targets
+Variety comes from **breadth multiplied by combination**. Everything is a data entry, so adding content means adding data, not code (except for new behaviors).
+
+| Content | M1 | M3 | v1 (M5) |
+|---|---|---|---|
+| Biomes | 1 | 3 | 8 |
+| Terrain types (incl. features) | 6 | 12 | 20+ |
+| Conditions | — | 2 | 5 |
+| Weapons | 5 | 12 | 30+ |
+| Weapon modifiers | — | 5 | 12+ |
+| Enemy units | 4 | 12 | 25+ |
+| Doctrines / elite variants | — | 3 / 2 | 6 / 6 |
+| Enemy Behemoth archetypes | — | — | 6 |
+| Armored train car types | — | — | 9 |
+| Add-ons + trailer modules | — | 4 | 12+ |
+| Battle modes | 1 | 3 | 5 + variants |
+| Directives | — | 3 | 10 |
+
+**Implication for implementation:** enemy AI is built from **reusable behavior pieces** (keep at range, flank, hide in cover, strafe run, follow rails, spot for artillery, …). Weapons are built from reusable **projectile and targeting types** (direct, lobbed, beam, chaining, homing, area, tether). A new unit or weapon is usually a new combination of existing pieces plus stats and a sprite.
+
+## 14. Out of scope for v1
+Multiplayer, mobile/touch controls, online leaderboards, a story campaign, a level editor.
+
+## 15. Decisions log
+| Topic | Decision |
+|---|---|
+| Platform | Browser; TypeScript + Vite + Phaser; sim decoupled from the engine |
+| Hosting | User's call (Nov 2026): the game lives in `games/behemoth-protocol/` of the public monorepo github.com/toddharrison/html-games (one workspace per game), and GitHub Pages deploys it on every push to `main` at https://toddharrison.github.io/html-games/behemoth-protocol/. Save keys stay prefixed with `behemoth-protocol` because every game shares the github.io origin. |
+| Title | **Behemoth Protocol**. Homage to *Ogre*, but with original names and content. One obscure indie project on ModDB/IndieDB shares the name; check again before a public release. |
+| Camera | Hybrid: top-down battles, a side-on depot cutaway, playable side-on set pieces as a stretch goal |
+| Scrolling | **Vertical**: the Behemoth drives up the screen; the battlefield is a centered column with HUD side panels. No auto-scroll. The camera follows the Behemoth, so scroll speed equals ground speed, and damage slows the whole battle. Pressure comes from the alert clock and the mode. |
+| Momentum | Always moving forward: braking only to a minimum speed, no reverse. Nothing stops the Behemoth; obstacles are crushed, plowed through, or deflected, with damage scaled by obstacle size and reduced by ram gear. Losing all treads = Immobilized = a doomed last stand. No hold-position mode. |
+| Tread damage | Minimum, cruise, and top speed all scale toward zero with tread integrity. Recovery comes from components (drone bay, nanites, spare segments, welders, skirts). Only the drone bay can revive an Immobilized Behemoth, once per battle. |
+| Death | The reactor detonates in a huge explosion that kills everything nearby. Blast kills count toward progression. There's an optional self-destruct ("Final protocol"). |
+| Controls | Three manual groups: Main (LMB), Secondary (RMB), Missiles (Space). Point defense, AP, and similar weapons are automatic. |
+| Route choice | Nodes show intel (approach, terrain, defenders, mode). Events are provisional. |
+| Objectives | Include enemy Behemoths and armored trains; Chase, Pursuit, and Intercept modes |
+| Terrain | Destructible tile grid is a core mechanic |
+| Growth | Add-ons and a trailer within a run; chassis classes unlocked between runs |
+| Power | Second resource; three weapon categories: ballistic, munitions, energy. Reactor output falls with reactor damage (51% output at 30% integrity). M1's point defense is the **PD laser** (energy), so power has a consumer before the other energy weapons arrive in M4. |
+| Progression | Permadeath + milestone unlocks + Protocol levels (NG+), with unlocks kept across levels |
+| Art | Chunky pixel art, procedural placeholders, modular component sprites, visible status feedback. Smooth sub-game-pixel motion: physical-pixel canvas with integer camera zoom, plus render interpolation (user request after M0 play). The Behemoth looks futuristic (angular, glowing cyan conduits); enemies look conventional (§11.1). |
+| Run length | 30–45 minutes |
+| Target classes | Every enemy is **infantry**, **light**, or **heavy**. Each round carries a damage multiplier per class (missing = 1), which is how §6's "best against" works: AP guns ×2.5 vs infantry, ×0.5 vs light, ×0.1 vs heavy; the autocannon ×0.4 vs heavy. Auto weapons prefer targets they're effective against. |
+| Deflection | Rock (outcrops and ridges) is **immovable**. Rock contact uses the hull's **ground box**, 80% of its length and width (52×32 units on the Class II; user request after M1 play), so grazing an outcrop with the edge of the hull is forgiven; crushing, ramming, and incoming fire still use the full footprint. Alongside it, the Behemoth slides along and scrapes that side's armor without losing speed. Head-on, it's held at the face (a 30% speed dip plus front-armor damage on impact) and shoved sideways at 1.4× its forward speed (at least 50 units/s) toward the nearer end of the face, or the way the player is steering at the moment of contact if there's room. The direction is fixed for that contact; it reverses only if blocked by more rock or the field edge. Scraping wears armor about 4/s at cruise, with overflow going to the treads. **Always a way forward:** the generator keeps a seeded, gently wandering lane (5 tiles wide) free of rock, and fills dead ends (any passable run that doesn't open onto a gap of 4+ tiles in the next 3 columns' rock) so outcrops read as faces to slide around rather than notches. Failsafe: if the slide is blocked both ways, the face crumbles to rubble and the Behemoth grinds through. |
+| Concealment | Units that can hide (infantry for now) are invisible while standing in concealing terrain (intact or damaged forest or buildings) farther than the **reveal radius** from the Behemoth (90 units on the Class II, scaled by sensor integrity down to 35%). They show up when the trees are cleared, when they start an aim telegraph, for 2.5 s after firing, and for 1.5 s after being hit. Hidden units can't be auto-targeted or missile-locked and get no threat arrow; a salvo already locked keeps homing. Rubble is cover but not concealment. |
+| Last stand | Implemented in M1 (`sim/lastStand.ts`). When the treads hit zero the frame stops following and eases (rate 1.2/s) until the hull, still grinding to a halt, sits in the middle of the screen; it had come to rest a third to halfway up, so this is the one time the camera moves backward (user request, so the siege can close from every side). The regular spawner (since M3, the defenders and the alert clock) stops and **waves** arrive instead: the first 4 s after Immobilized, then every 14 s, shrinking by 1 s per wave to 7 s; each brings 4 threat plus 2 more per wave, capped at 30 live threat, drawn from the battle's doctrine mix (a fixed mix of light tanks, infantry, heavy tanks, and launchers until M3). Vehicles drive in **from every side**, weighted ahead 3, behind 2, left 2.5, right 2.5: beyond the top or bottom of the frame, or from 30 units past either field edge, level with somewhere on screen, onto open ground (a unit beyond an edge can only move inward, and can't fire until its center is on the field). Off-field arrivals get threat arrows on the left/right field edge. Infantry **infiltrate** into concealing forest on screen beyond the reveal radius, so they arrive hidden (or come in from a side when there's no such cover). Every unit switches to a **besiege** behavior: it closes to a per-unit siege ring (light 60–100, heavy 70–115, launcher 140–200, infantry 45–90, which digs into cover on the ring when it can), circles slowly, routes around rock and buildings via a flow field toward the hull, and treats the stopped hull as solid (no free crush kills). Pacing (sim bot, full health apart from the treads): autos only lasts about 60–75 s (waves 5–7, measured after centering and flank entries); firing every trigger about 80–95 s (waves 7–9, measured before them). Since M3 the defenders and the alert clock stop for the stand (the clock resumes where it was after a drone revive); the stand keeps its own wave schedule. |
+| Rivers | Implemented in M1 as the sixth terrain type (user's pick over tank traps, minefields, and craters). A river crosses the whole field every few chunks (never in the first two, never in two neighboring chunks), meandering, 4–7 tiles bank to bank: **shallows** along each bank and a **deep channel** between. The Behemoth always fords. Shallows cap its speed at cruise (no surge). Deep water drags it down to minimum speed, blended by how much of the hull's ground box (see Deflection) is in the channel, so water lapping at the hull's edge doesn't slow it, at a water-drag deceleration, so plunging in at top speed carries it further across; steering is weak at that speed. The treads wear **per distance** driven through deep water (a few tread HP per crossing at any speed), not per second, so a crippled, slow Behemoth isn't pushed into a death spiral. Each river has 1–2 **fords** (3–5 tiles wide) where the channel is shallow all the way across: the faster crossing for the Behemoth, and the only one for tracked enemies, which treat deep water as impassable and drive to the nearest ford when their target is across. Infantry wade deep water slowly. Water never blocks fire, can't be damaged, and hides nothing; shells landing in it splash instead of scorching. Bridges (with weight limits) and hovercraft come later. |
+| Status visuals | Implemented in M1 (`render/statusFx.ts`, render-only). Damage levels match the HUD colors: **amber** ≤60% integrity throws occasional sparks, **red** ≤30% adds trailing smoke, **critical** ≤15% adds flickering flames, each from where the component sits on the hull (chassis `anchors`; hardpoints use their mount). Destroyed weapons become **charred stubs** (barrels broken off, embers at the break) that smolder; destroyed treads and sensors keep burning. Armor: the front and rear plates are separate sprites and the tread pods stand in for the flank plates, so a hit shakes (1 px) and flashes only that arc's plate (a hit from above, the whole hull); **dents and scorch marks** build up over 4 stages as an arc drops below 80/60/40/20%. **Barrel heat** is cosmetic (the main gun, autocannon, and AP guns): each shot adds heat and it cools at a fixed rate, so a few shots barely glow but sustained fire goes dull red to bright orange. The reactor glow pulses brighter with the capacitor's charge and sputters when it's nearly empty or the reactor is badly hurt. |
+| Run loop (M2) | Provisional, M2 part 1 (`sim/run.ts`). Until the M3 sector map (which has since replaced it, see "Sector map (M3)"), a run is a straight line: battle → depot → battle, with the live threat the spawner keeps up rising by 1 per battle won. A battle is won by driving the hull's center across the **extraction line**, 5000 units (500 m) from the start, about 2.3 minutes at a healthy cruise; the enemy then breaks off (no new units, nobody fires, rounds in the air fall short) and the depot opens after a 2.5 s outro. An Immobilized Behemoth can't extract. Every component's integrity, the installed weapons, and ammo carry over; power refills and the auto toggles reset. Salvage = kill values + 25 for extracting. **Run save:** versioned JSON in localStorage, written when a run starts, the moment the line is crossed, and on leaving a depot; deleted at the detonation. Resuming mid-battle restarts that battle from its start (no mid-battle saves, §12). Title screen: continue or start over (asks before abandoning a saved run). |
+| Depot (M2) | Implemented in M2 part 2 (`sim/depot.ts`, `content/depot.ts`, `scenes/DepotScene.ts`). 3 actions per depot. Repair = 10 + salvage per integrity point restored (treads 1.5, sensors 1, reactor 2, hardpoint 1, armor 0.5 across all zones), +20 to bring a destroyed hardpoint back online. **Partial repair** (user's call, after part 6): when the salvage left can't pay for a full tread or armor repair, the button patches as many whole points as it can afford (`Quote.partial`), labeled with how far it gets ("Repair treads to 64%", "Re-plate 40% of the damage"); other parts only repair in full. Rearm = 10 + a per-round price (missile rack 3, bunker-buster 6, howitzer 4, mortar 2). Weapons cost 60–200. The stock (4–5, no duplicates) is seeded per depot, so a reload shows the same goods. Sim bot reference: a battle won firing every trigger pays 250–400 salvage and leaves treads at 10–65%, the front armor near zero, and the rack empty, so the usual patch-up costs about 260 and all three actions; refits compete with repairs for both. **Resale** (user's call, after part 6): taking a part off pays back 65% of its depot price (`DEPOT.resale`) times its condition (integrity left / max; a mount's condition is its hardpoint's, a pod's its launcher's), rounded down, so a wreck sells for nothing (user's call, so pulling a wreck never beats repairing it); parts depots don't sell, like a pod's launcher, are worth nothing on their own); an add-on sells with what comes off with it, and an install or module swap credits the displaced part against the price (so affordability uses the net). Previously removal was free and paid nothing. The depot screen is the side-on cutaway: every part is clickable (bare hull = armor), stock items highlight the slots they fit, every action is saved at once. M2 adds six weapons built from existing projectile kinds plus a new **lobbed** shell (flies over units and cover, bursts only at the aim point): siege howitzer (main, L), rotary gun, flak cannon (secondary, M), bunker-buster missiles (missile, M), mortar (auto group 3, M, lobbed), PD guns (auto group 2, S, no power). |
+| Mass (M2) | Implemented in M2 part 3 (`massScale`, `loadMass` in `sim/behemoth.ts`; `MASS` in `content/tuning.ts`). Chassis speeds are rated at full capacity, so the tuned Class II speeds stay put (the starting loadout runs about 2% faster). Below capacity speed rises linearly to +15% when empty; above it falls 2% per 1% of overload, floored at 40%. It scales speeds, acceleration, and lateral speed; braking and turret traverse are unaffected. Installed weapons and add-ons count, wrecked or not; ammo has no mass. Capacity grows with extra tread sets (see Add-ons). |
+| Add-ons (M2) | Implemented in M2 part 4 (`content/addons.ts`; per-chassis placement in `ChassisDef.addonMounts`; user's calls). Each works through a part of the damage model that already exists. **Armored prow** (40 t, 150 salvage; now the **ram plow**, see "Steering and front armor"): an outer plate (80 integrity) that takes front hits and all ram armor damage before the front armor zone, and adds ram gear 0.6 while it holds (ram tread strain is cut by the same share); destroyed, it's a charred plate with no ram bonus until repaired. **Outboard treads** (35 t, 200): a second pair of pods outside the first, with its own integrity (100) and capacity (+140 t). The hull widens from 40 to 56 units (bigger crush footprint, bigger target; the 80-unit rock-free lane still fits it). Tread hits pick a working set by exposure (the outboard pods take 80% of flank hits, half of front and rear); damage with no direction (ram strain, fording, scraping) is shared so each set loses the same share. Speed scales with each set's tread scale weighted by the integrity it has left, so a sound inner set carries the hull as the outer one fails; a destroyed set adds no capacity. Immobilized only when every set is gone. **Sponsons** (15 t, 120 each): left and right are separate add-ons, each adding an M hardpoint on the inner tread pod (fires to its side and a little forward); a sponson arrives empty, and removing it scraps its weapon. Depot: 1–2 add-ons per depot (seeded on their own stream, so the weapons for sale don't change); the prow repairs at the armor rate, outboard treads at the tread rate. Sim bot (8 seeds, firing everything): the prow keeps the front armor at about 80% through a battle (13% without); outboard treads run a little faster than stock (underloaded) and end at about 61% treads (38%); two gun sponsons without extra treads overload to the 40% floor and never reach the exit, and with them (440/420 t) the Behemoth extracts every time. Run save version 2 (version 1 saves load with no add-ons). The dorsal turret ring came later, with turret rings (see "Turrets and bindings (M2)"). |
+| Trailer (M2) | Implemented in M2 part 5a (`content/trailer.ts`, `sim/trailer.ts`, the `trailer` add-on; user's calls). **Frame + 2 bays**: the trailer is an add-on (30 t, 140 salvage, 70 frame integrity, 60 armor, 34×26 units on a 6-unit tow bar, swings up to 50° off the hull's line); modules go in its bays like weapons (an action each). **Physical target**: it follows the hitch, and an enemy round that reaches it first hits it, so fire from behind mostly lands on it. Its armor (one pool) absorbs first; what gets through strikes the frame or a working module (weights 2 : 1.5 each); armor-bypassing strikes have nothing to aim at on it. **Towed mass** counts half against tread capacity (it rolls on its own treads), and nothing once it's gone; a stock Behemoth with a full trailer is slightly overloaded (288/280 t). **Modules**: missile pod (25 t, 130: its own launcher in the bay, salvos of 3, 12 rounds, fires with the rack on Space), ammo bunker (30 t, 110: 2 full loads; a munitions weapon that runs dry is refilled after 4 s, one load each time; rearmed at the depot for 30 per load), auxiliary generator (25 t, 90: +5 power/s and +30 capacitor while it works). **Jettison** (hold Q 0.5 s): it coasts to a stop in the track as a mine; after 1.5 s an enemy within 36 units (0.3 s fuse) or a round sets it off, and it blows on its own after 12 s. **Wrecked in tow** (frame at zero), it cooks off on the spot; it also goes up with the reactor. Blast: the frame's 36 radius / 50 damage, plus each module's share by what's left in it (pod 24/50, bunker 40/100, generator 12/30), full at the center and half at the edge; the Behemoth takes 35% of whatever reaches it. Depot: the trailer's armor re-plates with the hull's, the frame repairs at 0.75 per point, modules at the hardpoint rate. The camera follows a point behind the hull while a trailer is in tow, so it stays in view. Run save version 3 (older saves load without one). Sim bot (8 seeds, firing everything, pod + bunker vs stock): every battle extracted either way; about 4 more kills a battle, about 13 s slower (the overload); the bunker hands over both loads; the trailer takes only about one hit a battle, since nearly all fire still comes from ahead (rear raiders and Pursuit come later). The drone bay came next, as part 5b (below). |
+| Drone bay (M2) | Implemented in M2 part 5b (`sim/drones.ts`, the `droneBay` module; user's calls). A trailer module (25 t, 150 salvage, 35 integrity) holding **2 repair drones** (10 integrity each). **Repair:** when a tread set drops below 90%, the drones fly out (110 units/s) and hover just outboard of that set's pods, each patching 1.5 tread HP/s from the bay's **repair pool**: 45 tread HP per battle, refilled free between battles. Once out, they keep at it until the set is whole or the pool is spent, then fly home; they always work on the most worn set (a destroyed outboard set included). **Power** (user request): every drone out of the bay drains 1 power/s the whole time; with the capacitor dry they hover without working. Point defense draws first. **Risk:** an enemy round that reaches a drone hits it instead of the hull, so drones over the pods soak some flank fire; trailer blasts catch them too. A drone lost stays lost: a depot **replaces drones** as a rearm action (10 + 25 each; the run save keeps the count in the bay's `loads`). A wrecked bay takes its drones with it, and a jettisoned or wrecked trailer takes them all. **Revive** (once a battle): when the Behemoth is Immobilized, every drone swarms the chassis' own treads while the last stand begins (the camera centers, the first wave arrives). After 12 drone-seconds of work (6 s with both drones, plus the flight over), that set comes back at 30%: the camera follows again, the waves stop, the spawner takes over, and every besieger returns to its usual behavior; whoever is already there stays. If every drone is shot down first, the revive fails and the stand goes on. A second Immobilization in the same battle is final. The drone bay adds 14 radius / 30 damage to the trailer's cook-off, by how many drones are left. Sim bot (4 seeds, autos only, no steering, trailer with drones + bunker vs bunker only): one battle never reached Immobilized; the other three were revived 6–9 s after the treads gave out, then fell again within about 20 s, since a bot that doesn't drive or fire its main guns just sits among the converged besiegers at 30% treads. The drain never ran the capacitor dry (2/s against the reactor's 10/s); it starts to bite once energy weapons arrive. |
+| Turrets and bindings (M2) | Decided in M2 part 6 (user's calls). **Turret rings** are data: a chassis lists its rings (pivot, traverse, mount slots), and add-ons or trailer modules can add more; this one mechanism covers twin turrets (later chassis), multi-slot turrets, the dorsal ring, and a trailer gun bay. **Dorsal turret ring** (add-on, implemented in part 6a: 25 t, 180 salvage, 1.5 stock weight): an L slot (60 integrity, exposed mostly from the rear) on its own ring 14 units aft of center, raised over the spine rack so it fires over the main turret; it traverses at 90°/s against the main ring's 75°/s, so the two read as separate guns. It arrives empty, like a sponson (add-ons that add a hardpoint are one `mount` kind; the slot id is the add-on id). With a heavy cannon aboard, a stock Class II carries 380/280 t and hits the 40% speed floor (cruise 37 → 14); with outboard treads it's 415/420 t and cruises at 36. **Coaxial mount** (add-on, implemented in part 6a: 5 t, 60 salvage, 1.5 stock weight): an M slot (30 integrity) on the main turret's right cheek, firing along its facing on its trigger (RMB for a secondary, Space for a launcher). **Ripple** (implemented in part 6a, `RIPPLE_GAP` 0.25 s): while a trigger is held, the next ready L gun after the last one to fire goes, so holding alternates the guns and a lone click fires the other gun from last time; a wrecked or reloading gun is skipped; one L gun fires as before. **Bindings:** each hardpoint is bound to LMB, RMB, Space, or Auto at the depot (free); L guns and coax are never Auto; PD is Auto only. **Fire control:** a core component; auto spread = weapon spread × fire-control spread; 2 channels on Class II for weapons the player puts on Auto; destroyed, they fall back to their trigger and the built-in autos fire less accurately under local control. No extra trigger keys for now. **Implemented in part 6b:** a hardpoint's binding is saved with it (null = the weapon's default for the slot; installing or removing a weapon resets it) and set at the depot with a button per allowed binding (free, no action, undoable). Any weapon can go on any trigger: autos on a trigger fire at the cursor like secondaries (an auto weapon in a coax slot defaults to RMB), a missile rack on LMB or RMB fires its salvo there, and L guns sharing any trigger (Space too) ripple. On Auto, secondaries engage like the built-in autos, and a missile rack locks a salvo on the best target in reach that is on screen (it shouldn't spend ammo on what the player can't see); the lock bracket only follows racks on a trigger. Turret slots take any weapon that can go on a trigger (point defense can't). **Fire control** (Class II: 40 integrity, 2 channels, amidships: hit weights front 1, flanks 0.75, rear 0.5; repairs at 1 salvage/HP): auto spread × (1 + damage share), so up to 2× near destruction, and 2.5× under local control; point defense's hit chance is divided by the same factor. Channels are checked at the depot ("No channel") and again on load. HUD: the weapon strip groups rows by binding (LMB, RMB, SPC, then auto groups), and a row's key follows a fallback; the schematic and readout show fire control. Run save version 4 (version 3 saves load with default bindings and fire control intact). |
+| Energy weapons (M2) | Pulled forward from M4 (user request, Nov 2026). **Lasers, one per hardpoint size**, all instant beams (`BeamSpec`, kind `beam`; `fireBeam` in `sim/projectiles.ts`): the beam strikes the first unit, armed mine, or cover along its line out to its range, the moment it fires, so there's nothing to lead and nothing for point defense to shoot down. **Pulse laser** (S, Auto group 1, 14 t, 90 salvage): 4 damage every 0.4 s, range 110, ×1.4 vs infantry, ×0.3 vs heavy, 1.5 power a pulse. **Beam laser** (M, RMB, 45 t, 130): 2.4 damage every 0.1 s, range 260, 1.6 power a pulse (16/s against the Class II reactor's 10/s, so a full capacitor holds about 10–15 s of steady beam, then it sputters at what the reactor pays for). **Heavy laser** (L, LMB, 120 t, 190): 42 damage every 1.3 s, range 420, ×0.6 vs infantry, ×1.15 vs heavy, no splash, 15 power a shot. **Plasma thrower** (M, RMB, 55 t, 150): a slow glob (range 40–170) that bursts at the cursor (10 damage, blast 14, 30 tile damage) and leaves a **pool** (`ShellSpec.pool`, `sim/pools.ts`; radius 13, 3 s, 8 damage/s to units, 20/s to tiles, applied in 0.25 s ticks; 9 power a shot). A pool hurts **everything** in it, the Behemoth too (user's call): while the hull's ground box overlaps one, the treads take 1.5× its damage (`POOL.treads`; driving straight over one at cruise costs about 20 tread HP), and a towed trailer takes 1× (armor first). A glob landing in water leaves no pool. HUD: the Treads readout says BURN while a pool is under the hull. |
+| Cover and garrisons | User request (Nov 2026). Troops on foot take less damage in cover (`MaterialDef.protection`, applied in `damageEnemy`): forest 30% (damaged 20%), **buildings 60%** (damaged 50%), rubble 20%; vehicles get none. Infantry can **enter buildings** (foot speed 0.5, damaged 0.6; tanks still can't), which conceal them like forest. Walls still stop direct fire, so rounds aimed at a garrison hit the building first (autos see no line of fire); a garrison is dug out with splash, lobbed shells, lasers through the rubble, or by knocking the building down. A garrison fires out through the walls of its own tile (`Projectile.shelter`; `lineBlocked` ignores the shooter's tile) but not through a neighboring building. Squads choosing cover prefer better protection (`COVER.preference` 60 score per protection point) and only pick a building tile with an open side toward the Behemoth. **Building salvage:** 2 per building knocked down from standing (shot to rubble or crushed; rubble ground flat pays nothing), credited for the player's fire, ram, and blasts, not for enemy fire; `Terrain.takeSalvage`, banked every step. Sim bot (8 seeds, firing everything, driving straight): 0–42 a battle (avg ~17, about 5% of the total). |
+| Variety | High priority: biomes, conditions, a large weapon roster with modifiers, a large enemy roster with doctrines and elites, enemy Behemoth archetypes. AI and weapons are built from reusable pieces so content scales as data. |
+| Tank staples | Planned (user's call, Nov 2026, after a review of common tank features): **facing armor on enemy vehicles** (§7), **main-gun shell types** (high-explosive, armor-piercing, canister; chosen per gun at the depot, §6.2), and an **ammo magazine** component that can cook off, with **blowout panels** as an add-on (§5.1, §5.5). Pulled ahead of M2's economy tuning (user's call, Nov 2026: they shift balance anyway, so the economy is tuned once, after them). Their numbers are provisional; open details are in §16. Other tank ideas are parked for discussion in §17. **Ammo magazine** (implemented): as in §5.1. *Provisional numbers (Class II):* 40 integrity, aft of center under the spine rack; hit weights 0.3 per front half, 0.4 per flank, 0.6 rear (fire rarely reaches it until the armor is gone). The blast is 0.3 × the rounds' combined damage (a full missile rack, 24 × 26, makes about 190): 60% into the parts next to it (spine mount, turret, reactor, fire control, treads) and the rest over every armor zone from the inside. Rounds left add 0.02 units of detonation radius per point of their damage (a full rack, about 12). **Blowout panels** (implemented): 10 t, 100 salvage, 30 integrity; incoming fire never picks them. Run save version 7. Sim bot: firing everything, the magazine was never hit in 16 battles; a passive bot that was ground down cooked off in 6 battles of 8, a few seconds before the end. **Main-gun shells** (implemented): as in §6.2, chosen at the depot only; run save version 6. With depot-only choice a shell is a whole-battle commitment: a bot firing only canister from the main gun extracted 3 times in 8 (heavy tanks hold past its reach), against 8 of 8 with high-explosive or armor-piercing. It pays off as a second gun's load (the dorsal ring) or once an in-battle swap exists. **Facing armor** (implemented): as in §7, with hulls that back up while retreating slower than a per-unit reverse speed (light tank 20, heavy tank 45, missile launcher 30); the hull turns at 4 rad/s instead of snapping to its course. Flank and rear direct hits throw extra sparks (a white-hot flash from behind) and a bright ringing "pierce". |
+| Sound (M2) | Pulled forward from M5 (user request, Nov 2026: "realistic sound effects", plus per-play pitch variation). **Procedural Web Audio, no sample files** (like the placeholder art, §11.1): noise, oscillators, filters, a generated outdoor reverb, a compressor on the bus. `src/audio/cues.ts` is pure and tested (sim events → cues with size and position; `place` = distance falloff and pan from the Behemoth; `CueLimiter` rate-limits repeats; `AlarmWatch` sounds the critical alarm once per crossing; `PITCH_SPREAD` semitones per sound); `synth.ts` holds the recipes and loops, with all mix levels in `LEVEL`, `ENGINE`, `REACTOR`, `HOLD_LEVEL`. Uses Phaser's audio context (so the browser unlock and the mute node come for free). The `intercept` event now carries its weapon. Real samples can replace any recipe later without touching the event mapping. Mute: M, saved in `localStorage` apart from the run and profile saves. |
+| Steering and front armor (M2) | User's calls (Nov 2026). **Eased steering** (implemented): sideways acceleration builds and eases off at a jerk limit (`lateral.jerk`, Class II 150 units/s³, max accel 45), so turns start and settle on an S-curve; full turn-in still takes about 0.75 s. Near the field edge the steering target drops to the speed that can still ease to a stop (`edgeApproachSpeed`), so the hull arrives square instead of snapping straight. **Split front armor** (implemented): the front zone becomes **front-left** and **front-right** (the rear stays one zone), split at the hull's centerline, with the front/side boundary kept at ±45°. Angling the hull then chooses which front corner takes fire from ahead, without pushing it onto the weaker, tread-exposed flanks; each half has its own breach consequences (its side's treads and the prow mount). Ram damage goes to the half on the side of the nose that struck. *Details (provisional):* the incoming direction still picks front/rear/flank; a front hit's half is the side of the centerline its impact point is on, measured in hull space, so on an angled hull fire from ahead lands on the leading corner (the corner swung forward: steering right exposes the front-left). A hit dead on the centerline goes to the side it came from; a ram or rock face dead center splits evenly. Each half has 80 armor, as thick as a flank (user's call; the old single front was 120). Both halves share the old front's internal weights (fire control leans a little left, where it sits); the point-defense mount is more exposed on the front-right, each sponson on its own side. Treads are still one component, so "its side's treads" is the same tread draw on both halves. Run save version 5 (a version 4 front gives each half the same share of integrity it had left). **Ram plow** (implemented): the armored prow is renamed (it clashed with the Prow hardpoint) and becomes **ram-only**: incoming fire skips it and hits the front armor; rams, plowing, and scraping a rock face still wear it first, then spill into the struck half. It keeps 80 integrity and ram gear 0.6; retuned to **35 t** (the starting loadout plus the plow is exactly at capacity) and **120 salvage** (was 40 t, 150). Sim bot (8 seeds, firing everything, battle-2 threat): without it a battle ends with the front armor at 48% and the treads at 45%; with it, 82% and 54%. Steering at enemies (more rams), it's 37%/31% with 6/8 extractions without the plow, and 69%/53% with 8/8. It loses 15–30 integrity a battle, so it lasts several battles between repairs. Run save version 5 renames `armoredProw` to `ramPlow`. |
+| Component upgrades (M2) | User request (Nov 2026): core components come in grades, and parts take leveled upgrades (§5.6). User's calls: grades are named **Gen 1/2/3** (not the "Mark" numbering, which is *Ogre*'s); higher grades are **better but heavier**; part upgrades are **leveled tracks** up to 3, an action a level; **grades are found** in the depot's stock while **mods are always on offer**. Grade stats are multipliers on the chassis' Gen 1 numbers, so one table serves every chassis class (`content/upgrades.ts`). The Behemoth is built from the *fitted* chassis (`fitChassis` in `sim/upgrades.ts`), so the rest of the sim reads upgraded maxima and ratings without knowing about upgrades. Prices (`DEPOT_GRADES`, `DEPOT_TRACKS`): grades 80–170 for Gen 2 and 140–290 for Gen 3 (the reactor dearest, the magazine cheapest); mod levels 30–100, rising per level. A replaced core component sells back for 65% of its grade's price plus its mods (Gen 1 itself is worth nothing). Run save version 8. A stock Class II fitted with a Gen 3 reactor alone is at 275/280 t; with Gen 3 sensors, Gen 2 fire control, and a few mods it's overloaded (~296 t), so outboard treads or Gen 2 treads become part of an upgrade path. |
+| Biomes and terrain (M3) | User's calls (Nov 2026, starting M3): the three M3 biomes are **Temperate, Arctic, Industrial**; all four common features first (**bridges** with weight limits, **walls and bunkers**, **tank traps and craters**, **minefields**); and **approaches** built in the same pass as biomes. A battle's terrain is a **recipe**: biome × approach (or the biome's own mix), so the sector map only has to pick one per node. Biomes set the palette and a per-chunk **feature mix** (`content/biomes.ts`); approaches scale it and add set pieces (`content/approaches.ts`); shape knobs shared by all are in `TERRAIN_GEN`. New terrain is data on `MaterialDef`: `bearing` (tons; a bridge span collapses, thin ice cracks), `breaksTo` (a fallen bridge becomes the water under it, thin ice becomes water, a mine or fuel tank a crater), `explodes` (fuel tanks chain, mines), `hidden` (mines until swept), `grip` (ice), `scars` (heavy blasts crater open ground). Details are in §3.1 and §4.5–4.6. Rules that keep the way forward: rock never covers the lane (as before) and paints over everything but towns and industrial buildings, so new features never notch it; **factory compounds and tank farms stand beside the lane**, never across it; fortified lines and trap belts always have gates; rivers always have a ford (frozen rivers are crossable anywhere); a test checks tracked units can drive the whole strip in every recipe. Factory halls are **medium** obstacles like houses (as heavy tiles, a whole hall stopped the hull dead); walls and bunkers are heavy. Rivers are now never in two neighboring chunks by *having* one, not by *rolling* one (so a high chance alternates instead of suppressing itself); this moved some rivers on old seeds. Until the sector map, a run's biome changes every two battles (temperate, arctic, industrial, desert, wasteland) and each battle after the first draws an approach or the mix; `?biome=` and `?approach=` fix them. *Terrain-only bot* (6 seeds, no enemies, follows the lane, never fires): before biomes, temperate cost −46 treads and −40 front armor over 191 s, 6/6 extracted; now each recipe costs −47 to −70 treads and −10 to −76 front armor over 186–238 s, and 3–6 of 6 reached the extraction line within 5 minutes. Mines (~1 a battle, 2 in the arctic) and tank traps (~9–15 tread HP) are the new costs; a player who reads the minefield and shoots a gap pays much less. |
+| Desert and wasteland (M3) | User request (Nov 2026): two more biomes, **Desert** and **Blasted wasteland** (a new biome; the wasteland's contents are my proposal: an old battlefield of ruins, wrecks, glassed blast sites, craters, and old minefields). Details in §4.6. New data: `BiomeDef.ruins` (structures start damaged or in rubble), materials `dune`, `wadi`, `derrick`, `wreck`, `glass`, `MaterialDef.slipTag` (the HUD tag on slippery ground: ICE, GLASS). Desert rivers are wadis built by the river generator (`river: wadi/wadi`, no bridges); oilfields stand beside the lane like tank farms. *Terrain-only bot* (6 seeds, as above): desert −35 to −54 treads over 164–192 s (no rivers to ford; dunes cost time, not treads); wasteland −62 to −76 treads over 221–254 s, 4–5 of 6 within 5 minutes (the harshest biome: wrecks and ruins to plow, more traps and mines; its scrap salvage isn't counted). The first cut (more wrecks, traps, and intact ruins) cost −80 and was thinned out. |
+| Sector map (M3) | Implemented (Nov 2026; my calls on the details, numbers provisional, for the user to review). Structure, intel, and fog as in §3.1. **Depots are map nodes** (no automatic depot after every battle): fewer repairs than M2's loop (~8.5 depots for ~12.5 battles), so route choice trades fights for repairs. Each sector **opens with a forward depot** (after sector 1) and always has **a depot right before its objective**. **Doctrines** (§7.2) are the defender intel and the battle's spawner mix. Strong battles and supply caches give risk/reward choices; **sensor grades** clear intel fog. Sector 1 is always Temperate (the baseline, and it keeps the playtest seeds meaningful). The map is generated once from the run seed and **saved with the run** (save v9; a v8 run is put at the foot of a fresh map, keeping its Behemoth). After the battle report moved to the map, the depot header names the sector instead of the next battle. The run is won by taking the last sector's objective (a placeholder screen until Directives and the run summary). |
+| Encounters and the alert clock (M3) | Implemented (Nov 2026; my calls on the details, numbers provisional, for the user to review). Replaces the M1 spawner, which kept live threat topped up on a 2.5–5 s timer; in practice its timer, not its budget, set the pace, so a node's threat made no difference to a bot that killed quickly. Now, as in §4.2, **defenders are placed by distance and reinforcements arrive by time** (details in §7): posts are planned from the battle seed (the same battle always has the same posts), and the alert clock's waves escalate in size and frequency. Node threat sizes both, so it matters: the opening battle's threat went from 6 to **7** (about the M1 spawner's density) and the climb per layer from 0.6 to **0.3** (sector 1 about 7–9, sector 3 about 11–13, objectives +3). Infantry cost 1 threat instead of 0.75 (budgeted posts otherwise bought swarms of squads). A **doctrine splits the force** between posts and waves (§7.2), and the **biome and approach shade the mix** (`forces` on their defs). The last stand's waves draw from the battle's mix. HUD (§10): an Alert gauge in the left panel (the next wave and a countdown bar) and a banner when a wave is sent; the enemy's attack siren sounds, further off than the last stand's. *Sim bot* (8 seeds, stock Class II, driving straight, firing everything): threat 7, 7/8 extractions over ~234 s (the M1 spawner: 8/8, ~220 s) with ~15% fewer kills and ~20% less salvage; threat 9, 7/8; threat 12, 3/8; braking the whole way, 3/8 (M1: 6/8). Entrenched is the hardest doctrine (6/8, the bot never targets hidden squads); the others 8/8. |
+| Callsigns and the map's look (M3) | User requests (Nov 2026). **Callsigns:** every run's Behemoth is named from the run seed, from a list of 74 true historical names of devils and demons (`content/callsigns.ts`; each with its source and a short note), saved with the run (save v10). **Map look:** the sector map is drawn as a field map of the sector's biome with large terrain icons on the nodes (§10); the icons use the battle tile palettes, so a node's icon looks like the ground you'll fight on. Render-only placeholder art, replaceable under the same texture keys. |
+| Battle modes (M3) | Implemented (Nov 2026; my calls on the details, numbers provisional, for the user to review; §4.4). **Every mode still ends at the extraction line**; Breach and Chase add targets, and missing them costs salvage, never the run (a failed objective that stopped the run would clash with forward momentum: you can't go back for a gun you drove past). **Breach** is a forced fortified line with guns set into the wall (gun emplacement, weapon tower, rocket bunker), placed by distance like the posts; shoot them (thick fronts: angle in) or plow through them. **Chase** is a convoy of armored haulers (enemy Behemoths arrive in M4) running up the lane at 1.15× rated cruise from just out of sight, slowing as it's damaged, with a mine layer and escorts. Each target pays a share of a +60 bonus. Modes are drawn per battle node (Assault 2 : Breach 1 : Chase 1); the opening battle is always Assault. The **hovercraft** came in with Chase's escorts (user request, Nov 2026), as did the **weapon tower** with Breach. Bot (stock Class II, threat 7, a crude lane-following bot): Assault 6/8 extractions; Breach 4–5/8, all guns down in about half; Chase surging catches the whole convoy in ~15 s, cruising loses most of it. User requests queued for the roster (Nov 2026): placed artillery, a superheavy dual-turret tank, a unique unit per biome. |
+
+## 16. Open questions
+1. **Alert clock tuning:** is "reinforcements arrive by time" enough pressure, or does Assault also need a hard time limit? *Implemented (M3, numbers provisional):* bot data says it works as a lever: a bot braking the whole way met twice the enemy and extracted 3 times in 8, against 7 of 8 at cruise. Judge in play whether the waves read as "the clock is running" (the gauge, the siren, the banner) or just as more enemies, and whether 15 s at the floor is too relentless.
+2. **Camera zoom with growth:** zoom out as the Behemoth grows (which breaks pure integer scaling unless done in steps), or keep a fixed scale and let a Colossal chassis fill more of the screen?
+3. **Heat:** cosmetic only (recommended for v1) or an overheat mechanic? M1 implements heat as cosmetic only (render-side), so a mechanic can still be added on top.
+4. ~~**Fire-control module**~~: resolved. Weapons are bound to a trigger or to Auto, run by a fire-control component (§5.2, §15 "Turrets and bindings (M2)").
+5. **Trailer limit:** one in v1; ever more than one?
+6. **Fire spread** through forests: v1 or stretch?
+7. **Unlock style:** milestones only (recommended), or also a meta-currency?
+8. **Internal resolution:** 480×270, 576×324 (current default, a slight zoom-out), or 640×360. Decide during M0 based on how the Behemoth and small units read at that scale, and how much forward visibility the vertical column gives. Scaling is integer in physical pixels, so in-between sizes are crisp on high-DPI screens but may letterbox more on 1080p monitors.
+9. **Self-destruct timing:** provisional (M1): hold X for 1.5 s, then the normal reactor fuse. Available when Immobilized or with the reactor at or below 25% ("critical"). Revisit after playtest.
+10. **Retrying a battle:** resuming a save mid-battle restarts that battle from its start, and R does the same during play (a playtest convenience), so a bad battle can be retried. Keep that (forgiving, browser tabs close by accident), or count leaving mid-battle as a loss or a penalty once the loop is tuned?
+11. **Shell swap in battle:** depot only for now (user's call, Nov 2026). Revisit after playtest: a key would make the choice reactive (canister is a whole-battle gamble without it), but it needs a free key and a reload delay on the swap.
+12. ~~**Magazine cook-off**~~: resolved. Only when it's destroyed (user's call, Nov 2026); it costs the hull's munitions, not the weapons themselves (§5.1).
+13. **Facing armor numbers:** front ×0.75 / rear ×1.5 is a starting point. Check in playtest that rear shots feel worth chasing without making the skirmisher light tank (which circles you) trivial. *Bot data (Nov 2026):* a straight-driving bot lands ~39 flank hits a battle but only ~0.3 rear hits, since everything chases the Behemoth nose first; overall it's a slight nerf (heavy tanks backing up show their front). If rear hits should come more often, options are a wider rear arc, a lower light-tank reverse speed with slower orbits, or units that turn away to reposition.
+14. **Plasma pools and the AI:** enemies drive and stand in pools without a care, and nothing avoids them. Should units steer around pools (and infantry flee them), or is walking into fire part of the plasma's value? Same question for enemy plasma weapons later, whose pools would burn the Behemoth too.
+15. **Upgrade balance (§5.6):** all numbers are first guesses. Do straight upgrades plus mass make grades interesting, or an automatic buy? If automatic, add sidegrade models (e.g. a hot reactor: more output, a bigger blast, more fragile). Are always-available mods too strong against repairs for the 3 depot actions? Should add-ons, the trailer, and its modules take mods too?
+16. **Terrain costs (§4.5–4.6):** the new features cost a blind bot 10–25 more tread HP a battle than before (mines and tank traps, mostly). Is that the right pressure once enemies are in it too, or should mines hit softer / show from farther out (a sensor upgrade, the mine plow in §17 idea 3)? Revisit with the economy tuning.
+17. **Enemies and terrain hazards:** units ignore fuel tanks (they park beside them), drive onto thin ice and bridges freely, and never set off their own mines. Should vehicles keep clear of tanks and thin ice once they're under fire, and should engineers ever blow a bridge on purpose (§4.5)?
+18. **Walls:** plowing one at cruise costs about 16 tread HP and 27 front armor (three heavy tiles across the hull); the gates are free and walls are 200 HP to shoot. A real choice, or so steep everyone drives the gates?
+19. **Depots on the map:** with depots as nodes a run has ~8.5 depots for ~12.5 battles (M2 had one after every battle), and two battles in a row are allowed. Is that the right squeeze on repairs, or should depots be commoner (or a battle node offer a field repair)? Tune with the economy.
+20. **Sector 1 always Temperate?** It's the baseline and keeps playtest seeds stable, but it means every run opens the same way. Alternatives: draw it from Temperate/Arctic/Desert, or let a Directive set it.
+21. **Fog and sensors:** fog chances and "Gen 2 clears deep fog, Gen 3 clears all" are guesses. Should sensor *integrity* matter too, or an intel event/add-on reveal a whole sector?
+22. **Threat curve and salvage:** with encounters, threat really scales a battle (bot: 3/8 at threat 12 with a stock Behemoth), and the first battles pay ~20% less salvage than under the M1 spawner (fewer units at the same threat). Is the 7 → ~13 climb right once refits keep pace, and should kill salvage or extraction bonuses rise to compensate? Tune with the economy (M2's open task).
+23. **Doctrine split and ground:** entrenched (big posts, half-strength waves) is the hardest doctrine for the bot, raiders (small posts, big waves) among the easiest, since light tanks die fast. Do the splits and the biome/approach `forces` make doctrines feel different enough, or should doctrines also change the clock itself (e.g. raiders' waves come sooner, entrenched never reinforce from behind)?
+24. **Breach and Chase tuning (§4.4):** all first guesses. Breach's fortress is hard on a stock Behemoth (bot: 4–5 of 8 extractions against 6 for Assault): are three to five guns right, and is plowing through them (a heavy ram each) a real alternative to shooting? In Chase, a full surge catches the convoy in ~15 s; should it start farther out, or run nearer top speed so the chase lasts? Laid mines cost a bot that drives straight through them ~36% of its treads; players can see and steer around them, so is 6 per layer fair? Should a missed objective cost more than salvage (e.g. the sector objective, once Directives arrive)?
+
+## 17. Ideas to discuss
+Tank ideas, real and fantasy, raised in a review of the spec (Nov 2026). They aren't planned yet; talk them through before any of them moves into the spec proper.
+
+1. **Boarders.** Infantry climb onto the hull to plant charges on components or sabotage them, building on the sappers. The anti-personnel guns can't aim down onto their own hull, so the counters are an electrified-hull ability, shaking boarders off by ramming or turning hard, and anti-boarding mounts. A strong fit for "feel enormous", but it needs new AI and art (M4+).
+2. **Glancing hits on the Behemoth.** A round that strikes a plate at a shallow angle ricochets, so steering to angle the hull becomes a defense (the hull already tilts up to ~41°). It needs a clear ricochet spark, or it reads as random luck.
+3. **Engineering add-ons.** A **mine plow or flail** that sets off mines ahead of the treads, and a **deep-wading snorkel** that cuts the deep-water slowdown (§15 "Rivers") and helps on thin ice. Cheap data entries that make minefields and rivers matter more.
+4. **Reactive tiles and rocket cages.** Reactive tiles are visible blocks on an armor zone that each stop one big hit and then pop off (pillar 5). Cages cut infantry rocket damage. This extends the reactive tread skirts (§5.1) to the hull.
+5. **Internal fires and fire suppression.** Incendiary rounds, flamethrowers, and cook-offs set a component burning (damage over time) until it burns out or is put out. An automatic extinguisher is an add-on. The flames already drawn on critical components can be reused.
+6. **A fixed-forward spine gun.** A huge gun bolted along the hull with no turret, aimed by steering the whole machine. A staple of fantasy land battleships, and it turns forward momentum into part of the aiming.
+7. **A voice for the onboard AI.** The Behemoth is autonomous, so it can have some personality: short warnings and barks ("Tread integrity critical", "Magazine breached"). Cheap flavor (text first, audio in M5).
+
+Considered and set aside: **fuel** (overlaps with power), **crew** (the Behemoth is autonomous), **digging in or hull-down** (breaks forward momentum), **stealth** (it's enormous), and **allied escort vehicles** (they water down the lone-machine fantasy).

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HTML Games</title>
+    <style>
+      :root {
+        --bg: #0d0f0c;
+        --panel: #161a14;
+        --line: #2b3326;
+        --text: #d8dccf;
+        --muted: #8a9180;
+        --accent: #c8e05a;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; background: var(--bg); color: var(--text); }
+      body {
+        font: 16px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        padding: 48px 16px;
+      }
+      main { max-width: 640px; margin: 0 auto; }
+      h1 { font-size: 20px; letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 4px; }
+      .sub { color: var(--muted); margin: 0 0 32px; }
+      ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 12px; }
+      a {
+        display: block;
+        padding: 16px 18px;
+        background: var(--panel);
+        border: 2px solid var(--line);
+        color: inherit;
+        text-decoration: none;
+      }
+      a:hover, a:focus-visible { border-color: var(--accent); outline: none; }
+      .title { display: block; color: var(--accent); font-weight: bold; }
+      .desc { display: block; color: var(--muted); font-size: 14px; margin-top: 4px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>HTML Games</h1>
+      <p class="sub">Browser games. Click one to play.</p>
+      <ul>
+<!-- GAMES -->
+      </ul>
+    </main>
+  </body>
+</html>

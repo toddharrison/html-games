@@ -481,11 +481,14 @@ export function degraded(floor: number, integrity: number): number {
 }
 
 /**
- * How much of its full-health speed the Behemoth keeps at a given tread integrity.
- * Reaches exactly zero at zero integrity, and declines gradually (no cliff) before that (SPEC §5.1).
+ * How much of its full-health speed the Behemoth keeps at a given tread integrity: declines
+ * gradually to `DEGRADE.treadSpeedFloor` as the set wears out, and is zero only once it's
+ * destroyed (SPEC §5.1).
  */
 export function treadSpeedScale(integrity: number): number {
-  return clamp(integrity, 0, 1) ** DEGRADE.treadSpeedExponent;
+  if (integrity <= 0) return 0;
+  const floor = DEGRADE.treadSpeedFloor;
+  return floor + (1 - floor) * Math.min(integrity, 1) ** DEGRADE.treadSpeedExponent;
 }
 
 /**

@@ -10,6 +10,8 @@ import { levelFactor, pitchFactor, type EngineState, type HoldId, type Placement
  */
 
 const SR_GUARD = 0.45;
+/** Share of glancing hits on front armor that sing off as a ricochet whine. */
+const RICOCHET_WHINE = 0.3;
 const MAX_VOICES = 48;
 
 /** Overall level of each one-shot, before distance. */
@@ -28,7 +30,8 @@ const LEVEL: Record<SoundId, number> = {
   plasmaSplash: 0.6,
   splash: 0.6,
   impact: 0.6,
-  pierce: 0.55,
+  pierce: 0.6,
+  ricochet: 0.5,
   hullHit: 0.7,
   vehicleKill: 0.8,
   crush: 0.7,
@@ -426,12 +429,26 @@ const RECIPES: Record<SoundId, Recipe> = {
     v.tone({ f: 110, f1: 50, glide: 0.08, peak: 0.4, attack: 0.001, decay: 0.1 });
     v.noise({ color: 'crackle', type: 'bandpass', f: 2200, q: 0.8, peak: 0.3, attack: 0.01, decay: 0.25, delay: 0.02 });
   },
-  // A round finding thin armor on a vehicle's flank or rear: a bright crack and a short, high ring
-  // of light plate (heavy armor's ring is low; see hullHit). Brighter and longer from behind.
+  // A round punching into thin armor on a vehicle's flank or rear: a gritty crunch of torn plate,
+  // a dull, short clang, and the thump through the hull. Heavier from behind. Dark on purpose
+  // (user feedback): no bright crack or high ring.
   pierce: (v, s) => {
-    v.noise({ type: 'highpass', f: 4000, peak: 0.7, attack: 0.0003, decay: 0.012 });
-    v.modes(vary(900, 0.1), BAR, 0.25 + 0.2 * s, 0.25 + 0.3 * s);
-    v.noise({ color: 'crackle', type: 'bandpass', f: 3500, q: 1, peak: 0.3 * s, attack: 0.002, decay: 0.15, delay: 0.01 });
+    v.noise({ color: 'pink', type: 'bandpass', f: vary(1000, 0.15), q: 1.1, peak: 0.9, attack: 0.0005, decay: 0.035, dest: v.driven });
+    v.noise({ color: 'crackle', type: 'bandpass', f: vary(1300, 0.15), q: 0.7, peak: 0.45 + 0.3 * s, attack: 0.002, decay: 0.12 + 0.12 * s, delay: 0.004, dest: v.driven });
+    v.modes(vary(170, 0.12), PLATE, 0.2 + 0.15 * s, 0.22 + 0.25 * s);
+    v.tone({ f: 105, f1: 42, glide: 0.1, peak: 0.35 + 0.35 * s, attack: 0.001, decay: 0.14 + 0.08 * s, dest: v.driven });
+  },
+  // A round glancing off a vehicle's thick front plate: a dull clank and a puff of grit, and now
+  // and then (`RICOCHET_WHINE`) the round sings off: the one bright hit sound.
+  ricochet: (v, s) => {
+    v.noise({ color: 'pink', f: 1100, peak: 0.55 + 0.3 * s, attack: 0.0005, decay: 0.04, dest: v.driven });
+    v.modes(vary(230, 0.15), PLATE, 0.15 + 0.1 * s, 0.18);
+    v.tone({ f: 120, f1: 55, glide: 0.08, peak: 0.25 + 0.2 * s, attack: 0.001, decay: 0.09 });
+    v.noise({ color: 'crackle', type: 'bandpass', f: 1600, q: 0.8, peak: 0.25, attack: 0.003, decay: 0.12, delay: 0.01 });
+    if (Math.random() < RICOCHET_WHINE) {
+      const f = vary(2400, 0.25);
+      v.tone({ f, f1: f * rand(0.35, 0.5), glide: rand(0.25, 0.45), peak: 0.1, attack: 0.008, decay: rand(0.3, 0.5), delay: 0.012 });
+    }
   },
   // Heavy armor taking a round: lower and longer the harder the hit; big ones throw spall.
   hullHit: (v, s) => {

@@ -29,6 +29,7 @@ export type SoundId =
   | 'splash'
   | 'impact'
   | 'pierce'
+  | 'ricochet'
   | 'hullHit'
   | 'vehicleKill'
   | 'crush'
@@ -124,7 +125,11 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
     }
     case 'plasmaBurn':
       return [{ sound: 'burn', size: 1, x: ev.x, y: ev.y }];
+    // A bullet on armor: off the front it's a dark clank (now and then a round sings off); a flank
+    // or rear hit is the `facingHit`'s pierce, so it adds nothing of its own.
     case 'impact':
+      if (ev.armor === 'front') return [{ sound: 'ricochet', size: 0.5, x: ev.x, y: ev.y }];
+      if (ev.armor) return [];
       return [{ sound: 'impact', size: 0.4, x: ev.x, y: ev.y }];
     case 'facingHit':
       return [{ sound: 'pierce', size: ev.facing === 'rear' ? 1 : 0.5, x: ev.x, y: ev.y }];
@@ -265,6 +270,7 @@ export const MIN_GAP: Record<SoundId, number> = {
   splash: 0.08,
   impact: 0.04,
   pierce: 0.06,
+  ricochet: 0.05,
   hullHit: 0.05,
   vehicleKill: 0.08,
   crush: 0.1,
@@ -304,6 +310,7 @@ export const PITCH_SPREAD: Record<SoundId, number> = {
   splash: 1.5,
   impact: 2,
   pierce: 1.5,
+  ricochet: 2,
   hullHit: 1.8,
   vehicleKill: 1.2,
   crush: 1.5,

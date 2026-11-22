@@ -23,7 +23,7 @@ This game is one workspace in the html-games monorepo. The repo-wide rules (layo
 
 ## Core design rules that are easy to violate
 - **Forward momentum:** the Behemoth never stops by choice and never reverses; braking only goes down to minimum speed. Nothing on the battlefield blocks it outright: obstacles are crushed, plowed through (damage scales with obstacle size and is reduced by ram gear), or deflected. There is no auto-scroll; the camera follows the Behemoth and never scrolls backward (sole exception: it eases back to center the Immobilized Behemoth for the last stand). Battles scroll vertically (the Behemoth drives up the screen); the sim stays camera-agnostic (sim +x = forward), and only `src/render/` maps it to screen-up.
-- Speed (minimum, cruise, top) scales toward zero with tread integrity. Zero tread integrity = Immobilized = a doomed last stand.
+- Speed (minimum, cruise, top) scales down with tread integrity, to a floor of half (`DEGRADE.treadSpeedFloor`) while any tread set works. Zero tread integrity = Immobilized = a stop and a doomed last stand.
 - No single HP bar: component damage model. Reactor destroyed = a spectacular detonation that damages enemies and counts toward progression.
 
 ## Task tracking (docs/TODO.md and docs/FEATURES.md)

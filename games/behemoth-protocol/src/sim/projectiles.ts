@@ -151,8 +151,9 @@ function stepPlayerRound(w: World, p: Projectile): void {
     if (e.alive && Math.hypot(e.x - p.x, e.y - p.y) <= e.def.radius + 1.5) {
       if (spec.kind === 'bullet') {
         p.alive = false;
+        const armor = e.def.facing ? hitFacing(e, p.vx, p.vy) : undefined;
         damageEnemy(w, e, spec, spec.damage, direct(p));
-        w.events.push({ type: 'impact', x: p.x, y: p.y });
+        w.events.push({ type: 'impact', x: p.x, y: p.y, armor });
       } else {
         detonate(w, p, e);
       }

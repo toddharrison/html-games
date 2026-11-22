@@ -416,11 +416,14 @@ export class MapScene extends Phaser.Scene {
     const pos = this.hover ?? this.options[this.selected] ?? null;
     const node = pos && nodeAt(this.run.map, pos);
     if (!pos || !node) return;
-    const x = RESOLUTION.width - 160;
+    const x = RESOLUTION.width - INTEL_W;
     let y = 12;
+    // Every line wraps to the panel, so no string runs off the right edge.
     const t = (s: string, color: string = PAL.hudText, dx = 0) => {
-      this.text(x + dx, y, s, color, 1, this.intel);
-      y += 9;
+      for (const l of wrapText(s, Math.floor((INTEL_W - INTEL_MARGIN - dx) / CHAR_W))) {
+        this.text(x + dx, y, l, color, 1, this.intel);
+        y += 9;
+      }
     };
     const near = this.visited(pos) || this.options.some((o) => samePos(o, pos));
     const done = this.visited(pos);
@@ -431,7 +434,7 @@ export class MapScene extends Phaser.Scene {
       const hiddenKind = !done && hiddenEvent(ev, near, this.run.behemoth.grades.sensors ?? 1);
       t(hiddenKind ? 'Event: unknown contact' : `Event: ${MAP_EVENTS[ev.id].title}`, PAL.glow);
       y += 2;
-      for (const l of wrapText(hiddenKind ? 'Something out there. Closer, or better sensors, shows what.' : MAP_EVENTS[ev.id].teaser, 38)) t(l, PAL.hudDim);
+      t(hiddenKind ? 'Something out there. Closer, or better sensors, shows what.' : MAP_EVENTS[ev.id].teaser, PAL.hudDim);
       y += 4;
       t('No battle: a choice', PAL.hudText);
     } else if (node.kind === 'depot') {
@@ -490,7 +493,7 @@ export class MapScene extends Phaser.Scene {
     // The weather is never fogged (SPEC §4.6).
     const biome = this.run.map.sectors[this.sector]!.biome;
     field('Conditions', intel.condition ? conditionName(intel.condition, biome) : 'Clear', intel.condition ? PAL.amber : PAL.hudText);
-    if (intel.condition) for (const l of wrapText(CONDITIONS[intel.condition].intel, 36)) t(l, PAL.hudDim, 4);
+    if (intel.condition) t(CONDITIONS[intel.condition].intel, PAL.hudDim, 4);
     field('Reward', fog('reward') ? '?' : `+${intel.salvage} salvage on extraction`, PAL.amber);
     if (!fog('reward') && mode.bonus > 0) t(`+${mode.bonus} for destroying all ${mode.target?.[1] ?? 'targets'}`, PAL.amber, 4);
     if (!fog('reward') && intel.cache) t('Supply cache: +1 depot action', PAL.glow, 4);
@@ -511,6 +514,11 @@ const INK_TEXT = '#1d1a16';
 
 /** Characters that fit across the left panel (the 3×5 font is 4 pixels a character). */
 const PANEL_CHARS = 30;
+/** The 3×5 font's advance per character, in pixels. */
+const CHAR_W = 4;
+/** The intel panel's width at the right edge, and the gap its text keeps from the screen edge. */
+const INTEL_W = 160;
+const INTEL_MARGIN = 4;
 
 
 function dashed(g: Phaser.GameObjects.Graphics, x1: number, y1: number, x2: number, y2: number, width: number, color: number, alpha: number): void {

@@ -68,6 +68,13 @@ describe('cuesFor', () => {
     expect(rear.size).toBeGreaterThan(flank.size);
   });
 
+  it('a bullet glances off front armor, and leaves flank and rear hits to the pierce', () => {
+    expect(sounds({ type: 'impact', x: 0, y: 0 })).toEqual(['impact']);
+    expect(sounds({ type: 'impact', x: 0, y: 0, armor: 'front' })).toEqual(['ricochet']);
+    expect(sounds({ type: 'impact', x: 0, y: 0, armor: 'flank' })).toEqual([]);
+    expect(sounds({ type: 'impact', x: 0, y: 0, armor: 'rear' })).toEqual([]);
+  });
+
   it('makes no fireball for infantry, and crunches crushed vehicles', () => {
     expect(sounds({ type: 'enemyDestroyed', id: 1, enemy: 'infantry', x: 0, y: 0, cause: 'shot' })).toEqual([]);
     expect(sounds({ type: 'enemyDestroyed', id: 1, enemy: 'lightTank', x: 0, y: 0, cause: 'shot' })).toEqual(['vehicleKill']);

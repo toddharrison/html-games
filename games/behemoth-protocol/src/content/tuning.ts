@@ -75,7 +75,12 @@ export const RAM = {
 
 /** How components lose performance as they're damaged (SPEC §5.1, §5.4). `i` = integrity fraction. */
 export const DEGRADE = {
-  /** Speed scale = i^this: reaches zero at zero integrity, with no cliff before it. */
+  /**
+   * Speed scale = floor + (1 − floor) × i^exponent while a tread set works: worn treads slow the
+   * Behemoth to `treadSpeedFloor` of its speeds (min, cruise, top), and only losing every set
+   * (Immobilized) stops it.
+   */
+  treadSpeedFloor: 0.5,
   treadSpeedExponent: 0.75,
   /** Reactor and generator output = floor + (1 − floor) × i, while they're working: 30% integrity still makes 51%. */
   powerFloor: 0.3,

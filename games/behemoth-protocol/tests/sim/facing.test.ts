@@ -89,6 +89,8 @@ describe('facing armor', () => {
     shoot(w, e, 0);
     steps(w, 20);
     expect(facingHits(w).map((ev) => ev.type === 'facingHit' && ev.facing)).toEqual(['rear']);
+    // The bullet's impact names the face it struck (the audio's glance or pierce).
+    expect(w.events.filter((ev) => ev.type === 'impact').map((ev) => ev.type === 'impact' && ev.armor)).toEqual(['front', 'rear']);
   });
 
   it('splash counts as a flank hit, and a top hit (lobbed shell) as a rear hit', () => {

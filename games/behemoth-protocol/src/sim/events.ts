@@ -29,7 +29,11 @@ export type SimEvent =
   | { type: 'beam'; weapon: WeaponId; x0: number; y0: number; x1: number; y1: number; hit: boolean }
   /** A plasma pool burning the Behemoth's treads or its trailer, at the contact point. */
   | { type: 'plasmaBurn'; x: number; y: number }
-  | { type: 'impact'; x: number; y: number }
+  /**
+   * A round hit the ground, cover, a drone, or a unit. `armor`: a bullet struck a vehicle's
+   * armored face (the front glances off; a flank or rear hit also raises `facingHit`).
+   */
+  | { type: 'impact'; x: number; y: number; armor?: Facing }
   | { type: 'behemothHit'; arc: Arc; damage: number; x: number; y: number }
   /** A round struck the trailer (its armor first). */
   | { type: 'trailerHit'; damage: number; x: number; y: number }

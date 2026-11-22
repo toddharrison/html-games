@@ -3,6 +3,7 @@
 Open work and the hand-off between sessions. See CLAUDE.md for how to maintain it. **Only open items live here:** when a task is done, move it to [FEATURES.md](FEATURES.md) (under its system, with the tag line) and delete it here.
 
 ## Hand-off notes
+- **Just done (2026-11-22, uncommitted):** three user fixes. Worn treads now slow the Behemoth to a 50% floor (`DEGRADE.treadSpeedFloor`), not toward zero; only Immobilized stops it (SPEC §5.1, §15 "Tread damage", CLAUDE.md rule). Hits on enemy vehicles are darker (`pierce` reworked; a new `ricochet` off front armor, sometimes with a whine). The map's intel panel wraps every line (Chase/Breach goals ran off the edge). FEATURES.md §2 "Behemoth movement", §7 "Facing armor", §9 "Sector map".
 - **Just done (2026-11-22, commit 75a116f):** M3 **conditions and events**. Conditions: **night** and **storm** (rainstorm, blizzard, sandstorm, ash storm by biome) on 30% of battle nodes, both through a sight rule layered on concealment, and the enemy is blind too (at night the Behemoth's muzzle flash lifts that for 2 s; squalls blind both sides). A render veil with light holes, storm particles, a weather sound bed, map badges, intel, HUD line, banners; the attract mode shows one clip in four with a condition. Events: a third map node kind (about 2 a route), six events with seeded outcomes, an event screen. Save v12. All my calls: SPEC §3.1, §4.6, §8.3, §15 "Conditions and events (M3)", §16 Q27–28 for review. FEATURES.md §7 "Conditions: night and storm", §9 "Events". 519 tests.
 - **Before that (commit 3471074):** Directives and the run summary. SPEC §16 Q1, Q19–26 still await the user's answers.
 - **Next step:** the user reviews the diff and plays the conditions and events (playtest queue below), and answers SPEC §16 Q27–28. Then the last M3 task: content toward the targets, starting with the user's roster requests (placed artillery, the superheavy dual-turret tank, a unique unit per biome).
@@ -37,6 +38,7 @@ Built but not yet seen by the user. Check each one off by setting its FEATURES.m
 - [ ] Title attract mode: open the title (no URL params). Do ~10 s clips read as a show (enough action, the fade, the corner caption), is the dimming right for the menu, and does starting or continuing a run stop it cleanly? It's silent on purpose
 - [ ] Hovercraft: `?seed=4&approach=river` (raiders or river nodes on the map); they should skim the river where tanks need a ford
 - [ ] Sound: listen and tune by ear in `src/audio/synth.ts`
+- [ ] Tread speed floor and hit sounds: any seed: plow towns and take tread hits (infantry rockets, mines) and watch the speed settle near half as the treads wear (does 50% feel crippled enough?). Autocannon a tank's nose (dull clank, an occasional ricochet whine) and its flank or tail (a crunch, heavier from behind): dark enough now? The intel panel: hover a Chase node (`?seed=3&map`, the C node at upper right) and the long goal wraps
 - [ ] From M1: rivers (`?seed=4`), last stand (`?immobilize=10`), status visuals, smooth rendering on a real display
 
 ## M0: Feel prototype

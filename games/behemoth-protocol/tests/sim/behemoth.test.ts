@@ -1,4 +1,4 @@
-import { DETONATION, MASS } from '../../src/content/tuning';
+import { DEGRADE, DETONATION, MASS } from '../../src/content/tuning';
 import { describe, expect, it } from 'vitest';
 import { CHASSIS, type ChassisDef } from '../../src/content/chassis';
 import { WEAPONS } from '../../src/content/weapons';
@@ -121,14 +121,15 @@ describe('Behemoth movement', () => {
 });
 
 describe('tread integrity scaling', () => {
-  it('scales all speeds toward zero, gradually', () => {
+  it('scales all speeds down to the floor, gradually, and to zero only when destroyed', () => {
     expect(treadSpeedScale(1)).toBe(1);
     expect(treadSpeedScale(0)).toBe(0);
-    let prev = 0;
+    expect(treadSpeedScale(0.001)).toBeGreaterThanOrEqual(DEGRADE.treadSpeedFloor);
+    let prev = treadSpeedScale(0.001);
     for (let i = 1; i <= 10; i++) {
       const k = treadSpeedScale(i / 10);
       expect(k).toBeGreaterThan(prev);
-      expect(k - prev).toBeLessThan(0.2); // no cliff
+      expect(k - prev).toBeLessThan(0.2); // no cliff while the set works
       prev = k;
     }
   });

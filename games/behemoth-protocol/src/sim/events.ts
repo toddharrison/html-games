@@ -13,7 +13,8 @@ export type Owner = 'player' | 'enemy';
  * `blast` is the reactor's detonation (it counts toward the final-blast tally); `trailer` a trailer
  * going up; `hazard` the terrain (a fuel tank going up, the ground giving way under a vehicle).
  */
-export type KillCause = 'shot' | 'crushed' | 'blast' | 'trailer' | 'hazard';
+/** `friendly`: the enemy's own artillery (SPEC §7). */
+export type KillCause = 'shot' | 'crushed' | 'blast' | 'trailer' | 'hazard' | 'friendly';
 
 /**
  * Things that happened during sim steps, for the renderer (effects, sound) to consume.
@@ -82,6 +83,8 @@ export type SimEvent =
   | { type: 'objective'; what: 'destroyed' | 'lost'; enemy: EnemyId; x: number; y: number; done: boolean }
   /** A convoy's mine layer dropped a mine (world point of the tile's center). */
   | { type: 'mineLaid'; x: number; y: number }
+  /** A battery's volley went up: its target zone is marked, the first round lands in `flight` s (SPEC §7). */
+  | { type: 'barrage'; x: number; y: number; radius: number; flight: number }
   /** The Behemoth crossed the extraction line: battle won (SPEC §4.4). */
   /** A storm's squall building (rising) or dying away (SPEC §4.6). */
   | { type: 'squall'; rising: boolean }

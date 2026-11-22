@@ -53,6 +53,22 @@ export interface AiMemory {
   /** Mine layer: seconds until its next mine, and mines left. */
   mineIn?: number;
   minesLeft?: number;
+  /** Area fire: the zone the volley being fired is laid on (SPEC §7 artillery). */
+  zone?: { x: number; y: number; radius: number };
+}
+
+/**
+ * A target zone marked on the ground (SPEC §7 artillery): a battery's volley is on its way into
+ * it. Drawn from the moment the shells go up until the last one lands.
+ */
+export interface Barrage {
+  x: number;
+  y: number;
+  radius: number;
+  /** Sim time it was marked, when the first round lands, and when the last one does. */
+  from: number;
+  lands: number;
+  until: number;
 }
 
 export interface Projectile {

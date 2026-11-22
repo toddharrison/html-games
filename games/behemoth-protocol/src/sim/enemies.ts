@@ -1,6 +1,6 @@
 import { ENEMIES, type EnemyId, type Facing } from '../content/enemies';
 import { CONCEALMENT, ENEMY } from '../content/tuning';
-import { WEAPONS } from '../content/weapons';
+import { WEAPONS, type WeaponDef } from '../content/weapons';
 import { BEHAVIORS } from './ai';
 import { besiege, joinSiege } from './ai/besiege';
 import { hiddenNow } from './concealment';
@@ -181,8 +181,9 @@ function aimAndFire(w: World, e: Enemy, dt: number): void {
   const b = w.behemoth;
   const spec = roundSpec(e.weapon);
   const d = Math.hypot(b.x - e.x, b.y - e.y);
-  // Lead the target by the round's flight time (missiles home, so they just point at it).
-  const lead = spec.kind === 'missile' ? 0 : d / spec.speed;
+  // Lead the target by the round's flight time (missiles home, so they just point at it; a
+  // battery lays its guns on the zone it will mark).
+  const lead = e.weapon.barrage ? barrageLead(e.weapon) : spec.kind === 'missile' ? 0 : d / spec.speed;
   const ax = b.x + b.vx * lead;
   const ay = b.y + b.vy * lead;
   const want = Math.atan2(ay - e.y, ax - e.x);
@@ -219,12 +220,15 @@ function aimAndFire(w: World, e: Enemy, dt: number): void {
     e.windup = 0;
     e.cooldown = e.weapon.reload * w.rng.range(...ENEMY.reloadJitter);
     if (blocked(w, e)) return;
+    if (e.weapon.barrage && !markBarrage(w, e)) return;
     e.salvoLeft = e.weapon.salvo?.count ?? 1;
     fireRound(w, e);
     return;
   }
 
   if (e.cooldown > 0 || d > e.def.fireRange) return;
+  // Lobbed fire can't be laid on anything inside its minimum range.
+  if (spec.kind === 'shell' && spec.lobbed && d < spec.minRange) return;
   if (Math.abs(angleDiff(e.turret, want)) > ENEMY.aimTolerance) return;
   if (blocked(w, e)) return;
   // In the dark or a squall the enemy can't line up on what it can't see (SPEC §4.6).
@@ -232,21 +236,70 @@ function aimAndFire(w: World, e: Enemy, dt: number): void {
   e.windup = e.def.aimTime;
 }
 
-/** Direct fire needs a clear line to the Behemoth; homing missiles can fly around cover. */
+/** Direct fire needs a clear line to the Behemoth; homing missiles fly around cover and lobbed shells over it. */
 function blocked(w: World, e: Enemy): boolean {
-  if (e.weapon?.projectile.kind === 'missile') return false;
+  const spec = e.weapon?.projectile;
+  if (spec?.kind === 'missile' || (spec?.kind === 'shell' && spec.lobbed)) return false;
   return w.terrain.lineBlocked(e.x, e.y, w.behemoth.x, w.behemoth.y);
+}
+
+/**
+ * How far ahead a battery lays its zone (s): where the Behemoth will be, on its present course and
+ * speed, when the middle of the volley lands.
+ */
+export function barrageLead(weapon: WeaponDef): number {
+  const salvo = weapon.salvo ?? { count: 1, interval: 0 };
+  return (weapon.barrage?.flight ?? 0) + ((salvo.count - 1) * salvo.interval) / 2;
+}
+
+/**
+ * Area fire (SPEC §7 artillery): fixes the target zone where the Behemoth is headed and marks it on
+ * the ground for as long as the volley is on its way. The zone stays inside the guns' range band.
+ * False if there's nowhere in range to lay it (the Behemoth has closed inside the minimum range).
+ */
+function markBarrage(w: World, e: Enemy): boolean {
+  const weapon = e.weapon!;
+  const bar = weapon.barrage!;
+  const spec = roundSpec(weapon);
+  if (spec.kind !== 'shell') return false;
+  const b = w.behemoth;
+  const lead = barrageLead(weapon);
+  let x = b.x + b.vx * lead;
+  let y = clamp(b.y + b.vy * lead, 0, w.terrain.height);
+  const d = Math.hypot(x - e.x, y - e.y);
+  if (d < spec.minRange) return false;
+  if (d > spec.maxRange) {
+    x = e.x + ((x - e.x) * spec.maxRange) / d;
+    y = e.y + ((y - e.y) * spec.maxRange) / d;
+  }
+  e.ai.zone = { x, y, radius: bar.radius };
+  const salvo = weapon.salvo ?? { count: 1, interval: 0 };
+  const now = w.time;
+  w.barrages.push({ x, y, radius: bar.radius, from: now, lands: now + bar.flight, until: now + bar.flight + (salvo.count - 1) * salvo.interval });
+  w.events.push({ type: 'barrage', x, y, radius: bar.radius, flight: bar.flight });
+  return true;
 }
 
 function fireRound(w: World, e: Enemy): void {
   if (!e.weapon) return;
   const mx = e.x + Math.cos(e.turret) * e.weapon.muzzle;
   const my = e.y + Math.sin(e.turret) * e.weapon.muzzle;
-  // Out of a building's windows: the round ignores the walls of the tile the unit stands in.
-  const ts = w.terrain.tileSize;
-  const col = Math.floor(e.x / ts);
-  const row = Math.floor(e.y / ts);
-  spawnProjectile(w, 'enemy', e.weapon, mx, my, e.turret, w.terrain.blocksShot(col, row) ? { shelter: { col, row } } : {});
+  const zone = e.weapon.barrage ? e.ai.zone : undefined;
+  if (zone) {
+    // Somewhere in the zone, landing `flight` seconds from now.
+    const a = w.rng.range(0, Math.PI * 2);
+    const r = zone.radius * Math.sqrt(w.rng.next());
+    const tx = zone.x + Math.cos(a) * r;
+    const ty = zone.y + Math.sin(a) * r;
+    const reach = Math.max(1, Math.hypot(tx - mx, ty - my));
+    spawnProjectile(w, 'enemy', e.weapon, mx, my, Math.atan2(ty - my, tx - mx), { fuse: reach, speed: reach / e.weapon.barrage!.flight, tx, ty });
+  } else {
+    // Out of a building's windows: the round ignores the walls of the tile the unit stands in.
+    const ts = w.terrain.tileSize;
+    const col = Math.floor(e.x / ts);
+    const row = Math.floor(e.y / ts);
+    spawnProjectile(w, 'enemy', e.weapon, mx, my, e.turret, w.terrain.blocksShot(col, row) ? { shelter: { col, row } } : {});
+  }
   e.salvoLeft--;
   e.exposed = CONCEALMENT.afterFire;
   e.salvoTimer = e.weapon.salvo?.interval ?? 0;

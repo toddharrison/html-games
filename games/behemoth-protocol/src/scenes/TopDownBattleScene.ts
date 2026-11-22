@@ -2,7 +2,7 @@ import { DETONATION, TRAILER_MINE } from '../content/tuning';
 import Phaser from 'phaser';
 import { BattleAudio } from '../audio/battleAudio';
 import { toggleMute } from '../audio/mute';
-import { battleLayout, battleLengthFromUrl, conditionFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
+import { battleLayout, battleLengthFromUrl, conditionFromUrl, doctrineFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
 import { Controls } from '../input/controls';
 import { BehemothView, TrackMarks } from '../render/compositor';
 import { Effects } from '../render/effects';
@@ -14,6 +14,7 @@ import { ThreatIndicators } from '../render/threatIndicators';
 import { TrailerView } from '../render/trailerView';
 import { DroneViews } from '../render/droneView';
 import { PoolViews } from '../render/poolView';
+import { BarrageViews } from '../render/barrageView';
 import { WeatherView } from '../render/weatherView';
 import { CONDITIONS, conditionName } from '../content/conditions';
 import { sightRadius } from '../sim/conditions';
@@ -79,6 +80,7 @@ export class TopDownBattleScene extends Phaser.Scene {
   private units!: UnitViews;
   private drones!: DroneViews;
   private pools!: PoolViews;
+  private barrages!: BarrageViews;
   /** The condition's veil and weather (SPEC §4.6); null for a clear battle. */
   private weather: WeatherView | null = null;
   private fx!: Effects;
@@ -150,7 +152,7 @@ export class TopDownBattleScene extends Phaser.Scene {
       frameWidth: height,
       fieldRows: this.layout.fieldTiles,
       behemoth: run.behemoth,
-      ...battleEnemy(run, recipe),
+      ...battleEnemy(run, recipe, demo ? undefined : doctrineFromUrl()),
       ...(demo ? { threat: demo.threat, battleLength: demo.battleLength } : { battleLength: battleLengthFromUrl() ?? battleLength(run), alertPace: battleAlertPace(run) }),
       objective: demo ? { mode: demo.mode, strength: 'normal' } : battleObjective(run, modeFromUrl()),
       condition: demo ? demo.condition : battleCondition(run, conditionFromUrl()),
@@ -168,6 +170,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.units = new UnitViews(this);
     this.drones = new DroneViews(this);
     this.pools = new PoolViews(this);
+    this.barrages = new BarrageViews(this);
     this.weather = WeatherView.create(this, this.layout, this.world);
     this.fx = new Effects(this);
     // The attract mode is silent: the title shouldn't blare before anyone has asked to play.
@@ -583,6 +586,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.unitFx.update(damaged, dt, this.fx);
     this.drones.update(w.drones, this.interp, dt, w.time, this.fx);
     this.pools.update(w.pools, dt, w.time, this.fx);
+    this.barrages.update(w.barrages, w.time);
     this.weather?.update(w, this.interp, this.cameras.main, dt);
     this.threats?.update(w.enemies, w.frame, w.time);
     this.updateLockMark();

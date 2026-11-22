@@ -21,7 +21,7 @@ import { stepReactor } from './detonation';
 import { stepEnemies } from './enemies';
 import { stepLastStand, type LastStandState } from './lastStand';
 import { createObjective, planFortress, startObjective, stepObjective, type ObjectiveSpec, type ObjectiveState } from './objective';
-import type { Drone, Enemy, Mine, Pool, Projectile } from './entities';
+import type { Barrage, Drone, Enemy, Mine, Pool, Projectile } from './entities';
 import type { SimEvent } from './events';
 import { centerFrame, createFrame, frameRight, stepFrame, type FrameState } from './frame';
 import { SIM_DT } from './loop';
@@ -82,6 +82,8 @@ export interface World {
   pools: Pool[];
   /** Explosive terrain set off and waiting out its fuse (SPEC §4.6). */
   blasts: TerrainBlast[];
+  /** Artillery target zones with a volley on the way (SPEC §7). */
+  barrages: Barrage[];
   /** The drones' once-a-battle revive: drone-seconds of work done while it's under way. */
   revive: { work: number } | null;
   /** The revive has been used this battle (it worked). */
@@ -149,6 +151,7 @@ export function createWorld(opts: WorldOptions): World {
     drones: [],
     pools: [],
     blasts: [],
+    barrages: [],
     revive: null,
     revived: false,
     events: [],
@@ -238,6 +241,7 @@ export function stepWorld(w: World, cmd: PlayerCommand): void {
   const despawnX = w.frame.left - DESPAWN_BEHIND;
   w.enemies = w.enemies.filter((e) => e.alive && e.x > despawnX);
   w.projectiles = w.projectiles.filter((p) => p.alive);
+  w.barrages = w.barrages.filter((z) => z.until > w.time);
 }
 
 /**
@@ -249,5 +253,6 @@ function checkExtraction(w: World): void {
   if (w.extractedAt !== null || !mobile(b) || b.x < w.exitX) return;
   w.extractedAt = w.time;
   for (const p of w.projectiles) if (p.owner === 'enemy') p.alive = false;
+  w.barrages = [];
   w.events.push({ type: 'extracted' });
 }

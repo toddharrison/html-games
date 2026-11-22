@@ -961,6 +961,7 @@ export const HAUL = { body: { w: 24, h: 14 } };
 export const LAYER = { body: { w: 16, h: 11 } };
 export const HOVER = { body: { w: 15, h: 11 }, turret: { w: 10, h: 5 }, pivotX: 3 };
 export const POST = { body: 26 };
+export const BATTERY = { body: 22, turret: { w: 20, h: 9 }, pivotX: 6 };
 
 function makeObjectiveUnits(scene: Phaser.Scene): void {
   // Gun emplacement: a round concrete revetment with sandbags, a long gun on a heavy mount.
@@ -1133,6 +1134,43 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
   };
   canvasTexture(scene, 'post_body', POST.body, POST.body, (p) => postBody(p, false));
   canvasTexture(scene, 'post_wreck', POST.body, POST.body, (p) => postBody(p, true));
+  // Field battery: an earth berm around the gun pit, thick toward the approach (+x) and open at
+  // the back, with ammunition stacked behind; one big howitzer stands for the battery's guns.
+  const batteryBody = (p: Painter, dead: boolean) => {
+    const n = BATTERY.body;
+    const c = n / 2;
+    p.disc(c, c, c, PAL.outline);
+    p.disc(c, c, c - 1, dead ? PAL.ash : PAL.dirt, dead ? PAL.ashLight : PAL.rubble, dead ? PAL.hole : PAL.dirtDark);
+    p.disc(c - 1, c, c - 5, PAL.outline);
+    p.disc(c - 1, c, c - 6, dead ? PAL.hole : PAL.dirtDark);
+    // The open back: a gap in the berm, crates either side of it.
+    p.rect(0, c - 3, 5, 6, dead ? PAL.hole : PAL.dirtDark);
+    if (dead) {
+      p.px(c - 3, c + 1, PAL.ember);
+      p.px(c + 2, c - 3, PAL.ember);
+      return;
+    }
+    for (const y of [c - 6, c + 4] as const) {
+      p.rect(2, y, 4, 3, PAL.outline);
+      p.rect(3, y + 1, 2, 1, PAL.plank);
+    }
+    p.rect(n - 4, 5, 2, n - 10, PAL.rubble); // the berm's crest toward the approach
+  };
+  canvasTexture(scene, 'battery_body', BATTERY.body, BATTERY.body, (p) => batteryBody(p, false));
+  canvasTexture(scene, 'battery_wreck', BATTERY.body, BATTERY.body, (p) => batteryBody(p, true));
+  canvasTexture(scene, 'battery_turret', BATTERY.turret.w, BATTERY.turret.h, (p) => {
+    const tw = BATTERY.turret.w;
+    // Split trail behind the pivot, a gun shield, a thick barrel with a muzzle brake.
+    p.rect(0, 1, 6, 2, PAL.outline);
+    p.rect(0, 6, 6, 2, PAL.outline);
+    p.rect(8, 3, tw - 10, 3, PAL.outline);
+    p.rect(8, 4, tw - 11, 1, PAL.enemyDark);
+    p.rect(tw - 3, 2, 3, 5, PAL.outline);
+    p.rect(3, 1, 7, 7, PAL.outline);
+    p.rect(4, 2, 5, 5, PAL.enemy);
+    p.rect(4, 2, 5, 1, PAL.enemyHi);
+    p.rect(4, 6, 5, 1, PAL.enemyDark);
+  });
   canvasTexture(scene, 'hover_turret', HOVER.turret.w, HOVER.turret.h, (p) => {
     const tw = HOVER.turret.w;
     p.rect(4, 2, tw - 4, 1, PAL.outline);
@@ -1162,6 +1200,7 @@ export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
   mineLayer: { body: 'layer_body', turret: null, wreck: 'layer_wreck' },
   hovercraft: { body: 'hover_body', turret: { key: 'hover_turret', pivotX: HOVER.pivotX, w: HOVER.turret.w }, wreck: 'hover_wreck' },
   commandPost: { body: 'post_body', turret: null, wreck: 'post_wreck' },
+  artillery: { body: 'battery_body', turret: { key: 'battery_turret', pivotX: BATTERY.pivotX, w: BATTERY.turret.w }, wreck: 'battery_wreck' },
 };
 
 // ---------------------------------------------------------------------------------------------

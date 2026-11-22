@@ -9,7 +9,7 @@ import type { TargetClass, WeaponId } from './weapons';
  * - holdAhead: keeps a spot ahead of the Behemoth within an arc, falling back as it advances
  *   (heavy tanks hold close and straight ahead; missile launchers far off and to the side)
  * - ambusher: walks to nearby cover and holds there as the Behemoth passes (infantry)
- * - fixed: never moves; only the turret turns (fortress guns, SPEC §4.4 Breach)
+ * - fixed: never moves; only the turret turns (fortress guns, SPEC §4.4 Breach; field batteries)
  * - convoy: drives up the lane toward the far end at the convoy's speed, slowing as it's damaged
  *   (SPEC §4.4 Chase)
  */
@@ -26,7 +26,8 @@ export type EnemyId =
   | 'hauler'
   | 'mineLayer'
   | 'hovercraft'
-  | 'commandPost';
+  | 'commandPost'
+  | 'artillery';
 
 /** Which side of a vehicle a hit lands on, relative to its hull heading (SPEC §7 "Facing armor"). */
 export type Facing = 'front' | 'flank' | 'rear';
@@ -47,10 +48,11 @@ const EMPLACEMENT_FACING: FacingArmor = { front: 0.5, flank: 1, rear: 1.5 };
 const BUNKER_FACING: FacingArmor = { front: 0.6, flank: 0.8, rear: 1 };
 
 /**
- * Where a unit enters (`sim/spawner.ts`): ahead or behind the frame, ahead only, or in cover ahead.
+ * Where a unit enters (`sim/spawner.ts`): ahead or behind the frame, ahead only, in cover ahead, or
+ * dug in ahead near a side of the field ('edge': fixed units, which can't drive in from anywhere).
  * 'objective' units are placed by their battle mode (`sim/objective.ts`) and never drawn into a mix.
  */
-export type SpawnPlacement = 'edges' | 'ahead' | 'cover' | 'objective';
+export type SpawnPlacement = 'edges' | 'ahead' | 'cover' | 'edge' | 'objective';
 
 export interface EnemyDef {
   id: EnemyId;
@@ -361,6 +363,37 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     spawn: 'objective',
     threat: 1.5,
     salvage: 8,
+  },
+  artillery: {
+    // Area denial (SPEC §7): dug in near a side of the field, it lays a volley on the ground the
+    // Behemoth is about to cross. The zone is marked as the shells go up, so a change of speed or
+    // course gets clear; driving straight at the battery gets under its minimum range.
+    id: 'artillery',
+    name: 'Field battery',
+    // Tough enough to get a second volley off while the Behemoth closes on it.
+    hp: 75,
+    targetClass: 'light',
+    // Guns behind an earth berm toward the front; open behind.
+    facing: EMPLACEMENT_FACING,
+    reverseSpeed: 0,
+    radius: 10,
+    // Guns and limbers: they go under the treads with a crunch.
+    obstacle: 'medium',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 30,
+    weapon: 'batteryShells',
+    fireRange: 330,
+    // Laying the guns: a long glint before the volley goes up.
+    aimTime: 1.2,
+    behavior: 'fixed',
+    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
+    siege: { minRange: 0, maxRange: 0 },
+    spawn: 'edge',
+    threat: 2,
+    salvage: 14,
   },
   hovercraft: {
     id: 'hovercraft',

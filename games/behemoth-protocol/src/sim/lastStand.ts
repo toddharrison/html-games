@@ -6,7 +6,7 @@ import { buildFlow, type FlowField } from './ai/flow';
 import { footprint, revealRadius } from './behemoth';
 import { spawnEnemy } from './enemies';
 import { frameRight } from './frame';
-import { drawUnit, entryPoint, liveThreat } from './spawner';
+import { drawUnit, entryPoint, liveThreat, mobileMix } from './spawner';
 import type { World } from './world';
 
 /**
@@ -90,9 +90,11 @@ export function waveBudget(wave: number): number {
 function sendWave(w: World, budget: number): number {
   let live = liveThreat(w);
   let count = 0;
+  // Fixed positions don't come in waves: a battery is only ever found dug in.
+  const mix = mobileMix(w.mix);
   // A few extra tries cover placements that come up empty.
   for (let tries = 0; tries < 40 && budget > 0; tries++) {
-    const id = drawUnit(w.rng, w.mix, Math.min(budget, LAST_STAND.maxThreat - live));
+    const id = drawUnit(w.rng, mix, Math.min(budget, LAST_STAND.maxThreat - live));
     if (!id) break;
     const def = ENEMIES[id];
     const at = wavePlacement(w, def);

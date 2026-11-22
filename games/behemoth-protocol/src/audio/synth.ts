@@ -45,6 +45,7 @@ const LEVEL: Record<SoundId, number> = {
   immobilized: 0.7,
   alarm: 0.22,
   missileWarning: 0.25,
+  incoming: 0.3,
   horn: 0.3,
   radio: 0.25,
   detonation: 1,
@@ -537,6 +538,14 @@ const RECIPES: Record<SoundId, Recipe> = {
   },
   // Missile launch detected: rapid high beeps.
   missileWarning: (v) => beeps(v, [1500, 1500, 1500, 1500], 0.045, 0.085, 'sine'),
+  // Incoming artillery: a falling whistle that swells as the shells come down over the zone and
+  // cuts off as the first one lands (`size` = seconds of flight).
+  incoming: (v, s) => {
+    const dur = Math.max(0.6, s);
+    const start = Math.max(0, dur - 1.6);
+    v.tone({ type: 'sine', f: vary(1900, 0.05), f1: vary(700, 0.05), glide: dur - start, peak: 0.5, attack: dur - start - 0.05, decay: 0.05, delay: start });
+    v.noise({ type: 'bandpass', f: 2600, f1: 900, glide: dur - start, q: 4, peak: 0.25, attack: dur - start - 0.05, decay: 0.05, delay: start });
+  },
   // The enemy's attack siren, far across the field: a slow wail up and back down.
   horn: (v) => {
     for (const d of [1, 1.006]) {

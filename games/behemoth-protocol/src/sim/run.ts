@@ -6,6 +6,7 @@ import { ARMOR_ARCS, CHASSIS, type ArmorArc, type ChassisId } from '../content/c
 import { CALLSIGNS } from '../content/callsigns';
 import { DIRECTIVES, DIRECTIVE_IDS, type DirectiveDef, type DirectiveId } from '../content/directives';
 import type { ConditionId } from '../content/conditions';
+import type { DoctrineId } from '../content/doctrines';
 import type { EnemyId } from '../content/enemies';
 import type { EventReport } from './mapEvents';
 import { battleForces, type Forces } from './encounter';
@@ -347,10 +348,13 @@ export function battleThreat(run: RunState): number {
   return currentBattle(run).threat;
 }
 
-/** What the battle's enemy fields: its threat and doctrine (SPEC §7.2), shaded by the ground it's fought on. */
-export function battleEnemy(run: RunState, recipe: TerrainRecipe = battleRecipe(run)): Forces {
+/**
+ * What the battle's enemy fields: its threat and doctrine (SPEC §7.2), shaded by the ground it's
+ * fought on. `doctrine` replaces the node's (practice).
+ */
+export function battleEnemy(run: RunState, recipe: TerrainRecipe = battleRecipe(run), doctrine?: DoctrineId): Forces {
   const b = currentBattle(run);
-  return battleForces(b.threat, b.doctrine, recipe.biome, recipe.approach);
+  return battleForces(b.threat, doctrine ?? b.doctrine, recipe.biome, recipe.approach);
 }
 
 /**

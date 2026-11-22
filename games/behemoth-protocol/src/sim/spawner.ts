@@ -1,4 +1,5 @@
 import { ENEMIES, type EnemyDef, type EnemyId, type WaveSide } from '../content/enemies';
+import { isWet } from '../content/terrain';
 import { LAST_STAND, SPAWNER } from '../content/tuning';
 import type { Rng } from './rng';
 import { frameRight } from './frame';
@@ -53,6 +54,28 @@ export function openSpot(w: World, def: EnemyDef, x: number): { x: number; y: nu
     if (w.terrain.speedAt(x, y, def.mobility) > 0) return { x, y };
   }
   return null;
+}
+
+/**
+ * Where a fixed unit (a field battery) is found dug in at `x`: open, dry ground within
+ * `SPAWNER.edgeBand` of either side of the field, off the Behemoth's line. Null after a few tries.
+ */
+export function edgeSpot(w: World, def: EnemyDef, x: number): { x: number; y: number } | null {
+  const t = w.terrain;
+  const margin = def.radius + 4;
+  const band = Math.max(margin + 1, t.height * SPAWNER.edgeBand);
+  for (let attempt = 0; attempt < 12; attempt++) {
+    const inset = w.rng.range(margin, band);
+    const y = w.rng.chance(0.5) ? inset : t.height - inset;
+    const tile = t.tileAt(x, y);
+    if (t.speedAt(x, y, def.mobility) > 0 && !(tile && isWet(tile.mat)) && !t.blocksShotAt(x, y)) return { x, y };
+  }
+  return null;
+}
+
+/** Units that can arrive from anywhere: everything but fixed positions, which are only ever found dug in. */
+export function mobileMix(mix: Partial<Record<EnemyId, number>>): Partial<Record<EnemyId, number>> {
+  return Object.fromEntries(Object.entries(mix).filter(([id]) => ENEMIES[id as EnemyId].maxSpeed > 0));
 }
 
 /** Where a unit coming in from `side` starts, off screen. Null if it found no open ground to enter on. */

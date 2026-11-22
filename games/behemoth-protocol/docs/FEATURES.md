@@ -61,7 +61,7 @@ Fixed 60 Hz stepper, a world/entity store, and the seeded RNG (`sim/rng.ts`), al
 
 ### Practice URL parameters
 `M0`–`M2` · various · `playtest: n/a`
-Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`, `trailer`, `weapons`, `shells`, `cookoff`, `grades`, `mods`, `depot`, `biome`, `approach`, `map`, `mode`, `directive`, `objective`, `summary`, `condition`, `event`) skips the title screen and never saves.
+Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`, `trailer`, `weapons`, `shells`, `cookoff`, `grades`, `mods`, `depot`, `biome`, `approach`, `map`, `mode`, `directive`, `objective`, `summary`, `condition`, `event`, `doctrine`) skips the title screen and never saves.
 
 | Param | Effect |
 |---|---|
@@ -81,6 +81,7 @@ Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`
 | `?mode=breach` | Every battle in that mode (`assault`, `breach`, `chase`); the node's strength still sets the target count. With `?exit=60` the fortress is close (Breach) |
 | `?map` or `?map=N` | Opens the sector map at the start of sector N (default 1) instead of a battle; with `?biome`, that sector is drawn in that biome (for looking at the map art) |
 | `?condition=night` | Every battle in that condition (`night`, `storm`; `none` = clear) |
+| `?doctrine=longGuns` | Every battle's defenders fight that doctrine (`combined`, `armoredFist`, `entrenched`, `raiders`, `longGuns`; `longGuns` for field batteries) |
 | `?event=convoy` | Opens that event (`convoy`, `orders`, `hulk`, `dump`, `drop`, `scavengers`; `?event` alone, one drawn from the seed) on the first layer of sector 1, with a worn Behemoth (treads 60%, armor 50%, sensors 80%, munitions half) and 120 salvage |
 | `?res=480\|576\|640` | Internal resolution (default 576×324) |
 
@@ -361,6 +362,21 @@ Six units, the first past M1's four (content/enemies.ts; weapons in content/weap
 - **Gotcha:** `spawn: 'objective'` units never appear in a doctrine mix; `objective.ts` places them.
 - Tests: `tests/sim/objective.test.ts` (hovercraft over water, no ford).
 - The **command post** (Decapitation's target, unarmed) is in §9 "Directives and sector objectives".
+
+### Field battery (placed artillery)
+`M3` · `uncommitted` · `playtest: pending` · SPEC §7, §15 "Field artillery (M3)", §16 Q29
+A fixed battery dug in near a side of the field. After a 1.2 s aim glint it marks a target zone where the Behemoth is headed and fires four lobbed rounds into it, each landing 2.4 s after it's fired. Steering or a change of speed gets clear; inside 90 units it can't fire at all.
+- **Unit** `artillery` (content/enemies.ts): 75 HP, light, `EMPLACEMENT_FACING`, behavior `fixed`, obstacle `medium` (crushable), threat 2, salvage 14, `spawn: 'edge'`. **Weapon** `batteryShells` (content/weapons.ts): reload 7.5, `salvo` 4 × 0.3 s, `barrage: { radius 30, flight 2.4 }`, lobbed shell 12 dmg / 14 blast / 40 tile, `minRange` 90, `maxRange` 330, `strike` hardpoints 0.25.
+- **Area fire** (`WeaponDef.barrage`, a reusable targeting type): `aimAndFire` (sim/enemies.ts) leads the turret by `barrageLead` (flight + half the salvo spread) and skips the shot inside the shell's `minRange`. When the windup ends, `markBarrage` fixes the zone (Behemoth position + velocity × lead, clamped to the range band), stores it in `e.ai.zone`, pushes a `Barrage` onto `World.barrages` (`from`, `lands`, `until`) and a `barrage` event. `fireRound` then aims each round of the salvo at a random point in the zone, with `SpawnOptions.speed` = distance / flight so it lands on time.
+- **Enemy lobbed rounds** (`stepEnemyRound` → `shellBurst`, sim/projectiles.ts): no collisions in flight, and a burst when spent. The burst hits the Behemoth when its footprint is within the blast radius (on `hitArc` from the shell's travel, falling off to half at the edge), the trailer the same way, and mines. It hits enemy units at `BARRAGE.friendlyFire` (0.5) as a `top` hit, so their rear armor counts; such a kill has cause `friendly`. Tiles take damage through the shared `burstTerrain` with no salvage credit. Point defense intercepts these rounds like any enemy shell.
+- **Placement** (`edgeSpot`, sim/spawner.ts): open, dry, not shot-blocking ground within `SPAWNER.edgeBand` (0.28) of the field's width from either side. Posts use it in place of `openSpot`, and alert waves place a battery ahead of the frame (`arrival`). The last stand draws from `mobileMix(w.mix)`, which drops every `maxSpeed` 0 unit. **Breach**: `MODES.breach.fortress.batteries` (1/1/2 by strength) spawn `batteryDepth` (150) behind the wall when the guns are placed (`stepObjective`). They aren't targets.
+- **Doctrines**: long guns `artillery: 2.5` (intel "Missiles and artillery"), entrenched 0.75, combined 0.5.
+- **Render**: `battery_body`/`battery_turret`/`battery_wreck` (`makeObjectiveUnits`, render/placeholder.ts: an earth berm open at the back, crates, a howitzer with a split trail). `BarrageViews` (render/barrageView.ts): a dashed spinning ring and center tick at depth 5.9 (over the hull and the night veil), an inner ring closing in until `lands`, blinking in the last 0.5 s; the faint fill is a second Graphics at depth 4.4, under the hull. **Audio**: the guns use `cannon` at size 1; the `barrage` event cues `incoming` (synth.ts: a falling whistle over the last 1.6 s of the flight, placed at the zone).
+- Extraction clears `World.barrages` with the enemy rounds; `stepWorld` drops zones past `until`.
+- **Gotcha:** a zone stays up until `until` even if the battery dies or leaves the frame mid-volley (the rest of the salvo is cancelled, so fewer rounds land than the ring promised).
+- **Gotcha:** the zone leads with the Behemoth's *lateral* velocity too, so steering steadily doesn't dodge; a *change* of steering or speed does.
+- Bot (8 seeds, T 7, firing at the nearest enemy): long guns ~5.7 batteries and ~4.5 volleys a battle (most die before a second); armor left ~240 holding course vs ~290 steering out of zones. Combined arms: ~0.7 batteries a battle.
+- Tests: `tests/sim/artillery.test.ts` (telegraph and zone placement, rounds in the zone and on time, cover doesn't stop them, a dodge misses, minimum range, friendly fire, extraction, edge placement, posts, `mobileMix`, Breach batteries).
 
 ### Concealment
 `M1` · `initial` · `playtest: approved` · SPEC §4.5, §7, §15 "Concealment"

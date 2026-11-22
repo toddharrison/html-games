@@ -9,7 +9,7 @@ import { frameRight } from './frame';
 import { Rng, hashSeed } from './rng';
 import type { Strength } from './sectorMap';
 import { cutAlert } from './encounter';
-import { drawUnit } from './spawner';
+import { drawUnit, edgeSpot } from './spawner';
 import { chunkRiver, riverCenter, type FortressSpec, type Terrain, type TerrainRecipe } from './terrain';
 import type { World } from './world';
 
@@ -48,8 +48,11 @@ export interface ObjectiveState {
   total: number;
   destroyed: number;
   lost: number;
-  /** Breach: the guns waiting to be placed when the frame reaches the wall (x); null once placed. */
-  fortress: { x: number; guns: { id: EnemyId; x: number; y: number }[] } | null;
+  /**
+   * Breach: the guns waiting to be placed when the frame reaches the wall (x), and how many field
+   * batteries dig in behind it; null once placed.
+   */
+  fortress: { x: number; guns: { id: EnemyId; x: number; y: number }[]; batteries: number } | null;
   /** Chase: the convoy's pace (world units/s). 0 outside a chase. */
   convoySpeed: number;
   /** Decapitation: the command post, where it stands and what became of it; null without one. */
@@ -120,7 +123,7 @@ export function createObjective(spec: ObjectiveSpec | null, terrain: Terrain, b:
       const ts = terrain.tileSize;
       const x = (plan.col + 0.5) * ts;
       const guns = plan.embrasures.map(([a, z], i) => ({ id: def.fortress!.units[i % def.fortress!.units.length]!, x, y: ((a + z) / 2) * ts }));
-      o.fortress = { x, guns };
+      o.fortress = { x, guns, batteries: spec ? def.fortress.batteries[spec.strength] : 0 };
       o.total = guns.length;
       const k = plan.keep;
       if (k) o.command = { x: (k.col + DIRECTIVE.keep.cols / 2) * ts, y: ((k.rows[0] + k.rows[1]) / 2) * ts, state: 'waiting' };
@@ -197,6 +200,14 @@ export function stepObjective(w: World, dt: number): void {
       e.objective = true;
       e.heading = e.turret = Math.PI;
       c.state = 'standing';
+    }
+    // The fortress's own artillery, behind the wall near the sides, facing the approach.
+    const depth = MODES.breach.fortress?.batteryDepth ?? 0;
+    for (let i = 0; i < o.fortress.batteries; i++) {
+      const at = edgeSpot(w, ENEMIES.artillery, o.fortress.x + depth + i * 2 * w.terrain.tileSize);
+      if (!at) continue;
+      const e = spawnEnemy(w, 'artillery', at.x, at.y);
+      e.heading = e.turret = Math.PI;
     }
     o.fortress = null;
   }

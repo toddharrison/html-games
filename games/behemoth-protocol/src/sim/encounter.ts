@@ -5,7 +5,7 @@ import { ENEMIES, type EnemyId, type WaveSide } from '../content/enemies';
 import { ENCOUNTER, SPAWNER } from '../content/tuning';
 import { frameRight } from './frame';
 import { Rng, hashSeed } from './rng';
-import { cheapest, coverSpot, drawUnit, entryPoint, liveThreat, openSpot } from './spawner';
+import { cheapest, coverSpot, drawUnit, edgeSpot, entryPoint, liveThreat, openSpot } from './spawner';
 import { spawnEnemy } from './enemies';
 import type { World } from './world';
 
@@ -150,8 +150,10 @@ function stepDefenders(w: World): void {
     for (const id of post.units) {
       const def = ENEMIES[id];
       let at = def.spawn === 'cover' ? coverSpot(w, reach - SPAWNER.spawnDistance, post.x + ENCOUNTER.defenders.coverDepth) : null;
-      // Open ground at the post's line, or a little beyond (a river or rock across the line).
-      for (let step = 0; !at && step < 4; step++) at = openSpot(w, def, reach + step * 2 * w.terrain.tileSize);
+      // Open ground at the post's line, or a little beyond (a river or rock across the line); a
+      // battery near a side of the field.
+      const spot = def.spawn === 'edge' ? edgeSpot : openSpot;
+      for (let step = 0; !at && step < 4; step++) at = spot(w, def, reach + step * 2 * w.terrain.tileSize);
       if (at) spawnEnemy(w, id, at.x, at.y);
     }
   }
@@ -188,6 +190,8 @@ function stepAlert(w: World, dt: number): void {
 /** Where a wave unit comes in: troops into cover ahead when there's some, vehicles from a side. */
 function arrival(w: World, id: EnemyId): { x: number; y: number } | null {
   const def = ENEMIES[id];
+  // A battery can't drive in: it's found dug in ahead, near a side.
+  if (def.spawn === 'edge') return edgeSpot(w, def, frameRight(w.frame) + SPAWNER.spawnDistance);
   if (def.spawn === 'cover') {
     const ahead = frameRight(w.frame);
     const spot = coverSpot(w, ahead, ahead + SPAWNER.coverBand[1]);

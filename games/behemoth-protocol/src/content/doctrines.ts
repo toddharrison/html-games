@@ -4,7 +4,8 @@ import type { EnemyId } from './enemies';
  * Doctrines (SPEC §7.2): how a defending force weights the roster, so the same units make very
  * different fights. The sector map shows a battle's doctrine as its defender intel (SPEC §3.1), and
  * the battle's defenders and waves draw from the doctrine's mix (`sim/encounter.ts`), so the intel is accurate. M3 first pass: the
- * four M1 units, plus hovercraft for the raiders; later units (AT guns, artillery, …) join the mixes as they arrive.
+ * four M1 units, plus hovercraft for the raiders and field batteries for the long guns (a few for
+ * the entrenched and combined arms); later units (AT guns, rocket artillery, …) join the mixes as they arrive.
  */
 
 export type DoctrineId = 'combined' | 'armoredFist' | 'entrenched' | 'raiders' | 'longGuns';
@@ -32,7 +33,7 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
     id: 'combined',
     name: 'Combined arms',
     intel: 'A balanced mix',
-    mix: { lightTank: 4, infantry: 3, heavyTank: 1.5, missileLauncher: 1.5 },
+    mix: { lightTank: 4, infantry: 3, heavyTank: 1.5, missileLauncher: 1.5, artillery: 0.5 },
     weight: 3,
   },
   armoredFist: {
@@ -46,7 +47,7 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
     id: 'entrenched',
     name: 'Entrenched',
     intel: 'Infantry, dug in',
-    mix: { infantry: 6, heavyTank: 1, lightTank: 1, missileLauncher: 0.5 },
+    mix: { infantry: 6, heavyTank: 1, lightTank: 1, missileLauncher: 0.5, artillery: 0.75 },
     weight: 2,
     posts: 1.1,
     waves: 0.5,
@@ -63,8 +64,8 @@ export const DOCTRINES: Record<DoctrineId, DoctrineDef> = {
   longGuns: {
     id: 'longGuns',
     name: 'Long guns',
-    intel: 'Missile batteries',
-    mix: { missileLauncher: 4, lightTank: 1.5, infantry: 1.5, heavyTank: 0.5 },
+    intel: 'Missiles and artillery',
+    mix: { missileLauncher: 3, artillery: 2.5, lightTank: 1.5, infantry: 1.5, heavyTank: 0.5 },
     weight: 2,
   },
 };

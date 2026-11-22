@@ -1,10 +1,11 @@
-import { CONCEALMENT } from '../content/tuning';
-import type { BeamSpec, ProjectileSpec, RoundSpec, TargetClass, WeaponDef } from '../content/weapons';
+import { BARRAGE, CONCEALMENT } from '../content/tuning';
+import type { BeamSpec, ProjectileSpec, RoundSpec, ShellSpec, TargetClass, WeaponDef } from '../content/weapons';
 import { applyHit, footprint, hitArc, hitched, inTrailer } from './behemoth';
 import type { Enemy, Projectile } from './entities';
+import type { KillCause } from './events';
 import { damageDrone, droneAt } from './drones';
 import { destroyEnemy, hitFacing } from './enemies';
-import { pointInRect, rotateToward } from './math';
+import { clamp, pointInRect, rotateToward } from './math';
 import { spawnPool } from './pools';
 import { hitTrailer, mineAt, triggerMine } from './trailer';
 import type { World } from './world';
@@ -186,6 +187,12 @@ function stepPlayerRound(w: World, p: Projectile): void {
 function stepEnemyRound(w: World, p: Projectile): void {
   const b = w.behemoth;
   const spec = roundSpec(p.weapon);
+  // Artillery arcs over everything and comes down where it was laid.
+  if (spec.kind === 'shell' && spec.lobbed) {
+    if (spent(p)) shellBurst(w, p, spec);
+    else if (outOfField(w, p)) p.alive = false;
+    return;
+  }
   // A repair drone in the way takes the round (they hover over the tread pods).
   const drone = droneAt(w, p.x, p.y);
   if (drone) {
@@ -222,6 +229,48 @@ function stepEnemyRound(w: World, p: Projectile): void {
   if (spent(p) || outOfField(w, p)) {
     w.events.push({ type: 'impact', x: p.x, y: p.y });
     p.alive = false;
+  }
+}
+
+/**
+ * An enemy shell coming down (SPEC §7 artillery): the burst catches the Behemoth (on the armor
+ * facing the way the shell came, falling off over its radius), the trailer, the enemy's own units
+ * (at `BARRAGE.friendlyFire`), mines, and the ground.
+ */
+function shellBurst(w: World, p: Projectile, spec: ShellSpec): void {
+  p.alive = false;
+  const r = spec.blastRadius;
+  const b = w.behemoth;
+  w.events.push({ type: 'explosion', x: p.x, y: p.y, radius: r });
+  if (!b.destroyed) {
+    const box = footprint(b);
+    const at = { x: clamp(p.x, box.x0, box.x1), y: clamp(p.y, box.y0, box.y1) };
+    const d = Math.hypot(p.x - at.x, p.y - at.y);
+    if (d <= r) {
+      applyHit(b, hitArc(b, -p.vx, -p.vy, at.x, at.y), spec.damage * (1 - (0.5 * d) / r), w.rng, w.events, at.x, at.y, spec.strike);
+    }
+    const t = hitched(b);
+    const dt = t ? Math.max(0, Math.hypot(p.x - t.x, p.y - t.y) - t.def.width / 2) : Infinity;
+    if (t && dt <= r) hitTrailer(b, t, spec.damage * (1 - (0.5 * dt) / r), w.rng, w.events, p.x, p.y);
+  }
+  for (const m of w.mines) if (Math.hypot(m.x - p.x, m.y - p.y) <= r + m.radius) triggerMine(m);
+  for (const e of w.enemies) {
+    if (!e.alive) continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y) - e.def.radius;
+    if (d < r) damageEnemy(w, e, spec, spec.damage * BARRAGE.friendlyFire * (1 - (0.5 * Math.max(0, d)) / r), 'top', 'friendly');
+  }
+  burstTerrain(w, p.x, p.y, r, spec.tileDamage, false);
+}
+
+/** A burst's damage to the tiles around it, falling off to half at its edge. `credit`: knocked-down tiles pay salvage. */
+function burstTerrain(w: World, x: number, y: number, r: number, tileDamage: number, credit: boolean): void {
+  const ts = w.terrain.tileSize;
+  const reach = r + ts * 0.5;
+  for (let c = Math.floor((x - r) / ts); c <= Math.floor((x + r) / ts); c++) {
+    for (let row = Math.floor((y - r) / ts); row <= Math.floor((y + r) / ts); row++) {
+      const d = Math.hypot((c + 0.5) * ts - x, (row + 0.5) * ts - y);
+      if (d < reach) w.terrain.damage(c, row, tileDamage * (1 - 0.5 * (d / reach)), w.events, credit);
+    }
   }
 }
 
@@ -269,18 +318,7 @@ function detonate(w: World, p: Projectile, target?: Enemy): void {
     if (d < r) damageEnemy(w, e, spec, spec.damage * (1 - (0.5 * Math.max(0, d)) / r), from);
   }
 
-  const ts = w.terrain.tileSize;
-  const c0 = Math.floor((p.x - r) / ts);
-  const c1 = Math.floor((p.x + r) / ts);
-  const r0 = Math.floor((p.y - r) / ts);
-  const r1 = Math.floor((p.y + r) / ts);
-  for (let c = c0; c <= c1; c++) {
-    for (let row = r0; row <= r1; row++) {
-      const d = Math.hypot((c + 0.5) * ts - p.x, (row + 0.5) * ts - p.y);
-      const reach = r + ts * 0.5;
-      if (d < reach) w.terrain.damage(c, row, spec.tileDamage * (1 - 0.5 * (d / reach)), w.events);
-    }
-  }
+  burstTerrain(w, p.x, p.y, r, spec.tileDamage, true);
 }
 
 /** Share of the damage a unit avoids where it stands: troops on foot use cover (SPEC §4.5). */
@@ -316,8 +354,8 @@ export function facingMultiplier(w: World, e: Enemy, spec: RoundSpec, from: HitF
   return m < 1 ? m + (1 - m) * (spec.penetration ?? 0) : m;
 }
 
-export function damageEnemy(w: World, e: Enemy, spec: RoundSpec, amount: number, from: HitFrom): void {
+export function damageEnemy(w: World, e: Enemy, spec: RoundSpec, amount: number, from: HitFrom, cause: KillCause = 'shot'): void {
   e.hp -= amount * damageMultiplier(spec, e.def.targetClass) * facingMultiplier(w, e, spec, from) * (1 - coverProtection(w, e));
   e.exposed = Math.max(e.exposed, CONCEALMENT.afterHit);
-  if (e.hp <= 0) destroyEnemy(w, e, 'shot');
+  if (e.hp <= 0) destroyEnemy(w, e, cause);
 }

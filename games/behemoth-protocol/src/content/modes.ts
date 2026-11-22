@@ -38,6 +38,12 @@ export interface ModeDef {
     /** Gates through the wall and their width in rows. */
     gates: number;
     gateWidth: readonly [number, number];
+    /**
+     * Field batteries dug in behind the wall near the sides (not targets): they shell the approach
+     * and the breach. `batteryDepth` is how far behind the wall (world units).
+     */
+    batteries: ByStrength;
+    batteryDepth: number;
   };
   /** Chase: a convoy fleeing up the field toward the far end (SPEC §4.4). */
   convoy?: {
@@ -87,6 +93,8 @@ export const MODES: Record<BattleModeId, ModeDef> = {
       units: ['gunEmplacement', 'weaponTower', 'rocketBunker'],
       gates: 2,
       gateWidth: [3, 4],
+      batteries: { normal: 1, strong: 1, objective: 2 },
+      batteryDepth: 150,
     },
   },
   chase: {

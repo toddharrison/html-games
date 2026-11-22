@@ -157,6 +157,14 @@ export const SPAWNER = {
   spawnDistance: 110,
   /** `cover` spawns: how far ahead of the frame to look for forest or rubble. */
   coverBand: [20, 160] as const,
+  /** `edge` spawns (field batteries): the share of the field's width at either side they dig in within. */
+  edgeBand: 0.28,
+};
+
+/** Area fire (SPEC §7 artillery; per-weapon numbers in `WeaponDef.barrage`). Provisional (M3). */
+export const BARRAGE = {
+  /** Its shells hit the enemy's own units in the zone too, at this share of the damage. */
+  friendlyFire: 0.5,
 };
 
 /**

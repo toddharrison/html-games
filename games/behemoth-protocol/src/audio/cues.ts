@@ -43,6 +43,7 @@ export type SoundId =
   | 'immobilized'
   | 'alarm'
   | 'missileWarning'
+  | 'incoming'
   | 'horn'
   | 'radio'
   | 'detonation';
@@ -87,6 +88,8 @@ export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: nu
   bunkerRockets: { sound: 'rocket', size: 0.5 },
   towerGuns: { sound: 'autocannon', size: 0.4 },
   hoverGun: { sound: 'autocannon', size: 0.3 },
+  // Big guns well off: a deep boom per gun, the volley rippling along the battery.
+  batteryShells: { sound: 'cannon', size: 1 },
 };
 
 const RAM_SIZE: Record<ObstacleClass, number> = { none: 0, soft: 0, trivial: 0, light: 0.3, medium: 0.6, heavy: 1, trap: 0.45, immovable: 0.8 };
@@ -191,6 +194,9 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
       return [{ sound: 'immobilized', size: 1 }];
     case 'wave':
       return [{ sound: 'horn', size: 1 }];
+    // A battery's volley on its way: the shells' whistle over the target zone, ending as they land.
+    case 'barrage':
+      return [{ sound: 'incoming', size: ev.flight, x: ev.x, y: ev.y }];
     // The alert clock's reinforcements: the same siren, further off (it comes every 15-30 s).
     case 'alert':
       return [{ sound: 'horn', size: 0.6 }];
@@ -284,6 +290,7 @@ export const MIN_GAP: Record<SoundId, number> = {
   immobilized: 1,
   alarm: 1.2,
   missileWarning: 1.2,
+  incoming: 0.3,
   horn: 2,
   radio: 1,
   detonation: 1,
@@ -324,6 +331,7 @@ export const PITCH_SPREAD: Record<SoundId, number> = {
   immobilized: 0.5,
   alarm: 0,
   missileWarning: 0,
+  incoming: 1,
   horn: 0.4,
   radio: 0,
   detonation: 0.6,

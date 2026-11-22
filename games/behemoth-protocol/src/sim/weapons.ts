@@ -47,6 +47,8 @@ export interface SpawnOptions {
   slot?: string;
   /** Fired from inside this tile (a garrisoned building), so its walls don't stop the round. */
   shelter?: { col: number; row: number };
+  /** Muzzle speed in place of the round's own (area fire sets it so a round lands on time). */
+  speed?: number;
 }
 
 /**
@@ -71,6 +73,7 @@ function spawnRound(w: World, owner: Owner, weapon: WeaponDef, x: number, y: num
   const spec = roundSpec(weapon);
   const spread = spec.spread * (opts.spreadMul ?? 1);
   const a = angle + w.rng.range(-spread, spread);
+  const speed = opts.speed ?? spec.speed;
   const p: Projectile = {
     id: allocId(w),
     owner,
@@ -78,8 +81,8 @@ function spawnRound(w: World, owner: Owner, weapon: WeaponDef, x: number, y: num
     kind: spec.kind,
     x,
     y,
-    vx: Math.cos(a) * spec.speed,
-    vy: Math.sin(a) * spec.speed,
+    vx: Math.cos(a) * speed,
+    vy: Math.sin(a) * speed,
     traveled: 0,
     fuse: opts.fuse ?? roundRange(spec),
     targetId: opts.targetId ?? null,

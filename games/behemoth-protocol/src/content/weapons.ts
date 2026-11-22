@@ -137,7 +137,8 @@ export type WeaponId =
   | 'emplacementGun'
   | 'bunkerRockets'
   | 'towerGuns'
-  | 'hoverGun';
+  | 'hoverGun'
+  | 'batteryShells';
 
 /**
  * Main-gun shells (SPEC §6.2), chosen per gun at the depot. The first one a gun lists is its
@@ -187,6 +188,13 @@ export interface WeaponDef {
    * the default and must be `projectile` itself. Missing = no choice.
    */
   shells?: Partial<Record<ShellType, ShellSpec | BulletSpec>>;
+  /**
+   * Area fire (SPEC §7 artillery; a "area" targeting type, §13.1): the volley is laid on a target
+   * zone instead of at the target. When the aim telegraph ends the zone is fixed where the Behemoth
+   * will be if it holds its course, marked on the ground, and every round of the salvo comes down
+   * somewhere inside it, each `flight` seconds after it's fired. Enemy weapons only, lobbed shells.
+   */
+  barrage?: { radius: number; flight: number };
 }
 
 /** The shells a gun can take, default first; empty for guns with no choice. */
@@ -759,6 +767,35 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       minRange: 0,
       maxRange: 170,
       spread: 0.08,
+    },
+  },
+  batteryShells: {
+    id: 'batteryShells',
+    name: 'Field battery',
+    short: 'Battery',
+    role: 'auto',
+    category: 'munitions',
+    // Between volleys: long enough to get clear and find the battery before the next one.
+    reload: 7.5,
+    muzzle: 12,
+    traverseDegPerSec: 30,
+    // Four guns in turn: the rounds land one after another across the zone.
+    salvo: { count: 4, interval: 0.3 },
+    barrage: { radius: 30, flight: 2.4 },
+    projectile: {
+      kind: 'shell',
+      // Speed is set per round so each lands `barrage.flight` after it's fired.
+      speed: 150,
+      damage: 12,
+      blastRadius: 14,
+      tileDamage: 40,
+      // It can't lay its guns on anything close: drive at the battery and the shells fall behind.
+      minRange: 90,
+      maxRange: 330,
+      spread: 0,
+      lobbed: true,
+      // Plunging fire: some of it finds the deck mounts.
+      strike: { target: 'hardpoints', bypass: 0.25 },
     },
   },
 };

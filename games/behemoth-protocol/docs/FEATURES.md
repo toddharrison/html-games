@@ -87,7 +87,7 @@ Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`
 | `?res=480\|576\|640` | Internal resolution (default 576×324) |
 
 ### Dev console
-`M3` · uncommitted · `playtest: pending` · SPEC n/a (dev tool)
+`M3` · 96a22ba · `playtest: pending` · SPEC n/a (dev tool)
 An HTML panel down the right of the page for playtesting and tuning. It's on in the dev server, and in any build with `?dev` in the URL (`?dev` doesn't make a practice run). Open it with `\` or the DEV tab at top right; close it with Esc, `\`, or ×. While it's open the game shifts left to make room. The status lines show the active scenes, fps, sim time and speed, seed/biome/approach/mode/condition, distance, speed, enemies, threat, the alert clock, kills, and salvage.
 - **Time:** pause, step one sim tick (1/60 s), speed ×0.1–×4, the debug readout, restart the battle.
 - **Behemoth:** god mode (sticky across battles), repair all (also puts out a burning reactor and ends Immobilized and the last stand), rearm (ammo and capacitor), immobilize, reactor critical, extract now, damage one component by N, a shot of N on an armor arc (goes through armor to the internals like enemy fire), add salvage.

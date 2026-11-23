@@ -10,6 +10,7 @@ import type { ScoreEntry } from '../sim/scores';
 import { newRun, runWhere, type RunState } from '../sim/run';
 import { checkpoint, enterNode, randomSeed, type RunContext } from './flow';
 import { fitCamera } from './screen';
+import { VERSION } from '../version';
 
 /**
  * Title screen (SPEC §10): continue the saved run or start a new one. Starting over while a run is
@@ -57,6 +58,8 @@ export class TitleScene extends Phaser.Scene {
     ];
     this.prompt = text(Math.round(height * 0.62), '', PAL.hudText);
     this.scoreList(loadScores().slice(0, SCORE.shown));
+    // The build's version, bottom right (the attract mode's caption takes the bottom left).
+    this.add.bitmapText(width - 6, height - 6, FONT_KEY, fontText(VERSION)).setTint(hex(PAL.hudDim)).setOrigin(1, 1).setDepth(10);
 
     // The run setup (SPEC §10): choose the Directive.
     this.picker.push(text(top, 'Choose your Directive', PAL.glow, 2));

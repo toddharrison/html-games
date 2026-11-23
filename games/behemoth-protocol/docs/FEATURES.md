@@ -127,7 +127,7 @@ An HTML panel down the right of the page for playtesting and tuning. It's on in 
 - **Gotcha:** in zsh, `set -- $var` doesn't split words; wrap per-section loops in `bash -c`.
 
 ### Autopilot bench
-`M3` · `uncommitted` · `playtest: n/a`
+`M3` · `341df36` · `playtest: n/a`
 User question (Nov 23, 2026): can the autopilot be tested without the full browser, sound, or real time? `npm run bench [-- --count N --first K --seconds S --stock]` (`scripts/bench.mjs`) plays attract-mode clip settings as full battles in the bare sim, no browser, rendering, or sound, at ~220× real time (12 two-minute battles in ~5 s), and prints a table: biome, mode, main guns, outcome, time, share of the way to the extraction line, treads, kills, steering reversals a minute, mean sideways speed. Each battle uses its clip's random loadout, or the stock Class II with `--stock`.
 - `src/dev/bench.ts` (`runBench`, `benchReport`; pure, typechecked and tested with everything else); the script loads it through a Vite dev server in middleware mode (`ssrLoadModule`), nothing served. Battles are built by `createDemoWorld` (scenes/demo.ts), the same as the title's.
 - Use the bench for the autopilot and battle tuning; `npm run playtest` only to see the real page (render errors, how it looks).
@@ -370,7 +370,7 @@ User request (Nov 23). A controller in the browser's standard layout plays the w
 - **Limits:** driving is digital (the sim's `throttle`/`steer` are -1/0/1); no aim assist; no rumble; R (retry), backtick, and the dev console have no pad buttons; the event result screen keeps its keyboard hint if the device changes there; one pad (the first connected).
 
 ### Swarm missile pod
-`M3` · `uncommitted` · `playtest: pending` · SPEC §6, §15 "New weapons (M3)"
+`M3` · `341df36` · `playtest: pending` · SPEC §6, §15 "New weapons (M3)"
 User request (Nov 23, 2026): a missile pod that attacks many units on screen at once, its small missiles each tracking a different target when there are enough. An M missile (Space): 8 missiles 0.06 s apart, each to its own unit in view, nearest the lock first, shared out in turn; a missile whose target dies turns onto the nearest unit in view.
 - Content: `swarmPod` (50 t, 12 salvos, reload 6; 9 damage, blast 8, speed 200, turn 6.5, spread 0.9, ×1.3 infantry, ×0.45 heavy), `MissileSpec.swarm`, `DEPOT_WEAPONS` (150, rearm 4 a salvo), `SWARM.retarget` (250) in tuning.ts.
 - Sim (weapons.ts): `swarmTargets(w, x, y, n)` (alive, not hidden or sealed, on screen; sorted by distance), `stepMissiles` fills `salvo.targets` at launch and gives missile *i* `targets[i % n]`, else the lock's unit, else the nearest to the lock point now. In flight, `steerMissile` (projectiles.ts) retargets a swarm missile whose target died (`swarmRetarget`).
@@ -378,7 +378,7 @@ User request (Nov 23, 2026): a missile pod that attacks many units on screen at 
 - **Limits:** the autopilot rarely fires it (`BOT.missileThreat`). Swarm missiles are as easy for point defense as the rack's (no enemy PD yet anyway).
 
 ### EMP emitter
-`M3` · `uncommitted` · `playtest: pending` · SPEC §6, §15 "New weapons (M3)", §16 Q34
+`M3` · `341df36` · `playtest: pending` · SPEC §6, §15 "New weapons (M3)", §16 Q34
 User request (Nov 23, 2026): an EMP pulse that disables nearby vehicles for a short time. An M energy weapon, Auto (group 4) by default: a pulse from the mount that stuns every vehicle within 110 (to its body) for 3.5 s (heavy ×0.6), and fries enemy missiles in reach. Troops on foot are untouched; no damage.
 - Content: `empEmitter` (40 t, power 30, reload 9), `PulseSpec` (kind `pulse`: `radius`, `stun`, `stunVs`), `DEPOT_WEAPONS` (140), `EMP` in tuning.ts (`autoMin` 2, `renew` 0.5).
 - Sim: `sim/emp.ts`: `empable` (alive, not `foot`), `stun` (max of the old and new stun; zeroes velocity; clears every gun's `windup`, `salvoLeft`, `zone`), `pulseWorth` (Auto: `autoMin` working vehicles in reach, any bomb truck, or an enemy missile), `firePulse` (`fire` + `emp` events). `stepPulse` in weapons.ts (Auto or a held trigger). `Enemy.stunned`: `stepEnemies` counts it down and skips moving and firing while it lasts (it can still be sighted, and the hull can still run it down).
@@ -387,7 +387,7 @@ User request (Nov 23, 2026): an EMP pulse that disables nearby vehicles for a sh
 - **Limits:** it can't fire while lasers keep the capacitor under 30 (the HUD row reads `NO PWR`); a stunned unit just stops (a hovercraft doesn't drift); a field battery's marked zone stays up after its volley is cut off (as when the battery dies).
 
 ### Flamethrower and fire
-`M3` · `uncommitted` · `playtest: pending` · SPEC §6, §15 "New weapons (M3)", §16 Q6, Q34
+`M3` · `341df36` · `playtest: pending` · SPEC §6, §15 "New weapons (M3)", §16 Q6, Q34
 User request (Nov 23, 2026): flamethrowers that set things on fire and do damage over time. An M munitions auto (group 1; bind it to a trigger to aim it at woods): a cone resolved at once like a beam, 10 licks a second. It strikes every unit in the cone it has a clear line to and sets it burning, lights what burns along its path, and stops at cover. Burning tiles burn down, scorch and light the units in them, and spread to their neighbors.
 - Content: `flamethrower` (45 t, 250 licks, reload 0.1, traverse 200; 1.6 a lick, reach 90, cone ±0.2 rad, burn 5/s for 3 s, ×1.6 infantry, ×0.8 light, ×0.3 heavy), `FlameSpec` (kind `flame`, part of `RoundSpec`), `BurnSpec`, `DEPOT_WEAPONS` (110, fuel 0.2 a lick). `MaterialDef.burns` (`dps`, `spread` a second): forest 5/0.35, hedgerow 5/0.4, building 6/0.08, fuel tank 8/0 (it then goes up), derrick 6/0. `FIRE` in tuning.ts (tick 0.25, trace step 4, tile 4/s to units in it, tile burn 4/s for 2 s, `maxTiles` 160).
 - Sim: `sim/fire.ts`: `shootFlame` (trace for tiles to light, mines, and cover; then units in the cone short of that; `fire` + `flame` events), `igniteEnemy` (renews, never shortens), `igniteTile`, `burning`, `fireKey`, `stepFire` (every `FIRE.tick`: burning units, then tiles: drop burnt-out ones, scorch and light units in the tile, roll spread for each side neighbor, then eat the tile's HP). `w.fires` (`Map<fireKey, TileFire>`), `w.fireTick`, `Enemy.burn`. Called from `fireAimed` and `stepAutoGun`; `stepFire` runs after `stepPools`.
@@ -396,7 +396,7 @@ User request (Nov 23, 2026): flamethrowers that set things on fire and do damage
 - **Limits:** fire never hurts the Behemoth or its trailer, and units don't avoid fires (§16 Q34). Only the flamethrower lights fires. Burning buildings pay their salvage as they come down. Fire glow doesn't light the night.
 
 ### Railgun and coilgun
-`M3` · `uncommitted` · `playtest: pending` · SPEC §6, §15 "Heavy weapons (M3)", §16 Q35
+`M3` · `341df36` · `playtest: pending` · SPEC §6, §15 "Heavy weapons (M3)", §16 Q35
 User request (Nov 23, 2026): a railgun that attacks several enemies in a row and pierces armor; the coilgun is its M sibling (also requested). A slug resolved at once along the barrel: through every unit in its line (losing `falloff` past each) and through walls (losing `wallLoss` past each, damaging them), stopped by rock or once spent (10%).
 - Content: `railgun` (L LMB, 125 t, power 24, reload 2.6; 70, reach 440, falloff 0.8, wallLoss 0.55, penetration 1, ×1.3 heavy, ×0.5 infantry), `coilgun` (M RMB, 50 t, power 6, reload 0.8; 22, reach 340, falloff 0.6, wallLoss 0.3, penetration 0.6), `RailSpec` (kind `rail`, part of `RoundSpec`), `DEPOT_WEAPONS` (210, 140).
 - Sim: `sim/rail.ts` `shootRail` (units in line sorted by where it meets them, merged with a 2-unit trace for walls and mines; `fire` + `rail` events with every hit point). Dispatched by `shootInstant` in weapons.ts (beam, flame, rail, arc), which `fireAimed` and `stepAutoGun` share.
@@ -404,14 +404,14 @@ User request (Nov 23, 2026): a railgun that attacks several enemies in a row and
 - **Gotcha:** a slug fired straight ahead runs along a tile boundary (the hull's y is a multiple of 16), so which row of a wall it meets depends on the spread; tests use two-row walls.
 
 ### Arc projector and tesla coil
-`M3` · `uncommitted` · `playtest: pending` · SPEC §6, §15 "Heavy weapons (M3)", §16 Q35
+`M3` · `341df36` · `playtest: pending` · SPEC §6, §15 "Heavy weapons (M3)", §16 Q35
 From the L-weapon brainstorm (user's pick), with the tesla coil as its S sibling (user request). A bolt along the barrel to the first unit or cover in its path (units count within 4 of the line), then leaps to the nearest unit not yet struck within `jumpRange` that it has a clear line to, up to `jumps` times, keeping `falloff` each leap. Cover takes the bolt and ends it.
 - Content: `arcProjector` (L LMB, 115 t, power 18, reload 1.5; 28, reach 240, 4 leaps of 70, falloff 0.75), `teslaCoil` (S Auto group 1, 16 t, power 3, reload 0.7; 6, reach 90, 2 leaps of 45), `ArcSpec` (kind `arc`), `DEPOT_WEAPONS` (190, 90).
 - Sim: `sim/arc.ts` `shootArc`, `nextLeap`; `arc` event with the points it went through.
 - Render/audio: `Effects.lightning` (a jagged bolt per leap, redrawn once at 60 ms to flicker, crackles at each strike), `bh_barrel_arc`, `wpn_teslaCoil`, `arc` sound (crackle, snap, thunder).
 
 ### Ballistic missile launcher and missile erector
-`M3` · `uncommitted` · `playtest: pending` · SPEC §6, §5.5, §15 "Heavy weapons (M3)", §16 Q35
+`M3` · `341df36` · `playtest: pending` · SPEC §6, §5.5, §15 "Heavy weapons (M3)", §16 Q35
 User request (Nov 23, 2026): a large ballistic missile launcher, one missile in a ballistic arc with a large crater and explosion, also as a trailer module. A lobbed shell launched straight up (`ShellSpec.vertical`): from the mount, toward the cursor whatever way the mount faces, so turret or trailer it never waits to line up. 110 damage, blast 48, tile damage 320 (every open-ground tile in the blast becomes a crater).
 - Content: `BALLISTIC` (the shared shell), `ballisticMissile` (L LMB, 130 t, 6 shots, reload 6; 110–440 out), `erectorMissile` (built into the `missileErector` module: 45 t, 40 hp, 2 shots, Space, reload 8, cook-off 50/160), `DEPOT_WEAPONS` (210, 12 a round), `DEPOT_MODULES` (170, 15 a round).
 - Sim: `fireAimed` spawns a vertical shell at the mount with the fuse to the cursor; `stepAimedWeapon` doesn't wait for a vertical round's mount to line up.
@@ -419,20 +419,20 @@ User request (Nov 23, 2026): a large ballistic missile launcher, one missile in 
 - **Limits:** the autopilot fires it whenever it fires the main gun, so it's empty in about a minute. Nothing shoots it down (no enemy point defense).
 
 ### Rocket artillery
-`M3` · `uncommitted` · `playtest: pending` · SPEC §6, §15 "Heavy weapons (M3)"
+`M3` · `341df36` · `playtest: pending` · SPEC §6, §15 "Heavy weapons (M3)"
 From the brainstorm; M at the user's call. One pull (Space) ripples 12 lobbed rockets 0.07 s apart from the mount, each onto a random point within `scatter` (32) of the cursor.
 - Content: `rocketArtillery` (M, 55 t, 10 salvos, reload 8; 9 each, blast 12, 80–360 out, `scatter` 32, `look` rocket), `DEPOT_WEAPONS` (150, 5 a salvo).
 - Sim: salvos now take shells too: `salvoSpec` (a missile, or a shell with `salvo`), `stepSalvo` (was `stepMissiles`; shells go through `lobScattered`), `endSalvoRound`. `cursorLock` lays a shell salvo on the cursor; on Auto `autoLock` respects its minimum range.
 - Render: `rocket` projectile with a trail, `wpn_rocketArtillery`, smoke puff at launch.
 
 ### Thermobaric launcher
-`M3` · `uncommitted` · `playtest: pending` · SPEC §6, §15 "Heavy weapons (M3)"
+`M3` · `341df36` · `playtest: pending` · SPEC §6, §15 "Heavy weapons (M3)"
 From the brainstorm, M (my call). Lobbed canisters (RMB) that burst into a fireball: every unit in the blast is set burning and every tile in it that burns is set alight (`ShellSpec.incendiary`, `ignitedBurst` in projectiles.ts, using sim/fire.ts).
 - Content: `thermobaric` (M, 50 t, 18 shots, reload 2.4; 18, blast 22, 50–230 out, burns 6/s for 3 s, ×1.6 infantry, ×0.5 heavy, `look` canister), `DEPOT_WEAPONS` (140, 4 a round).
 - Render: the `explosion` event's `fire` flag → `Effects.fireball` (a flash ring, a ball of flame, black smoke), `canister` projectile, `wpn_thermobaric`, cutaway hazard band.
 
 ### Lasers pinned to their barrels
-`M3` · `uncommitted` · `playtest: pending` · SPEC §6, §15 "New weapons (M3)"
+`M3` · `341df36` · `playtest: pending` · SPEC §6, §15 "New weapons (M3)"
 User report (Nov 23, 2026): beam weapons were jumpy on screen and didn't pivot smoothly. Each pulse was drawn as a fixed line in the world that faded over 130 ms, so the hull drove away from it and a swinging mount left a fan of stale lines; and own-mount weapon angles weren't interpolated between sim steps (only the turret rings were), so mounts stepped on a high-refresh screen.
 - `render/laserView.ts` (`LaserView`): a `beam` event (it always carries its `slot`) only records how far the pulse reached and whether it hit; every frame the beam is redrawn on one `Graphics` from `BehemothView.drawnMuzzle(b, slot)` (the interpolated hull, rings, and mount angles, at the drawn barrel tip for turret guns) along the barrel. Per size (`LOOKS`): S flashes 0.11 s; M holds 0.13 s (longer than its 0.1 s reload, so steady fire is one steady beam with a soft halo) then fades 0.08 s; L holds 0.04 s and fades 0.2 s. Sparks via `Effects.laserSpark`.
 - The battle scene captures `h.angle` for every hardpoint in `capture()` and passes the interpolated angles to `BehemothView.update(b, at, rings, mounts, …)`. The `beam` event got an optional `slot`.
@@ -907,7 +907,7 @@ Actions (repair, rearm, install/remove from a seeded stock of 4–5) cost salvag
 - `render/cutaway.ts` draws the cutaway (per-chassis `LAYOUTS`, `onHull` → armor). `DepotScene`: priced buttons with reasons, undo (Z), Enter twice to leave with actions unused, saves after every action.
 
 ### Scrolling For sale list
-`M3` · `uncommitted` · `playtest: pending` · SPEC §8.2, §4.3
+`M3` · `341df36` · `playtest: pending` · SPEC §8.2, §4.3
 User request (Nov 23, 2026): a full depot (up to 5 weapons, 2 add-ons, 2 modules, 2 grades) ran off the bottom of the screen, since only 9 rows fit under the cutaway at 576×324. The list now shows the rows that fit; when there are more, the rows narrow and a gutter on the right gets an up arrow (first row), a down arrow (last row), each dimmed at its end, and a thumb showing which rows are in view. The mouse wheel over the list, the arrows, or the pad's right stick move it a row at a time.
 - `DepotScene.drawStock` builds the rows, then draws the window from `stockScroll` (kept across refreshes, reset per depot); `stockGutter`, `scrollStock`, `STOCK_MARGIN`, `STOCK_GUTTER`. `src/input/listScroll.ts`: `clampScroll`, `WheelRows` (adds up wheel travel, 40 px a row; line-mode deltas count 16 px a line). `PadCursor` takes an optional `scroll` callback, fed by the right stick with the menu repeat (tests/input/listScroll.test.ts).
 - Only the rows in view are built, so the pad cursor's D-pad jumps (`clickTargets`) never land on a hidden row; the arrows are click targets too.
@@ -915,7 +915,7 @@ User request (Nov 23, 2026): a full depot (up to 5 weapons, 2 add-ons, 2 modules
 - **Limit:** the side panel doesn't scroll. A hardpoint with a shell choice, a rearm, and 4+ installable weapons could reach the footer; not seen yet.
 
 ### Fitted weapons greyed out
-`M3` · `uncommitted` · `playtest: pending` · SPEC §8.2, §15 "New weapons (M3)"
+`M3` · `341df36` · `playtest: pending` · SPEC §8.2, §15 "New weapons (M3)"
 User request (Nov 23, 2026): show weapons for sale that are the same as one already mounted in a different color, so the same weapon isn't replaced by accident. A For sale row for a weapon the Behemoth already carries is drawn greyed out (dim text and price, faint row) and says `fitted` in place of its binding; it can still be clicked, to put a second one on another slot. Installing a weapon over its twin is refused (`Fitted`), and its slot in the *Install on* list reads `(has one)`.
 - `onBoard(snapshot, weapon)` and the `Fitted` check in `quote` (sim/depot.ts); `DepotScene.button` takes a `dim` flag (still interactive; hover keeps the dim alpha).
 

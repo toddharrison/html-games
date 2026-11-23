@@ -384,7 +384,7 @@ The first two phases of the user's AI review (Nov 2026). **Behaviors are content
 - **Gotcha:** routes are world points replanned every 0.4 s while the hull and the goals move; a slow unit (heavy tank, accel 30) pinned between the hull and an outcrop can still be run down (seed 1's outcrop; the roster test now levels the ground).
 
 ### Smarter Chase convoy and escort roles
-`M3` · `uncommitted` · `playtest: pending` · SPEC §4.4, §15 "Enemy AI (M3)", §16 Q24
+`M3` · `3e13746` · `playtest: pending` · SPEC §4.4, §15 "Enemy AI (M3)", §16 Q24
 Phase 3 of the AI review. The convoy holds a column, scatters when the Behemoth comes near, sacrifices its badly hurt haulers, its mine layer mines the hull's line, and its escorts screen the haulers instead of circling the hull. My calls, numbers provisional.
 - Convoy-wide rules in `MODES.chase.convoy` (content/modes.ts): `cohesion {gain 0.8, max 1.25}`, `alarm {range 200, hold 4, call}`, `sprint` 1.1, `spread` 40, `hurtAt` 0.45, `aside` 56, `escort` (a `ScreenDef`).
 - `ai/convoy.ts`: pace as before (convoy speed × hurt scaling); a vehicle under `hurtAt` steers `aside` off the lane on its side and drops out of the column; otherwise, alarmed, × `sprint` and at least `spread` off the lane; then it keeps station on the nearest healthy convoy vehicle ahead (`nextAhead`): pace + (gap − `spacing`) × gain, clamped to [0, max × pace]. A unit with `mines` (`ConvoyDef.mines {range 400, lead 1.5}`, the mine layer) steers onto `b.y + b.vy × t` while the hull is within `range` behind it.

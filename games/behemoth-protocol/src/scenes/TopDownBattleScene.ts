@@ -972,6 +972,7 @@ export class TopDownBattleScene extends Phaser.Scene {
       `SHOTS ${w.projectiles.length}`,
       `ALERT ${w.encounter.alert.wave} NEXT ${w.encounter.alert.next.toFixed(1)} Q ${w.encounter.alert.queue.toFixed(1)}`,
       `POSTS ${w.encounter.posts.length} THREAT ${w.threat}`,
+      ...(this.audio?.musicStatus() ? [this.audio.musicStatus()!] : []),
       ...(w.condition ? [`${w.condition.id.toUpperCase()} SIGHT ${sightRadius(w)?.toFixed(0) ?? '-'} SQUALL ${w.condition.squall.toFixed(2)}`] : []),
       `MODE ${w.objective.mode.toUpperCase()} ${w.objective.destroyed}/${w.objective.total} LOST ${w.objective.lost}`,
       ...(w.lastStand ? [`WAVE ${w.lastStand.wave} NEXT ${w.lastStand.nextWave.toFixed(1)}`] : []),

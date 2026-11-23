@@ -2,7 +2,7 @@ import type Phaser from 'phaser';
 import * as TUNING from '../content/tuning';
 import { ADDONS } from '../content/addons';
 import { APPROACHES } from '../content/approaches';
-import { BIOMES } from '../content/biomes';
+import { BIOME_IDS, BIOMES } from '../content/biomes';
 import { ARMOR_ARCS, CHASSIS, type ArmorArc } from '../content/chassis';
 import { CONDITIONS, type ConditionId } from '../content/conditions';
 import { DEPOT_ADDONS, DEPOT_GRADES, DEPOT_MODULES, DEPOT_WEAPONS } from '../content/depot';
@@ -16,6 +16,8 @@ import { MATERIALS } from '../content/terrain';
 import { TRAILER_MODULES } from '../content/trailer';
 import { GRADES, TRACKS } from '../content/upgrades';
 import { WEAPONS } from '../content/weapons';
+import { lookFromUrl } from '../config';
+import { LOOKS, lookFor } from '../render/looks';
 import { applyHit, component, damageComponent, damageTreads, igniteReactor } from '../sim/behemoth';
 import { devExtract, devKillAll, devRearm, devRepair, devSpawn, devWave, setInvulnerable, type DevSide } from '../sim/dev';
 import { paySalvage } from '../sim/salvage';
@@ -69,7 +71,7 @@ function tweakTables(): Record<string, object> {
 const LIVE_CHASSIS = 'this battle: chassis';
 
 /** The URL params the New battle section knows, in the order it shows them. */
-const PARAMS = ['seed', 'biome', 'approach', 'condition', 'mode', 'doctrine', 'directive', 'mix', 'exit', 'addons', 'trailer', 'weapons', 'shells', 'grades', 'mods', 'immobilize', 'cookoff', 'objective', 'map', 'depot', 'event', 'summary', 'res'] as const;
+const PARAMS = ['seed', 'biome', 'approach', 'look', 'condition', 'mode', 'doctrine', 'directive', 'mix', 'exit', 'addons', 'trailer', 'weapons', 'shells', 'grades', 'mods', 'immobilize', 'cookoff', 'objective', 'map', 'depot', 'event', 'summary', 'res'] as const;
 
 const CSS = `
 #dev-tab { position: fixed; top: 8px; right: 8px; z-index: 20; font: 11px/1 ui-monospace, Menlo, monospace; background: #2a2d24; color: #e8b04a; border: 1px solid #e8b04a; padding: 4px 7px; cursor: pointer; opacity: .75; }
@@ -254,7 +256,7 @@ export class DevConsole {
     const a = w.encounter.alert;
     this.status.textContent =
       `${scenes}  ${this.fps} fps  t ${w.time.toFixed(2)}s  ×${dev.timeScale}${dev.paused ? '  PAUSED' : ''}\n` +
-      `seed ${w.seed}  ${w.terrain.recipe.biome}${w.terrain.recipe.approach ? '/' + w.terrain.recipe.approach : ''}  ${w.objective.mode}  ${w.condition?.id ?? 'clear'}\n` +
+      `seed ${w.seed}  ${w.terrain.recipe.biome}${w.terrain.recipe.approach ? '/' + w.terrain.recipe.approach : ''}  ${lookFor(w.terrain.recipe.biome, w.terrain.seed, lookFromUrl()).id}  ${w.objective.mode}  ${w.condition?.id ?? 'clear'}\n` +
       `${Math.round((b.x - 70) / 10)} m of ${Math.round((w.exitX - 70) / 10)}  ${Math.round(b.vx)} u/s  enemies ${live}  threat ${w.threat}\n` +
       `alert wave ${a.wave}, next ${a.cut ? 'cut' : a.next.toFixed(1) + 's'}  kills ${w.stats.kills}  salvage ${w.stats.salvage}`;
     for (const s of this.syncs) s();
@@ -456,6 +458,7 @@ export class DevConsole {
       seed: h('input', { type: 'text', value: get('seed'), placeholder: 'random' }),
       biome: select([none, ...ids(BIOMES)], get('biome')),
       approach: select([none, ['none', 'none (biome mix)'], ...ids(APPROACHES)], get('approach')),
+      look: select([none, ...BIOME_IDS.flatMap((b) => LOOKS[b].map((l) => [l.id, `${l.name} (${b})`] as [string, string]))], get('look')),
       condition: select([none, ['none', 'clear'], ...ids(CONDITIONS)], get('condition')),
       mode: select([none, ...ids(MODES)], get('mode')),
       doctrine: select([none, ...ids(DOCTRINES)], get('doctrine')),

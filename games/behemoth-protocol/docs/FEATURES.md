@@ -85,6 +85,7 @@ Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`
 | `?depot=N` | Opens the depot after N battles won, with 1000 salvage (Gen 3 grades show from N = 2) |
 | `?biome=arctic` | Every battle in that biome, whatever the sector (`temperate`, `arctic`, `industrial`, `desert`, `wasteland`) |
 | `?approach=pass` | Every battle on that approach (`plain`, `forest`, `urban`, `river`, `pass`; `none` = the biome's own mix) |
+| `?look=autumn` | Every battle's look (§3 "Ground looks"; `spring`, `summer`, `autumn`, `deepSnow`, `windswept`, `thaw`, `cinders`, `rust`, `chemical`, `paleSand`, `redSand`, `hamada`, `ash`, `rustDust`, `toxic`); one its biome lacks is ignored. Cosmetic: doesn't make a practice run |
 | `?mode=breach` | Every battle in that mode (`assault`, `breach`, `chase`); the node's strength still sets the target count. With `?exit=60` the fortress is close (Breach) |
 | `?map` or `?map=N` | Opens the sector map at the start of sector N (default 1) instead of a battle; with `?biome`, that sector is drawn in that biome (for looking at the map art) |
 | `?condition=night` | Every battle in that condition (`night`, `storm`; `none` = clear) |
@@ -128,6 +129,15 @@ An HTML panel down the right of the page for playtesting and tuning. It's on in 
 ### Sim bot
 `M1` · n/a · `playtest: n/a`
 An ad-hoc headless driver (not checked in) used for balance numbers: passive autos-only vs firing everything, over 8–40 seeds. The results are recorded in the matching entries below.
+- Quickest form (Nov 23, 2026): a scratch vitest file plus a config whose `root` is this folder and whose `include` points at the scratch file, looping `createWorld` + `stepWorld(w, demoCommand(w))` per seed, biome, and mode. 36 full battles take ~2 s. **Gotcha:** real battles are `battleLayout(...).fieldTiles` = 21 rows wide (36 is the attract mode's full width, and the tests' `OPTS`); use 21 for balance numbers. Vitest swallows `console.log` from such a file: write results to a file.
+
+### Autopilot playtest
+`M3` · `uncommitted` · `playtest: n/a`
+User request (Nov 23, 2026). `npm run playtest [-- --minutes N --title S --speed K --out dir path]` (`scripts/playtest.mjs`): a Vite dev server and the headless shell over CDP, as in "Headless screenshots". The autopilot (§9 "Title attract mode") drives every battle at ×2 and Enter carries it through the title, Directive picker, map, depots, events, and summaries. It logs scene changes, a battle snapshot every 15 s (distance, enemies, kills, treads, armor, state), and every page exception or console error, and saves screenshots to `renders/playtest/` (git-ignored). It exits non-zero if the page threw. `--title S` watches the attract mode first; `path` opens a practice URL instead (e.g. `/?seed=3&biome=desert`).
+- How: `Runtime.evaluate` imports `/src/input/controls.ts` (the same module instance the game uses) and patches `Controls.prototype.command` to return `demoCommand(this.scene.world)`; the patch also exposes the scene and `game` for reading state.
+- **Gotcha:** editing a source file mid-run makes Vite reload the page; the script notices (`window.__auto` gone) and patches again, and the run carries on from its save.
+- **Gotcha:** run it from this folder (npm does), or the version stamp's `git rev-parse` reads `unknown`. It can't drive the public build (bundled: no `/src` modules to patch).
+- **Limits:** Enter rolls straight out of every depot, so it never repairs or buys: treads fall ~50–60% a battle under the autopilot and every run dies of tread wear in its 2nd–3rd battle (12-minute run, Nov 23, 2026: 11 battles, 6 extracted, no page errors). Its run lengths say nothing about the economy until it spends at depots.
 
 ---
 
@@ -194,7 +204,7 @@ A battle's terrain is a `TerrainRecipe` `{ biome, approach }` (approach null = t
 - Tests: `tests/sim/biomes.test.ts` (determinism, order independence, start clear, lane free of rock/compounds, tracked units can drive every recipe end to end, biome-only materials, approach shares, cliffs, run recipes).
 - **Gotcha:** `neighborOf` caches chunk features and rivers in a module-level `chunkCache` (96 entries, keyed by seed/rows/recipe/chunk); it's a pure function of those, so it never needs clearing. Painting checks only features whose `colSpan` reaches the column (`reaching`); a new feature kind needs a `colSpan` case or it never paints.
 - **Gotcha:** rock paints over everything except `ROCK_SPARES` (building, road, factory, fuel tank). Rails and defenses must not punch holes in outcrops: holes left notches that boxed the hull in (seed 2 crumbled until this rule).
-- **Gotcha:** a hidden mine is drawn as the plain ground frame, so minefields only claim `ground`.
+- **Gotcha:** a hidden mine is drawn as open ground (the see-through `clear` frame over the painted ground, §3 "Ground looks"), so minefields only claim `ground`.
 - Bot (terrain only, 6 seeds, follows the lane, never fires): before biomes −46 treads / −40 front armor / 191 s / 6 of 6; now per recipe −47 to −70 treads, −10 to −76 front armor, 186–238 s, 3–6 of 6 within 5 min. Mines and traps are the new costs. Desert −35 to −54 treads; wasteland −62 to −76 (the harshest).
 
 ### Common terrain features
@@ -215,6 +225,21 @@ Craters, tank traps, walls and bunkers (fortified lines), minefields, and bridge
 - **Desert**: `dune` (`wading` cruise cap, label SAND), `wadi` (river material for both banks and channel: passable, conceals and covers infantry), `derrick` (40 HP, shots pass through, `explodes` 44/60 with a 0.4 s fuse, 3 salvage, `breaksTo: 'crater'`). Features `dune` (oval, long across the field; `TERRAIN_GEN.dune`) and `oilfield` (square block placed with `besideLane`, derricks on a 3-tile grid that don't chain; `TERRAIN_GEN.oilfield`).
 - **Blasted wasteland**: `wreck` (150 HP, medium, blocks fire, garrisonable cover 0.5, 4 salvage), `glass` (`grip` 0.5, `slipTag` GLASS). Features `wrecks` (patch; `TERRAIN_GEN.wreckField`) and `blast` (oval: glass inside `blastSite.core`, craters around; claims anything). `BiomeDef.ruins` sets `RUINABLE` tiles (building, factory, wall, bunker) damaged or destroyed when `generateChunk` creates them (cell noise salt `0x7a1d`). Rubble placed this way pays no salvage; a damaged ruin still pays when it's knocked down.
 - **Gotcha:** the HUD speed tag comes from `b.wading.label` (FORD, WADE, DRIFT, SAND, or the `slipTag` of the slippery ground under it: ICE, GLASS), set by `groundAt`. `isWet(mat)` (content/terrain.ts) is the check for river water (splashes, pools fizzling); snowdrifts have `wading` but aren't wet.
+- **Limits:** dunes don't block sight (long sightlines are the point). Arctic gets an occasional fuel-tank farm (`tankFarms` 0.05) as a fuel depot; drop it if it reads oddly. Hedgerows are `trivial` like forest (0.05 tread per tile at cruise; bot ~1 HP a battle). Wasteland wrecks are single tiles, and ruins pay no salvage for the part already knocked down.
+
+### Ground looks (seasons)
+`M3` · `uncommitted` · `playtest: pending` · SPEC §4.6 "Looks", §15 "Terrain looks (M3)"
+User request (Nov 23, 2026): maps looked too much alike. Cosmetic only. Each battle draws a **look** from its terrain seed (three per biome: a season in temperate, its counterpart elsewhere). The look recolors the tiles, and the open ground is painted per pixel under them: big dithered patches of three tones, bare patches, ragged fringes where the ground meets other terrain (river banks, leaf litter, aprons, scree, …), clustered decals, and now and then old tank ruts.
+- `render/looks.ts`: `Look` (`tones` ×3 `Ramp` [base, light, dark], `bare` + `bareCover`, `bank`, `accents`, `decalDensity` + `decals` weights, `ruts` chance, `pal` overrides), `LOOKS` per biome, `lookFor(biome, terrainSeed, wanted?)` (salt `0x5ea5`), `lookPalette(biome, look)` (the look's first tone becomes `grass*`). `Pal`, `BIOME_PAL`, and `biomePalette` moved here from tileArt.ts so the painter and tests stay free of Phaser.
+- `render/ground.ts` (pure): `GroundPainter(src, look, pal, ci, cols, tile)` paints a chunk one tile column at a time (`paintColumn(lc)`) into `pixels` (RGBA, screen orientation); `paintGround` does a whole chunk. Noise: `Grid` (value noise, lattice hashed once per chunk) and `Fbm`; tone octaves 320/96/32 px with thresholds `TONE_LOW`/`TONE_HIGH` (0.42/0.6 ≈ 28/45/27%); bare octaves 56/20 px with `bareThreshold` (measured quantiles). `FRINGE_OF` (material → fringe) and `FRINGE_WIDTH` (px); only tiles in `SHOWS_GROUND` (ground, mine, crater, tank trap) take fringes, decals (`STAMPS`, letter-coded colors), and ruts (`rutsNear`: one chance per 3 chunks, a sine path, gauge 8 px).
+- `render/terrainView.ts`: picks the look (`TerrainView.look`), gets per-look sheets from `lookSheets(scene, biome, look)` (tileArt.ts; keys `tiles_<biome>_<look>`, `clumps_<biome>_<look>`, drawn on first use; `makeTiles` is gone), and keeps one `ground_<ci>` canvas texture per chunk at depth −0.5. The chunk coming up next is painted `PAINT_BUDGET` (4) columns a frame, ones in view at once; textures are dropped behind the view and on scene shutdown. Open-ground tiles use the see-through `clear` frame and are hidden; tank traps, swept mines, craters, flattened woods, and wrecks are drawn without a grass backing.
+- Practice: `?look=autumn` (any look id; ignored if the battle's biome lacks it; not a practice-run trigger); the dev console's New battle form has it, and its status line and the debug overlay show the look.
+- Cost: ~5 ms a chunk (16 columns × 21 rows) in Node, spread over 4 frames.
+- Tests: `tests/render/ground.test.ts` (deterministic and opaque, a mine paints exactly like ground, banks line water, all three tones get sizable shares, bare cover near the look's, seams match across chunks, looks picked from the seed).
+- **Gotcha:** the ground layer is painted once from the tiles as they were then: fringes don't follow later changes (a burnt wood keeps its litter; a fallen bridge's banks were already there). Craters made in play are see-through, so they sit on the painted ground.
+- **Gotcha:** a mine must paint exactly like ground (the test checks it): don't make anything in ground.ts depend on `mine` vs `ground`, or minefields show before they're swept.
+- **Gotcha:** the top tile column of a chunk takes fringes from the next chunk, so painting waits for the world to make it (`Terrain.tile((ci + 1) * CHUNK, 0)`); the world makes chunks one ahead, so that chunk is still above the frame.
+- **Limits:** no scorch around craters made in play; enemies are rust red, so check them on the reddish looks (autumn, red sand, rust, rust dust); the attract mode always uses the seed's look.
 
 ### Terrain hazards
 `M3` · `initial` · `playtest: pending` · SPEC §4.5, §4.6
@@ -222,6 +247,7 @@ Craters, tank traps, walls and bunkers (fortified lines), minefields, and bridge
 - A terrain blast uses the trailer's `blast` (now exported, with an `edge` falloff) on units and tiles, then hits the treads (`TERRAIN_BLAST.under` 0.3) if its tile overlaps the hull's footprint, else the facing arc (`hullBlast`, `TERRAIN_BLAST.hull` 0.35), and a trailer in reach.
 - New `KillCause` `hazard` (counts as a kill, not a final-blast kill).
 - Tests in `tests/sim/biomes.test.ts`: bridges (limits, span, shot out, crossings, vehicles lost), thin ice (crack rate by mass, drowning), fuel-tank chains, plowing a tank, minefields (hidden, swept, blow under the treads, shot), craters, tank traps, ice steering, drifts.
+- **Limits:** thin ice: a stock Class II (245 t) breaks it in under a second, so every frozen river is a ford in practice (a lighter Class I would skate). Collapses take only the hull's weight, and the trailer never sets off a mine.
 
 ---
 
@@ -237,6 +263,7 @@ Rock is immovable, blocks fire, and enemies can't pass it. The hull glances off 
 - The `immovable` class in `content/obstacles.ts`; `DEFLECT` in tuning.ts. `deflectOffRock` (sim/collision.ts) runs before crushing: each overlapping rock tile pushes the hull out along the shallower axis, and a tile at the nose within `FACE_DEPTH` (2 units) always counts as the face (otherwise sliding along a face flip-flops).
 - The face contact (ram damage, armor half, spark) is `faceContact`; see Split front armor.
 - State: `b.deflect {dir, flips, spark}`. The slide direction is picked once at contact (`slideDirection`); steering mid-slide is ignored on purpose (it caused in-place flip-flopping against rock alongside).
+- **Gotcha** (fixed `uncommitted`, Nov 23, 2026): the shove writes `vy` directly but leaves the eased sideways acceleration `b.ay` from before, so clearing the face now zeroes `ay`. Without that, a hull that slid off flush with the face's end was pulled back onto its corner every other tick: a fresh head-on hit (speed dip and all) each time, until it crawled to a stop (practice `?seed=4&biome=industrial`, x ≈ 774, a non-steering hull; regression test in `tests/sim/collision.test.ts`). Don't treat a sliver of sideways overlap at the nose as alongside to fix such things: that lets blind hulls box themselves in (seeds 2 and 18 grind rock).
 
 ### Ground box
 `M2` · `initial` · `playtest: pending` · SPEC §15
@@ -250,6 +277,7 @@ User request: the hit box follows the hull's shape as it steers (up to ~41°). A
 - **Gotcha:** rock deflection, fording, and bridge/ice loads still use the **unturned** `groundFootprint`: the deflection's push-out is axis-aligned by design (SPEC §4.2), and it's playtest-approved. The field-edge clamp uses the unturned half-width too, so at full lock a corner can poke past the edge.
 - Tests: `tests/sim/hullBox.test.ts` (box math; a round past where the unturned corner was misses, one on the turned nose corner hits; crushing and running over units follow the turned hull).
 - `ChassisDef.ground {length, width}` shares (0.8, 0.8), `groundFootprint(b)`; used by `deflectOffRock`, `slideDirection` (room = (hull + ground width)/2), and `ford`.
+- **Limits:** rock deflection, fording, and bridge/ice loads still use the unturned ground box (`groundFootprint`, on purpose), and the field-edge clamp the unturned half-width, so a corner can poke past the edge at full lock. Turn them too if it shows.
 
 ---
 
@@ -298,6 +326,7 @@ Lasers for S/M/L (pulse, beam, heavy) and the plasma thrower (splash plus burnin
 - Sim: `fireBeam` (projectiles.ts: analytic unit hit + 2-unit steps for cover/mines), `shootBeam` (weapons.ts: spread, `fire` + `beam` events), used by `fireAimed` and `stepAutoGun` (no lead). `damageEnemy` is exported.
 - `sim/pools.ts`: `spawnPool` (none in water), `stepPools` (counts ticks, not age: float drift lost the last tick), `poolUnder`. Pools burn units, tiles, the hull's treads (ground box), and a hitched trailer; `w.pools`. Events: `beam`, `plasmaBurn`, `explosion.plasma`.
 - Render: `Effects.laser/plasmaBurst/plasmaSpark/plasmaBurn`, `render/poolView.ts` (`PoolViews`, depth 1.8), `plasma` glob + `plasma_pool0/1` textures, `PAL.plasma*`, laser/plasma mounts, `bh_barrel_laser`, heat glow for the heavy laser/beam/plasma, HUD Treads `BURN`, cutaway lens/chamber, depot stats `burns 8/s 3s`.
+- **Limits:** plasma pools: enemies ignore them (SPEC §16 Q14), the hull hides a pool under it (BURN tag only), the trailer's overlap uses its box and the hull's its ground box. The beam laser doesn't ignite forests (§16 Q6). A full energy build (heavy + beam + pulse ×2 + PD) can't run everything at once on the 10/s reactor, which is the point.
 
 ### Turret rings as data
 `M2` · `initial` · `playtest: pending` · SPEC §5.2, §15 "Turrets and bindings (M2)"
@@ -317,6 +346,7 @@ Each hardpoint is bound to LMB, RMB, Space, or Auto at the depot (free, no actio
 - **Gotcha:** `firingBinding` falls back once fire control is destroyed. Use it, not `h.binding`, in sim and render.
 - `sim/weapons.ts`: aimed / missile salvo via `cursorLock` or `autoLock` / auto gun / PD; `autoTarget` is shared by auto guns and auto missiles (on-screen only for missiles). The battle's lock bracket follows racks on a trigger only.
 - Depot: `{kind: 'bind'}` action ("Not allowed", "Set", "No channel"), `bindingOf`, `channelsOf`, fire-control repair; autos are allowed in ring slots on a trigger. DepotScene: "Fires on" button row on hardpoint and pod panels + channel line; fire-control part in the cutaway (`L.fireControl`). HUD: schematic `FIRE_CONTROL_BOX`, `Fire ctrl` readout, hints `LMB RMB SPC  fire`.
+- **Limits:** a damaged-but-working fire control keeps both channels (only destruction matters); auto missiles skip line of fire and ignore hidden units like the guns; no in-battle indicator of which mount a binding row drives. Revisit after playtest.
 
 ---
 
@@ -338,6 +368,7 @@ The front zone is now front-left and front-right (80 each, as thick as a flank; 
 - Content: per-half `internals` (fire control 1.25 left / 0.75 right), hardpoint `exposure` per half (pd 1.5 front-right / 0.5 front-left, sponsons 1 on their own side, centered mounts the same on both), outboard tread `exposure` 1 per half.
 - Render: HUD `ARMOR_BOX` has two front boxes with a 2 px seam. `BehemothView` has `bh_plate_frontLeft/Right` + `bh_wear_frontLeft/Right` (placeholder.ts splits at the texture's middle row). The cutaway draws front-left on the near glacis and front-right as a far-side strip rising at the nose (x 276). The depot lists zones by `ARC_NAMES`.
 - Run save v5: a v4 `front` gives each half the same share of integrity (`V4_FRONT` in runSave.ts holds the old size).
+- **Limits:** enemies aim at the hull's center, so even a slight angle puts nearly all fire from ahead on one half (check in playtest that it reads as a choice, not twitchy). A rock-face contact snaps the heading to ~41° on its first step (the deflect shove writes `vy` directly), which throws the leading corner onto the face.
 
 ### Power
 `M1` · `initial` · `playtest: pending` · SPEC §5.4
@@ -377,6 +408,7 @@ Infantry squad (ambushes from cover; rockets bypass armor into the treads), heav
 - Behaviors in `sim/ai/`: `skirmisher` (light tank), `holdAhead` (heavy tank: narrow arc, close; missile launcher: wide arc, far), `ambusher` (infantry → `findCover`, which wraps `bestCover(score)`). Shared steering in `ai/steer.ts`. Enemy weapons can fire salvos (`salvoLeft`); missiles skip the line-of-fire check.
 - `threat` per unit: light tank 1, heavy tank 2, missile launcher 1.5, infantry 1 (0.75 until M3's encounters: budgeted posts bought too many cheap squads).
 - Bot, 8 seeds: passive with autos is Immobilized at 104–191 s (heavy tanks are the main driver); firing everything survives 5–6+ min. The user was happy with the M1 spawner's density, which the M3 encounters are tuned to match at the opening threat.
+- **Limits:** heavy tanks only ever spawn ahead, and one that falls behind (forest slows it) rarely catches up.
 
 ### Behaviors as data and shared navigation
 `M3` · `b97ec63` · `playtest: pending` · SPEC §7, §15 "Enemy AI (M3)", §16 Q17
@@ -393,6 +425,7 @@ The first two phases of the user's AI review (Nov 2026). **Behaviors are content
 - **Gotcha:** presets make fresh objects on purpose, so each unit's numbers are its own in the dev console (`ENEMIES.<id>.behavior.*`); tweaks saved under the old `engage`/`siege`/`evasive`/`BOMB.maxLead`/`WALKER.sideGap`/`SKI.clearance` paths are dropped on load. In tests, swap a unit's behavior with a preset call (`holdAhead({...})`), and narrow `def.behavior` (`as HoldAheadDef`) to read kind settings.
 - **Gotcha:** behaviors return a `Goal`, not a velocity; `fixed` returns null. The goal is snapped and moved by `navigate` every step, so don't assume a unit heads for exactly the point its behavior picked.
 - **Gotcha:** routes are world points replanned every 0.4 s while the hull and the goals move; a slow unit (heavy tank, accel 30) pinned between the hull and an outcrop can still be run down (seed 1's outcrop; the roster test now levels the ground).
+- **Limits:** routes are world points replanned every 0.4 s; a slow unit pinned between the hull and an outcrop ahead can still be run down (seed 1, heavy tank). The hull's danger zone is axis-aligned (it ignores the hull's turn). Goals snap off impassable ground but aren't otherwise hazard-aware: units park beside fuel tanks, drive onto thin ice and bridges, never set off mines (their own or laid ones; SPEC §16 Q17). `Terrain.crossings` is used only by a test now.
 
 ### Smarter Chase convoy and escort roles
 `M3` · `3e13746` · `playtest: pending` · SPEC §4.4, §15 "Enemy AI (M3)", §16 Q24
@@ -416,6 +449,7 @@ Phase 4 of the AI review: the hovercraft's hit-and-run from the rear. My calls, 
 - Bot (12 seeds × 60 s, demo bot): open ground rear hits 3 → 4 (hovercraft mostly die to the autos first: ~115 lost either way); a river map 3 → 15; with a trailer in tow, trailer hits 4 → 30 and hull hits 72 → 8; hovercraft ticks out of view 1125 → 612.
 - Tests: `tests/sim/hovercraft.test.ts` (the cycle, in view; behind the tail and more rear fire than a circling unit; the flinch; staging on water; going for the trailer).
 - **Gotcha:** the run aims at a point clamped by `inFrame`; with the frame's trailing edge close behind a slow hull there's little room behind the tail, so the pass can end beside the rear quarter rather than behind it.
+- **Limits:** no sound or mark when a run starts (the pass itself is the telegraph); on open ground most die to the autos before a pass lands (22 HP), so the raid matters mainly on river maps and against a trailer; the run aims at a point clamped into the frame, so with little room behind a slow hull the pass ends beside the rear quarter.
 
 ### Enemy smarts
 `M3` · `3865498` · `playtest: pending` · SPEC §15 "Enemy AI (M3)"
@@ -428,6 +462,7 @@ Phase 5 of the AI review: units read the Behemoth, not just where it is. One glo
 - Bot (12 seeds × 90 s, demo bot, smarts 0 vs 1): kills and damage taken within ~10%; bomb trucks reaching the hull 3 → 6; ski troops' rear hits 6 → 16; light tanks a little less in the rear (they keep out of the gun's line, and the bot's gun chases them).
 - Tests: `tests/sim/smarts.test.ts` (`arcAt` matches `hitArc`, out of the gun's line, onto worn armor, spreading, the angular speed and smarts 0, the fall-back and its cap, the weaker front half, the bomb truck's offset). `skiTroops.test.ts`'s weave test runs with smarts 0 (it measures the weave alone).
 - **Gotcha:** `AI` is a mutable tuning table (the dev console edits it); a test that changes `AI.smarts` must restore it.
+- **Limits:** the bot barely feels them (kills and damage within ~10% at smarts 0 vs 1; bomb trucks reach the hull twice as often, ski troops land more rear hits); a skirmisher's bearing ignores the AP guns' reach and arcs (it reads only the main gun), and nothing reads the Behemoth's hardpoints or which component is worn.
 
 ### Encounters and the alert clock
 `M3` · `initial` · `playtest: pending` · SPEC §4.2, §4.4, §7, §7.2, §10, §15 "Encounters and the alert clock (M3)", §16 Q1, Q22–23
@@ -442,6 +477,7 @@ Replaces the M1 spawner. **Defenders are placed by distance**: posts every 550�
 - Tests: `tests/sim/encounter.test.ts` (mix shading and the doctrine split, post layout and determinism, posts appear only when reached and beyond the frame, wave schedule, the cap, entry sides, braking meets more, stops for the last stand and extraction).
 - **Gotcha:** tests that want a quiet field set `w.encounter.off = true` (it doesn't stop the last stand's waves). To keep only the posts, push `w.encounter.alert.next` far out; to keep only the waves, empty `w.encounter.posts`.
 - **Gotcha:** the cap only holds back wave units: posts spawn whatever is already on the field, and the hull crushing units or leaving them behind frees room.
+- **Limits:** posts are only *when* units appear; their units then fight with the usual behaviors (a post's heavy tanks still back away ahead of the hull). Nothing on the map's intel panel says how strong a node's posts or waves are beyond strength and doctrine. Kill salvage is ~20% below the M1 spawner (259 vs 332 a battle, SPEC §16 Q22).
 
 ### Fortress guns, convoy, and hovercraft
 `M3` · `initial` · `playtest: pending` · SPEC §4.4, §7, §15 "Battle modes (M3)"
@@ -469,6 +505,7 @@ A fixed battery dug in near a side of the field. After a 1.2 s aim glint it mark
 - **Gotcha:** the zone leads with the Behemoth's *lateral* velocity too, so steering steadily doesn't dodge; a *change* of steering or speed does.
 - Bot (8 seeds, T 7, firing at the nearest enemy): long guns ~5.7 batteries and ~4.5 volleys a battle (most die before a second); armor left ~240 holding course vs ~290 steering out of zones. Combined arms: ~0.7 batteries a battle.
 - Tests: `tests/sim/artillery.test.ts` (telegraph and zone placement, rounds in the zone and on time, cover doesn't stop them, a dodge misses, minimum range, friendly fire, extraction, edge placement, posts, `mobileMix`, Breach batteries).
+- **Limits:** a zone stays up for the whole volley even if the battery dies or leaves the frame mid-salvo (fewer rounds land than the ring promised); batteries never relocate; the bot kills most batteries before their second volley (SPEC §16 Q29).
 
 ### Siege tank (two turrets, survives a ram)
 `M3` · `4dff8a5` · `playtest: pending` · SPEC §7, §15 "Siege tank (M3)", §16 Q30
@@ -481,6 +518,7 @@ A slow superheavy mini-boss that holds the line ahead. Its main turret is a huge
 - **Gotcha:** code that needs every gun of a unit must walk `[e, ...e.guns]`: `e.windup`, `e.cooldown`, `e.turret`, and `e.salvoLeft` are only the main gun's. `beyondSight` (conditions.ts) still looks only at the main gun's windup and salvo (firing any gun sets `exposed`, which covers it).
 - Bot (armored fist, 8 seeds, firing everything at the nearest unit): T 7 one shows up in 2 battles of 8, T 10 in 6 of 8; it lasts ~14 s from first sight (5–24) and lands 1–3 main-gun hits.
 - Tests: `tests/sim/siegeTank.test.ts` (two guns firing on their own cycles, the rear pivot, `support` targeting, a ram at cruise and its damage, a finishing ram, the callout once, doctrines and facing).
+- **Limits:** rare at sector 1's threat 7 (its threat of 4 rarely fits a post, SPEC §16 Q30); no health bar for the mini-boss; the autopilot never rams on purpose.
 
 ### Spider walker (the wasteland's biome unit)
 `M3` · `54e56de` · `playtest: pending` · SPEC §7, §7.4, §15 "Biome units (M3)", §16 Q13, Q31
@@ -493,6 +531,7 @@ The fifth and last biome unit. A six-legged walker that strides over the rubble,
 - **Leg animation** (user request, `89aacf7`): `walker_step_a`/`walker_step_b` swing the two alternating tripods (front and rear legs on one side with the middle one on the other) 2 px forward or back; `EnemyArt.gait` (`WALKER.gait`: `step_a, body, step_b, body`, one frame per 6 world units walked). `EnemyView` adds `|velocity| × dt` to `walked` and picks the frame, so the legs step faster the faster it goes and hold their pose when it stops. General: any unit's art can take a `gait`.
 - Bot (8 seeds, wasteland, T 7, driving straight, main gun at the nearest visible enemy, autos on): raiders ~2–2.5 walkers a battle, ~7 s each before the bot kills them, none crushed. Without a trailer, rear hits 3.5 → 6.8 a battle and the rear armor ends at 60% (77% without walkers); with one, the trailer takes 7 hits a battle (2.6 without). Combined arms ~1.4 walkers a battle.
 - Tests: `tests/sim/spiderWalker.test.ts` (content and doctrines, wasteland only, `walkerSpeed`, met ahead it steps aside and ends behind and in view without being crushed, its hits land on the rear, it goes for a trailer, the callout).
+- **Limits:** nothing tells the player it's behind beyond the threat arrows and the rear hits; the last stand's `besiege` replaces `stalker`, so it closes in from any side like everyone else.
 
 ### Trapdoor team (the desert's biome unit)
 `M3` · `54e56de` · `playtest: pending` · SPEC §7, §7.4, §15 "Biome units (M3)", §16 Q31
@@ -506,6 +545,7 @@ The fourth biome unit (the user's idea). Troops in a lidded hole in the sand, li
 - Bot before the range change (8 seeds, desert, T 7, driving straight, the main gun at the nearest visible and exposed enemy, autos on): entrenched ~5–6 teams a battle, 51 lifts, 15 ducks, 34 rockets fired, 19 of 45 teams killed, none crushed; armor at the end 66% against 71% without them. Without ducking: 41 lifts, 40 rockets, 29 of 42 killed (mostly in the linger), armor 64%. A reaction time of 0.3 s or more and they never duck (rounds at these ranges arrive sooner). Before the quick aim (0.6 s) and the lid shielding the lift, 2 rockets in 33 lifts: the autos killed them first.
 - Tests: `tests/sim/trapdoorTeam.test.ts` (content, desert only, unseen until found and marked after, waits for the hull to come near then lifts, fires, and shuts, a second lift as the hull draws away, sealed against rounds, blasts, and the autos, sealed while lifting and hurt once up, ducking a round seen in time (no shot, no damage) but not one from point-blank, crushed by the treads, `burrowSpot`).
 - **Gotcha:** an enemy with `trapdoor` must go through `stepLid` (it gates `aimAndFire`); a test that wants it to shoot sets `ai.lid = 'open'`, and one that wants it quiet sets `ai.lidT` high.
+- **Limits:** ducking ignores beams (they can't be seen coming) and judges lobbed shells' arcs on their ground track; holes never move or dig a new one; nothing draws a found hole on the threat arrows; a shut hole is sealed against all blasts (field battery shells, bomb trucks), but the reactor detonation's core still kills it (SPEC §16 Q31).
 
 ### Ski troops (arctic's biome unit)
 `M3` · `54e56de` · `playtest: pending` · SPEC §7, §7.4, §15 "Biome units (M3)", §16 Q31
@@ -518,6 +558,7 @@ The third biome unit. Fast troops on skis that sweep round the Behemoth over the
 - Bot (16 seeds, one team, a stock Class II driving straight, autos only): a team lasts ~16 s (the same unit without the weave ~6.7 s), ~13 tread HP of rockets each (~5.5); with the autocannon held on it by hand (aimed at it, no lead) ~3.5 s. A sweep: settle 0.3/×4 ~10 s, 0.45/×6 ~11.5 s, 0.7/×8 ~28 s (6 of 16 alive at 40 s: too close to immune). Hits per second on an immortal team: 0.08 against 0.93 without the weave.
 - Tests: `tests/sim/skiTroops.test.ts` (content and doctrines, arctic only, ski speeds, the weave flips and every shot fired on the move, the wider spread and a longer life under the autos, `trackable`, keeping clear of the hull, the callout).
 - **Gotcha:** the field is narrow (the hull's flanks are inside the AP guns' 75 reach), so any unit circling beside the hull is in AP range; the evasion rules, not the circle, are what keep ski troops alive.
+- **Limits:** the player's auto missiles home, so the weave doesn't fool them (SPEC §16 Q31); the evasion rule ignores the target's speed (a skier slogging through a forest is just as hard to track); `weaveAge` only counts while the skier behavior runs (the last stand's `besiege` replaces it, so they're trackable then).
 
 ### Bomb truck (industrial's biome unit)
 `M3` · `54e56de` · `playtest: pending` · SPEC §7, §7.4, §15 "Biome units (M3)", §16 Q31
@@ -531,6 +572,7 @@ The second biome unit. An unarmed truck with a bomb on its bed that drives flat 
 - Bot (8 seeds, industrial, T 7, driving straight, main gun at the nearest visible enemy, autos on): armored fist ~6 trucks a battle, 5 of 47 reach the hull (~50 hull damage each, counting what lands the same step), 1 dies in a chain; combined arms ~2 a battle, 2 of 17 reach it; raiders ~2.5, 4 of 20. Extractions with/without trucks: armored fist 3/3, combined 3/6, raiders 4/4 (8 seeds: noisy; this bot does badly in the industrial biome either way).
 - Tests: `tests/sim/bombTruck.test.ts` (content, industrial only, the alarm and the contact hit on one arc plus treads, the ram plow first, shot short it kills an escort and spares the hull, it sets off a fuel tank, enemy fire passes it by, the last stand against a stopped hull).
 - **Gotcha:** a test that snapshots armor must copy the numbers (`{ ...b.armor }` shares the arc objects). A bomb's kills are `hazard`, and the truck itself dies `crushed` when it meets the hull (it pays its salvage either way).
+- **Limits:** it never weighs whether to wait for a better angle; nothing marks it on the threat arrows as more urgent than other units.
 
 ### Hedge gun (temperate's biome unit)
 `M3` · `54e56de` · `playtest: approved` · SPEC §7, §7.4, §15 "Biome units (M3)", §16 Q31
@@ -544,6 +586,7 @@ The first biome unit (designed with the user). A towed anti-tank gun dug into a 
 - Bot (8 seeds, temperate, T 7, driving straight, main gun at the nearest visible enemy, autos on): entrenched ~3 hedge guns a battle (about 60% in hedges, the rest in woods; fewer on forest and urban approaches), ~1 shot each before the autos kill it once it's shown itself; extractions 6/8 (5/8 without hedge guns, which take the place of some squads). Combined arms ~2 a battle. None crushed (the bot never steers).
 - Tests: `tests/sim/hedgeGun.test.ts` (content and doctrines, temperate only, faces across, holds fire head-on then hits a side arc, the turret stays in its arc, hidden in a hedge until it lines up, crushed, `hedgeSpot` hedge/wood/none and the offset, the once-a-run callout carried by `completeBattle`, the siege tank's still per unit, save v14).
 - **Gotcha:** `EnemyDef.callout` is an object now (`callout?.text`). Any unit that's been in view has `ai.sighted` set, not just mini-bosses.
+- **Limits:** nothing marks where a flank shot came from beyond the glint; `crossfire` limits only the main gun (extra turrets ignore it); a gun in the wood fallback isn't really a "hedge" gun (SPEC §16 Q31); the autopilot never steers onto one to crush it.
 
 ### Heavy weapons team (lock-on, guided missile)
 `M3` · `7dfa568` · `playtest: pending` · SPEC §7, §15 "Feedback batch (Nov 22, 2026)"
@@ -553,12 +596,14 @@ User request: a heavy weapon infantry unit with a longer range, that looks diffe
 - **Mixes**: combined 1, entrenched 2, long guns 1.5; approach `forces` plain 0.6, forest 1.4, urban 1.4, pass 1.3.
 - **Render**: `hwt_1`/`hwt_2` (`makeWeaponsTeam`, placeholder.ts: a pale two-tone tube with a lit lens, a sight box, tripod legs, the soldiers); `EnemyArt.squad {prefix, soldiers}` generalizes the squad frames (`unitViews.ts`). `LockViews` (render/lockView.ts, depth 6.3, over the night veil): a red designator line from the muzzle to the hull flickering faster as the lock firms, a pulsing ring on the team, and corner brackets closing from 26 to 12 units on the hull, blinking in the last quarter. **Audio**: `lockOn` (a rising triangle trill, cues.ts/synth.ts) at the team; the launch uses the missile report and the usual missile warning.
 - Tests: `tests/sim/weaponsTeam.test.ts` (range, telegraph, doctrines; the lock event and the launch after it; revealed in a wood while locking; a hit breaks it; a wall breaks it and stops a new one).
+- **Limits:** no bot data yet on how often it lands a missile or how it shifts the doctrines' difficulty.
 
 ### Concealment
 `M1` · `initial` · `playtest: approved` · SPEC §4.5, §7, §15 "Concealment"
 Infantry in forest stay hidden outside the sensor reveal radius (sensor damage shrinks it). Telegraphing, firing, getting hit, and clearing the trees reveal them.
 - `sim/concealment.ts` sets `Enemy.hidden` each step (after projectiles) from `def.canHide`, the material's `conceals` flag (`terrain.concealsAt`), `revealRadius(b)` (chassis `revealRadius` × `sensorRangeScale`), and the reveal triggers (windup, salvo, the `exposed` timer set by `fireRound` and `damageEnemy`; durations in `CONCEALMENT`).
 - Autos and `missileLockTarget` skip hidden units. The renderer fades them out (0.5 s), flashes white when spotted, and hides threat arrows and the lock bracket.
+- **Limits:** no visual cue for the reveal radius. If playtesting shows players don't connect sensor damage with ambushes, try a faint sensor ring or a sweep when forest is near.
 
 ### Conditions: night and storm
 `M3` · `75a116f` · `playtest: pending` · SPEC §3.1, §4.6, §15 "Conditions and events (M3)", §16 Q27
@@ -572,6 +617,7 @@ A battle can be fought at night or in a storm (30% of battle nodes, never the op
 - Tests: `tests/sim/conditions.test.ts` (content, sight and sensors, hidden past sight and given away, enemy sight and the flash mark, never lining up a shot unseen, the squall cycle and its events, its own stream, a squall blinding both sides, map draw rate and determinism, `battleCondition`), `tests/input/demoBot.test.ts` (clips with conditions).
 - **Gotcha:** the veil's `RenderTexture` buffers its commands until `render()`, so every light needs its own `Image` (a pool, `WeatherView.lights`), never one image moved between erases.
 - **Gotcha:** objective targets (`e.objective`) are never hidden by a condition, but the enemy-sight rule applies to every unit (fortress guns too).
+- **Limits:** enemies have no night behavior of their own (they don't close in under the dark on purpose); the veil sits under smoke and dust, so a far-off explosion's smoke draws over the dark unlit. The autos mark the Behemoth at night whenever they fire, so "hold fire" means toggling them off; if players never do, consider letting the AP guns (short, small flashes) not count. The storm's "rain stops forest fires" waits for fire spread (§16 Q6).
 
 ### Structures pay salvage
 `M3` · `7dfa568` · `playtest: pending` · SPEC §8.1, §15 "Feedback batch (Nov 22, 2026)"
@@ -637,6 +683,7 @@ Every battle still ends at the extraction line; **Breach** (destroy the fortress
 - Tests: `tests/sim/objective.test.ts` (map draw and opening, save, objective spec, fortress placement clear of rivers, wall layout incl. a narrow field, guns spawn/face/hold/fire, bonus shares and events, ramming, lost when passed, battle report; convoy layout, pace and slowing, escape, mines, running a hauler down).
 - **Gotcha:** `recipe.fortress` is part of `neighborOf`'s cache key; a fortress chunk's features depend on it.
 - **Gotcha:** `w.objective.total` for a Chase is the haulers that actually spawned (a lane walled in by buildings can drop one).
+- **Limits:** Breach: fortress guns have no garrison of their own (the posts and the bunkers' infantry fill in), and doctrines don't change the gun mix. Chase: the convoy has no smoke screen; a Chase objective's convoy is still 5 haulers at 1.15× cruise (SPEC §16 Q24); laid mines are drawn swept, with no beat beyond a smoke puff when one drops.
 
 ### Directives and sector objectives
 `M3` · `3471074` · `playtest: pending` · SPEC §3, §3.1, §4.4, §10, §15 "Directives and the run summary (M3)", §16 Q24–26
@@ -650,6 +697,7 @@ Three Directives, picked on the title when starting a run, each setting every se
 - Tests: `tests/sim/directives.test.ts` (draw and naming, map modes, objective-only shaping and asks, the command post's pad/spawn/tally/clock cut/loss, fortress fits before the exit, share and par rules, alert pace, sector reward, the last objective deciding the run, plain battles, summaries, blast's biggest kill, save round trip and v10 migration).
 - **Gotcha:** the command post is `e.objective` (amber arrows, lost when left behind) but isn't in `ObjectiveState.total`; check `o.command` for it.
 - **Gotcha:** par uses the battle's actual length (`w.exitX - START_X`), so a practice `?exit=` shortens it too.
+- **Limits:** no profile save yet, so a Directive complete unlocks nothing (M5, §9); the picker offers all three every run (§16 Q26); no chassis choice in the run setup (one chassis). Decapitation: the command post has no garrison or reaction when the guns fall, and its pad can sit right behind a bunker (plowing to it means plowing a bunker too).
 
 ### Run summary
 `M3` · `3471074` · `playtest: pending` · SPEC §3, §5.1, §10
@@ -658,15 +706,19 @@ The screen a run ends on: won (Directive complete), failed, or destroyed. Verdic
 - `scenes/SummaryScene.ts` (key `summary`, data `SummaryData {summary, shot}` in flow.ts): two columns, three with a still. `flow.enterNode` sends `won`/`failed` here (clearing the save); `showSummary`. MapScene's placeholder win screen is gone (a won or failed run at the map is forwarded).
 - Battle scene: on `detonation`, hides the reticle and takes the still `SHOT_DELAY_MS` (450) later with `renderer.snapshotArea` over the field column (texture `summary_shot`; skipped if it fails); the death message waits until then. Then "Enter - run summary" (`Controls.summaryPressed`; R too in a real run, R restarts a practice one).
 - **Gotcha:** CDP key presses need a short hold (~250 ms) between keyDown and keyUp, or `JustDown` misses them.
+- **Limits:** the lower half is empty (room for a cutaway of the Behemoth as it ended, SPEC §4.1's side-on view).
 
 ### Title attract mode
 `M3` · `initial` · `playtest: pending` · SPEC §10
 User request (Nov 2026): the title screen plays short battles in the background.
 - `scenes/demo.ts`: `DemoClip` {seed, biome, approach, mode, preroll, length, battleLength, threat, condition}, `DEMO` {length 10, threat 10, fade 0.4, conditionEvery 4: every fourth clip at night or in a storm, by turns, captioned}, `demoClip(i, seed)` (biomes in `BIOME_IDS` order; biome b on pass k gets mode b + k of assault/chase/breach; approach from the seed; preroll 16 s Assault, 5 s Chase, 7 s Breach on a 1100-unit strip so the fortress is near).
-- `input/demoBot.ts` `demoCommand(w)`: pure autopilot. Holds the lane (`Terrain.laneY`, 8-unit deadband), aims at the nearest visible target (a mode's targets first), fires main and missiles at anything, the autocannon within 200; surges after a convoy, brakes for fortress guns in sight.
+- `input/demoBot.ts` `demoCommand(w)`: the autopilot (smarter since `uncommitted`, Nov 23, 2026, user's request: "use the improved bot to drive the preview"). Pure; it reads only what a player could see (terrain, mines the sensors swept, marked artillery zones, units not hidden). Its one bit of memory, the line it picked, is a `WeakMap` per world.
+  - Driving: every 0.1 s it scores lines across the field (`BOT.lineStep` 6) by what the hull's ground box would cross over the next 208 units, easing over from where it is: each tile's obstacle class (tread damage + 0.3 × armor damage), rock 25, a swept mine 40, fuel tanks and derricks 20 (8 more for each within 32 of the line), ford wear, ground that can't bear the hull 12, a marked artillery zone 30; near tiles count in full, far ones half. Plus a pull toward the guaranteed lane (0.012/unit) and against swerving (0.01/unit), and a new line must beat the current one by 0.6. It brakes when the near 72 units cost 2.5 or more, surges over open ground with nothing in sight, surges after a convoy, holds cruise into a Breach fortress, and brakes for its guns in sight.
+  - Fighting: a battle mode's targets first, then the lowest distance / (1 + 0.35 × threat), ×1.6 for a blocked line of fire; it leads moving targets (400 units/s). With nothing to shoot, the main gun knocks down the nearest structure on its line. Missiles only for objectives and threat ≥ 3; the autocannon within 200.
+  - Measured (12 seeds × Assault/Chase/Breach, the battle's real 21-row field): extracts 64/72 against the lane-holder's 49/72 (threat 7 and 10), ~20% faster, treads end ~35% vs ~23%. Tread loss now comes mostly from dense towns (temperate seed 100 has no way round). Tune it in `BOT`.
 - `DemoBattleScene` (key `demo`, in TopDownBattleScene.ts) extends the battle scene: `init` builds the next clip (a static counter) on a throwaway `newRun`, `persist: false`. Demo mode (`this.demo`): full-width layout (`fullWidthLayout`, no HUD panels), no Controls, HUD, audio, threat arrows, reticle, or cursor change; `prerollDemo` steps the sim ahead (first wave pulled to 3 s after the preroll); `startDemo` sends the scene to the back, captions it, fades in; `updateDemo` steps with the autopilot and fades out then `scene.restart()` after `length` s (sooner after an extraction). Extraction and detonation never touch the run or the save.
 - `TitleScene` launches `demo` under itself, stops it on shutdown, and dims it (a 0.2 overlay, a 0.5 band behind the title and menu).
-- Tests: `tests/input/demoBot.test.ts` (lane, firing, target priority, surge/brake, clip schedule).
+- Tests: `tests/input/demoBot.test.ts` (less tread wear than holding the lane over three battles, steering round buildings, braking into a wall of them, swept vs unseen mines, artillery zones, surging, leading, missiles for the big ones, target priority, surge/brake by mode, clip schedule).
 - **Gotcha:** the battle scene's `hud`, `threats` (and `controls`, `audio`) don't exist in demo mode; use `this.hud?.`.
 - **Gotcha:** a headless screenshot catches the clip's fade-in partway (the loop barely advances in virtual time), so it looks dark.
 
@@ -715,6 +767,7 @@ User request: a score list with the Behemoth's (demon) callsign on the title scr
 - **Gotcha:** practice runs (`BootScene`) call `enterMapNode` on the opening battle before going in, so a practice battle has a node; `?depot=N` opens its depot at that node (leaving it goes to the map).
 - **Gotcha:** the save rejects `next: 'battle'` with `at: null`; `next: 'depot'` with no node is allowed (a practice or migrated depot).
 - **Gotcha:** the map is drawn for the sector of the reachable nodes, so after an objective it already shows the next sector.
+- **Limits:** depot intel lists only the weapons (add-ons and grades depend on the Behemoth when it arrives).
 
 ### Events
 `M3` · `75a116f` · `playtest: pending` · SPEC §3.1, §8.3, §15 "Conditions and events (M3)", §16 Q28
@@ -722,15 +775,16 @@ Map nodes that are a short text choice instead of a battle: about 22% of battles
 - Content: `content/mapEvents.ts` (`MapEventId`, `MAP_EVENT_IDS`, `MAP_EVENTS`: title, text, teaser, options {label, hint, cost?, outcomes {weight, text, effects}}; `EventEffect`: `salvage`, `damage`/`repair` {part treads/armor/sensors, share}, `rearm`, `cache`, `reveal`, `threat` {amount, scope next/sector}). Tuning: `SECTOR_MAP.eventChance` 0.22, `eventFog` 0.5.
 - Map: `NodeKind` adds `'event'`; `MapNode.event: EventIntel {id, seed, fog} | null` (null for every other kind); `placeEvents` in `generateMap` (own stream `hashSeed(seed, 0xe7e7)`, after every sector's intel, so other nodes are unchanged; a shuffled bag, siblings never the same); `hiddenEvent(intel, near, sensors)`, `revealSector(map, s)`; `BattleIntel.shift?` (threat an event moved).
 - Sim: `sim/mapEvents.ts`: `currentEvent`, `canChoose`, `drawOutcome(seed, id, option)` (`hashSeed(seed, 0x0e7c, option)`), `chooseEventOption(run, option)` (pays the cost, applies the effects to cloned snapshot and map, `next: 'map'`, sets `lastEvent`), `changePart`, `rearmAll` (hardpoints and bunkers, not drones), `shiftThreat` + `nextBattles` (the first battle on every route, past depots and events), `effectLines`, `lastEventOutcome`. Run: `RunNext` adds `'event'`; `RunState.lastEvent: EventReport {id, option, outcome} | null`; `enterMapNode` opens an event; `runWhere` "at an event".
-- Scenes: `scenes/EventScene.ts` (key `event`; 1–3, arrows/W/S, or click; Enter or a second click to decide; Enter or click to continue (armed 250 ms after the choice); Esc to the title). `flow.enterNode` routes `event` there. Map: the `event` icon (`mapArt.ts`: an amber hazard diamond on a post over the biome's ground), intel "Event: <title>" and its teaser ("unknown contact" while fogged), the last event's lines in the left panel, *Alerted +N* / *Weakened -N* under a battle's strength.
+- Scenes: `scenes/EventScene.ts` (key `event`; 1–3 (the key hint counts the event's options, `uncommitted`: it said 1-3 on two-option events), arrows/W/S, or click; Enter or a second click to decide; Enter or click to continue (armed 250 ms after the choice); Esc to the title). `flow.enterNode` routes `event` there. Map: the `event` icon (`mapArt.ts`: an amber hazard diamond on a post over the biome's ground), intel "Event: <title>" and its teaser ("unknown contact" while fogged), the last event's lines in the left panel, *Alerted +N* / *Weakened -N* under a battle's strength.
 - Practice: `?event=<id>` (see the table in §1).
 - Tests: `tests/sim/mapEvents.test.ts` (content and font glyphs, placement rules and rates, no sibling repeats, fog, entering, choosing and determinism, cost, driving on, a mined convoy, each effect, `nextBattles`, effect lines, save round trip and rejection, v11 migration).
 - **Gotcha:** a test or practice run can make any node an event by setting `kind`, `battle: null`, and `event`; the save requires `event: null` on every non-event node.
+- **Limits:** none is biome-specific; no event starts a fight, offers a weapon or add-on, or touches the trailer (§16 Q28); the munitions row counts only hardpoint racks, not the ammo bunker.
 
 ### Sector map art
 `M3` · `initial` · `playtest: pending` · SPEC §10, §15 "Callsigns and the map's look (M3)"
 User request (Nov 2026): large terrain icons on the nodes and a map that looks like a real one. Render-only, placeholder art in code.
-- `render/mapArt.ts`: `makeMapIcons` (called from `generatePlaceholderArt`) builds `mapicons_<biome>` sheets of 26×26 frames (`MAP_ICON`) named by `MapIcon`: the five approaches (`plain`, `forest`, `urban`, `river`, `pass`), `mix` (the biome's own: farmhouse, snowfield, factory, dunes and derrick, crater and wreck), `depot` (workshop, hazard-striped door, cyan light, crane), `fog` (cloud with a question mark), `event` (an amber hazard diamond on a post over the biome's ground, tire tracks). Drawn in the biome's tile palette (`biomePalette` from tileArt.ts) on a ground oval, then a 1-pixel ink `outline` pass.
+- `render/mapArt.ts`: `makeMapIcons` (called from `generatePlaceholderArt`) builds `mapicons_<biome>` sheets of 26×26 frames (`MAP_ICON`) named by `MapIcon`: the five approaches (`plain`, `forest`, `urban`, `river`, `pass`), `mix` (the biome's own: farmhouse, snowfield, factory, dunes and derrick, crater and wreck), `depot` (workshop, hazard-striped door, cyan light, crane), `fog` (cloud with a question mark), `event` (an amber hazard diamond on a post over the biome's ground, tire tracks). Drawn in the biome's tile palette (`biomePalette` from looks.ts) on a ground oval, then a 1-pixel ink `outline` pass.
 - `makeMapBackground(scene, key, { w, h, biome, seed, clear, routes, grid })`: the sector's sheet as a canvas texture: paper per biome (`LOOK`), value-noise elevation (`fbm`) with contour lines (every fourth bolder) and lakes, a vegetation noise for woods, a river across the sheet (a dotted dry wash in the desert), faint grid lines, paper grain, darkened edges, then map symbols (trees in the woods, hill marks up high, the biome's scatter, a few settlements) kept off the nodes and routes, and a north arrow.
 - `MapScene`: the sheet fills `mapRect()` (x 136 to width − 166, y 6 to height − 18), framed, with grid references (letters across, numbers down) and the arrow's N as text; lanes are spaced up to `MAX_LANE` 56. A node shows `iconFor(node, hidden)`: its approach, `mix` for none, `fog` while the approach is fogged, `depot`. Battles carry a defenders badge on the icon's shoulder (red; amber when strong; bigger for the objective; normal while strength is fogged). Visited nodes are drawn at half alpha.
 - Seeded from `hashSeed(run seed, 0x3a95, sector)`, so a sector's sheet is the same every visit.
@@ -773,6 +827,7 @@ Core components come in Gen 1/2/3: a higher grade, found in the depot's stock, r
 - Snapshot: `BehemothSnapshot.grades` / `.mods`; `DepotState.grades: DepotGradeItem[]` (own RNG stream `0x9e4d`, so the other stock is unchanged). Depot: actions `installGrade` (reason `Gen N fitted` for a grade at or below) and `mod` (`Doesn't apply`, `Maxed`, `Fixed weapon`); `tracksOf(s, part)` / `partKind`; `coreMax`; resale of a core part = its grade's price + its mods (`modsSpent`); a mount add-on resells and drops its slot's mods. A mod keeps the part's share of integrity (`partMax`/`scaleHp`).
 - UI: stock rows (`Gen 2 reactor  +15t  upgrade`); a grade panel with before>after stats (`coreStats`) and a Replace button; core panels show `Gen N`, their stats, mod buttons, and "Replace with" grades for sale; hardpoint panels a mod row (half-width `modButton`s, short reasons via `SHORT_REASON`); the armor panel a Plate button per zone. The cutaway draws a glow pip per grade over Gen 1 on core parts and frames the part a selected grade replaces.
 - Practice: `?grades=reactor:3,fireControl:2`, `?mods=turret.traverse:3,armor.frontLeft.plate:2`, and `?depot=N` (opens the depot after N battles with 1000 salvage).
+- **Limits:** add-ons, the trailer, and modules take no mods (SPEC §16 Q15); weapon tiers (SPEC §6) are M4.
 
 ---
 
@@ -794,6 +849,7 @@ The armored prow, renamed (it clashed with the Prow hardpoint) and made ram-only
 - Render: `BH.plow`, `bh_plow`/`bh_plow_stub`, cutaway `L.plow`; `BehemothView.onRam()` (on `collision` events) shakes and flashes `plowPlate`. Depot stats: "Takes 80 ram damage (not fire)". `DEPOT.perHp.plow`.
 - Run save v5 renames `armoredProw` to `ramPlow` on the Behemoth and in the depot stock.
 - Bot numbers are in SPEC §15 "Steering and front armor": it still lifts end-of-battle front armor from ~48% to ~82% (rams hit hard), and it loses only 15–30 integrity a battle.
+- **Limits:** ram gear's "adds damage to whatever you hit" (SPEC §4.2) only matters for units that survive a ram (`ramDamage`: the siege tank so far); everything else is still crushed outright. Enemy Behemoths and train cars will use it too.
 
 ### Blowout panels
 `M2` · `initial` · `playtest: pending` · SPEC §5.1, §5.5
@@ -818,6 +874,7 @@ A frame (armor, mass) with 2 module bays; modules install like weapons. It's a p
 - `sim/trailer.ts`: `stepTrailer` (follow, bunkers, jettison, wreck), `hitTrailer`, `trailerBlast`, `stepMines` (`w.mines`), `triggerMine`/`mineAt` (projectiles.ts checks them; splash triggers too).
 - Jettisoned/wrecked trailers drop out of the snapshot. Depot: `installModule`/`removeModule`, `bayPart`, trailer armor in `repairArmor`, bunker rearm per load; `fits` refuses pod slots.
 - Render: `render/trailerView.ts`, `TR` + `tr_*` textures, `trailerPartAt` + trailer components in `ComponentFx`, HUD schematic trailer box + readout + LOST/RELOAD/DROPPED, cutaway trailer at negative x (`cutawayRear`).
+- **Limits:** salvage motes home on the hull's center, so with a trailer they fly over it.
 
 ### Drone bay
 `M2` · `initial` · `playtest: pending` · SPEC §5.1, §15 "Drone bay (M2)"
@@ -826,6 +883,7 @@ A trailer module with 2 repair drones. They patch the most worn tread set from a
 - `sim/drones.ts`: `stepDrones` (runs after the weapons, outside the `!destroyed` block), `Drone` entities in `w.drones` (docked drones aren't entities), `w.revive {work}` / `w.revived`, `droneAt`/`damageDrone` (enemy rounds check drones first), `blastDrones`. Drones hover `OUTBOARD` 4 units outside the pod anchors, or the hull edge would shield them.
 - Revive → `endLastStand(w)` (lastStand.ts) → `leaveSiege` (ai/besiege.ts) resets every unit's AI memory. `hullToWorld(b, p)` is exported from behemoth.ts.
 - Render: `render/droneView.ts` (`DroneViews`: sprite + shadow, sparks while working), `drone` + `drone_shadow` + `tr_droneBay` textures, HUD `drones` row (`2/2 45HP`, or `REV n%`), revive bar and messages, `droneLost` puff, cyan flash on revive.
+- **Limits:** drones fly straight through everything, and only the siege tank's rear gun aims at them on purpose (user's call: stray rounds + splash otherwise; flak/AA enemies later).
 
 ---
 
@@ -837,7 +895,7 @@ Pixel art generated in code (`render/placeholder.ts`); a modular Behemoth (tread
 
 ### Biome tile sheets
 `M3` · `initial` · `playtest: pending` · SPEC §4.6, §11.1
-Terrain art moved from placeholder.ts to `render/tileArt.ts`: a tile sheet and a raised-overlay sheet per biome (`tileSheet(biome)`, `clumpSheet(biome)`, keys `tiles_<biome>`, `clumps_<biome>`), drawn from the same recipes with `BIOME_PAL` overrides (snow and snowy pines, cinders and scrub, sand and sandstone, ash and dead trees). Frames for every new material (craters, teeth, wall, bunker, swept mine, girder/plank decks, crops, ice, thin ice with cracks, drift ridges, sawtooth factory roofs, tank pads, rails, dune ridges, wadi beds, derrick pads, wrecks, glass) and overlays `hedge0/1`, `tank0`, `tank_damaged`, `derrick0`, `derrick_damaged`. `TerrainView` picks the sheets by `terrain.recipe.biome`. Scene effects key on `MATERIALS[ev.mat].debris`; `bridgeCollapse` is a collapse plus a big splash; sounds the same way in `audio/cues.ts` (`CueContext.tile` is gone).
+Terrain art moved from placeholder.ts to `render/tileArt.ts`: a tile sheet and a raised-overlay sheet per biome (`tileSheet(biome)`, `clumpSheet(biome)`, keys `tiles_<biome>`, `clumps_<biome>`), drawn from the same recipes with `BIOME_PAL` overrides (snow and snowy pines, cinders and scrub, sand and sandstone, ash and dead trees). Frames for every new material (craters, teeth, wall, bunker, swept mine, girder/plank decks, crops, ice, thin ice with cracks, drift ridges, sawtooth factory roofs, tank pads, rails, dune ridges, wadi beds, derrick pads, wrecks, glass) and overlays `hedge0/1`, `tank0`, `tank_damaged`, `derrick0`, `derrick_damaged`. `TerrainView` picks the sheets by `terrain.recipe.biome` (and since Nov 23, 2026 by look too: §3 "Ground looks"). Scene effects key on `MATERIALS[ev.mat].debris`; `bridgeCollapse` is a collapse plus a big splash; sounds the same way in `audio/cues.ts` (`CueContext.tile` is gone).
 
 ### Juice
 `M0` · `initial` · `playtest: pending` · SPEC §11.3
@@ -849,6 +907,7 @@ Muzzle flash, recoil, screen shake, explosions, scorch/wreck decals, tread marks
 User request: salvage travels from what was destroyed to the Behemoth, to show when it's gathered.
 - Sim: every payout goes through `paySalvage(w, x, y, amount, source)` (sim/salvage.ts), which banks it and pushes `salvage {x, y, amount, source: unit | tile | objective}`. `destroyEnemy` pays the unit's salvage; the world banks `Terrain.takeSalvageDrops()` (each razed tile at its center; `takeSalvage()` still sums them, for tests); `objectiveTaken` pays the objective share.
 - Render: `SalvageMotes` (render/salvageView.ts, ADD-blended Graphics at depth 6.4): one mote per ~4 salvage (1–8), a short scatter, then homing on the hull's interpolated center at up to 420 units/s; a `+N` tag rises over pickups of 5 or more (objective shares in hot amber). `inFlight()` is held back from the HUD's Salvage line until it lands (`Hud.update(w, dt, pending)`); landing plays `pickup` (a small bright tink; `BattleAudio.pickup`). With the hull gone they drift and fade. The attract mode shows them too.
+- **Limits:** objective shares are banked as targets fall, so the battle report's `salvage` includes them (`bonus` is only the node's reward).
 
 ### Off-screen threat indicators
 `M0` · `initial` · `playtest: pending` · SPEC §7, §10
@@ -857,10 +916,12 @@ Arrows at the field edges for off-screen enemies (left/right edges too during th
 ### Smooth rendering
 `M1` · `initial` · `playtest: pending` · SPEC §11.1
 A physical-pixel canvas, integer camera zoom, render interpolation (`render/interp.ts`), trees on whole pixels. Still needs the user's eyes on a real display.
+- **Limits:** own-mount weapon angles and a siege tank's extra turret aren't interpolated (only the hull and turrets are); fine unless it shows.
 
 ### Schematic HUD
 `M1` · `initial` · `playtest: pending` · SPEC §10
 Components colored by integrity (`damageLevel`, shared with statusFx), hit flashes, component readout, power gauge, weapon strip.
+- **Limits:** the schematic and cutaway place add-ons by hand per chassis (`ADDON_BOX`, `SLOT_BOX`, `TRAILER_BOX`, cutaway `LAYOUTS`); Class I/III will need their own. The power readout shows output (`+10/S`), not net of the drones' drain. Add-ons, the trailer view, and the weapon strip are built at battle start (they only change at depots).
 
 ### Status visuals
 `M1` · `initial` · `playtest: pending` · SPEC §11.3
@@ -887,6 +948,7 @@ Procedural Web Audio: every weapon, blasts, hits, terrain, engine/tread/reactor 
 - `synth.ts`: shared noise/crackle/tread/impulse buffers per context, the `Voice` builder (one pitch factor per play), `RECIPES` per `SoundId`, `Hold` loops for beam/scrape/burn, `EngineLoop`, `ReactorLoop` with the meltdown siren. Mix levels in `LEVEL`/`ENGINE`/`REACTOR`/`HOLD_LEVEL`. Tune by ear here.
 - `battleAudio.ts` (scene glue on Phaser's context; torn down on scene shutdown), `mute.ts` (own state, since Phaser's `mute` getter lags its setter). Sim change: the `intercept` event carries `weapon`.
 - Verified headless (no page errors; pause/mute/restart OK; offline renders show no NaNs, peaks under 0 dB, engine bed ≈ −28 dB RMS, reactor ≈ −32). After the user's first listen (drive too high and whiny): saturation before the engine's low-pass, a lower firing pitch, duller track links, a darker reactor hum, the capacitor whine only in a meltdown.
+- **Limits:** far sounds have no speed-of-sound delay (left out on purpose: it would feel laggy at this scale).
 
 ### Music (proof of concept)
 `M5` (pulled forward) · fee5f6d · `playtest: approved` · SPEC §11.4 "Music", §15 "Music", §16 Q33

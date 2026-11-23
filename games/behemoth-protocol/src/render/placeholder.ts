@@ -5,7 +5,6 @@ import { canvasTexture, type Painter } from './painter';
 import { PAL } from './palette';
 import { ARMOR_STAGES } from './statusFx';
 import { makeMapIcons } from './mapArt';
-import { makeTiles } from './tileArt';
 
 export { CLUMP, TILE } from './tileArt';
 
@@ -61,7 +60,6 @@ export const TR = {
 export const DRONE = { size: 9 };
 
 export function generatePlaceholderArt(scene: Phaser.Scene): void {
-  makeTiles(scene);
   makeMapIcons(scene);
   makeBehemoth(scene);
   makeTrailer(scene);

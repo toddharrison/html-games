@@ -93,6 +93,14 @@ export function conditionFromUrl(): ConditionId | null | undefined {
   return c && c in CONDITIONS ? (c as ConditionId) : undefined;
 }
 
+/**
+ * Playtest shortcut: every battle's look (`?look=autumn`; render/looks.ts ids, for whichever biome
+ * has it). Cosmetic, so it doesn't make a practice run; a look the biome doesn't have is ignored.
+ */
+export function lookFromUrl(): string | undefined {
+  return params.get('look') ?? undefined;
+}
+
 /** Playtest shortcut: open an event (`?event=convoy`; `?event` alone, a random one); null when not asked for. */
 export function eventFromUrl(): MapEventId | 'random' | null {
   if (!params.has('event')) return null;

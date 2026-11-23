@@ -140,7 +140,7 @@ export class EventScene extends Phaser.Scene {
       this.text(x + 12, y + 9, ok ? opt.hint : `Not enough salvage. ${opt.hint}`, PAL.hudDim);
       y += rowH;
     });
-    this.text(x, height - 16, '1-3 or click to choose, Enter to decide    Esc - title', PAL.hudDim);
+    this.text(x, height - 16, `1-${def.options.length} or click to choose, Enter to decide    Esc - title`, PAL.hudDim);
   }
 
   /** The left panel: salvage and the Behemoth's condition, what an option would risk or mend. */

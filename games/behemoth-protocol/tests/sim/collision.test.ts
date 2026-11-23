@@ -6,6 +6,7 @@ import { applyObstacle } from '../../src/sim/collision';
 import type { SimEvent } from '../../src/sim/events';
 import { Rng } from '../../src/sim/rng';
 import { generateChunk, laneCenter, Terrain } from '../../src/sim/terrain';
+import { battleRecipe, battleSeed, newRun } from '../../src/sim/run';
 import { createWorld, stepWorld, type World } from '../../src/sim/world';
 
 const ROWS = 16;
@@ -209,6 +210,17 @@ describe('rock terrain', () => {
       }
     }
     expect(contacts).toBeGreaterThan(seeds.length);
+  });
+
+  it('a hull that never steers slides clear of a face and stays clear (no stall flush against its end)', () => {
+    // Practice seed 4, industrial: the hull slid off a face into a gap exactly its ground box wide,
+    // and the easing left over from the shove pulled it back onto the face's corner every other
+    // tick, a fresh head-on hit each time, until it crawled to a stop at x ≈ 774.
+    const run = newRun(4);
+    const w = createWorld({ seed: battleSeed(run), frameWidth: 324, fieldRows: 21, recipe: battleRecipe(run, { biome: 'industrial' }) });
+    w.encounter.off = true;
+    steps(w, 60 * 40);
+    expect(w.behemoth.x).toBeGreaterThan(1200);
   });
 
   it('is generated, but never inside the guaranteed lane', () => {

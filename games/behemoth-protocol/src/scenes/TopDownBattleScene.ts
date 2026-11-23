@@ -2,7 +2,7 @@ import { DETONATION, TRAILER_MINE } from '../content/tuning';
 import Phaser from 'phaser';
 import { BattleAudio } from '../audio/battleAudio';
 import { toggleMute } from '../audio/mute';
-import { battleLayout, battleLengthFromUrl, conditionFromUrl, doctrineFromUrl, mixFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
+import { battleLayout, battleLengthFromUrl, conditionFromUrl, doctrineFromUrl, lookFromUrl, mixFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
 import { Controls } from '../input/controls';
 import { BehemothView, TrackMarks } from '../render/compositor';
 import { Effects } from '../render/effects';
@@ -194,7 +194,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     if (demo) this.prerollDemo(demo);
     this.stepper = new FixedStepper();
     if (!demo) this.controls = new Controls(this);
-    this.terrainView = new TerrainView(this, this.world.terrain);
+    this.terrainView = new TerrainView(this, this.world.terrain, demo ? undefined : lookFromUrl());
     this.behemothView = new BehemothView(this, this.world.behemoth);
     this.behemothView.root.setDepth(5);
     const trailer = this.world.behemoth.trailer;
@@ -965,7 +965,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     const rel = (b.x - w.frame.left) / this.layout.height;
     return [
       `FPS ${Math.round(this.game.loop.actualFps)}`,
-      `SEED ${w.seed} ${w.terrain.recipe.biome.toUpperCase()} ${(w.terrain.recipe.approach ?? 'mix').toUpperCase()}`,
+      `SEED ${w.seed} ${w.terrain.recipe.biome.toUpperCase()} ${(w.terrain.recipe.approach ?? 'mix').toUpperCase()} ${this.terrainView.look.name.toUpperCase()}`,
       `VX ${b.vx.toFixed(1)} VY ${b.vy.toFixed(1)}`,
       `FRAME ${rel.toFixed(2)}`,
       `ENEMIES ${w.enemies.length} HIDDEN ${w.enemies.filter((e) => e.hidden).length}`,

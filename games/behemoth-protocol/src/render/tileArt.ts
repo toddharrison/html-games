@@ -1,140 +1,23 @@
 import Phaser from 'phaser';
-import { BIOME_IDS, type BiomeId } from '../content/biomes';
+import type { BiomeId } from '../content/biomes';
 import { TERRAIN_GEN } from '../content/tuning';
 import type { Tile } from '../sim/terrain';
 import { Rng } from '../sim/rng';
+import { lookPalette, type Look, type Pal } from './looks';
 import { canvasTexture, type Painter } from './painter';
 import { PAL } from './palette';
 
 /**
- * Procedural placeholder terrain (SPEC §11.1): a tile sheet and a raised-overlay sheet per biome
- * (SPEC §4.6), drawn from the same recipes in the biome's palette. Real art replaces these textures
- * later under the same keys and frame names.
+ * Procedural placeholder terrain (SPEC §11.1): a tile sheet and a raised-overlay sheet per biome and
+ * look (SPEC §4.6), drawn from the same recipes in the biome's palette with the look's colors on
+ * top. Real art replaces these textures later under the same keys and frame names.
  */
 
 export const TILE = TERRAIN_GEN.tileSize;
 
-/** Texture keys of a biome's tile sheet and overlay sheet. */
-export const tileSheet = (biome: BiomeId) => `tiles_${biome}`;
-export const clumpSheet = (biome: BiomeId) => `clumps_${biome}`;
-
-/** A palette with the base one's color names (any colors). */
-export type Pal = { [K in keyof typeof PAL]: string };
-
-/**
- * Each biome's palette over the base (temperate) one: the ground, trees, roofs, and water change;
- * everything that isn't terrain keeps its colors.
- */
-const BIOME_PAL: Record<BiomeId, Partial<Pal>> = {
-  temperate: {},
-  arctic: {
-    // Snow for grass, frozen earth for dirt, snow-laden pines, snow on the roofs.
-    grass: '#d4dde3',
-    grassLight: '#eaf0f3',
-    grassDark: '#b4c1ca',
-    dirt: '#7d7c76',
-    dirtDark: '#5f605c',
-    canopyShadow: '#132219',
-    canopy: '#24443a',
-    canopyLight: '#35604f',
-    canopyHi: '#e9f1f3',
-    trunk: '#43352a',
-    roofAHi: '#eef3f5',
-    roofBHi: '#eef3f5',
-    pavement: '#767d84',
-    waterDeep: '#15293a',
-    water: '#1f3c50',
-    waterLight: '#3a6077',
-    shallow: '#476b78',
-    shallowLight: '#6a8e9a',
-    silt: '#5d6c72',
-  },
-  industrial: {
-    // Cinders and oily dirt for ground, scrubby olive trees, grimy concrete, murky water.
-    grass: '#4a4943',
-    grassLight: '#57554e',
-    grassDark: '#3b3a35',
-    dirt: '#55473a',
-    dirtDark: '#3f3429',
-    canopyShadow: '#22281a',
-    canopy: '#3c4529',
-    canopyLight: '#525d37',
-    canopyHi: '#6a7444',
-    pavement: '#3d3e40',
-    roofA: '#6e5040',
-    roofADark: '#533b2f',
-    roofAHi: '#86624f',
-    water: '#2f3e37',
-    waterDeep: '#222e29',
-    waterLight: '#465a4f',
-    shallow: '#47544a',
-    shallowLight: '#5d6c5f',
-    silt: '#4e5242',
-  },
-  desert: {
-    // Sand for grass, sandstone for rock, dusty palms and scrub, adobe roofs.
-    grass: '#c6ad78',
-    grassLight: '#d8c290',
-    grassDark: '#ad935f',
-    dirt: '#9c7f52',
-    dirtDark: '#7f6541',
-    canopyShadow: '#343c1b',
-    canopy: '#58682f',
-    canopyLight: '#71833d',
-    canopyHi: '#8fa04f',
-    trunk: '#6a4e30',
-    roofA: '#b5845a',
-    roofAHi: '#cfa074',
-    roofADark: '#93673f',
-    roofB: '#b09f84',
-    roofBHi: '#c9baa0',
-    roofBDark: '#8e7f68',
-    pavement: '#9a8766',
-    stone: '#a88b64',
-    stoneHi: '#c7aa80',
-    stoneDark: '#7b6345',
-    gravel: '#8d7451',
-    rubble: '#a89676',
-    rubbleDark: '#857456',
-  },
-  wasteland: {
-    // Ash for grass, scorched earth, dead grey-brown trees, soot-dark roofs, a toxic river.
-    grass: '#55524b',
-    grassLight: '#625e56',
-    grassDark: '#46433d',
-    dirt: '#594a3d',
-    dirtDark: '#41362c',
-    canopyShadow: '#2a251f',
-    canopy: '#4a4237',
-    canopyLight: '#5d5446',
-    canopyHi: '#706653',
-    trunk: '#3a2f25',
-    roofA: '#5e4136',
-    roofAHi: '#735245',
-    roofADark: '#46302a',
-    roofB: '#5f6064',
-    roofBHi: '#76777b',
-    roofBDark: '#47484b',
-    pavement: '#46443f',
-    water: '#3b4a2b',
-    waterDeep: '#2b371f',
-    waterLight: '#58703a',
-    shallow: '#4f5a36',
-    shallowLight: '#6b7a46',
-    silt: '#4b4a35',
-  },
-};
-
-/** A biome's full palette (the base one with its terrain colors swapped in). */
-export function biomePalette(biome: BiomeId): Pal {
-  return { ...PAL, ...BIOME_PAL[biome] };
-}
-
 const TILE_FRAMES = [
-  'ground0',
-  'ground1',
-  'ground2',
-  'ground3',
+  // Open ground is painted under the tiles (render/ground.ts); its tile is see-through.
+  'clear',
   'road0',
   'road1',
   'forest_floor',
@@ -208,7 +91,7 @@ export function tileFrame(t: Tile, shimmer: number): TileFrame {
   const standing = t.state === 'intact' || t.state === 'damaged';
   switch (t.mat) {
     case 'ground':
-      return `ground${t.variant & 3}` as TileFrame;
+      return 'clear';
     case 'road':
       return `road${v1}` as TileFrame;
     case 'forest':
@@ -232,7 +115,7 @@ export function tileFrame(t: Tile, shimmer: number): TileFrame {
     case 'bunker':
       return standing ? (`${t.mat}_${t.state}` as TileFrame) : t.state === 'destroyed' ? 'building_destroyed' : 'building_flattened';
     case 'mine':
-      return t.seen ? 'mine' : (`ground${t.variant & 3}` as TileFrame);
+      return t.seen ? 'mine' : 'clear';
     case 'bridge':
     case 'lightBridge':
       return t.state === 'damaged' ? (`${t.mat}_damaged` as TileFrame) : (`${t.mat}_intact` as TileFrame);
@@ -298,25 +181,31 @@ export function tileOverlay(t: Tile): ClumpFrame | null {
   }
 }
 
-export function makeTiles(scene: Phaser.Scene): void {
-  for (const biome of BIOME_IDS) {
-    const pal = biomePalette(biome);
-    const tex = canvasTexture(scene, tileSheet(biome), TILE * TILE_FRAMES.length, TILE, (p) => {
-      TILE_FRAMES.forEach((name, i) => {
-        p.ox = i * TILE;
-        drawTile(p, name, new Rng(1000 + i * 77), pal);
-      });
+/**
+ * The tile and overlay sheets for a biome in a look (render/looks.ts), drawn the first time a battle
+ * needs them. Returns their texture keys.
+ */
+export function lookSheets(scene: Phaser.Scene, biome: BiomeId, look: Look): { tiles: string; clumps: string } {
+  const tiles = `tiles_${biome}_${look.id}`;
+  const clumps = `clumps_${biome}_${look.id}`;
+  if (scene.textures.exists(tiles) && scene.textures.exists(clumps)) return { tiles, clumps };
+  const pal = lookPalette(biome, look);
+  const tex = canvasTexture(scene, tiles, TILE * TILE_FRAMES.length, TILE, (p) => {
+    TILE_FRAMES.forEach((name, i) => {
+      p.ox = i * TILE;
+      drawTile(p, name, new Rng(1000 + i * 77), pal);
     });
-    TILE_FRAMES.forEach((name, i) => tex.add(name, 0, i * TILE, 0, TILE, TILE));
+  });
+  TILE_FRAMES.forEach((name, i) => tex.add(name, 0, i * TILE, 0, TILE, TILE));
 
-    const clumps = canvasTexture(scene, clumpSheet(biome), CLUMP * CLUMP_FRAMES.length, CLUMP, (p) => {
-      CLUMP_FRAMES.forEach((name, i) => {
-        p.ox = i * CLUMP;
-        drawClump(p, name, new Rng(3000 + i * 31), pal, biome);
-      });
+  const sheet = canvasTexture(scene, clumps, CLUMP * CLUMP_FRAMES.length, CLUMP, (p) => {
+    CLUMP_FRAMES.forEach((name, i) => {
+      p.ox = i * CLUMP;
+      drawClump(p, name, new Rng(3000 + i * 31), pal, biome);
     });
-    CLUMP_FRAMES.forEach((name, i) => clumps.add(name, 0, i * CLUMP, 0, CLUMP, CLUMP));
-  }
+  });
+  CLUMP_FRAMES.forEach((name, i) => sheet.add(name, 0, i * CLUMP, 0, CLUMP, CLUMP));
+  return { tiles, clumps };
 }
 
 function drawClump(p: Painter, name: ClumpFrame, rng: Rng, pal: Pal, biome: BiomeId): void {
@@ -443,7 +332,6 @@ function derrick(p: Painter, rng: Rng, c: number, bent: boolean): void {
 
 /** A burnt-out vehicle from above: hull, a turret ring with no turret, scorch around it. */
 function wreck(p: Painter, rng: Rng, pal: Pal, kind: 0 | 1, damaged: boolean): void {
-  grass(p, rng, pal);
   // A scorch ring around it, so it stands out on ash or sand.
   p.disc(8, 8, 8, pal.ash, undefined, pal.hole);
   p.speckle(rng, 0, 0, TILE, TILE, 10, pal.ash);
@@ -467,25 +355,6 @@ function wreck(p: Painter, rng: Rng, pal: Pal, kind: 0 | 1, damaged: boolean): v
   if (damaged) {
     p.rect(rng.int(x, x + w - 4), rng.int(y, y + h - 3), 4, 3, pal.hole);
     p.speckle(rng, x, y, w, h, 6, pal.hole);
-  }
-}
-
-function grass(p: Painter, rng: Rng, pal: Pal, variant = 0): void {
-  p.rect(0, 0, TILE, TILE, pal.grass);
-  p.speckle(rng, 0, 0, TILE, TILE, 12, pal.grassLight);
-  p.speckle(rng, 0, 0, TILE, TILE, 12, pal.grassDark);
-  if (variant === 2) {
-    const x = rng.int(3, 11);
-    const y = rng.int(3, 11);
-    p.px(x, y, pal.canopyLight);
-    p.px(x + 1, y - 1, pal.canopyLight);
-    p.px(x + 2, y, pal.canopyLight);
-  }
-  if (variant === 3) {
-    const x = rng.int(2, 10);
-    const y = rng.int(2, 10);
-    p.rect(x, y, 3, 2, pal.dirt);
-    p.px(x + 1, y + 2, pal.dirtDark);
   }
 }
 
@@ -524,9 +393,8 @@ function rubble(p: Painter, rng: Rng, pal: Pal): void {
   }
 }
 
-/** A shell hole: a dark bowl with a lit far rim and thrown-out dirt. */
+/** A shell hole in open ground: a dark bowl with a lit far rim and thrown-out dirt. */
 function crater(p: Painter, rng: Rng, pal: Pal, big: boolean): void {
-  grass(p, rng, pal);
   const r = big ? 6.5 : 5;
   p.speckle(rng, 1, 1, 14, 14, 14, pal.dirt);
   p.disc(8, 8, r + 1, pal.dirt, pal.dirt, pal.dirtDark);
@@ -554,11 +422,7 @@ function deck(p: Painter, rng: Rng, pal: Pal, light: boolean, damaged: boolean):
 
 function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
   switch (name) {
-    case 'ground0':
-    case 'ground1':
-    case 'ground2':
-    case 'ground3':
-      grass(p, rng, pal, Number(name.slice(-1)));
+    case 'clear':
       break;
     case 'road0':
     case 'road1':
@@ -594,7 +458,6 @@ function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
       p.px(rng.int(2, 13), rng.int(2, 13), pal.ember);
       break;
     case 'forest_flattened':
-      grass(p, rng, pal);
       p.speckle(rng, 0, 0, TILE, TILE, 16, pal.grassDark);
       p.speckle(rng, 0, 0, TILE, TILE, 8, pal.canopy);
       for (let i = 0; i < 3; i++) {
@@ -679,8 +542,7 @@ function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
       break;
     case 'tankTrap_intact':
     case 'tankTrap_damaged': {
-      // Three concrete pyramids, lit from the upper left, with shadows down-right.
-      grass(p, rng, pal);
+      // Three concrete pyramids, lit from the upper left, with shadows down-right, on open ground.
       const teeth: [number, number][] = name === 'tankTrap_intact' ? [[4, 4], [11, 6], [6, 11]] : [[4, 4], [10, 10]];
       for (const [x, y] of teeth) {
         p.rect(x - 1, y + 1, 6, 5, 'rgba(10,10,8,0.45)');
@@ -695,7 +557,6 @@ function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
       break;
     }
     case 'tankTrap_down':
-      grass(p, rng, pal);
       for (let i = 0; i < 7; i++) p.rect(rng.int(1, 13), rng.int(1, 13), rng.int(1, 2), rng.int(1, 2), rng.pick([PAL.concrete, PAL.concreteDark]));
       break;
     case 'wall_intact':
@@ -726,8 +587,7 @@ function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
       }
       break;
     case 'mine':
-      // A swept mine: ground with the mine's lid showing and a warning tick beside it.
-      grass(p, rng, pal);
+      // A swept mine: the mine's lid showing through the ground and a warning tick beside it.
       p.disc(8, 8, 3.5, PAL.mineBody, PAL.mineHi);
       p.px(8, 8, PAL.mineHi);
       p.rect(2, 2, 2, 1, pal.warn);

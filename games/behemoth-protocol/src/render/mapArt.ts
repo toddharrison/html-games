@@ -4,7 +4,7 @@ import { BIOME_IDS, type BiomeId } from '../content/biomes';
 import { Rng, hashSeed } from '../sim/rng';
 import { canvasTexture, Painter } from './painter';
 import { PAL } from './palette';
-import { biomePalette, type Pal } from './tileArt';
+import { biomePalette, type Pal } from './looks';
 
 /**
  * Procedural placeholder art for the sector map (SPEC §10): a large terrain icon per node (what the

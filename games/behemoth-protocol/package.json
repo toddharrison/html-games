@@ -12,7 +12,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
-    "render:music": "node scripts/render-music.mjs"
+    "render:music": "node scripts/render-music.mjs",
+    "playtest": "node scripts/playtest.mjs"
   },
   "dependencies": {
     "phaser": "^4.2.1"

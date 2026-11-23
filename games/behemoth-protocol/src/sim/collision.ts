@@ -211,10 +211,12 @@ function deflectOffRock(w: World, dt: number, steer: -1 | 0 | 1): void {
       b.vy = d.dir * Math.max(DEFLECT.minSlideSpeed, b.vx * DEFLECT.slideSpeedScale);
     }
   } else if (d.dir !== 0) {
-    // Clear of the face: keep drifting with the shove, but no faster than steering allows.
+    // Clear of the face: keep drifting with the shove, but no faster than steering allows, and with
+    // no sideways pull left over from easing out of the shove (it would carry it back onto the face).
     d.dir = 0;
     const maxLat = lateralLimit(b);
     b.vy = clamp(b.vy, -maxLat, maxLat);
+    b.ay = 0;
   }
 
   const contact = facePoint ?? side;

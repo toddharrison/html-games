@@ -32,6 +32,9 @@ import {
 import { currentBiome, leaveDepot, type BehemothSnapshot, type RunState } from '../sim/run';
 import { checkpoint, enterNode, type RunContext } from './flow';
 import { fitCamera } from './screen';
+import { keyLabel, usingPad } from '../input/gamepad';
+import { PadCursor } from '../input/padCursor';
+import { padMenu } from '../input/padMenu';
 
 /**
  * The depot between battles (SPEC §8.2): the side-on cutaway of the Behemoth with every part
@@ -56,8 +59,22 @@ const CORE_INFO: Record<CoreComponent, [string, string]> = {
   magazine: ['Magazine', 'Holds the hull\'s missiles and shells. Destroyed\nwith rounds in it: it cooks off inside the hull,\nand every round is lost.'],
 };
 
-const ROLE_NAME: Record<WeaponDef['role'], string> = { main: 'Main (LMB)', secondary: 'Secondary (RMB)', missile: 'Missile (Space)', auto: 'Auto' };
-const BINDING_NAME: Record<Binding, string> = { lmb: 'LMB', rmb: 'RMB', space: 'SPC', auto: 'Auto' };
+const ROLE_NAME: Record<WeaponDef['role'], string> = { main: 'Main', secondary: 'Secondary', missile: 'Missile', auto: 'Auto' };
+const ROLE_BINDING: Record<WeaponDef['role'], Binding> = { main: 'lmb', secondary: 'rmb', missile: 'space', auto: 'auto' };
+const KEY_BINDING_NAME: Record<Binding, string> = { lmb: 'LMB', rmb: 'RMB', space: 'SPC', auto: 'Auto' };
+const PAD_BINDING_NAME: Record<Binding, string> = { lmb: 'RT', rmb: 'LT', space: 'RB', auto: 'Auto' };
+
+/** A trigger's name: its mouse button or key, or its pad trigger once the pad is in use. */
+function bindingName(b: Binding): string {
+  return (usingPad() ? PAD_BINDING_NAME : KEY_BINDING_NAME)[b];
+}
+
+/** A weapon's role, with its default trigger: "Main (LMB)". */
+function roleName(role: WeaponDef['role']): string {
+  const b = ROLE_BINDING[role];
+  if (b === 'auto') return ROLE_NAME[role];
+  return `${ROLE_NAME[role]} (${b === 'space' && !usingPad() ? 'Space' : bindingName(b)})`;
+}
 
 export class DepotScene extends Phaser.Scene {
   private ctx!: RunContext;
@@ -113,6 +130,10 @@ export class DepotScene extends Phaser.Scene {
     kb.on('keydown-Z', () => this.undo());
     kb.on('keydown-BACKSPACE', () => this.undo());
     kb.on('keydown-ESC', () => this.select(null));
+    // The pad: a cursor (left stick, D-pad jumps between buttons and parts, A clicks), B clears
+    // the selection, Y undoes, Start rolls out.
+    new PadCursor(this, () => this.clickTargets());
+    padMenu(this, { b: () => this.select(null), y: () => this.undo(), start: () => this.leave() }, () => this.refresh());
     this.refresh();
   }
 
@@ -127,6 +148,18 @@ export class DepotScene extends Phaser.Scene {
       if (x >= bx - 2 && x <= bx + p.box.w + 2 && y >= by - 2 && y <= by + p.box.h + 2) return p.id;
     }
     return onHull(this.run.behemoth.chassis, x - this.cut.x, y - this.cut.y) ? 'armor' : null;
+  }
+
+  /** Centers of everything the pad cursor can jump to: the panel's buttons and the cutaway's parts. */
+  private clickTargets(): { x: number; y: number }[] {
+    const out: { x: number; y: number }[] = [];
+    for (const o of this.ui) {
+      if (!(o instanceof Phaser.GameObjects.Rectangle) || !o.input?.enabled) continue;
+      const b = o.getBounds();
+      out.push({ x: b.centerX, y: b.centerY });
+    }
+    for (const p of this.parts) out.push({ x: this.cut.x + p.box.x + p.box.w / 2, y: this.cut.y + p.box.y + p.box.h / 2 });
+    return out;
   }
 
   private select(sel: Selection): void {
@@ -332,7 +365,7 @@ export class DepotScene extends Phaser.Scene {
       const w = WEAPONS[item.weapon];
       const selected = this.selection?.kind === 'stock' && this.selection.index === i;
       const name = `${selected ? '> ' : ''}${w.name}`;
-      const label = `${name.padEnd(24)}${w.size}  ${`${w.mass ?? 0}t`.padStart(4)}  ${BINDING_NAME[defaultBinding(w)]}`;
+      const label = `${name.padEnd(24)}${w.size}  ${`${w.mass ?? 0}t`.padStart(4)}  ${bindingName(defaultBinding(w))}`;
       row(label, DEPOT_WEAPONS[item.weapon]?.price ?? 0, item.sold, () => this.select({ kind: 'stock', index: i }));
     });
     depot.addons.forEach((item, i) => {
@@ -617,7 +650,7 @@ export class DepotScene extends Phaser.Scene {
     const allowed = allowedBindings(weapon, slot);
     this.text(x, y + 3, 'Fires on', PAL.hudDim);
     BINDINGS.forEach((binding, i) => {
-      if (allowed.includes(binding)) this.choice(x, y, w, i, BINDING_NAME[binding], binding === current, { kind: 'bind', slot: slot.id, binding });
+      if (allowed.includes(binding)) this.choice(x, y, w, i, bindingName(binding), binding === current, { kind: 'bind', slot: slot.id, binding });
     });
     y += 13;
     // Channels matter only for weapons that can go on Auto without being Auto by default.
@@ -628,7 +661,7 @@ export class DepotScene extends Phaser.Scene {
       this.text(x, y, note, ch.used >= ch.max && current !== 'auto' ? PAL.warn : PAL.hudDim);
       y += 8;
     } else if (current !== defaultBindingFor(weapon, slot)) {
-      this.text(x, y, `Default ${BINDING_NAME[defaultBindingFor(weapon, slot)]}`, PAL.hudDim);
+      this.text(x, y, `Default ${bindingName(defaultBindingFor(weapon, slot))}`, PAL.hudDim);
       y += 8;
     }
     return y;
@@ -678,7 +711,7 @@ export class DepotScene extends Phaser.Scene {
       this.text(x, y, weapon.blurb, PAL.hudText);
       y += 9;
     }
-    this.text(x, y, `${ROLE_NAME[weapon.role]}, ${weapon.category}, ${weapon.mass ?? 0} t${sub ? `\n${sub}` : ''}`, PAL.hudDim);
+    this.text(x, y, `${roleName(weapon.role)}, ${weapon.category}, ${weapon.mass ?? 0} t${sub ? `\n${sub}` : ''}`, PAL.hudDim);
     y += sub ? 17 : 9;
     this.text(x, y, weaponStats(weapon), PAL.hudDim);
     return y + 11;
@@ -766,9 +799,9 @@ export class DepotScene extends Phaser.Scene {
     const { x, w } = this.panel;
     const y = RESOLUTION.height - 30;
     const left = this.run.depot?.actions ?? 0;
-    if (this.confirmLeave) this.text(x, y - 11, `${left} ${left === 1 ? 'action' : 'actions'} unused. Enter again to roll out.`, PAL.warn);
-    this.button(x, y, Math.floor(w / 2) - 2, 'Undo (Z)', '', this.history.length > 0, () => this.undo());
-    this.button(x + Math.floor(w / 2) + 2, y, Math.ceil(w / 2) - 2, 'Roll out (Enter)', '', true, () => this.leave());
+    if (this.confirmLeave) this.text(x, y - 11, `${left} ${left === 1 ? 'action' : 'actions'} unused. ${keyLabel('Enter', 'Start')} again to roll out.`, PAL.warn);
+    this.button(x, y, Math.floor(w / 2) - 2, `Undo (${keyLabel('Z', 'Y')})`, '', this.history.length > 0, () => this.undo());
+    this.button(x + Math.floor(w / 2) + 2, y, Math.ceil(w / 2) - 2, `Roll out (${keyLabel('Enter', 'Start')})`, '', true, () => this.leave());
   }
 }
 

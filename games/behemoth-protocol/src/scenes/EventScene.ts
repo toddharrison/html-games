@@ -11,6 +11,8 @@ import { treadIntegrity } from '../sim/behemoth';
 import { restoreBehemoth } from '../sim/run';
 import { checkpoint, enterNode, type RunContext } from './flow';
 import { fitCamera } from './screen';
+import { usingPad } from '../input/gamepad';
+import { padMenu } from '../input/padMenu';
 
 /**
  * An event node (SPEC §8.3): the scene, the options (1–3, arrows, or click; Enter or a second click
@@ -53,6 +55,18 @@ export class EventScene extends Phaser.Scene {
     kb.on('keydown-SPACE', () => this.confirm());
     // Back to the title: the run is saved at the event (undecided) or just past it.
     kb.on('keydown-ESC', () => this.scene.start('title'));
+    // The pad: up/down to choose, A to decide (and carry on), B to the title.
+    padMenu(
+      this,
+      {
+        up: () => this.pick((this.selected + count - 1) % count),
+        down: () => this.pick((this.selected + 1) % count),
+        a: () => this.confirm(),
+        b: () => this.scene.start('title'),
+      },
+      // The result screen arms a click when drawn, so only the choice screen redraws.
+      () => !this.decided && this.draw(),
+    );
     this.draw();
   }
 
@@ -118,7 +132,7 @@ export class EventScene extends Phaser.Scene {
         this.text(x + 4, y, line, line.startsWith('-') || line.includes(' -') || line.includes('alerted') ? PAL.amber : PAL.glow);
         y += 9;
       }
-      this.text(x, height - 16, 'Enter or click - continue', PAL.hudText);
+      this.text(x, height - 16, usingPad() ? 'A - continue' : 'Enter or click - continue', PAL.hudText);
       // Armed a moment later, so the click that chose can't also skip the result.
       this.time.delayedCall(250, () => this.input.once('pointerdown', () => this.confirm()));
       return;
@@ -140,7 +154,12 @@ export class EventScene extends Phaser.Scene {
       this.text(x + 12, y + 9, ok ? opt.hint : `Not enough salvage. ${opt.hint}`, PAL.hudDim);
       y += rowH;
     });
-    this.text(x, height - 16, `1-${def.options.length} or click to choose, Enter to decide    Esc - title`, PAL.hudDim);
+    this.text(
+      x,
+      height - 16,
+      usingPad() ? 'D-pad to choose, A to decide    B - title' : `1-${def.options.length} or click to choose, Enter to decide    Esc - title`,
+      PAL.hudDim,
+    );
   }
 
   /** The left panel: salvage and the Behemoth's condition, what an option would risk or mend. */

@@ -795,3 +795,28 @@ export const DEPOT = {
    */
   resale: 0.65,
 };
+
+/**
+ * Gamepad (SPEC §4.3): a standard-mapping controller drives the battle twin-stick style and works
+ * the menus with the D-pad and face buttons. Stick values run -1..1; speeds are in internal
+ * (unzoomed) pixels per second.
+ */
+export const PAD = {
+  /** Stick travel ignored around center (radial), so a worn stick doesn't drift. */
+  deadzone: 0.2,
+  /** Left stick past this (after the deadzone) surges, brakes, or steers. */
+  driveThreshold: 0.35,
+  /** A trigger counts as pulled past this much travel. */
+  triggerThreshold: 0.3,
+  /** Reticle speed at full right-stick tilt. */
+  aimSpeed: 340,
+  /** Tilt is raised to this power before scaling the speed: small tilts give fine aim. */
+  aimCurve: 2,
+  /** The depot's pad cursor speed at full left-stick tilt. */
+  cursorSpeed: 220,
+  /** Menus: a held direction repeats after this many seconds, then every `repeatRate` seconds. */
+  repeatDelay: 0.4,
+  repeatRate: 0.14,
+  /** Left stick past this moves the menu selection. */
+  menuThreshold: 0.5,
+};

@@ -10,6 +10,8 @@ import type { ScoreEntry } from '../sim/scores';
 import { newRun, runWhere, type RunState } from '../sim/run';
 import { checkpoint, enterNode, randomSeed, type RunContext } from './flow';
 import { fitCamera } from './screen';
+import { keyLabel } from '../input/gamepad';
+import { padMenu } from '../input/padMenu';
 import { VERSION } from '../version';
 
 /**
@@ -28,6 +30,7 @@ export class TitleScene extends Phaser.Scene {
   private choosing: number | null = null;
   private picker: Phaser.GameObjects.BitmapText[] = [];
   private orders!: Phaser.GameObjects.BitmapText;
+  private pickerHint!: Phaser.GameObjects.BitmapText;
 
   constructor() {
     super('title');
@@ -70,7 +73,8 @@ export class TitleScene extends Phaser.Scene {
     });
     this.orders = text(top + 22 + DIRECTIVE_IDS.length * 12 + 8, '', PAL.hudText);
     this.picker.push(this.orders);
-    this.picker.push(text(Math.round(height * 0.66), 'Enter - roll out    Esc - back', PAL.hudText));
+    this.pickerHint = text(Math.round(height * 0.66), '', PAL.hudText);
+    this.picker.push(this.pickerHint);
     for (const p of this.picker) p.setVisible(false);
     this.refresh();
 
@@ -79,22 +83,30 @@ export class TitleScene extends Phaser.Scene {
     kb.on('keydown-ENTER', go);
     kb.on('keydown-SPACE', go);
     kb.on('keydown-C', () => this.choosing === null && this.saved && this.continueRun());
-    kb.on('keydown-N', () => {
+    const fresh = () => {
       if (this.choosing !== null) return;
       if (!this.saved || this.confirmNew) this.openPicker();
       else {
         this.confirmNew = true;
         this.refresh();
       }
-    });
-    kb.on('keydown-ESC', () => {
+    };
+    kb.on('keydown-N', fresh);
+    const back = () => {
       this.confirmNew = false;
       this.choosing = null;
       this.refresh();
-    });
+    };
+    kb.on('keydown-ESC', back);
     const pick = (d: number) => this.choosing !== null && this.choose((this.choosing + d + DIRECTIVE_IDS.length) % DIRECTIVE_IDS.length);
     for (const k of ['UP', 'W', 'LEFT', 'A']) kb.on(`keydown-${k}`, () => pick(-1));
     for (const k of ['DOWN', 'S', 'RIGHT', 'D']) kb.on(`keydown-${k}`, () => pick(1));
+    // The pad: A (or Start) as Enter, B as Esc, Y as N, the D-pad or left stick to choose.
+    padMenu(
+      this,
+      { a: go, start: go, b: back, y: fresh, up: () => pick(-1), left: () => pick(-1), down: () => pick(1), right: () => pick(1) },
+      () => this.refresh(),
+    );
     DIRECTIVE_IDS.forEach((_, i) => kb.on(`keydown-${['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE'][i]}`, () => this.choosing !== null && this.choose(i)));
   }
 
@@ -145,10 +157,14 @@ export class TitleScene extends Phaser.Scene {
     this.prompt.setVisible(!picking);
     const s = this.saved;
     let lines: string[];
-    if (!s) lines = ['Enter - new run'];
-    else if (this.confirmNew) lines = ['Abandon the saved run?', '', 'N - yes, start over', 'Esc - keep it'];
+    const enter = keyLabel('Enter', 'A');
+    const n = keyLabel('N', 'Y');
+    const esc = keyLabel('Esc', 'B');
+    this.pickerHint.setText(fontText(`${enter} - roll out    ${esc} - back`));
+    if (!s) lines = [`${enter} - new run`];
+    else if (this.confirmNew) lines = ['Abandon the saved run?', '', `${n} - yes, start over`, `${esc} - keep it`];
     else {
-      lines = [`Enter - continue ${s.callsign} (${runWhere(s)}, ${s.salvage} salvage)`, 'N - new run'];
+      lines = [`${enter} - continue ${s.callsign} (${runWhere(s)}, ${s.salvage} salvage)`, `${n} - new run`];
     }
     this.prompt.setText(fontText(lines.join('\n'))).setCenterAlign();
   }

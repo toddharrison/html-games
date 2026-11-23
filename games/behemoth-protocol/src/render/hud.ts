@@ -28,6 +28,7 @@ import type { DirectiveGoal } from '../content/directives';
 import { FONT_KEY, fontText } from './pixelFont';
 import { hex, PAL } from './palette';
 import { damageLevel } from './statusFx';
+import { usingPad } from '../input/gamepad';
 import { objectivePercent } from '../sim/objective';
 
 /**
@@ -126,11 +127,19 @@ const FLASH_TIME = 0.15;
 
 const BINDING_ORDER: Binding[] = ['lmb', 'rmb', 'space', 'auto'];
 const TRIGGER_KEY: Record<Exclude<Binding, 'auto'>, string> = { lmb: 'LMB', rmb: 'RMB', space: 'SPC' };
+/** The pad's triggers for the same bindings, and its D-pad arrows for the auto groups 1–4. */
+const PAD_TRIGGER: Record<Exclude<Binding, 'auto'>, string> = { lmb: 'RT', rmb: 'LT', space: 'RB' };
+const PAD_AUTO = ['', 'D^', 'D>', 'DV', 'D<'];
 
-/** The strip's key for a mount: its trigger, or its toggle group on Auto. */
+/** The strip's key for a mount: its trigger, or its toggle group on Auto (as the pad names it, if in use). */
 function stripKey(b: BehemothState, h: HardpointState): string {
   const binding = firingBinding(b, h);
-  return binding === 'auto' ? String(autoGroupOf(h.weapon!)) : TRIGGER_KEY[binding];
+  const pad = usingPad();
+  if (binding === 'auto') {
+    const group = autoGroupOf(h.weapon!);
+    return pad ? PAD_AUTO[group]! : String(group);
+  }
+  return (pad ? PAD_TRIGGER : TRIGGER_KEY)[binding];
 }
 
 /** One row of the weapon strip: identical weapons on the same binding are grouped. */
@@ -157,6 +166,9 @@ export class Hud {
   private readonly components: Phaser.GameObjects.BitmapText;
   private readonly componentValues: Phaser.GameObjects.BitmapText;
   private readonly stats: Phaser.GameObjects.BitmapText;
+  /** The key hints at the bottom left: keyboard and mouse, or the pad's. */
+  private readonly keyHints: Phaser.GameObjects.BitmapText;
+  private readonly padHints: Phaser.GameObjects.BitmapText;
   /** The alert clock's readout in the left panel, above the key hints. */
   private readonly alertLabel: Phaser.GameObjects.BitmapText;
   private readonly alertText: Phaser.GameObjects.BitmapText;
@@ -246,11 +258,19 @@ export class Hud {
       }
     }
 
+    // Key hints for the keyboard and mouse, or the pad's (the same number of lines), whichever
+    // was used last.
     const hints = ['W/S  speed', 'A/D  steer', 'LMB RMB SPC  fire', '1-4  autos on/off', 'X    final protocol'];
-    if (b.trailer) hints.push('Q    jettison trailer');
+    const padHints = ['LS   speed, steer', 'RS   aim  R3 recenter', 'RT LT RB  fire', 'D-pad autos on/off', 'X    final protocol'];
+    if (b.trailer) {
+      hints.push('Q    jettison trailer');
+      padHints.push('LB   jettison trailer');
+    }
     hints.push('ESC pause  R retry');
+    padHints.push('START pause BACK mute');
     const hintsY = height - 5 - hints.length * 7;
-    text(this.lx, hintsY, hints.join('\n'), PAL.hudDim);
+    this.keyHints = text(this.lx, hintsY, hints.join('\n'), PAL.hudDim);
+    this.padHints = text(this.lx, hintsY, padHints.join('\n'), PAL.hudDim).setVisible(false);
     this.alertY = hintsY - 22;
     this.alertLabel = text(this.lx, this.alertY, 'Alert', PAL.hudDim);
     this.alertText = text(this.lx + this.lw, this.alertY, '').setOrigin(1, 0);
@@ -288,6 +308,9 @@ export class Hud {
     const b = w.behemoth;
     const g = this.g;
     g.clear();
+    const pad = usingPad();
+    this.keyHints.setVisible(!pad);
+    this.padHints.setVisible(pad);
     for (const [id, t] of this.flashes) {
       if (t - dt <= 0) this.flashes.delete(id);
       else this.flashes.set(id, t - dt);

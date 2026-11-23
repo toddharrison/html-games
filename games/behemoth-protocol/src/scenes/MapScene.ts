@@ -37,6 +37,8 @@ import {
 } from '../sim/sectorMap';
 import { checkpoint, enterNode, type RunContext } from './flow';
 import { fitCamera } from './screen';
+import { usingPad } from '../input/gamepad';
+import { padMenu } from '../input/padMenu';
 
 /**
  * The sector map (SPEC §3, §3.1, §10): the current sector's routes drawn bottom to top (the way the
@@ -55,6 +57,8 @@ export class MapScene extends Phaser.Scene {
   private sector = 0;
   private gone = false;
   private rings: Phaser.GameObjects.GameObject[] = [];
+  /** The key hints under the map; they change with the device in use. */
+  private keyHint: Phaser.GameObjects.BitmapText | null = null;
 
   constructor() {
     super('map');
@@ -99,6 +103,15 @@ export class MapScene extends Phaser.Scene {
     kb.on('keydown-RIGHT', () => this.cycle(1));
     kb.on('keydown-D', () => this.cycle(1));
     kb.on('keydown-ESC', () => this.scene.start('title'));
+    // The pad: the D-pad or left stick cycles the choices, A rolls out, B goes to the title.
+    padMenu(
+      this,
+      { left: () => this.cycle(-1), up: () => this.cycle(-1), right: () => this.cycle(1), down: () => this.cycle(1), a: () => this.go(), start: () => this.go(), b: () => this.scene.start('title') },
+      () => {
+        this.keyHint?.setText(fontText(mapHint()));
+        this.drawIntel();
+      },
+    );
     for (let i = 0; i < 9; i++) kb.on(`keydown-${['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX', 'SEVEN', 'EIGHT', 'NINE'][i]}`, () => this.pick(i));
     this.input.on('pointermove', (p: Phaser.Input.Pointer) => {
       const at = this.nodeUnder(p.worldX, p.worldY);
@@ -227,7 +240,7 @@ export class MapScene extends Phaser.Scene {
     for (const n of sector.nodes) this.drawNode(n, xy[n.id]!);
     this.drawRings();
 
-    this.text((left + right) / 2, RESOLUTION.height - 12, 'Click a node or 1-9, then Enter    Esc - title', PAL.hudDim).setOrigin(0.5, 0);
+    this.keyHint = this.text((left + right) / 2, RESOLUTION.height - 12, mapHint(), PAL.hudDim).setOrigin(0.5, 0);
   }
 
   /** What a node's icon shows: its ground (fogged ground shows as fog), a depot, or an event. */
@@ -466,7 +479,10 @@ export class MapScene extends Phaser.Scene {
     y += 8;
     if (done && !samePos(pos, this.run.at)) t('Done', PAL.hudDim);
     else if (samePos(pos, this.run.at)) t('You are here', PAL.glowHot);
-    else if (choice >= 0) t(choice === this.selected ? 'Enter or click: roll out' : `${choice + 1} or click: select`, PAL.glow);
+    else if (choice >= 0) {
+      const pad = usingPad();
+      t(choice === this.selected ? (pad ? 'A: roll out' : 'Enter or click: roll out') : pad ? 'D-pad: select' : `${choice + 1} or click: select`, PAL.glow);
+    }
     else t(onRouteFrom(this.run.map, this.run.at, pos) ? 'Further along this route' : 'Off your route', PAL.hudDim);
   }
 
@@ -513,6 +529,11 @@ function objectiveReward(mode: BattleModeId, strength: Strength | null): string 
   const count = strength && (def.fortress?.guns[strength] ?? def.convoy?.haulers[strength]);
   if (!count) return `Up to +${def.bonus}: a share per ${names[0]} destroyed`;
   return `+${Math.round(def.bonus / count)} a ${names[0]} destroyed (${count}), up to +${def.bonus}`;
+}
+
+/** The key hints under the map, for the keyboard and mouse or the pad. */
+function mapHint(): string {
+  return usingPad() ? 'D-pad to choose, A to roll out    B - title' : 'Click a node or 1-9, then Enter    Esc - title';
 }
 
 /** The map sheet's area: between the side panels, above the key hints. */

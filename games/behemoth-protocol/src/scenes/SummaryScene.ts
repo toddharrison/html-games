@@ -10,6 +10,8 @@ import { clock, type RunSummary } from '../sim/run';
 import { runScore } from '../sim/scores';
 import type { SummaryData } from './flow';
 import { fitCamera } from './screen';
+import { keyLabel } from '../input/gamepad';
+import { padMenu } from '../input/padMenu';
 
 /**
  * The run summary (SPEC §5.1, §10): how the run ended (the Directive complete or failed, or the
@@ -117,12 +119,13 @@ export class SummaryScene extends Phaser.Scene {
       text(rx, top + img.displayHeight + 4, `Detonation, sector ${s.reached}`, PAL.hudDim);
     }
 
-    text(cx, height - 14, 'Enter - title', PAL.hudText).setOrigin(0.5, 0);
+    const hint = text(cx, height - 14, `${keyLabel('Enter', 'A')} - title`, PAL.hudText).setOrigin(0.5, 0);
     const kb = this.input.keyboard!;
     const leave = () => this.scene.start('title');
     kb.once('keydown-ENTER', leave);
     kb.once('keydown-SPACE', leave);
     kb.once('keydown-ESC', leave);
+    padMenu(this, { a: leave, b: leave, start: leave }, () => hint.setText(fontText(`${keyLabel('Enter', 'A')} - title`)));
   }
 }
 

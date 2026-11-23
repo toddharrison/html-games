@@ -1624,4 +1624,10 @@ function makeFx(scene: Phaser.Scene): void {
     for (const [x, y, w, h] of ticks) p.rect(x, y, w, h, PAL.white);
     p.px(5, 5, PAL.amber);
   });
+  // The pad's cursor on mouse screens (the depot): an arrow, tip at the top-left pixel.
+  canvasTexture(scene, 'padCursor', 7, 10, (p) => {
+    const rows = [1, 2, 3, 4, 5, 6, 7, 4, 2, 1];
+    rows.forEach((w, y) => p.rect(0, y, w, 1, PAL.outline));
+    rows.forEach((w, y) => y > 0 && y < 8 && w > 2 && p.rect(1, y, Math.min(w, 6) - 2, 1, PAL.amber));
+  });
 }

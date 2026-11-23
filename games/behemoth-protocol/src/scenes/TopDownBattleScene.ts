@@ -4,6 +4,7 @@ import { BattleAudio } from '../audio/battleAudio';
 import { toggleMute } from '../audio/mute';
 import { battleLayout, battleLengthFromUrl, conditionFromUrl, doctrineFromUrl, lookFromUrl, mixFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
 import { Controls } from '../input/controls';
+import { keyLabel, usingPad } from '../input/gamepad';
 import { BehemothView, TrackMarks } from '../render/compositor';
 import { Effects } from '../render/effects';
 import { Hud, type HudRun } from '../render/hud';
@@ -328,6 +329,10 @@ export class TopDownBattleScene extends Phaser.Scene {
       this.updateDemo(deltaMs / 1000);
       return;
     }
+    const cam = this.cameras.main;
+    const hull = this.world.behemoth;
+    const { fieldX, fieldW, height } = this.layout;
+    this.controls.update(deltaMs / 1000, { x: viewX(hull.x, hull.y) - cam.scrollX, y: viewY(hull.x) - cam.scrollY }, { x: fieldX, y: 0, w: fieldW, h: height });
     if (this.world.behemoth.destroyed && this.controls.summaryPressed()) {
       this.toSummary();
       return;
@@ -351,9 +356,8 @@ export class TopDownBattleScene extends Phaser.Scene {
     if (this.controls.mutePressed()) toggleMute(this.sound);
     this.audio?.setPaused(this.paused);
 
-    const p = this.input.activePointer;
-    const zoom = this.cameras.main.zoom;
-    this.reticle.setPosition(Math.round(p.x / zoom), Math.round(p.y / zoom));
+    const aim = this.controls.reticle();
+    this.reticle.setPosition(Math.round(aim.x), Math.round(aim.y));
 
     const dt = deltaMs / 1000;
     const stepOnce = this.paused && this.devStep;
@@ -495,7 +499,7 @@ export class TopDownBattleScene extends Phaser.Scene {
   private statusMessage(): string | null {
     const w = this.world;
     const b = w.behemoth;
-    if (this.paused) return 'Paused - Esc to resume';
+    if (this.paused) return `Paused - ${keyLabel('Esc', 'Start')} to resume`;
     const ls = w.lastStand;
     if (b.destroyed) {
       // Kept off the field until the summary's still has been taken.
@@ -504,7 +508,7 @@ export class TopDownBattleScene extends Phaser.Scene {
       const stand = ls ? `\nHeld out ${Math.floor(ls.time)}s against ${ls.wave} ${ls.wave === 1 ? 'wave' : 'waves'}` : '';
       const battles = this.ctx.run.battle;
       const run = `\nRun over after ${battles} ${battles === 1 ? 'battle' : 'battles'} won`;
-      return `Reactor detonated\n${this.ctx.run.callsign} is lost\n${n} destroyed in the blast${stand}${run}\n${this.ctx.persist ? 'Enter - run summary' : 'Enter - run summary   R - restart'}`;
+      return `Reactor detonated\n${this.ctx.run.callsign} is lost\n${n} destroyed in the blast${stand}${run}\n${keyLabel('Enter', 'A')} - run summary${this.ctx.persist || usingPad() ? '' : '   R - restart'}`;
     }
     if (this.won) {
       const r = this.won.run;

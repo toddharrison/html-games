@@ -1,11 +1,12 @@
 import Phaser from 'phaser';
 import type { BiomeId } from '../content/biomes';
-import { TERRAIN_GEN } from '../content/tuning';
-import type { Tile } from '../sim/terrain';
 import { Rng } from '../sim/rng';
+import { HALL_STYLES, ROAD_STYLES, STRUCTURES, structuresOf, TREE_IDS } from '../content/structures';
 import { lookPalette, type Look, type Pal } from './looks';
 import { canvasTexture, type Painter } from './painter';
 import { PAL } from './palette';
+import { damageTile, drawCar, drawFootbridge, drawHall, drawRoad, drawStructure, drawTree, drawWall } from './structureArt';
+import { CLUMP, CLUMP_FRAMES, frameName, TILE, TILE_FRAMES, type ClumpFrame, type TileFrame } from './tileFrames';
 
 /**
  * Procedural placeholder terrain (SPEC §11.1): a tile sheet and a raised-overlay sheet per biome and
@@ -13,173 +14,7 @@ import { PAL } from './palette';
  * top. Real art replaces these textures later under the same keys and frame names.
  */
 
-export const TILE = TERRAIN_GEN.tileSize;
-
-const TILE_FRAMES = [
-  // Open ground is painted under the tiles (render/ground.ts); its tile is see-through.
-  'clear',
-  'road0',
-  'road1',
-  'forest_floor',
-  'forest_floor_burnt',
-  'forest_destroyed',
-  'forest_flattened',
-  'building_intact0',
-  'building_intact1',
-  'building_damaged0',
-  'building_damaged1',
-  'building_destroyed',
-  'building_flattened',
-  'rock_base',
-  'rock_rubble',
-  'water0',
-  'water1',
-  'shallows0',
-  'shallows1',
-  'crater0',
-  'crater1',
-  'tankTrap_intact',
-  'tankTrap_damaged',
-  'tankTrap_down',
-  'wall_intact',
-  'wall_damaged',
-  'bunker_intact',
-  'bunker_damaged',
-  'mine',
-  'bridge_intact',
-  'bridge_damaged',
-  'lightBridge_intact',
-  'lightBridge_damaged',
-  'hedge_floor',
-  'farm0',
-  'farm1',
-  'farm_flattened',
-  'ice0',
-  'ice1',
-  'thinIce_intact',
-  'thinIce_damaged',
-  'drift0',
-  'drift1',
-  'factory_intact0',
-  'factory_intact1',
-  'factory_damaged',
-  'factory_destroyed',
-  'tank_pad',
-  'rail',
-  'rail_torn',
-  'dune0',
-  'dune1',
-  'wadi0',
-  'wadi1',
-  'derrick_pad',
-  'wreck_intact0',
-  'wreck_intact1',
-  'wreck_damaged',
-  'wreck_destroyed',
-  'glass0',
-  'glass1',
-] as const;
-
-type TileFrame = (typeof TILE_FRAMES)[number];
-
-/**
- * Which frame of a tile sheet represents a tile in its current state. `shimmer` (0/1) flips water
- * between its two frames, so rivers ripple. A mine the sensors haven't swept looks like open ground.
- */
-export function tileFrame(t: Tile, shimmer: number): TileFrame {
-  const v1 = t.variant & 1;
-  const standing = t.state === 'intact' || t.state === 'damaged';
-  switch (t.mat) {
-    case 'ground':
-      return 'clear';
-    case 'road':
-      return `road${v1}` as TileFrame;
-    case 'forest':
-      if (t.state === 'intact') return 'forest_floor';
-      if (t.state === 'damaged') return 'forest_floor_burnt';
-      return `forest_${t.state}` as TileFrame;
-    case 'building':
-      return standing ? (`building_${t.state}${v1}` as TileFrame) : (`building_${t.state}` as TileFrame);
-    case 'rock':
-      // Intact rock is the gravel base under a boulder overlay; flattened rubble is plain dirt.
-      if (t.state === 'destroyed') return 'rock_rubble';
-      return t.state === 'flattened' ? 'building_flattened' : 'rock_base';
-    case 'shallows':
-    case 'water':
-      return `${t.mat}${v1 ^ shimmer}` as TileFrame;
-    case 'crater':
-      return `crater${v1}` as TileFrame;
-    case 'tankTrap':
-      return standing ? (`tankTrap_${t.state}` as TileFrame) : 'tankTrap_down';
-    case 'wall':
-    case 'bunker':
-      return standing ? (`${t.mat}_${t.state}` as TileFrame) : t.state === 'destroyed' ? 'building_destroyed' : 'building_flattened';
-    case 'mine':
-      return t.seen ? 'mine' : 'clear';
-    case 'bridge':
-    case 'lightBridge':
-      return t.state === 'damaged' ? (`${t.mat}_damaged` as TileFrame) : (`${t.mat}_intact` as TileFrame);
-    case 'hedgerow':
-      if (t.state === 'intact' || t.state === 'damaged') return 'hedge_floor';
-      return `forest_${t.state}` as TileFrame;
-    case 'farmland':
-      return t.state === 'flattened' ? 'farm_flattened' : (`farm${v1}` as TileFrame);
-    case 'ice':
-      return `ice${v1}` as TileFrame;
-    case 'thinIce':
-      return t.state === 'damaged' ? 'thinIce_damaged' : 'thinIce_intact';
-    case 'snowdrift':
-      return `drift${v1}` as TileFrame;
-    case 'factory':
-      if (t.state === 'intact') return `factory_intact${v1}` as TileFrame;
-      if (t.state === 'damaged') return 'factory_damaged';
-      return t.state === 'destroyed' ? 'factory_destroyed' : 'building_flattened';
-    case 'fuelTank':
-      return 'tank_pad';
-    case 'rail':
-      return t.state === 'flattened' ? 'rail_torn' : 'rail';
-    case 'dune':
-      return `dune${v1}` as TileFrame;
-    case 'wadi':
-      return `wadi${v1}` as TileFrame;
-    case 'derrick':
-      return 'derrick_pad';
-    case 'wreck':
-      if (t.state === 'intact') return `wreck_intact${v1}` as TileFrame;
-      if (t.state === 'damaged') return 'wreck_damaged';
-      return t.state === 'destroyed' ? 'wreck_destroyed' : 'building_flattened';
-    case 'glass':
-      return `glass${v1}` as TileFrame;
-  }
-}
-
-/**
- * Raised overlays drawn over a tile, bigger than a tile so neighbors merge organically: tree clumps
- * over forest, hedges over hedgerows, boulders over rock, fuel tanks on their pads.
- */
-export const CLUMP = 22;
-const CLUMP_FRAMES = ['clump0', 'clump1', 'clump_damaged', 'boulder0', 'boulder1', 'hedge0', 'hedge1', 'tank0', 'tank_damaged', 'derrick0', 'derrick_damaged'] as const;
-type ClumpFrame = (typeof CLUMP_FRAMES)[number];
-
-export function tileOverlay(t: Tile): ClumpFrame | null {
-  const standing = t.state === 'intact' || t.state === 'damaged';
-  switch (t.mat) {
-    case 'rock':
-      return standing ? (t.variant & 1 ? 'boulder1' : 'boulder0') : null;
-    case 'forest':
-      if (t.state === 'intact') return t.variant & 1 ? 'clump1' : 'clump0';
-      return t.state === 'damaged' ? 'clump_damaged' : null;
-    case 'hedgerow':
-      if (t.state === 'intact') return t.variant & 1 ? 'hedge1' : 'hedge0';
-      return t.state === 'damaged' ? 'clump_damaged' : null;
-    case 'fuelTank':
-      return t.state === 'intact' ? 'tank0' : t.state === 'damaged' ? 'tank_damaged' : null;
-    case 'derrick':
-      return t.state === 'intact' ? 'derrick0' : t.state === 'damaged' ? 'derrick_damaged' : null;
-    default:
-      return null;
-  }
-}
+export { CLUMP, TILE, tileFrame, tileOverlay } from './tileFrames';
 
 /**
  * The tile and overlay sheets for a biome in a look (render/looks.ts), drawn the first time a battle
@@ -190,22 +25,123 @@ export function lookSheets(scene: Phaser.Scene, biome: BiomeId, look: Look): { t
   const clumps = `clumps_${biome}_${look.id}`;
   if (scene.textures.exists(tiles) && scene.textures.exists(clumps)) return { tiles, clumps };
   const pal = lookPalette(biome, look);
-  const tex = canvasTexture(scene, tiles, TILE * TILE_FRAMES.length, TILE, (p) => {
-    TILE_FRAMES.forEach((name, i) => {
-      p.ox = i * TILE;
-      drawTile(p, name, new Rng(1000 + i * 77), pal);
-    });
-  });
-  TILE_FRAMES.forEach((name, i) => tex.add(name, 0, i * TILE, 0, TILE, TILE));
-
-  const sheet = canvasTexture(scene, clumps, CLUMP * CLUMP_FRAMES.length, CLUMP, (p) => {
-    CLUMP_FRAMES.forEach((name, i) => {
-      p.ox = i * CLUMP;
-      drawClump(p, name, new Rng(3000 + i * 31), pal, biome);
-    });
-  });
-  CLUMP_FRAMES.forEach((name, i) => sheet.add(name, 0, i * CLUMP, 0, CLUMP, CLUMP));
+  packSheet(scene, tiles, tilePieces(biome, pal));
+  packSheet(scene, clumps, clumpPieces(biome, pal));
   return { tiles, clumps };
+}
+
+/** An image on a sheet and the frames cut from it (offsets inside the image). */
+interface Piece {
+  w: number;
+  h: number;
+  draw: (p: Painter) => void;
+  frames: [name: string, x: number, y: number, w: number, h: number][];
+}
+
+const single = (name: string, size: number, draw: (p: Painter) => void): Piece => ({ w: size, h: size, draw, frames: [[name, 0, 0, size, size]] });
+
+/** Shelf-packs pieces (tallest first) onto one canvas texture and adds their frames. */
+function packSheet(scene: Phaser.Scene, key: string, pieces: Piece[], width = 512): void {
+  const order = [...pieces].sort((a, b) => b.h - a.h);
+  const at = new Map<Piece, [number, number]>();
+  let x = 0;
+  let y = 0;
+  let shelf = 0;
+  for (const pc of order) {
+    if (x + pc.w > width) {
+      x = 0;
+      y += shelf;
+      shelf = 0;
+    }
+    at.set(pc, [x, y]);
+    x += pc.w;
+    shelf = Math.max(shelf, pc.h);
+  }
+  const tex = canvasTexture(scene, key, width, y + shelf, (p) => {
+    for (const pc of order) {
+      [p.ox, p.oy] = at.get(pc)!;
+      pc.draw(p);
+    }
+    p.ox = p.oy = 0;
+  });
+  for (const pc of order) {
+    const [px, py] = at.get(pc)!;
+    for (const [name, fx, fy, fw, fh] of pc.frames) tex.add(name, 0, px + fx, py + fy, fw, fh);
+  }
+}
+
+/** Every tile frame a biome's battles can use. */
+function tilePieces(biome: BiomeId, pal: Pal): Piece[] {
+  const out: Piece[] = TILE_FRAMES.map((name, i) => single(name, TILE, (p) => drawTile(p, name, new Rng(1000 + i * 77), pal)));
+  ROAD_STYLES.forEach((style, si) => {
+    for (let links = 0; links < 16; links++) {
+      for (let v = 0; v < 2; v++) out.push(single(frameName.road(style, links, v), TILE, (p) => drawRoad(p, style, links, v, new Rng(5000 + si * 101 + links * 7 + v), pal)));
+    }
+  });
+  for (let links = 0; links < 16; links++) {
+    for (const d of [false, true]) out.push(single(frameName.wall(links, d), TILE, (p) => drawWall(p, links, d, new Rng(6000 + links), pal)));
+  }
+  for (const s of [false, true]) {
+    for (const d of [false, true]) out.push(single(frameName.footbridge(s, d), TILE, (p) => drawFootbridge(p, s, d, new Rng(6500 + (s ? 1 : 0)), pal)));
+  }
+  // Structures, drawn whole and cut into tiles (screen x is the row, y counts down from the front).
+  structuresOf(biome).forEach((id, ii) => {
+    const def = STRUCTURES[id];
+    const w = def.rows * TILE;
+    const h = def.cols * TILE;
+    for (let style = 0; style < def.styles; style++) {
+      for (const d of [false, true]) {
+        const seed = 7000 + ii * 131 + style * 17;
+        const frames: Piece['frames'] = [];
+        for (let dc = 0; dc < def.cols; dc++) {
+          for (let dr = 0; dr < def.rows; dr++) frames.push([frameName.structure(id, style, dc, dr, d), dr * TILE, (def.cols - 1 - dc) * TILE, TILE, TILE]);
+        }
+        out.push({
+          w,
+          h,
+          frames,
+          draw: (p) => {
+            drawStructure(p, id, style, w, h, new Rng(seed), pal, biome);
+            if (!d) return;
+            const rng = new Rng(seed + 1);
+            for (let ty = 0; ty < h; ty += TILE) for (let tx = 0; tx < w; tx += TILE) damageTile(p, rng, pal, tx, ty);
+          },
+        });
+      }
+    }
+  });
+  for (let style = 0; style < HALL_STYLES; style++) {
+    for (const d of [false, true]) {
+      const frames: Piece['frames'] = [];
+      for (let x = 0; x < 3; x++) for (let y = 0; y < 3; y++) frames.push([frameName.hall(style, x, y, d), x * TILE, y * TILE, TILE, TILE]);
+      out.push({
+        w: 3 * TILE,
+        h: 3 * TILE,
+        frames,
+        draw: (p) => {
+          drawHall(p, style, new Rng(8000 + style), pal);
+          if (!d) return;
+          const rng = new Rng(8100 + style);
+          for (let y = 0; y < 3; y++) for (let x = 0; x < 3; x++) damageTile(p, rng, pal, x * TILE, y * TILE);
+        },
+      });
+    }
+  }
+  return out;
+}
+
+/** Every overlay frame: the old clumps, tree species, and cars. */
+function clumpPieces(biome: BiomeId, pal: Pal): Piece[] {
+  const out: Piece[] = CLUMP_FRAMES.map((name, i) => single(name, CLUMP, (p) => drawClump(p, name, new Rng(3000 + i * 31), pal, biome)));
+  TREE_IDS.forEach((species, si) => {
+    for (let v = 0; v < 2; v++) out.push(single(frameName.tree(species, v), CLUMP, (p) => drawTree(p, species, v, new Rng(3500 + si * 13 + v), pal, biome)));
+  });
+  for (const o of ['v', 'h'] as const) {
+    for (let v = 0; v < 4; v++) {
+      for (let state = 0; state < 4; state++) out.push(single(frameName.car(o === 'v', v, state), CLUMP, (p) => drawCar(p, o === 'v', v, state, new Rng(3900 + v * 5 + state), pal)));
+    }
+  }
+  return out;
 }
 
 function drawClump(p: Painter, name: ClumpFrame, rng: Rng, pal: Pal, biome: BiomeId): void {

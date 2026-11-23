@@ -88,7 +88,7 @@ describe('cuesFor', () => {
     expect(sounds({ ...ev, state: 'damaged' })).toEqual([]);
     expect(sounds({ ...ev, mat: 'ground' })).toEqual([]);
     // A bridge giving way under the hull: masonry or girders, then the splash.
-    expect(sounds({ type: 'bridgeCollapse', x: 0, y: 0, tiles: 9 })).toEqual(['collapse', 'splash']);
+    expect(sounds({ type: 'bridgeCollapse', x: 0, y: 0, tiles: 9, mat: 'bridge' })).toEqual(['collapse', 'splash']);
   });
 
   it('plays harder rams louder and ignores trivial ones', () => {

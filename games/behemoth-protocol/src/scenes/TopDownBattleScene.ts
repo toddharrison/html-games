@@ -972,18 +972,21 @@ export class TopDownBattleScene extends Phaser.Scene {
           const y = (ev.row + 0.5) * ts;
           const down = ev.state === 'destroyed' || ev.state === 'flattened';
           // Bridges have their own effect, once for the whole span (bridgeCollapse).
-          if (ev.mat === 'bridge' || ev.mat === 'lightBridge') break;
+          if (MATERIALS[ev.mat].bearing?.give === 'span') break;
           const debris = MATERIALS[ev.mat].debris;
           if (debris === 'wood') ev.state === 'destroyed' ? this.fx.forestBurnt(x, y) : this.fx.forestFlattened(x, y);
           else if (debris === 'ice' && ev.state === 'destroyed') this.fx.splash(x, y, 10);
           else if (debris && debris !== 'ice' && down) this.fx.buildingCollapse(x, y);
           break;
         }
-        case 'bridgeCollapse':
+        case 'bridgeCollapse': {
+          // A footbridge goes with a splash, not a jolt.
+          const slight = MATERIALS[ev.mat].bearing?.quiet;
           this.fx.buildingCollapse(ev.x, ev.y);
-          this.fx.splash(ev.x, ev.y, 18 + ev.tiles * 1.5);
-          this.shake(220, 3);
+          this.fx.splash(ev.x, ev.y, (slight ? 8 : 18) + ev.tiles * 1.5);
+          if (!slight) this.shake(220, 3);
           break;
+        }
         case 'collision': {
           const shake = OBSTACLE_CLASSES[ev.obstacle].shake;
           this.fx.plow(ev.x, ev.y, ev.obstacle === 'heavy' || ev.obstacle === 'medium');

@@ -2,6 +2,7 @@ import { APPROACHES, type ApproachDef, type ApproachId } from '../content/approa
 import { BIOMES, type BiomeDef, type BiomeId, type MixKey } from '../content/biomes';
 import { hoverable, MATERIALS, skiable, walkerSpeed, type MaterialId, type TileState, type UnitMobility } from '../content/terrain';
 import type { ObstacleClass } from '../content/obstacles';
+import { ROADS, SETTLEMENTS, STRUCTURES, TREES, HALL_STYLES, weighted, type OpenLot, type RoadStyle, type Setting, type StructureId, type TileArt, type TreeId } from '../content/structures';
 import { BEARING, DIRECTIVE, SKI, TERRAIN_GEN, WALKER } from '../content/tuning';
 import type { SimEvent } from './events';
 import type { Rect } from './math';
@@ -24,7 +25,17 @@ export interface Tile {
   under?: MaterialId;
   /** A hidden tile (a mine) the Behemoth's sensors have swept: drawn from now on. */
   seen?: boolean;
+  /** What it's drawn as (cosmetic, content/structures.ts): a structure's piece, a tree species, a road's surface. */
+  art?: TileArt;
+  /**
+   * Roads and walls (cosmetic): which neighbors they join, as `LINK` bits, so they're drawn running
+   * the right way.
+   */
+  links?: number;
 }
+
+/** `Tile.links` bits: the neighbor ahead (col + 1), to the right (row + 1), behind, to the left. */
+export const LINK = { fwd: 1, right: 2, back: 4, left: 8 } as const;
 
 /** What a battle's terrain is built from. A null approach is the biome's own balanced mix. */
 export interface TerrainRecipe {
@@ -116,6 +127,32 @@ interface Town {
   row0: number;
   cols: number;
   rows: number;
+  setting: Setting;
+  /** Every cell's lot, column by column (`dc * rows + dr`); null leaves the cell as it was. */
+  lots: (Lot | null)[];
+}
+/** What a cell of a settlement or farmyard is, and how it's drawn. */
+interface Lot {
+  mat: MaterialId;
+  art?: TileArt;
+}
+/**
+ * A country road (cosmetic going): winding along the field through a chunk between knots (rows at
+ * the chunk's first column and the next chunk's), or straight across it at a column.
+ */
+interface Road {
+  kind: 'road';
+  id: number;
+  /** The chunk's first column (it paints only its own chunk). */
+  col0: number;
+  /** The first knot's column, and the knots' rows (null: a road across the field). */
+  knotCol: number;
+  knots: [number, number] | null;
+  cross: { col: number; rows: [number, number] } | null;
+  width: 1 | 2;
+  style: RoadStyle;
+  /** Share of its tiles with a car left on it. */
+  cars: number;
 }
 /** A rock outcrop (a = b) or ridge: a capsule from a to b, in tile units. */
 interface Rock {
@@ -157,6 +194,8 @@ interface Block {
   rows: number;
   /** Farms: boxed in by hedgerows. Factories: inside a compound wall. */
   walled: boolean;
+  /** Farms: the farmyard (house, barn, silos) in a corner, and its lots by `dc * rows + dr`. */
+  yard?: { col0: number; row0: number; cols: number; rows: number; lots: Lot[] };
 }
 /** A straight hedgerow, across the field (along the rows) or along it (along the columns). */
 interface Hedge {
@@ -189,7 +228,7 @@ interface Defense {
   /** A Breach fortress's command post pad (Decapitation): first column and [first, end) rows. */
   keep?: { col: number; rows: [number, number] };
 }
-type Feature = ForestBlob | Town | Rock | Patch | Oval | Block | Hedge | Defense;
+type Feature = ForestBlob | Town | Rock | Patch | Oval | Block | Hedge | Defense | Road;
 
 /** Deterministic [0,1) value for a cell, independent of generation order. */
 function cellNoise(seed: number, col: number, row: number, salt: number): number {
@@ -213,7 +252,11 @@ const SALT = {
   oilfield: 0x0115,
   wrecks: 0x3ec7,
   blast: 0xb1a5,
+  crossRoad: 0xc40d,
 } as const;
+
+/** Streams for cosmetic layout (SPEC §4.6 "Settlements"), apart from the ones that place features. */
+const ART_SALT = { town: 0x70a1, yard: 0xfa7d, road: 0x40ad, footbridge: 0xf0b1, trees: 0x7ee5, hall: 0x4a1e, fallback: 0x5f1b } as const;
 
 /** `n` gates spread over [a, b), each in its own stretch, so two never merge. */
 function gates(rng: Rng, n: number, width: readonly [number, number], a: number, b: number): [number, number][] {
@@ -255,15 +298,19 @@ function chunkFeatures(seed: number, ci: number, rows: number, rc: Resolved): Fe
   const towns = expected(rng, mixOf(rc, 'towns'));
   for (let i = 0; i < towns; i++) {
     const cols = Math.round(rng.int(g.townCols[0], g.townCols[1]) * townSize);
-    const trows = Math.min(rows, Math.round(rng.int(g.townRows[0], g.townRows[1]) * townSize));
-    out.push({
+    const trows = Math.min(rows, Math.round(rng.int(g.townRows[0], g.townRows[1]) * (rc.approach?.townWidth ?? townSize)));
+    const town: Town = {
       kind: 'town',
       id: 100 + i,
       col0: baseCol + rng.int(0, CHUNK - 1),
       row0: rng.int(0, Math.max(0, rows - trows)),
       cols,
       rows: trows,
-    });
+      setting: rc.approach?.city ? 'city' : cols * trows < g.settlement.townArea ? 'village' : 'town',
+      lots: [],
+    };
+    town.lots = layoutTown(seed, ci, town, rows, rc);
+    out.push(town);
   }
   const rocks = scaled(rng, rng.int(mix.rock[0], mix.rock[1]), scaleOf(rc, 'rock'));
   for (let i = 0; i < rocks; i++) {
@@ -294,7 +341,10 @@ function chunkFeatures(seed: number, ci: number, rows: number, rc: Resolved): Fe
   each('farm', mixOf(rc, 'farms'), (r, id) => {
     const cols = r.int(g.farm.cols[0], g.farm.cols[1]);
     const frows = Math.min(rows, r.int(g.farm.rows[0], g.farm.rows[1]));
-    return { kind: 'farm', id, col0: baseCol + r.int(0, CHUNK - 1), row0: r.int(0, rows - frows), cols, rows: frows, walled: r.chance(g.farm.hedged) };
+    const farm: Block = { kind: 'farm', id, col0: baseCol + r.int(0, CHUNK - 1), row0: r.int(0, rows - frows), cols, rows: frows, walled: r.chance(g.farm.hedged) };
+    const yard = layoutYard(seed, ci, farm);
+    if (yard) farm.yard = yard;
+    return farm;
   });
   each('craters', mixOf(rc, 'craterFields'), (r, id) => ({ kind: 'craters', id, col: anyCol(r), row: r.range(0, rows), r: r.range(g.craterField.radius[0], g.craterField.radius[1]) }));
   each('hedge', mixOf(rc, 'hedgerows'), (r, id) => {
@@ -306,8 +356,9 @@ function chunkFeatures(seed: number, ci: number, rows: number, rc: Resolved): Fe
   // compound of halls (or a farm of tanks waiting to go up) in the only way forward would leave
   // nothing to do but grind through it.
   each('factory', mixOf(rc, 'factories'), (r, id) => {
-    const cols = Math.round(r.int(g.factory.cols[0], g.factory.cols[1]) * townSize);
-    const frows = Math.min(rows - 4, Math.round(r.int(g.factory.rows[0], g.factory.rows[1]) * townSize));
+    const size = rc.approach?.factorySize ?? townSize;
+    const cols = Math.round(r.int(g.factory.cols[0], g.factory.cols[1]) * size);
+    const frows = Math.min(rows - 4, Math.round(r.int(g.factory.rows[0], g.factory.rows[1]) * size));
     const col0 = baseCol + r.int(0, CHUNK - 1);
     const ring = 2;
     const row0 = besideLane(seed, rows, rc, r, col0 - ring, col0 + cols + ring, frows + 2 * ring);
@@ -383,7 +434,221 @@ function chunkFeatures(seed: number, ci: number, rows: number, rc: Resolved): Fe
     });
     each('mines', mixOf(rc, 'minefields'), (r, id) => ({ kind: 'mines', id, col: anyCol(r), row: r.range(0, rows), r: r.range(g.minefield.radius[0], g.minefield.radius[1]) }));
   }
+  // Country roads last, so the features above keep their ids (and with them their layouts).
+  const road = ROADS[rc.biome.id];
+  const at = roadKnots(seed, ci, rows, rc);
+  if (at) out.push({ kind: 'road', id: 300 + out.length, col0: baseCol, knotCol: at.k * ROAD_KNOT, knots: at.knots, cross: null, width: road.width, style: road.style, cars: road.cars });
+  each('crossRoad', mixOf(rc, 'crossRoads'), (r, id) => {
+    const col = baseCol + r.int(1, CHUNK - 2);
+    let span: [number, number] = [0, rows];
+    if (r.chance(0.5)) {
+      const len = r.int(g.road.crossMin, rows - 3);
+      span = r.chance(0.5) ? [0, len] : [rows - len, rows];
+    }
+    return { kind: 'road', id, col0: col, knotCol: col, knots: null, cross: { col, rows: span }, width: 1, style: road.style, cars: road.cars };
+  });
   return out;
+}
+
+/** Columns between the winding road's knots. */
+const ROAD_KNOT = TERRAIN_GEN.road.knotChunks * CHUNK;
+
+/** Whether the stretch between knots `k` and `k + 1` has a country road (the same all along a stretch). */
+function roadHas(seed: number, k: number, rc: Resolved): boolean {
+  const stretch = Math.floor((k * TERRAIN_GEN.road.knotChunks) / TERRAIN_GEN.road.stretch);
+  return cellNoise(seed, stretch, 0, ART_SALT.road) < Math.min(1, mixOf(rc, 'roads'));
+}
+
+/**
+ * The country road's row at knot `k` (column `k * ROAD_KNOT`): within `swing` of mid-field with a
+ * road either side; past a side of the field where it comes in or leaves.
+ */
+function roadKnot(seed: number, k: number, rows: number, rc: Resolved): number {
+  if (roadHas(seed, k - 1, rc) && roadHas(seed, k, rc)) return rows / 2 + (cellNoise(seed, k, 1, ART_SALT.road) * 2 - 1) * TERRAIN_GEN.road.swing;
+  return cellNoise(seed, k, 2, ART_SALT.road) < 0.5 ? -2 : rows + 1;
+}
+
+/** The knots either side of a chunk's stretch of road, and the column of the first. */
+function roadKnots(seed: number, ci: number, rows: number, rc: Resolved): { k: number; knots: [number, number] } | null {
+  const k = Math.floor((ci * CHUNK) / ROAD_KNOT);
+  return roadHas(seed, k, rc) ? { k, knots: [roadKnot(seed, k, rows, rc), roadKnot(seed, k + 1, rows, rc)] } : null;
+}
+
+/** The winding road's center row at a (fractional) column (eased between the knots). */
+function roadCenterAt(knotCol: number, [a, b]: [number, number], col: number): number {
+  const t = Math.max(0, Math.min(1, (col - knotCol) / ROAD_KNOT));
+  return a + ((b - a) * (1 - Math.cos(Math.PI * t))) / 2;
+}
+
+/** Whether a country road covers a cell. Each column covers the rows to the next one's, so it never breaks. */
+function onRoad(f: Road, col: number, row: number): boolean {
+  if (f.cross) return col === f.cross.col && row >= f.cross.rows[0] && row < f.cross.rows[1];
+  if (col < f.col0 || col >= f.col0 + CHUNK) return false;
+  const y0 = roadCenterAt(f.knotCol, f.knots!, col);
+  const y1 = roadCenterAt(f.knotCol, f.knots!, col + 1);
+  const pad = (f.width - 1) / 2;
+  return row >= Math.round(Math.min(y0, y1) - pad) && row <= Math.round(Math.max(y0, y1) + pad);
+}
+
+/** The row a chunk's winding road crosses a column at, or null (none, or off the field). */
+function roadRowAt(seed: number, col: number, rows: number, rc: Resolved): number | null {
+  const ci = Math.floor(col / CHUNK);
+  const at = roadKnots(seed, ci, rows, rc);
+  if (!at) return null;
+  const row = Math.round(roadCenterAt(at.k * ROAD_KNOT, at.knots, col + 0.5) - 0.5);
+  return row >= 0 && row < rows ? row : null;
+}
+
+/** Splits [0, n) into blocks of a drawn size with one-tile streets between them: the streets. */
+function streetLines(rng: Rng, n: number, size: readonly [number, number]): Set<number> {
+  const out = new Set<number>();
+  if (n < size[0] + 2) return out;
+  for (let i = rng.int(size[0], size[1]); i < n - 1; i += 1 + rng.int(size[0], size[1])) out.add(i);
+  return out;
+}
+
+/** [start, end) runs of [0, n) between the streets. */
+function blockRuns(n: number, streets: Set<number>): [number, number][] {
+  const out: [number, number][] = [];
+  let a = 0;
+  for (let i = 0; i <= n; i++) {
+    if (i === n || streets.has(i)) {
+      if (i > a) out.push([a, i]);
+      a = i + 1;
+    }
+  }
+  return out;
+}
+
+const street = (style: RoadStyle, car: boolean): Lot => ({ mat: car ? 'car' : 'road', art: { kind: 'road', style } });
+
+/** A tree species from a biome's mix. */
+function treeOf(rc: Resolved, u: number): TreeId {
+  return weighted(TREES[rc.biome.id], u);
+}
+
+/**
+ * A settlement's lots (SPEC §4.6 "Settlements"), on a stream of its own: streets cut it into blocks
+ * (and a city's avenue runs through along the lane), landmarks go in the biggest block they fit,
+ * and the rest is packed with the biome's structures and open lots, each where its footprint fits.
+ */
+function layoutTown(seed: number, ci: number, f: Town, fieldRows: number, rc: Resolved): (Lot | null)[] {
+  const rng = new Rng(hashSeed(seed, ci, f.id, ART_SALT.town));
+  const g = TERRAIN_GEN.settlement;
+  const kind = g[f.setting];
+  const plan = SETTLEMENTS[rc.biome.id][f.setting];
+  const cross = streetLines(rng, f.cols, kind.blockCols);
+  const along = streetLines(rng, f.rows, kind.blockRows);
+  const lots: (Lot | null | undefined)[] = new Array(f.cols * f.rows).fill(undefined);
+  const at = (dc: number, dr: number) => dc * f.rows + dr;
+  const avenue = rc.approach?.avenue;
+  for (let dc = 0; dc < f.cols; dc++) {
+    for (let dr = 0; dr < f.rows; dr++) {
+      const lane = laneCenter(seed, f.col0 + dc + 0.5, fieldRows, rc.approach?.laneAmplitude);
+      if (avenue && Math.abs(f.row0 + dr + 0.5 - lane) < avenue / 2) lots[at(dc, dr)] = street('avenue', rng.chance(g.avenueCars));
+      else if (cross.has(dc) || along.has(dr)) lots[at(dc, dr)] = street('street', !(cross.has(dc) && along.has(dr)) && rng.chance(kind.cars));
+    }
+  }
+  const fits = (dc: number, dr: number, cols: number, rows: number, b: [number, number, number, number]) => {
+    if (dc + cols > b[1] || dr + rows > b[3]) return false;
+    for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) if (lots[at(dc + i, dr + j)] !== undefined) return false;
+    return true;
+  };
+  let placed = 0;
+  const place = (id: StructureId, dc: number, dr: number) => {
+    const d = STRUCTURES[id];
+    const style = rng.int(0, d.styles - 1);
+    const uid = hashSeed(seed, ci, f.id, placed++);
+    for (let i = 0; i < d.cols; i++) {
+      for (let j = 0; j < d.rows; j++) {
+        lots[at(dc + i, dr + j)] = { mat: 'building', art: { kind: 'structure', id, style, cols: d.cols, rows: d.rows, dc: i, dr: j, uid } };
+      }
+    }
+  };
+  // Blocks: [c0, c1, r0, r1), biggest first for landmarks.
+  const blocks: [number, number, number, number][] = [];
+  for (const [c0, c1] of blockRuns(f.cols, cross)) for (const [r0, r1] of blockRuns(f.rows, along)) blocks.push([c0, c1, r0, r1]);
+  const bySize = [...blocks].sort((a, b) => (b[1] - b[0]) * (b[3] - b[2]) - (a[1] - a[0]) * (a[3] - a[2]));
+  for (const [id, chance] of Object.entries(plan.landmarks ?? {}) as [StructureId, number][]) {
+    if (!rng.chance(chance)) continue;
+    const d = STRUCTURES[id];
+    found: for (const b of bySize) {
+      // Centered in the block where it can be (a landmark faces its square).
+      const dc = b[0] + Math.floor((b[1] - b[0] - d.cols) / 2);
+      const dr = b[2] + Math.floor((b[3] - b[2] - d.rows) / 2);
+      for (const [c, r] of [[dc, dr], [b[0], b[2]]] as const) {
+        if (fits(c, r, d.cols, d.rows, b)) {
+          place(id, c, r);
+          break found;
+        }
+      }
+    }
+  }
+  for (const b of blocks) {
+    for (let dc = b[0]; dc < b[1]; dc++) {
+      for (let dr = b[2]; dr < b[3]; dr++) {
+        if (lots[at(dc, dr)] !== undefined) continue;
+        const options: Partial<Record<StructureId | OpenLot, number>> = {};
+        for (const [k, w] of Object.entries(plan.lots) as [StructureId | OpenLot, number][]) {
+          const d = k in STRUCTURES ? STRUCTURES[k as StructureId] : null;
+          // Weights are shares of the built-up area: a big structure wins wherever it fits.
+          if (!d) options[k] = w;
+          else if (fits(dc, dr, d.cols, d.rows, b)) options[k] = w * d.cols * d.rows;
+        }
+        const pick = weighted(options, rng.next());
+        if (pick in STRUCTURES) {
+          place(pick as StructureId, dc, dr);
+          continue;
+        }
+        const open = pick as OpenLot;
+        if (open === 'park') lots[at(dc, dr)] = { mat: 'forest', art: { kind: 'tree', species: rc.biome.id === 'desert' ? 'palm' : treeOf(rc, rng.next()) } };
+        else if (open === 'lot') lots[at(dc, dr)] = street('lot', rng.chance(g.lotCars));
+        else if (open === 'plaza') lots[at(dc, dr)] = street('plaza', false);
+        else lots[at(dc, dr)] = open === 'garden' ? { mat: 'farmland' } : null;
+      }
+    }
+  }
+  return lots.map((l) => l ?? null);
+}
+
+/**
+ * A farm's yard (SPEC §4.6 "Settlements"), on a stream of its own: in a corner inside the hedges,
+ * a barn, the farmhouse, maybe a silo, on open ground (the crops stop short of them). Null if the field is too small for one.
+ */
+function layoutYard(seed: number, ci: number, f: Block): Block['yard'] | null {
+  const g = TERRAIN_GEN.farm;
+  const rng = new Rng(hashSeed(seed, ci, f.id, ART_SALT.yard));
+  const cols = 3;
+  const rows = Math.min(3, f.rows - 2);
+  if (!rng.chance(g.yard) || f.cols < cols + 2 || rows < 2) return null;
+  const col0 = rng.chance(0.5) ? f.col0 + 1 : f.col0 + f.cols - 1 - cols;
+  const row0 = rng.chance(0.5) ? f.row0 + 1 : f.row0 + f.rows - 1 - rows;
+  const lots: (Lot | undefined)[] = new Array(cols * rows).fill(undefined);
+  const at = (dc: number, dr: number) => dc * rows + dr;
+  let placed = 0;
+  const put = (id: StructureId, dc: number, dr: number) => {
+    const d = STRUCTURES[id];
+    const style = rng.int(0, d.styles - 1);
+    const uid = hashSeed(seed, ci, f.id, ART_SALT.yard, placed++);
+    for (let i = 0; i < d.cols; i++) for (let j = 0; j < d.rows; j++) lots[at(dc + i, dr + j)] = { mat: 'building', art: { kind: 'structure', id, style, cols: d.cols, rows: d.rows, dc: i, dr: j, uid } };
+  };
+  const free = (id: StructureId): [number, number][] => {
+    const d = STRUCTURES[id];
+    const out: [number, number][] = [];
+    for (let dc = 0; dc + d.cols <= cols; dc++) {
+      for (let dr = 0; dr + d.rows <= rows; dr++) {
+        let ok = true;
+        for (let i = 0; i < d.cols; i++) for (let j = 0; j < d.rows; j++) if (lots[at(dc + i, dr + j)]) ok = false;
+        if (ok) out.push([dc, dr]);
+      }
+    }
+    return out;
+  };
+  for (const id of ['barn', 'farmhouse', ...(rng.chance(g.silos) ? (['silo'] as const) : [])] as StructureId[]) {
+    const spots = free(id);
+    if (spots.length) put(id, ...spots[rng.int(0, spots.length - 1)]!);
+  }
+  return { col0, row0, cols, rows, lots: lots.map((l) => l ?? { mat: 'ground' }) };
 }
 
 /** Whether a cell is on a fortress's command post pad (Decapitation, SPEC §3). */
@@ -489,7 +754,9 @@ const SOFT: ReadonlySet<MaterialId> = new Set(['ground', 'farmland']);
  * it paints over, so rock keeps the shape it would have on open ground (holes cut by rails or
  * defenses would leave notches a hull gets wedged in).
  */
-const ROCK_SPARES: ReadonlySet<MaterialId> = new Set(['building', 'road', 'factory', 'fuelTank']);
+const ROCK_SPARES: ReadonlySet<MaterialId> = new Set(['building', 'road', 'car', 'factory', 'fuelTank']);
+/** What a country road runs over (it goes round everything else; rock, rivers, and towns paint over it). */
+const ROAD_CLAIMS: ReadonlySet<MaterialId> = new Set(['ground', 'farmland', 'forest', 'hedgerow']);
 const LAKE_CLAIMS: ReadonlySet<MaterialId> = new Set(['ground', 'forest', 'farmland', 'crater', 'snowdrift']);
 
 /**
@@ -510,12 +777,11 @@ function featurePaint(seed: number, ci: number, f: Feature, col: number, row: nu
       // Mostly solid with a slightly ragged edge.
       return d < f.r * (0.8 + 0.4 * noise) ? 'rock' : null;
     }
-    case 'town': {
-      const dc = col - f.col0;
-      const dr = row - f.row0;
-      if (dc < 0 || dr < 0 || dc >= f.cols || dr >= f.rows) return null;
-      const street = dc % 3 === 2 || (f.rows >= 4 && dr === Math.floor(f.rows / 2));
-      return !street && noise < TERRAIN_GEN.townFill ? 'building' : 'road';
+    case 'town':
+      return townLot(f, col, row)?.mat ?? null;
+    case 'road': {
+      if (!ROAD_CLAIMS.has(cur) || !onRoad(f, col, row)) return null;
+      return noise < f.cars ? 'car' : 'road';
     }
     case 'craters': {
       if (!SOFT.has(cur) && cur !== 'forest') return null;
@@ -575,6 +841,8 @@ function featurePaint(seed: number, ci: number, f: Feature, col: number, row: nu
       const dr = row - f.row0;
       if (dc < 0 || dr < 0 || dc >= f.cols || dr >= f.rows || !SOFT.has(cur)) return null;
       const edge = dc === 0 || dr === 0 || dc === f.cols - 1 || dr === f.rows - 1;
+      const yard = yardLot(f, col, row);
+      if (yard) return yard.mat;
       return f.walled && edge && noise >= TERRAIN_GEN.farm.gap ? 'hedgerow' : 'farmland';
     }
     case 'factory': {
@@ -612,6 +880,52 @@ function featurePaint(seed: number, ci: number, f: Feature, col: number, row: nu
   }
 }
 
+/** A settlement's lot at a cell, or null outside it (or an open yard). */
+function townLot(f: Town, col: number, row: number): Lot | null {
+  const dc = col - f.col0;
+  const dr = row - f.row0;
+  if (dc < 0 || dr < 0 || dc >= f.cols || dr >= f.rows) return null;
+  return f.lots[dc * f.rows + dr] ?? null;
+}
+
+/** A farmyard's lot at a cell, or null outside it. */
+function yardLot(f: Block, col: number, row: number): Lot | null {
+  const y = f.yard;
+  if (!y) return null;
+  const dc = col - y.col0;
+  const dr = row - y.row0;
+  if (dc < 0 || dr < 0 || dc >= y.cols || dr >= y.rows) return null;
+  return y.lots[dc * y.rows + dr] ?? null;
+}
+
+/**
+ * How a feature draws a cell it just painted `mat` (cosmetic, SPEC §4.6 "Settlements"): a
+ * structure's piece, a tree species, a road's surface; undefined for the plain look.
+ */
+function featureArt(seed: number, ci: number, f: Feature, col: number, row: number, mat: MaterialId, rc: Resolved): TileArt | undefined {
+  switch (f.kind) {
+    case 'town':
+      return townLot(f, col, row)?.art;
+    case 'farm':
+      return yardLot(f, col, row)?.art;
+    case 'road':
+      return { kind: 'road', style: f.style };
+    case 'forest': {
+      // A wood is mostly one species, with others mixed in.
+      const own = treeOf(rc, cellNoise(seed, ci, f.id, ART_SALT.trees));
+      const species = cellNoise(seed, col, row, ART_SALT.trees) < 0.75 ? own : treeOf(rc, cellNoise(seed, col, row, ART_SALT.trees + 1));
+      return { kind: 'tree', species };
+    }
+    case 'factory': {
+      if (mat !== 'factory') return undefined;
+      const style = hashSeed(seed, ci, f.id, ART_SALT.hall) % HALL_STYLES;
+      return { kind: 'hall', style, cols: f.cols, rows: f.rows, dc: col - f.col0, dr: row - f.row0 };
+    }
+    default:
+      return undefined;
+  }
+}
+
 /**
  * A river crossing the whole field (SPEC §4.5), in tile units: shallows along both banks, a deep
  * channel between, fords (row ranges) that are shallow all the way across, and maybe a bridge.
@@ -631,6 +945,8 @@ export interface River {
   fords: [number, number][];
   /** A bridge across it (rows it spans, and which kind), or null. */
   bridge: { rows: [number, number]; mat: MaterialId } | null;
+  /** Rows of its footbridges (one row wide; troops only). */
+  footbridges: number[];
   /** What it's made of (the biome's): the shallows and fords, and the channel. */
   shallows: MaterialId;
   channel: MaterialId;
@@ -681,6 +997,7 @@ function riverOf(seed: number, ci: number, rows: number, rc: Resolved): River | 
     bank: rng.range(g.riverBank[0], g.riverBank[1]),
     fords: [],
     bridge: null,
+    footbridges: [],
     shallows: rc.biome.river.shallows,
     channel: rc.biome.river.channel,
   };
@@ -693,6 +1010,26 @@ function riverOf(seed: number, ci: number, rows: number, rc: Resolved): River | 
       const r0 = brng.int(1, rows - w - 1);
       if (rv.fords.some(([a, b]) => r0 < b + 1 && r0 + w > a - 1)) continue;
       rv.bridge = { rows: [r0, r0 + w], mat: brng.chance(g.lightBridgeShare) ? 'lightBridge' : 'bridge' };
+    }
+  }
+  // Footbridges over open water, on a stream of their own, clear of the fords, the bridge, and each
+  // other. A country road that reaches the river crosses it on one.
+  if (rv.channel === 'water') {
+    const frng = new Rng(hashSeed(seed, ci, ART_SALT.footbridge));
+    const clear = (r: number) =>
+      r >= 1 &&
+      r < rows - 1 &&
+      !rv.fords.some(([a, b]) => r >= a - 1 && r < b + 1) &&
+      !(rv.bridge && r >= rv.bridge.rows[0] - 1 && r < rv.bridge.rows[1] + 1) &&
+      !rv.footbridges.some((x) => Math.abs(x - r) < 3);
+    const road = roadRowAt(seed, Math.floor(rv.col), rows, rc);
+    if (road !== null && clear(road)) rv.footbridges.push(road);
+    const n = expected(frng, mixOf(rc, 'footbridges'));
+    for (let i = 0, attempts = 0; i < n && attempts < 12; attempts++) {
+      const r = frng.int(1, rows - 2);
+      if (!clear(r)) continue;
+      rv.footbridges.push(r);
+      i++;
     }
   }
   return rv;
@@ -727,6 +1064,8 @@ function colSpan(f: Feature): [number, number] {
     case 'farm':
     case 'oilfield':
       return [f.col0, f.col0 + f.cols];
+    case 'road':
+      return f.cross ? [f.cross.col, f.cross.col] : [f.col0, f.col0 + CHUNK];
     case 'factory':
       return [f.col0 - 2, f.col0 + f.cols + 2];
     case 'tanks':
@@ -852,20 +1191,22 @@ function railRows(seed: number, ci: number, rows: number, rc: Resolved): number[
 }
 
 /** Order features are painted in: later passes paint over earlier ones where they claim the cell. */
-const PASSES = ['farm', 'forest', 'craters', 'hedge', 'town', 'factory', 'tanks', 'oilfield', 'drift', 'dune', 'lake', 'wrecks', 'blast', 'fort', 'traps', 'mines'] as const;
+const PASSES = ['farm', 'forest', 'craters', 'hedge', 'road', 'town', 'factory', 'tanks', 'oilfield', 'drift', 'dune', 'lake', 'wrecks', 'blast', 'fort', 'traps', 'mines'] as const;
 
 /** Structures an old battlefield leaves standing damaged or in rubble (`BiomeDef.ruins`). */
-const RUINABLE: ReadonlySet<MaterialId> = new Set(['building', 'factory', 'wall', 'bunker']);
+const RUINABLE: ReadonlySet<MaterialId> = new Set(['building', 'factory', 'wall', 'bunker', 'car']);
 
 interface Painted {
   mats: MaterialId[];
   /** What a bridge tile is built over. */
   under: (MaterialId | undefined)[];
+  /** How each cell is drawn (from the feature that painted it, if nothing painted over it since). */
+  art: (TileArt | undefined)[];
 }
 
 /** Raw material of every cell in a column, before dead ends are filled. */
 function paintColumn(seed: number, col: number, rows: number, neighbors: Neighbor[], rc: Resolved): Painted {
-  const out: Painted = { mats: [], under: [] };
+  const out: Painted = { mats: [], under: [], art: [] };
   const rails = col >= TERRAIN_GEN.clearStartCols ? railRows(seed, Math.floor(col / CHUNK), rows, rc) : [];
   const cliffs = rc.approach?.cliffs;
   const reach = reaching(neighbors, col);
@@ -873,13 +1214,23 @@ function paintColumn(seed: number, col: number, rows: number, neighbors: Neighbo
   for (let row = 0; row < rows; row++) {
     let mat: MaterialId = 'ground';
     let under: MaterialId | undefined;
+    let art: TileArt | undefined;
     if (col >= TERRAIN_GEN.clearStartCols) {
+      let owner: { ci: number; f: Feature } | null = null;
       for (const pass of PASSES) {
         for (const { ci, f } of reach.get(pass) ?? []) {
           const paint = featurePaint(seed, ci, f, col, row, mat);
-          if (paint) mat = paint;
+          if (paint) {
+            mat = paint;
+            owner = { ci, f };
+          }
         }
       }
+      const featured = mat;
+      art = owner ? featureArt(seed, owner.ci, owner.f, col, row, mat, rc) : undefined;
+      // Rock goes over a country road as if it were open ground (a road through an outcrop would
+      // leave a notch a hull could wedge in).
+      const track = owner?.f.kind === 'road';
       // Rails run under everything but a command post's pad (Decapitation).
       if (rails.includes(row) && !(reach.get('fort') ?? []).some(({ f }) => f.kind === 'fort' && inKeep(f, col, row))) mat = 'rail';
       // A main avenue runs through town along the lane (urban districts).
@@ -903,6 +1254,9 @@ function paintColumn(seed: number, col: number, rows: number, neighbors: Neighbo
           if (onBridge) {
             mat = rv.bridge!.mat;
             under = water;
+          } else if (rv.footbridges.includes(row)) {
+            mat = 'footbridge';
+            under = water;
           } else {
             mat = water;
             under = undefined;
@@ -917,13 +1271,15 @@ function paintColumn(seed: number, col: number, rows: number, neighbors: Neighbo
           if (row + 0.5 < top || rows - row - 0.5 < bottom) mat = 'rock';
         }
         for (const { ci, f } of reach.get('rock') ?? []) {
-          const paint = featurePaint(seed, ci, f, col, row, mat);
+          const paint = featurePaint(seed, ci, f, col, row, track && mat === featured ? 'ground' : mat);
           if (paint) mat = paint;
         }
       }
+      if (mat !== featured) art = undefined;
     }
     out.mats.push(mat);
     out.under.push(under);
+    out.art.push(art);
   }
   return out;
 }
@@ -943,18 +1299,31 @@ export function generateChunk(seed: number, ci: number, rows: number, recipe: Te
   const ahead: MaterialId[][] = [];
   for (let col = first + 2 * CHUNK + k - 1; col >= first + 2 * CHUNK; col--) ahead.unshift(paintColumn(seed, col, rows, neighbors, rc).mats);
   const cols: Painted[] = [];
+  // Every column painted, for checking structures' footprints and linking roads across the chunk's
+  // edges: a few behind it (raw: dead ends aren't filled there) and the ones ahead.
+  const painted = new Map<number, Painted>();
+  for (let col = first - MAX_FOOTPRINT; col < first; col++) painted.set(col, paintColumn(seed, col, rows, neighbors, rc));
   for (let col = first + 2 * CHUNK - 1; col >= first; col--) {
-    const painted = paintColumn(seed, col, rows, neighbors, rc);
-    fillDeadEnds(painted.mats, ahead, (row) => inLane(seed, col, row, rows, rc) || nearRiver(seed, neighbors, col, row, rows));
-    if (col < first + CHUNK) cols[col - first] = painted;
-    ahead.unshift(painted.mats);
+    const p = paintColumn(seed, col, rows, neighbors, rc);
+    fillDeadEnds(p.mats, ahead, (row) => inLane(seed, col, row, rows, rc) || nearRiver(seed, neighbors, col, row, rows));
+    if (col < first + CHUNK) cols[col - first] = p;
+    painted.set(col, p);
+    ahead.unshift(p.mats);
     ahead.length = k;
   }
+  const whole = new Map<number, boolean>();
+  const matAt = (col: number, row: number) => painted.get(col)?.mats[row];
   return cols.map((p, i) =>
     p.mats.map((mat, row) => {
-      const t: Tile = { mat, state: 'intact', hp: MATERIALS[mat].maxHp, variant: hashSeed(seed, first + i, row) & 3 };
+      const col = first + i;
+      const t: Tile = { mat, state: 'intact', hp: MATERIALS[mat].maxHp, variant: hashSeed(seed, col, row) & 3 };
       const under = p.under[row];
       if (under) t.under = under;
+      // Dead-end filling may have turned the cell to rock since it was drawn.
+      const art = artFits(p.art[row], mat);
+      if (art) t.art = art.kind === 'structure' && !footprintWhole(art, col, row, painted, whole) ? fallbackArt(seed, art, col, row) : art;
+      const links = linksOf(mat, col, row, rows, matAt, art);
+      if (links !== null) t.links = links;
       const ruins = rc.biome.ruins;
       if (ruins && RUINABLE.has(mat)) {
         const n = cellNoise(seed, first + i, row, 0x7a1d);
@@ -964,6 +1333,64 @@ export function generateChunk(seed: number, ci: number, rows: number, recipe: Te
       return t;
     }),
   );
+}
+
+/** A cell's art if it still suits its material (rock may have filled the cell since). */
+function artFits(art: TileArt | undefined, mat: MaterialId): TileArt | undefined {
+  if (!art) return undefined;
+  const ok = art.kind === 'structure' ? mat === 'building' : art.kind === 'hall' ? mat === 'factory' : art.kind === 'tree' ? mat === 'forest' : mat === 'road' || mat === 'car';
+  return ok ? art : undefined;
+}
+
+/** The longest side of any structure's footprint, in tiles. */
+const MAX_FOOTPRINT = Math.max(...Object.values(STRUCTURES).map((d) => Math.max(d.cols, d.rows)));
+
+/**
+ * Whether every tile of a structure's footprint came out as that structure: a river, a rail line,
+ * or anything else painted over part of it cuts it, and its pieces then stand as small buildings of
+ * their own. Worked out the same from every tile of the footprint, so they all agree.
+ */
+function footprintWhole(art: Extract<TileArt, { kind: 'structure' }>, col: number, row: number, painted: Map<number, Painted>, memo: Map<number, boolean>): boolean {
+  const known = memo.get(art.uid);
+  if (known !== undefined) return known;
+  const c0 = col - art.dc;
+  const r0 = row - art.dr;
+  let ok = true;
+  for (let i = 0; i < art.cols && ok; i++) {
+    const p = painted.get(c0 + i);
+    for (let j = 0; j < art.rows && ok; j++) {
+      const a = p?.art[r0 + j];
+      ok = !!p && a?.kind === 'structure' && a.uid === art.uid && a.dc === i && a.dr === j && p.mats[r0 + j] === 'building';
+    }
+  }
+  memo.set(art.uid, ok);
+  return ok;
+}
+
+function fallbackArt(seed: number, art: Extract<TileArt, { kind: 'structure' }>, col: number, row: number): TileArt {
+  const id = STRUCTURES[art.id].fallback;
+  const h = hashSeed(seed, col, row, ART_SALT.fallback);
+  return { kind: 'structure', id, style: h % STRUCTURES[id].styles, cols: 1, rows: 1, dc: 0, dr: 0, uid: h };
+}
+
+/** What roads and cars join up with: each other and bridges. */
+const ROAD_LINKS: ReadonlySet<MaterialId> = new Set(['road', 'car', 'bridge', 'lightBridge']);
+
+/**
+ * `LINK` bits for a road or wall tile (null for anything else). Country roads and walls run on off
+ * the sides of the field.
+ */
+function linksOf(mat: MaterialId, col: number, row: number, rows: number, matAt: (c: number, r: number) => MaterialId | undefined, art: TileArt | undefined): number | null {
+  const road = mat === 'road' || mat === 'car';
+  if (!road && mat !== 'wall') return null;
+  const joins = (m: MaterialId | undefined) => (road ? m !== undefined && ROAD_LINKS.has(m) : m === 'wall');
+  const offField = mat === 'wall' || (art?.kind === 'road' && (art.style === 'track' || art.style === 'paved'));
+  let links = 0;
+  if (joins(matAt(col + 1, row))) links |= LINK.fwd;
+  if (joins(matAt(col - 1, row))) links |= LINK.back;
+  if (row + 1 >= rows ? offField : joins(matAt(col, row + 1))) links |= LINK.right;
+  if (row - 1 < 0 ? offField : joins(matAt(col, row - 1))) links |= LINK.left;
+  return links;
 }
 
 /** Salvage from one tile knocked down, at its center. */
@@ -1281,7 +1708,8 @@ export class Terrain {
   /**
    * The Behemoth's weight on the tiles under its ground box (SPEC §4.5 bridge limits, §4.6 thin
    * ice). Over a bridge's limit, the whole span comes down; over thin ice's, the ice cracks, faster
-   * the heavier it is, until it gives way. Returns how many spans collapsed.
+   * the heavier it is, until it gives way. Returns how many spans collapsed hard enough to jolt the
+   * hull (a footbridge doesn't).
    */
   bear(fp: Rect, mass: number, dt: number, events: SimEvent[]): number {
     let spans = 0;
@@ -1292,7 +1720,7 @@ export class Terrain {
         if (!t || !bearing || mass <= bearing.limit || (t.state !== 'intact' && t.state !== 'damaged')) continue;
         if (bearing.give === 'span') {
           this.collapse(c, r, events);
-          spans++;
+          if (!bearing.quiet) spans++;
         } else {
           this.damage(c, r, BEARING.crackRate * (mass / bearing.limit - 1) * dt, events, false);
         }
@@ -1349,7 +1777,7 @@ export class Terrain {
       n++;
       queue.push([c + 1, r], [c - 1, r], [c, r + 1], [c, r - 1]);
     }
-    if (n > 0) events.push({ type: 'bridgeCollapse', x: (sx / n + 0.5) * TS, y: (sy / n + 0.5) * TS, tiles: n });
+    if (n > 0) events.push({ type: 'bridgeCollapse', x: (sx / n + 0.5) * TS, y: (sy / n + 0.5) * TS, tiles: n, mat });
   }
 
   /**

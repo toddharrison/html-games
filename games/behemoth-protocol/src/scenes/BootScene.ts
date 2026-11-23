@@ -13,6 +13,7 @@ import {
   seedFromUrl,
   shellsFromUrl,
   summaryFromUrl,
+  TERRAIN_PREVIEW,
   trailerFromUrl,
   weaponsFromUrl,
 } from '../config';
@@ -45,6 +46,10 @@ export class BootScene extends Phaser.Scene {
     generatePlaceholderArt(this);
     generatePixelFont(this);
     applySavedMute(this.sound);
+    if (TERRAIN_PREVIEW) {
+      this.scene.start('terrainPreview');
+      return;
+    }
     if (PRACTICE) {
       // Practice mounts come with a gun each: an autocannon left, a rotary gun right, a heavy
       // cannon on the dorsal ring, and a flak cannon on the coax.

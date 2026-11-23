@@ -111,7 +111,7 @@ describe('crossing rivers', () => {
     for (let c = Math.floor(lo) - 15; c <= hi + 15; c++) {
       for (let r = 0; r < rows; r++) {
         const t = w.terrain.tile(c, r)!;
-        if (t.mat !== 'water' && t.mat !== 'shallows') Object.assign(t, { mat: 'ground', state: 'intact', hp: 0 });
+        if (t.mat !== 'water' && t.mat !== 'shallows' && t.mat !== 'footbridge') Object.assign(t, { mat: 'ground', state: 'intact', hp: 0 });
       }
     }
     return { w, rv, lo, hi };
@@ -134,7 +134,7 @@ describe('crossing rivers', () => {
     expect(crossed).toBe(6);
   });
 
-  it('infantry wade straight across', () => {
+  it('infantry cross straight over (wading, or on a footbridge)', () => {
     const { w, lo, hi } = atRiver(1);
     const e = spawnEnemy(w, 'infantry', (hi + 2) * TS, w.behemoth.y);
     let wet = false;
@@ -143,7 +143,8 @@ describe('crossing rivers', () => {
       e.ai.anchor = { x: (lo - 3) * TS, y: e.y };
       e.ai.retargetIn = 10;
       stepEnemies(w, SIM_DT);
-      wet ||= w.terrain.tileAt(e.x, e.y)?.mat === 'water';
+      const m = w.terrain.tileAt(e.x, e.y)?.mat;
+      wet ||= m === 'water' || m === 'footbridge';
     }
     expect(wet).toBe(true);
     expect(e.x).toBeLessThan(lo * TS);

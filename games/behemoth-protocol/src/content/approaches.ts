@@ -13,8 +13,14 @@ export interface ApproachDef {
   name: string;
   /** Multipliers on the biome's mix (missing = 1). Chances are capped at 1. */
   scale: Partial<Record<MixKey, number>>;
-  /** Multiplier on town and factory sizes (default 1). */
+  /** Multiplier on town sizes along the field (default 1). */
   townSize?: number;
+  /** Multiplier on town sizes across the field (default `townSize`). */
+  townWidth?: number;
+  /** Multiplier on factory sizes (default `townSize`). */
+  factorySize?: number;
+  /** Its towns are cities (SPEC §4.6 "Settlements": towers, a capitol, avenues, car parks). */
+  city?: boolean;
   /** Multiplier on forest blob radius (default 1). */
   forestSize?: number;
   /**
@@ -55,8 +61,11 @@ export const APPROACHES: Record<ApproachId, ApproachDef> = {
     // blocks either side of it.
     id: 'urban',
     name: 'Urban district',
-    scale: { towns: 2.2, factories: 1.5, forests: 0.4, farms: 0.2, hedgerows: 0.3, craterFields: 1.6, lakes: 0.3, snowdrifts: 0.5, dunes: 0.4, oilfields: 0.5, wrecks: 1.3, blastSites: 1.3 },
-    townSize: 1.4,
+    scale: { towns: 2.2, factories: 1.5, crossRoads: 2, forests: 0.4, farms: 0.2, hedgerows: 0.3, craterFields: 1.6, lakes: 0.3, snowdrifts: 0.5, dunes: 0.4, oilfields: 0.5, wrecks: 1.3, blastSites: 1.3 },
+    townSize: 2,
+    townWidth: 2.8,
+    factorySize: 1.4,
+    city: true,
     avenue: 3,
     forces: { infantry: 1.6, weaponsTeam: 1.4, lightTank: 0.8 },
   },
@@ -64,7 +73,7 @@ export const APPROACHES: Record<ApproachId, ApproachDef> = {
     // Rivers every other chunk or so, nearly all bridged: a bridge fight.
     id: 'river',
     name: 'River crossing',
-    scale: { rivers: 2.4, bridges: 3, fortLines: 0.6 },
+    scale: { rivers: 2.4, bridges: 3, fortLines: 0.6, footbridges: 1.5 },
     // Hovercraft own the water.
     forces: { hovercraft: 2.5 },
   },

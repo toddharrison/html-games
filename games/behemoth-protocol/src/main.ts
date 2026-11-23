@@ -6,6 +6,7 @@ import { MapScene } from './scenes/MapScene';
 import { SummaryScene } from './scenes/SummaryScene';
 import { EventScene } from './scenes/EventScene';
 import { TitleScene } from './scenes/TitleScene';
+import { TerrainPreviewScene } from './scenes/TerrainPreviewScene';
 import { DemoBattleScene, TopDownBattleScene } from './scenes/TopDownBattleScene';
 import { DevConsole, devEnabled } from './dev/console';
 
@@ -25,7 +26,7 @@ const game = new Phaser.Game({
     mode: Phaser.Scale.NONE,
     zoom: rs.cssZoom,
   },
-  scene: [BootScene, TitleScene, MapScene, TopDownBattleScene, DepotScene, EventScene, SummaryScene, DemoBattleScene],
+  scene: [BootScene, TitleScene, MapScene, TopDownBattleScene, DepotScene, EventScene, SummaryScene, DemoBattleScene, TerrainPreviewScene],
 });
 dev?.attach(game);
 

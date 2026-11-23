@@ -518,7 +518,21 @@ export const TERRAIN_GEN = {
   forestBlobRadius: [1.5, 4] as const,
   townCols: [3, 7] as const,
   townRows: [2, 5] as const,
-  townFill: 0.75,
+  /**
+   * Settlement layouts (SPEC §4.6 "Settlements"): a town is cut into blocks by streets (a block is
+   * `blockCols` × `blockRows` tiles, a street one tile), and each block is packed with structures
+   * and open lots (content/structures.ts `SETTLEMENTS`). A town smaller than `townArea` tiles is a
+   * village; the urban approach's are cities. `cars` is the share of street tiles with a parked car
+   * (`avenueCars` on a city's avenue), `lotCars` of a car park's.
+   */
+  settlement: {
+    townArea: 18,
+    village: { blockCols: [2, 3] as const, blockRows: [2, 3] as const, cars: 0.03 },
+    town: { blockCols: [2, 4] as const, blockRows: [2, 4] as const, cars: 0.07 },
+    city: { blockCols: [3, 5] as const, blockRows: [3, 5] as const, cars: 0.1 },
+    avenueCars: 0.04,
+    lotCars: 0.5,
+  },
   /** Share of rock features that are ridges rather than round outcrops. */
   ridgeChance: 0.45,
   outcropRadius: [0.9, 1.9] as const,
@@ -588,7 +602,7 @@ export const TERRAIN_GEN = {
   trapLine: { length: [8, 21] as const, gates: [1, 2] as const, gateWidth: 3 },
   hedgerow: { length: [5, 12] as const, gap: 0.1 },
   /** Crop fields (columns × rows); `hedged` of them are boxed in by hedgerows with a few gaps. */
-  farm: { cols: [5, 10] as const, rows: [4, 8] as const, hedged: 0.6, gap: 0.15 },
+  farm: { cols: [5, 10] as const, rows: [4, 8] as const, hedged: 0.6, gap: 0.15, yard: 0.7, silos: 0.6 },
   /** Frozen lakes: an ice sheet whose middle (`core` of its radius) is thin ice. */
   lake: { radius: [2.2, 4.5] as const, core: 0.55 },
   /** Drifts are blown out across the field (`stretch` times longer across than along). */
@@ -609,6 +623,14 @@ export const TERRAIN_GEN = {
   blastSite: { radius: [2.5, 4.5] as const, core: 0.45 },
   /** Mountain-pass cliff depth wanders between knots this many columns apart. */
   cliffKnotCols: 6,
+  /**
+   * Country roads (cosmetic going, SPEC §4.6 "Settlements"): one winds along a stretch of `stretch`
+   * chunks between knots `knotChunks` chunks apart, at most `swing` rows either side of mid-field;
+   * where the stretch before or after has none, it comes in from (or leaves by) a side of the field.
+   * `stretch` must be a multiple of `knotChunks`. Roads across the field reach from a side at least
+   * `crossMin` rows in.
+   */
+  road: { stretch: 4, knotChunks: 2, swing: 5, crossMin: 6 },
 };
 
 /** Tonnage limits (SPEC §4.5 bridges, §4.6 thin ice): what an overloaded tile does under the Behemoth. */

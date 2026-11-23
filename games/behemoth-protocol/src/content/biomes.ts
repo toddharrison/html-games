@@ -52,6 +52,15 @@ export interface FeatureMix {
   wrecks: number;
   /** Old blast sites: glassed ground ringed by craters. */
   blastSites: number;
+  /**
+   * Chance a stretch of `TERRAIN_GEN.road.stretch` chunks has a country road winding along it
+   * (cosmetic going, SPEC §4.6 "Settlements"; surfaced per `ROADS` in content/structures.ts).
+   */
+  roads: number;
+  /** Roads across the field. */
+  crossRoads: number;
+  /** Footbridges over a river (only rivers of open water get them). */
+  footbridges: number;
 }
 
 export type MixKey = keyof FeatureMix;
@@ -102,6 +111,9 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       oilfields: 0,
       wrecks: 0,
       blastSites: 0,
+      roads: 0.7,
+      crossRoads: 0.3,
+      footbridges: 0.8,
     },
     river: { shallows: 'shallows', channel: 'water' },
   },
@@ -131,6 +143,9 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       oilfields: 0,
       wrecks: 0,
       blastSites: 0,
+      roads: 0.5,
+      crossRoads: 0.15,
+      footbridges: 0,
     },
     river: { shallows: 'ice', channel: 'thinIce' },
     // Open snowfields: fewer places for troops to hide, more armor.
@@ -162,6 +177,9 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       oilfields: 0,
       wrecks: 0.05,
       blastSites: 0,
+      roads: 0.6,
+      crossRoads: 0.35,
+      footbridges: 0.8,
     },
     river: { shallows: 'shallows', channel: 'water' },
     // Troops garrison the halls.
@@ -194,6 +212,9 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       oilfields: 0.3,
       wrecks: 0.08,
       blastSites: 0,
+      roads: 0.5,
+      crossRoads: 0.12,
+      footbridges: 0,
     },
     river: { shallows: 'wadi', channel: 'wadi' },
     // Fast, open ground: skirmishers range wide; few troops.
@@ -228,6 +249,9 @@ export const BIOMES: Record<BiomeId, BiomeDef> = {
       oilfields: 0,
       wrecks: 0.45,
       blastSites: 0.3,
+      roads: 0.6,
+      crossRoads: 0.2,
+      footbridges: 0.6,
     },
     river: { shallows: 'shallows', channel: 'water' },
     ruins: { damaged: 0.35, destroyed: 0.4 },

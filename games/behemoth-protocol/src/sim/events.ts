@@ -78,7 +78,7 @@ export type SimEvent =
   /** `mat` is what the tile was: a bridge that fell has already turned into the river under it. */
   | { type: 'tileChanged'; col: number; row: number; state: TileState; mat: MaterialId }
   /** A whole bridge span came down (shot out, or overloaded). */
-  | { type: 'bridgeCollapse'; x: number; y: number; tiles: number }
+  | { type: 'bridgeCollapse'; x: number; y: number; tiles: number; mat: MaterialId }
   | { type: 'collision'; obstacle: ObstacleClass; x: number; y: number }
   /** Armor grinding along rock: sparks at the contact point. */
   | { type: 'scrape'; x: number; y: number }

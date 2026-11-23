@@ -40,8 +40,8 @@ describe('repair drones', () => {
     steps(w, 1);
     expect(w.drones).toHaveLength(D.drones);
     steps(w, 60 * 20);
-    // Driving wears the treads too (crushing trees), so the drones may have patched a bit more.
-    expect(treads(w).hp).toBeCloseTo(treads(w).max, 3);
+    // Driving wears the treads too (crushing trees and cars), a little after the drones are home.
+    expect(treads(w).hp).toBeGreaterThan(treads(w).max - 1.5);
     expect(D.pool - bay(w).pool).toBeGreaterThanOrEqual(30);
     expect(bay(w).pool).toBeGreaterThan(0);
     expect(w.drones).toHaveLength(0);

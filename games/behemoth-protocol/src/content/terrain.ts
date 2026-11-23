@@ -20,6 +20,8 @@ export type MaterialId =
   | 'mine'
   | 'bridge'
   | 'lightBridge'
+  | 'footbridge'
+  | 'car'
   // Temperate
   | 'hedgerow'
   | 'farmland'
@@ -70,7 +72,7 @@ export function skiable(mat: MaterialId): boolean {
 
 /** What a hovercraft skims over freely: open water and ice. */
 export function hoverable(mat: MaterialId): boolean {
-  return mat === 'water' || mat === 'shallows' || mat === 'ice' || mat === 'thinIce';
+  return mat === 'water' || mat === 'shallows' || mat === 'ice' || mat === 'thinIce' || mat === 'footbridge';
 }
 
 /** What a tile throws off when it's knocked down, for effects and sound. */
@@ -120,8 +122,9 @@ export interface MaterialDef {
    * Tons the tile holds (SPEC §4.5 bridges, §4.6 thin ice). A heavier Behemoth over it either
    * collapses the whole span at once (`span`, bridges) or cracks the tiles under it until they
    * give way (`crack`, thin ice; faster the heavier it is). Enemy vehicles are always light enough.
+   * A `quiet` span (a footbridge) is too slight to jolt the hull when it goes.
    */
-  bearing?: { limit: number; give: 'span' | 'crack' };
+  bearing?: { limit: number; give: 'span' | 'crack'; quiet?: boolean };
   /**
    * What the tile turns into once it's destroyed or crushed, starting intact: another material, or
    * `under`, the one it was built over (a bridge falls into its river).
@@ -387,6 +390,42 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     bearing: { limit: 300, give: 'span' },
     breaksTo: 'under',
     debris: 'wood',
+  },
+  footbridge: {
+    // A narrow plank or girder footbridge over a river (SPEC §4.5): troops cross dry-shod; vehicles
+    // can't get on it, and the Behemoth's weight brings the whole span down without slowing it
+    // (it's fording beside it anyway).
+    id: 'footbridge',
+    maxHp: 14,
+    damagedAt: 0.5,
+    obstacle: NO_OBSTACLE,
+    blocksShots: NO_COVER,
+    speed: { tracked: every(0), foot: every(1) },
+    cover: NO_COVER,
+    conceals: NO_COVER,
+    protection: NO_PROTECTION,
+    bearing: { limit: 20, give: 'span', quiet: true },
+    breaksTo: 'under',
+    debris: 'wood',
+  },
+  car: {
+    // Cars parked along a street or left on a road (SPEC §4.6 "Settlements"): like rubble, light
+    // going that slows small units and gives troops a little cover. The treads crush them flat; a
+    // hit burns one out where it stands.
+    id: 'car',
+    maxHp: 16,
+    damagedAt: 0.5,
+    obstacle: { intact: 'light', damaged: 'light', destroyed: 'light', flattened: 'none' },
+    blocksShots: NO_COVER,
+    speed: {
+      tracked: { intact: 0.6, damaged: 0.6, destroyed: 0.7, flattened: 1 },
+      foot: { intact: 0.8, damaged: 0.8, destroyed: 0.85, flattened: 1 },
+    },
+    cover: { intact: true, damaged: true, destroyed: true, flattened: false },
+    conceals: NO_COVER,
+    protection: { intact: 0.2, damaged: 0.2, destroyed: 0.15, flattened: 0 },
+    debris: 'metal',
+    burns: { dps: 4, spread: 0.12 },
   },
 
   // ── Temperate (SPEC §4.6) ──────────────────────────────────────────────────────────────────

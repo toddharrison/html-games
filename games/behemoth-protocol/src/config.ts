@@ -50,6 +50,9 @@ const RESOLUTIONS: Record<string, Resolution> = {
 export const RESOLUTION: Resolution = RESOLUTIONS[params.get('res') ?? ''] ?? RESOLUTIONS['576']!;
 
 /** Playtest run from a URL parameter: straight into battle, nothing saved or deleted. */
+/** Dev tool: `?terrain` opens the terrain preview (scenes/TerrainPreviewScene.ts) instead of the game. */
+export const TERRAIN_PREVIEW = params.has('terrain');
+
 export const PRACTICE = ['seed', 'immobilize', 'addons', 'trailer', 'weapons', 'shells', 'cookoff', 'grades', 'mods', 'depot', 'biome', 'approach', 'map', 'mode', 'directive', 'objective', 'summary', 'condition', 'event', 'doctrine', 'mix'].some((k) => params.has(k));
 
 /**

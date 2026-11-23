@@ -359,6 +359,11 @@ const BIOME_PAL: Record<BiomeId, Partial<Pal>> = {
     shallow: '#476b78',
     shallowLight: '#6a8e9a',
     silt: '#5d6c72',
+    lawn: '#d8e1e6',
+    lawnHi: '#eef3f5',
+    lawnDark: '#b9c6ce',
+    asphalt: '#5a6168',
+    asphaltHi: '#6c737a',
   },
   industrial: {
     // Cinders and oily dirt for ground, scrubby olive trees, grimy concrete, murky water.
@@ -381,6 +386,9 @@ const BIOME_PAL: Record<BiomeId, Partial<Pal>> = {
     shallow: '#47544a',
     shallowLight: '#5d6c5f',
     silt: '#4e5242',
+    lawn: '#4a5434',
+    lawnHi: '#5a6640',
+    lawnDark: '#3a4229',
   },
   desert: {
     // Sand for grass, sandstone for rock, dusty palms and scrub, adobe roofs.
@@ -407,6 +415,13 @@ const BIOME_PAL: Record<BiomeId, Partial<Pal>> = {
     gravel: '#8d7451',
     rubble: '#a89676',
     rubbleDark: '#857456',
+    lawn: '#7c8442',
+    lawnHi: '#949c52',
+    lawnDark: '#646a34',
+    asphalt: '#5e5547',
+    asphaltHi: '#6e6455',
+    scrub: '#7a7444',
+    scrubHi: '#9a9258',
   },
   wasteland: {
     // Ash for grass, scorched earth, dead grey-brown trees, soot-dark roofs, a toxic river.
@@ -433,6 +448,10 @@ const BIOME_PAL: Record<BiomeId, Partial<Pal>> = {
     shallow: '#4f5a36',
     shallowLight: '#6b7a46',
     silt: '#4b4a35',
+    lawn: '#57533e',
+    lawnHi: '#66614a',
+    lawnDark: '#47432f',
+    asphalt: '#3a3936',
   },
 };
 

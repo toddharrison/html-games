@@ -156,7 +156,7 @@ describe('rivers', () => {
     expect(count / (20 * 40)).toBeLessThan(0.35);
   });
 
-  it('cross the whole field: water, shallows, or a bridge at every row, and no rock in the water', () => {
+  it('cross the whole field: water, shallows, a bridge, or a footbridge at every row, and no rock in the water', () => {
     for (const rows of [ROWS, FIELD]) {
       for (const { t, rv } of rivers(5, rows)) {
         const [c0, c1] = span(rv, rows, 0);
@@ -164,7 +164,7 @@ describe('rivers', () => {
           let wet = false;
           for (let c = c0; c <= c1; c++) {
             const m = t.tile(c, r)!.mat;
-            if (m === 'water' || m === 'shallows' || m === 'bridge' || m === 'lightBridge') wet = true;
+            if (m === 'water' || m === 'shallows' || m === 'bridge' || m === 'lightBridge' || m === 'footbridge') wet = true;
           }
           expect(wet).toBe(true);
         }

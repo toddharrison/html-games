@@ -4,7 +4,8 @@ import { hashSeed } from '../sim/rng';
 import { TERRAIN_GEN } from '../content/tuning';
 import { GroundPainter } from './ground';
 import { lookFor, lookPalette, type Look, type Pal } from './looks';
-import { CLUMP, lookSheets, TILE, tileFrame, tileOverlay } from './tileArt';
+import { lookSheets } from './tileArt';
+import { CLUMP, TILE, tileFrame, tileOverlay } from './tileFrames';
 
 const CHUNK = TERRAIN_GEN.chunkCols;
 /** Ground columns painted per frame for the chunk coming up next (all of a chunk in view at once). */
@@ -157,9 +158,10 @@ export class TerrainView {
     // Jitter each clump a little so the forest edge is ragged rather than a grid. Offsets are whole
     // pixels and the top-left corner is placed directly: a half-pixel position makes the sprite
     // flicker between two pixels as the view scrolls.
-    const h = hashSeed(col, row, 0xc1);
-    const jx = (h & 3) - 2;
-    const jy = ((h >> 2) & 3) - 2;
+    // Parked cars sit square in their bay.
+    const h = frame.startsWith('c.') ? 0 : hashSeed(col, row, 0xc1);
+    const jx = h ? (h & 3) - 2 : 0;
+    const jy = h ? ((h >> 2) & 3) - 2 : 0;
     const flip = ((h >> 4) & 1) === 1;
     const half = Math.floor(CLUMP / 2);
     return this.scene.add

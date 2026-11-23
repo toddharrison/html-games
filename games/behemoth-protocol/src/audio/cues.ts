@@ -196,11 +196,13 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
       if (debris === 'ice' && ev.state === 'destroyed') return [{ sound: 'splash', size: 0.4, x, y }];
       return [];
     }
-    case 'bridgeCollapse':
+    case 'bridgeCollapse': {
+      const k = MATERIALS[ev.mat].bearing?.quiet ? 0.45 : 1;
       return [
-        { sound: 'collapse', size: 1.4, x: ev.x, y: ev.y },
-        { sound: 'splash', size: 1.2, x: ev.x, y: ev.y },
+        { sound: 'collapse', size: 1.4 * k, x: ev.x, y: ev.y },
+        { sound: 'splash', size: 1.2 * k, x: ev.x, y: ev.y },
       ];
+    }
     case 'collision': {
       const size = RAM_SIZE[ev.obstacle];
       return size > 0 ? [{ sound: 'ram', size, x: ev.x, y: ev.y }] : [];

@@ -19,14 +19,15 @@ import { capped, goTo, keepPace } from './steer';
 
 /**
  * Where a behavior wants the unit, and how it means to get there. 'pace': a point that moves with
- * the Behemoth (match its velocity and close in); 'arrive': walk there and stop; 'speed': drive at
- * it at `speed` (a convoy's pace, a charge).
+ * the Behemoth, or at `vel` if given (match its velocity and close in); 'arrive': walk there and
+ * stop; 'speed': drive at it at `speed` (a convoy's pace, a charge).
  */
 export interface Goal {
   x: number;
   y: number;
   mode: 'pace' | 'arrive' | 'speed';
   speed?: number;
+  vel?: Velocity;
   /** It means to touch the hull (a bomb truck's charge): the hull and its danger zones are no obstacle to it. */
   contact?: boolean;
 }
@@ -66,11 +67,12 @@ export function navigate(e: Enemy, w: World, goal: Goal, dt: number): Velocity {
       if (g.mode === 'speed') return toward(e, p.x, p.y, g.speed ?? e.def.maxSpeed);
       const v = toward(e, p.x, p.y, e.def.maxSpeed);
       // A goal moving with the hull: keep its pace while working round, or the hull runs it down.
-      return g.mode === 'arrive' ? v : capped(e, w.behemoth.vx + v.vx, w.behemoth.vy + v.vy);
+      const ref = g.vel ?? w.behemoth;
+      return g.mode === 'arrive' ? v : capped(e, ref.vx + v.vx, ref.vy + v.vy);
     }
     // The last leg: the goal itself, as the behavior asked; or, if it's out of reach, the nearest
     // point (kept pace with, if the goal moves with the hull: stopping in its path gets a unit run down).
-    if (!nav.reaches) return g.mode === 'pace' ? keepPace(e, w, p.x, p.y) : goTo(e, p.x, p.y);
+    if (!nav.reaches) return g.mode === 'pace' ? keepPace(e, w, p.x, p.y, g.vel) : goTo(e, p.x, p.y);
   }
   return direct(e, w, g);
 }
@@ -117,7 +119,7 @@ function onOpenGround(e: Enemy, w: World, g: Goal): Goal {
 
 /** Straight at the goal, the way the behavior asked. */
 function direct(e: Enemy, w: World, g: Goal): Velocity {
-  if (g.mode === 'pace') return keepPace(e, w, g.x, g.y);
+  if (g.mode === 'pace') return keepPace(e, w, g.x, g.y, g.vel);
   if (g.mode === 'arrive') return goTo(e, g.x, g.y);
   return toward(e, g.x, g.y, g.speed ?? e.def.maxSpeed);
 }

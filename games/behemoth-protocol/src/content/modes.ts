@@ -1,3 +1,4 @@
+import { screen, type ScreenDef } from './behaviors';
 import type { EnemyId } from './enemies';
 
 /**
@@ -64,9 +65,31 @@ export interface ModeDef {
     /** Gap between vehicles in the column (world units), and how far ahead of the frame's top the lead starts. */
     spacing: number;
     lead: number;
-    /** Seconds between a mine layer's mines, and how many it carries. */
+    /** Seconds between a mine layer's mines (while the hull is in its range), and how many it carries. */
     mineEvery: number;
     mines: number;
+    /**
+     * The column: a healthy vehicle closes up to `spacing` behind the nearest healthy one ahead of
+     * it, at `cohesion.gain` units/s per unit of gap, at most `cohesion.max` × its pace (the lead
+     * never waits).
+     */
+    cohesion: { gain: number; max: number };
+    /**
+     * The Behemoth within `range` of any convoy vehicle alarms the whole convoy until `hold` s after
+     * it's out of range (the banner `call`, once a battle). Alarmed, healthy vehicles push their pace
+     * by `sprint` and spread across the lane to `spread` off its center, so one ram can't take two.
+     */
+    alarm: { range: number; hold: number; call: string };
+    sprint: number;
+    spread: number;
+    /**
+     * Triage: a vehicle under `hurtAt` of its HP gives way, pulling `aside` off the lane's center and
+     * out of the column, and the rest go on without it.
+     */
+    hurtAt: number;
+    aside: number;
+    /** The escorts' role: they screen the haulers (`ScreenDef`). */
+    escort: ScreenDef;
   };
 }
 
@@ -116,6 +139,13 @@ export const MODES: Record<BattleModeId, ModeDef> = {
       lead: 170,
       mineEvery: 2.4,
       mines: 6,
+      cohesion: { gain: 0.8, max: 1.25 },
+      alarm: { range: 200, hold: 4, call: 'The convoy scatters' },
+      sprint: 1.1,
+      spread: 40,
+      hurtAt: 0.45,
+      aside: 56,
+      escort: screen(),
     },
   },
 };

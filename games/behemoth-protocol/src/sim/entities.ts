@@ -1,3 +1,4 @@
+import type { BehaviorDef } from '../content/behaviors';
 import type { EnemyDef, EnemyTurretDef } from '../content/enemies';
 import type { PoolSpec, ProjectileKind, ShellSpec, WeaponDef } from '../content/weapons';
 import type { NavState } from './ai/nav';
@@ -50,6 +51,11 @@ export interface Enemy extends EnemyGun {
   exposed: number;
   /** One of the battle mode's targets (SPEC §4.4: a fortress gun, a convoy hauler). */
   objective: boolean;
+  /**
+   * A behavior the battle gave it in place of its own (a convoy escort's screen); its own last-stand
+   * ring and weave still apply. Dropped once the role has nothing left to do.
+   */
+  role?: BehaviorDef;
   ai: AiMemory;
 }
 

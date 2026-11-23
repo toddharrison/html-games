@@ -99,6 +99,8 @@ export type SimEvent =
   | { type: 'lidOpen'; id: number; x: number; y: number }
   /** A trapdoor team pulling its lid down at fire coming its way (SPEC §7.4). */
   | { type: 'lidDuck'; id: number; x: number; y: number }
+  /** The Behemoth came within range of the Chase convoy for the first time: it scatters (`MODES.chase.convoy.alarm`). */
+  | { type: 'convoyAlarm'; x: number; y: number }
   /** A bomb truck started its run at the Behemoth (SPEC §7.4). */
   | { type: 'charge'; id: number; x: number; y: number }
   /** A mini-boss came into view for the first time (`EnemyDef.callout`). */

@@ -21,11 +21,11 @@ export function inFrame(e: Enemy, w: World, x: number, y: number): { x: number; 
 }
 
 /**
- * Desired velocity to reach a point that moves with the Behemoth: match its velocity, plus a
- * chase term toward the point, capped at the unit's top speed.
+ * Desired velocity to reach a point that moves with the Behemoth (or with `ref`, another unit's
+ * velocity): match its velocity, plus a chase term toward the point, capped at the unit's top speed.
  */
-export function keepPace(e: Enemy, w: World, tx: number, ty: number): { vx: number; vy: number } {
-  const b = w.behemoth;
+export function keepPace(e: Enemy, w: World, tx: number, ty: number, ref?: { vx: number; vy: number }): { vx: number; vy: number } {
+  const b = ref ?? w.behemoth;
   const dx = tx - e.x;
   const dy = ty - e.y;
   const d = Math.hypot(dx, dy) || 1;

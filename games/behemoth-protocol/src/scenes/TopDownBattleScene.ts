@@ -948,6 +948,9 @@ export class TopDownBattleScene extends Phaser.Scene {
         case 'salvage':
           this.salvage.add(ev.x, ev.y, ev.amount, ev.source);
           break;
+        case 'convoyAlarm':
+          this.objectiveShown = { at: w.time, text: MODES.chase.convoy?.alarm.call ?? '' };
+          break;
         case 'sighted':
           this.objectiveShown = { at: w.time, text: ENEMIES[ev.enemy].callout?.text ?? ENEMIES[ev.enemy].name };
           break;

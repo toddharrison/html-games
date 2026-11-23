@@ -106,12 +106,18 @@ export interface FixedDef extends Common {
 /**
  * Drives up the guaranteed lane for the far end at the convoy's pace (SPEC §4.4 Chase), steering
  * for a point `lookAhead` up the lane, slowing as it's damaged. With no convoy pace set it drives at
- * `idlePace` × its top speed.
+ * `idlePace` × its top speed. How the convoy holds together and reacts to the Behemoth is the
+ * Chase mode's (`MODES.chase.convoy`: column, alarm, spread, sprint, triage).
+ *
+ * `mines` (a mine layer): it lays only with the hull within `range` behind it, and then steers onto
+ * the line the hull will be on when it gets there (at most `lead` s ahead), so its mines land in the
+ * hull's path.
  */
 export interface ConvoyDef extends Common {
   kind: 'convoy';
   lookAhead: number;
   idlePace: number;
+  mines?: { range: number; lead: number };
 }
 
 /** Drives flat out at where the Behemoth will be, leading it by at most `maxLead` s of its travel (SPEC §7.4 bomb truck). */
@@ -135,7 +141,19 @@ export interface StalkerDef extends Common {
   across: number;
 }
 
-export type BehaviorDef = SkirmisherDef | HoldAheadDef | AmbusherDef | FixedDef | ConvoyDef | ChargeDef | StalkerDef;
+/**
+ * Screens the battle's targets (SPEC §4.4 Chase escorts): holds between the Behemoth and the target
+ * nearest it, `standoff` out from the target toward the hull (never past halfway), `spread` to its
+ * own side of that line, keeping pace with the target. Given to a unit by the battle as its role
+ * (`Enemy.role`); once there's nothing left to screen, the unit goes back to its own behavior.
+ */
+export interface ScreenDef extends Common {
+  kind: 'screen';
+  standoff: number;
+  spread: number;
+}
+
+export type BehaviorDef = SkirmisherDef | HoldAheadDef | AmbusherDef | FixedDef | ConvoyDef | ChargeDef | StalkerDef | ScreenDef;
 export type BehaviorKind = BehaviorDef['kind'];
 
 /** A behavior's settings: the unit's own numbers, with the preset's defaults for anything it leaves out. */
@@ -186,6 +204,11 @@ export function convoy(o: Partial<Omit<ConvoyDef, 'kind'>> = {}): ConvoyDef {
 
 export function charge(o: Partial<Omit<ChargeDef, 'kind'>> = {}): ChargeDef {
   return { kind: 'charge', rearInset: 0, siege: null, maxLead: 1.5, ...o };
+}
+
+/** A role, not a unit's own behavior: the unit's own `rearInset`, last-stand ring, and weave still apply. */
+export function screen(o: Partial<Omit<ScreenDef, 'kind'>> = {}): ScreenDef {
+  return { kind: 'screen', rearInset: 0, siege: null, standoff: 45, spread: 24, ...o };
 }
 
 export function stalker(o: Opts<StalkerDef, 'hold' | 'siege' | 'rearInset'>): StalkerDef {

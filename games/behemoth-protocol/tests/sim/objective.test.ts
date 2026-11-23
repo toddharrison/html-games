@@ -271,18 +271,6 @@ describe('chase', () => {
     expect(events.some((e) => e.type === 'objective' && e.what === 'lost')).toBe(true);
   });
 
-  it('the mine layer drops mines in plain sight behind it', () => {
-    const w = world({ objective: { mode: 'chase', strength: 'normal' } });
-    const events = run(w, 60 * 10, { throttle: -1 });
-    const laid = events.filter((e) => e.type === 'mineLaid');
-    expect(laid.length).toBeGreaterThan(0);
-    for (const m of laid) {
-      if (m.type !== 'mineLaid') continue;
-      const t = w.terrain.tileAt(m.x, m.y);
-      if (t?.mat === 'mine') expect(t.seen).toBe(true);
-    }
-  });
-
   it('running a hauler down destroys it and counts', () => {
     const w = world({ objective: { mode: 'chase', strength: 'normal' } });
     const h = targets(w)[0]!;

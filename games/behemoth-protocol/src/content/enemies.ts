@@ -434,7 +434,8 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: null,
     fireRange: 0,
     aimTime: 0,
-    behavior: convoy(),
+    // Saves its mines while nothing is following, and drops them on the hull's line.
+    behavior: convoy({ mines: { range: 400, lead: 1.5 } }),
     spawn: 'objective',
     threat: 1.5,
     salvage: 8,

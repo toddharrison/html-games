@@ -61,6 +61,8 @@ const objective = (o: Partial<ObjectiveState>): ObjectiveState => ({
   lost: 0,
   fortress: null,
   convoySpeed: 0,
+  alarm: 0,
+  alarmed: false,
   command: null,
   ...o,
 });

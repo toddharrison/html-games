@@ -56,6 +56,9 @@ export interface ObjectiveState {
   fortress: { x: number; guns: { id: EnemyId; x: number; y: number }[]; batteries: number } | null;
   /** Chase: the convoy's pace (world units/s). 0 outside a chase. */
   convoySpeed: number;
+  /** Chase: seconds the convoy stays alarmed (> 0: the Behemoth is near, or was just now), and whether it has been yet. */
+  alarm: number;
+  alarmed: boolean;
   /** Decapitation: the command post, where it stands and what became of it; null without one. */
   command: { x: number; y: number; state: CommandState } | null;
 }
@@ -116,7 +119,7 @@ export function planFortress(
 
 export function createObjective(spec: ObjectiveSpec | null, terrain: Terrain, b: BehemothState): ObjectiveState {
   const mode = spec?.mode ?? 'assault';
-  const o: ObjectiveState = { mode, total: 0, destroyed: 0, lost: 0, fortress: null, convoySpeed: 0, command: null };
+  const o: ObjectiveState = { mode, total: 0, destroyed: 0, lost: 0, fortress: null, convoySpeed: 0, alarm: 0, alarmed: false, command: null };
   const def = MODES[mode];
   if (def.fortress) {
     const plan = terrain.fortress();
@@ -166,7 +169,10 @@ export function startObjective(w: World, strength: Strength): void {
     if (!id) break;
     const side = i % 2 === 0 ? -1 : 1;
     const at = laneSpot(w, id, mid + w.rng.range(-30, 30), w.terrain.laneY(mid) + side * w.rng.range(40, 80));
-    if (at) spawnEnemy(w, id, at.x, at.y);
+    if (!at) continue;
+    const e = spawnEnemy(w, id, at.x, at.y);
+    e.role = c.escort;
+    e.ai.orbitDir = side;
   }
 }
 
@@ -212,17 +218,41 @@ export function stepObjective(w: World, dt: number): void {
     }
     o.fortress = null;
   }
+  stepAlarm(w, dt);
   for (const e of w.enemies) {
     if (!e.alive) continue;
+    const d = e.def.behavior;
     if (e.objective && (e.x >= w.exitX + OBJECTIVE.escapeBeyond || e.x < w.frame.left - OBJECTIVE.lostBehind)) lose(w, e);
-    else if (e.def.id === 'mineLayer') layMines(w, e, dt);
+    else if (d.kind === 'convoy' && d.mines) layMines(w, e, d.mines.range, dt);
   }
 }
 
-/** A mine layer drops a mine behind it every so often, on bare ground, until it runs out (SPEC §4.4 Chase). */
-function layMines(w: World, e: Enemy, dt: number): void {
+/** The Chase convoy's alarm (`MODES.chase.convoy.alarm`): the Behemoth within range of any of its vehicles. */
+function stepAlarm(w: World, dt: number): void {
+  const o = w.objective;
+  const a = MODES[o.mode].convoy?.alarm;
+  if (!a) return;
+  const b = w.behemoth;
+  const near = w.enemies.find((e) => e.alive && e.def.behavior.kind === 'convoy' && Math.hypot(e.x - b.x, e.y - b.y) <= a.range);
+  if (!near) {
+    o.alarm = Math.max(0, o.alarm - dt);
+    return;
+  }
+  o.alarm = a.hold;
+  if (o.alarmed) return;
+  o.alarmed = true;
+  w.events.push({ type: 'convoyAlarm', x: near.x, y: near.y });
+}
+
+/**
+ * A mine layer drops a mine behind it every so often, on bare ground, until it runs out (SPEC §4.4
+ * Chase), but only while the hull is within `range` behind it: there's no point mining an empty road.
+ */
+function layMines(w: World, e: Enemy, range: number, dt: number): void {
   const every = MODES.chase.convoy?.mineEvery ?? 0;
   if (every <= 0 || (e.ai.minesLeft ?? 0) <= 0) return;
+  const behind = e.x - w.behemoth.x;
+  if (behind <= 0 || behind > range) return;
   e.ai.mineIn = (e.ai.mineIn ?? every) - dt;
   if (e.ai.mineIn > 0) return;
   e.ai.mineIn = every;

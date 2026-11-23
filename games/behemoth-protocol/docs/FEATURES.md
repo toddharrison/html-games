@@ -48,7 +48,7 @@ The game is the `behemoth-protocol` npm workspace in the html-games monorepo, at
 - **Gotcha:** `node_modules` is hoisted to the repo root. Run `npm install` there, not in this folder.
 
 ### Version stamp
-`M3` · `uncommitted` · `playtest: pending` · SPEC §10
+`M3` · `8f2917a` · `playtest: pending` · SPEC §10
 User request (Nov 23, 2026): the title screen shows the build's version, dim, bottom right (the attract caption has the bottom left), e.g. `v0.3.0 1f7853a`, plus `dev` on the dev server (the code may be ahead of that commit).
 - The version is `package.json`'s `version`, numbered `0.<milestone>.<patch>` until v1 (M5): `0.3.0` for M3. Bump it by hand when a milestone lands (and run `npm install` at the root so the lockfile follows). The commit is `git rev-parse --short HEAD` at build time (`unknown` without git); the deploy builds the pushed commit.
 - `vite.config.ts` `define` (`__APP_VERSION__`, `__APP_COMMIT__`) → `src/version.ts` `VERSION` → `TitleScene.create`.

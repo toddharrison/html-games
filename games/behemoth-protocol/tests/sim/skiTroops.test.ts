@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DOCTRINES, DOCTRINE_IDS } from '../../src/content/doctrines';
 import { ENEMIES } from '../../src/content/enemies';
-import { groundMobility, MATERIALS } from '../../src/content/terrain';
+import { MATERIALS } from '../../src/content/terrain';
 import { EVASION, SKI } from '../../src/content/tuning';
 import { IDLE_COMMAND } from '../../src/sim/behemoth';
 import { spawnEnemy } from '../../src/sim/enemies';
@@ -39,7 +39,7 @@ describe('ski troops', () => {
     expect(DEF.targetClass).toBe('infantry');
     expect(DEF.mobility).toBe('ski');
     expect(DEF.canHide).toBe(false);
-    expect(DEF.evasive).toBeDefined();
+    expect(DEF.behavior.weave).toBeDefined();
     expect(DEF.callout?.per).toBe('run');
     expect(DEF.maxSpeed).toBeGreaterThan(ENEMIES.infantry.maxSpeed * 3);
     const most = Math.max(...DOCTRINE_IDS.map((d) => DOCTRINES[d].mix.skiTroops ?? 0));
@@ -51,7 +51,7 @@ describe('ski troops', () => {
   it('glide over snow, drifts, and ice, and slog over anything else', () => {
     const w = world();
     const t = w.terrain;
-    const at = (mat: 'ground' | 'snowdrift' | 'ice' | 'thinIce' | 'forest') => {
+    const at = (mat: 'ground' | 'snowdrift' | 'ice' | 'thinIce' | 'forest' | 'water') => {
       Object.assign(t.tile(40, 5)!, { mat, state: 'intact', hp: MATERIALS[mat].maxHp });
       return t.speedAt(40.5 * t.tileSize, 5.5 * t.tileSize, 'ski');
     };
@@ -59,8 +59,8 @@ describe('ski troops', () => {
     expect(at('forest')).toBeCloseTo(MATERIALS.forest.speed.foot.intact * SKI.offSnow);
     // Drifts bog everyone else down.
     expect(MATERIALS.snowdrift.speed.foot.intact).toBeLessThan(1);
-    // Fords and last-stand paths: the rules of troops on foot.
-    expect(groundMobility('ski')).toBe('foot');
+    // Deep water: wading, like troops on foot (routes go round it or across a ford).
+    expect(at('water')).toBeCloseTo(MATERIALS.water.speed.foot.intact * SKI.offSnow);
   });
 
   it('weave from side to side as they go, and fire on the move', () => {
@@ -98,7 +98,7 @@ describe('ski troops', () => {
         const v = world(seed);
         const b = v.behemoth;
         const e = spawnEnemy(v, 'skiTroops', b.x + 140, b.y + (seed % 2 ? 60 : -60));
-        if (!evasive) e.def = { ...e.def, evasive: undefined };
+        if (!evasive) e.def = { ...e.def, behavior: { ...e.def.behavior, weave: undefined } };
         let i = 0;
         for (; i < 60 * 40 && e.alive; i++) steps(v, 1);
         total += i;

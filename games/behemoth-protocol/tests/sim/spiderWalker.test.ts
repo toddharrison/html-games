@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { DOCTRINES, DOCTRINE_IDS } from '../../src/content/doctrines';
 import { ENEMIES } from '../../src/content/enemies';
-import { groundMobility, MATERIALS, walkerSpeed } from '../../src/content/terrain';
+import { MATERIALS, walkerSpeed } from '../../src/content/terrain';
 import { WALKER } from '../../src/content/tuning';
 import { IDLE_COMMAND, hitched } from '../../src/sim/behemoth';
 import { spawnEnemy } from '../../src/sim/enemies';
@@ -44,7 +44,7 @@ describe('spider walker', () => {
   it('is the wasteland’s own unit, mostly with the raiders, gunning for the trailer and the rear', () => {
     expect(DEF.biome).toBe('wasteland');
     expect(DEF.mobility).toBe('walker');
-    expect(DEF.behavior).toBe('stalker');
+    expect(DEF.behavior.kind).toBe('stalker');
     expect(DEF.target).toBe('support');
     expect(DEF.callout?.per).toBe('run');
     const most = Math.max(...DOCTRINE_IDS.map((d) => DOCTRINES[d].mix.spiderWalker ?? 0));
@@ -58,9 +58,8 @@ describe('spider walker', () => {
     expect(MATERIALS.rock.speed.tracked.intact).toBe(0);
     expect(walkerSpeed('building', 'intact', WALKER.climb)).toBe(WALKER.climb);
     expect(walkerSpeed('building', 'destroyed', WALKER.climb)).toBe(1);
+    // It can't wade deep water: routes take it to a ford, like a tank.
     expect(walkerSpeed('water', 'intact', WALKER.climb)).toBe(0);
-    // It fords like a tank.
-    expect(groundMobility('walker')).toBe('tracked');
   });
 
   it('met ahead, it steps out of the way, lets the hull by, and settles in behind, in view', () => {

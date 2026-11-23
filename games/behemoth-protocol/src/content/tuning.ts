@@ -278,6 +278,70 @@ export const ENEMY = {
   reverse: { start: (60 * Math.PI) / 180, stop: (95 * Math.PI) / 180, speedSlack: 1.25 },
 };
 
+/**
+ * Steering shared by every enemy behavior (`sim/ai/steer.ts`). Each behavior's own settings are per
+ * unit, in content/behaviors.ts.
+ */
+export const STEER = {
+  /** Chasing a point that moves with the Behemoth: closing speed per unit of distance (1/s), on top of matching its velocity. */
+  paceGain: 1.5,
+  /** Walking to a fixed point: closing speed per unit of distance (1/s), and how close counts as there. */
+  arriveGain: 2,
+  arrived: 1.5,
+  /** Units keep this much farther inside the frame's leading and trailing edges than the edge of the screen (radius + 4). */
+  frameMargin: 8,
+};
+
+/**
+ * Navigation (`sim/ai/nav.ts`): how every moving unit routes to where its behavior wants it.
+ * Straight when the way is clear; otherwise along a route planned over the tiles (A*), costed by
+ * 1 / the ground's speed for the unit, plus hazards.
+ */
+export const NAV = {
+  /** Seconds between rethinking the route (units are staggered over `stagger` slots so they don't all plan at once). */
+  replan: 0.4,
+  stagger: 8,
+  /** Ground slower than this (share of top speed) on the straight line makes a unit plan a route, in case going round is quicker. */
+  slow: 0.6,
+  /**
+   * A goal on ground the unit can't enter moves to the nearest open tile within `snap` tiles, scoring
+   * each by its distance from the goal, plus `snapBias` × its distance from the unit, plus `snapAway` ×
+   * how much nearer the hull it is than the goal.
+   */
+  snap: 4,
+  snapBias: 0.5,
+  snapAway: 3,
+  /** A replan multiplies the cost of the tiles on the unit's current route by this, so it sticks to it. */
+  stick: 0.6,
+  /** A waypoint counts as passed within this distance. */
+  reached: 6,
+  /** The planning window: this many columns beyond the unit and its goal, at most `maxCols` in all; at most `maxExpand` tiles searched. */
+  pad: 6,
+  maxCols: 48,
+  maxExpand: 2500,
+  /** Smoothing looks at most this many tiles ahead for a straight leg. */
+  smoothReach: 16,
+  /** Units this wide (radius) and up pay `edgeCost` on tiles beside anything impassable, so they keep to the middle of a gap. */
+  wideAt: 7,
+  edgeCost: 0.75,
+  /**
+   * The Behemoth's path: the hull's footprint and the ground it covers in the next `lead` s, `pad`
+   * beyond a unit's radius, costs `cost` a tile to cross on the hull's line, falling to `edge` × that
+   * at the zone's sides (units go round, not under the treads, and one caught in front gets out sideways).
+   */
+  hull: { lead: 0.75, pad: 6, cost: 25, edge: 0.2 },
+  /**
+   * A marked barrage zone (SPEC §7 artillery): `react` s after it's marked, units steer clear of it
+   * (`pad` beyond their radius) and a goal inside it moves to its edge. Slow troops still get caught,
+   * so luring a volley onto them works.
+   */
+  zone: { react: 0.8, pad: 6, cost: 30 },
+  /** Explosive terrain still standing (fuel tanks, derricks): `cost` a tile within `share` × its blast radius. */
+  blast: { share: 0.6, cost: 4 },
+  /** Units push apart inside their radii plus `gap`: `gain` units/s per unit of overlap, at most `max` × their top speed. */
+  sep: { gap: 2, gain: 8, max: 0.6 },
+};
+
 /** How long a hidden unit stays visible after giving itself away (SPEC §4.5). */
 export const CONCEALMENT = {
   /** Seconds visible after its last shot. Lining up a shot (the telegraph) reveals it too. */
@@ -357,6 +421,18 @@ export const LAST_STAND = {
   flankDistance: 30,
   /** Infantry slip into concealing cover at least this far beyond the sensor reveal radius. */
   infiltrateMargin: 16,
+  /** How often besiegers rethink their spot on the ring (s), and the chance they switch direction when they do. */
+  replan: { every: [3, 7] as const, flip: 0.4 },
+  /** Troops in the last stand look again for cover on the ring this often (s). */
+  coverRecheck: 1,
+  /** After a revive, units go back to their usual behavior and rethink within this many seconds. */
+  release: [0.5, 2] as const,
+  /**
+   * Besiegers steer round the stranded hull: they keep `clearance` (plus their radius) off its corners,
+   * and a path that would cross it goes via a waypoint `wayAngle` radians round the side they're on,
+   * `wayOut` × that clearance from its center.
+   */
+  aroundHull: { clearance: 4, wayAngle: 0.8, wayOut: 1.15 },
 };
 
 // ── Terrain ─────────────────────────────────────────────────────────────────────────────────────
@@ -369,6 +445,8 @@ export const COVER = {
    * by 18.
    */
   preference: 60,
+  /** A picked spot is jittered up to this far within its tile, so squads sharing a wood don't stack. */
+  jitter: 4,
 };
 
 /**
@@ -485,16 +563,14 @@ export const BEARING = {
 };
 
 /** Explosive terrain (SPEC §4.6: fuel tanks, minefields) reaching the Behemoth. */
-/** Skis (SPEC §7.4 ski troops; `UnitMobility` 'ski'). Provisional (M3). */
+/** Skis (SPEC §7.4 ski troops; `UnitMobility` 'ski'; the weave is the behavior's, `WeaveDef`). Provisional (M3). */
 export const SKI = {
   /** Off snow and ice, a skier's speed is its foot speed on that ground times this (about a squad's pace). */
   offSnow: 0.3,
-  /** Skiers veer off the hull inside this distance of it, harder the closer they are (they're not there to be run over). */
-  clearance: 20,
 };
 
 /**
- * Evasive units (SPEC §7.4 ski troops, `EnemyDef.evasive`): the Behemoth's fire control can't track
+ * Evasive units (SPEC §7.4 ski troops, a behavior's `weave`): the Behemoth's fire control can't track
  * one that's weaving. Its automatic weapons hold fire until the unit has held a line for `settle`
  * seconds since its last jink, and then spread `autoSpread` times wider at it (beams too). Manual
  * fire is the player's own aim, and takes no penalty.
@@ -508,8 +584,6 @@ export const EVASION = {
 export const WALKER = {
   /** Its pace over standing structures (buildings, walls, bunkers, factory halls, tanks): it clambers over. */
   climb: 0.4,
-  /** It keeps this far clear of the hull's side while it works round behind it. */
-  sideGap: 30,
 };
 
 /** A bomb truck's bomb (SPEC §7.4; its size and damage in `EnemyDef.bomb`). Provisional (M3). */
@@ -523,8 +597,6 @@ export const BOMB = {
   reach: 8,
   contact: 0.5,
   treads: 0.15,
-  /** The charge leads the hull by at most this many seconds of its travel. */
-  maxLead: 1.5,
   /** Within this far of the hull a charging truck's strobe quickens (the reactor fuse's last half second). */
   close: 50,
 };

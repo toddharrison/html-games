@@ -1,9 +1,7 @@
 import { ENEMIES, type EnemyDef, type WaveSide } from '../content/enemies';
-import type { MobilityId } from '../content/terrain';
-import { LAST_STAND, SPAWNER } from '../content/tuning';
+import { LAST_STAND } from '../content/tuning';
 import { joinSiege, leaveSiege } from './ai/besiege';
-import { buildFlow, type FlowField } from './ai/flow';
-import { footprint, revealRadius } from './behemoth';
+import { revealRadius } from './behemoth';
 import { spawnEnemy } from './enemies';
 import { frameRight } from './frame';
 import { drawUnit, entryPoint, liveThreat, mobileMix } from './spawner';
@@ -23,14 +21,7 @@ export interface LastStandState {
   wave: number;
   /** Seconds until the next wave. */
   nextWave: number;
-  /** Routes toward the Behemoth around rock and buildings, per mobility (rebuilt as terrain changes). */
-  flow: Record<MobilityId, FlowField> | null;
-  /** Seconds until the flow fields are rebuilt. */
-  flowIn: number;
 }
-
-/** How often the flow fields are rebuilt (seconds): buildings fall, and the hull grinds to a halt. */
-const FLOW_REBUILD = 0.5;
 
 /** Starts the last stand once the Behemoth is Immobilized, then sends the waves. */
 export function stepLastStand(w: World, dt: number): void {
@@ -38,17 +29,12 @@ export function stepLastStand(w: World, dt: number): void {
   if (b.destroyed) return;
   if (!w.lastStand) {
     if (!b.immobilized) return;
-    w.lastStand = { time: 0, wave: 0, nextWave: LAST_STAND.firstWave, flow: null, flowIn: 0 };
+    w.lastStand = { time: 0, wave: 0, nextWave: LAST_STAND.firstWave };
     for (const e of w.enemies) if (e.alive) joinSiege(e, w);
     w.events.push({ type: 'lastStand' });
   }
   const ls = w.lastStand;
   ls.time += dt;
-  ls.flowIn -= dt;
-  if (!ls.flow || ls.flowIn <= 0) {
-    ls.flowIn = FLOW_REBUILD;
-    ls.flow = buildFlows(w);
-  }
   ls.nextWave -= dt;
   if (ls.nextWave > 0) return;
   ls.wave++;
@@ -67,16 +53,6 @@ export function endLastStand(w: World): void {
   for (const e of w.enemies) if (e.alive) leaveSiege(e, w);
 }
 
-function buildFlows(w: World): Record<MobilityId, FlowField> {
-  const hull = footprint(w.behemoth);
-  const margin = SPAWNER.spawnDistance + 4 * w.terrain.tileSize;
-  const x0 = w.frame.left - margin;
-  const x1 = frameRight(w.frame) + margin;
-  return {
-    tracked: buildFlow(w.terrain, 'tracked', hull, x0, x1),
-    foot: buildFlow(w.terrain, 'foot', hull, x0, x1),
-  };
-}
 
 /** Threat a given wave brings (1-based). */
 export function waveBudget(wave: number): number {

@@ -1,64 +1,54 @@
-import { groundMobility } from '../../content/terrain';
+import { behaviorBand, type SiegeDef } from '../../content/behaviors';
+import { LAST_STAND } from '../../content/tuning';
 import { hullWidth } from '../behemoth';
 import type { Enemy } from '../entities';
 import { angleDiff } from '../math';
 import type { World } from '../world';
 import { bestCover } from './ambusher';
-import { flowStep, pathBlocked } from './flow';
-import { goTo, inFrame, keepPace } from './steer';
+import type { Goal } from './nav';
+import { inFrame } from './steer';
 
 /**
  * Last-stand behavior (SPEC §5.1): once the Behemoth is Immobilized, every unit drops its usual
- * behavior and closes in to a ring at its `siege` range, from any side. Vehicles circle slowly on
- * the ring; troops dig into cover on it if there is some in reach, or stand on it in the open.
- * Everyone steers around the stranded hull rather than into it.
+ * behavior and closes in to a ring at its siege range (`SiegeDef`), from any side. Vehicles circle slowly
+ * on the ring; troops dig into cover on it if there is some in reach, or stand on it in the open.
+ * Everyone steers around the stranded hull rather than into it (`navigate` routes round rock,
+ * buildings, and the hull itself).
  */
-export function besiege(e: Enemy, w: World, dt: number): { vx: number; vy: number } {
+export function besiege(e: Enemy, s: SiegeDef, w: World, dt: number): Goal {
   const ai = e.ai;
   ai.retargetIn -= dt;
 
   if (e.def.canHide) {
     if (!ai.anchor || ai.retargetIn <= 0) {
-      ai.retargetIn = 1;
+      ai.retargetIn = LAST_STAND.coverRecheck;
       const ts = w.terrain.tileSize;
       const lost = ai.anchor && !w.terrain.isCover(Math.floor(ai.anchor.x / ts), Math.floor(ai.anchor.y / ts));
-      if (!ai.anchor || lost) ai.anchor = siegeCover(e, w) ?? ringPoint(e, w);
+      if (!ai.anchor || lost) ai.anchor = siegeCover(e, s, w) ?? ringPoint(e, w);
     }
-    const t = route(e, w, ai.anchor.x, ai.anchor.y);
-    return goTo(e, t.x, t.y);
+    const t = aroundHull(e, w, ai.anchor.x, ai.anchor.y);
+    return { x: t.x, y: t.y, mode: 'arrive' };
   }
 
   if (ai.retargetIn <= 0) {
-    ai.retargetIn = w.rng.range(3, 7);
-    if (w.rng.chance(0.4)) ai.orbitDir = ai.orbitDir === 1 ? -1 : 1;
-    ai.orbitRange = w.rng.range(e.def.siege.minRange, e.def.siege.maxRange);
+    ai.retargetIn = w.rng.range(...LAST_STAND.replan.every);
+    if (w.rng.chance(LAST_STAND.replan.flip)) ai.orbitDir = ai.orbitDir === 1 ? -1 : 1;
+    ai.orbitRange = w.rng.range(s.minRange, s.maxRange);
   }
-  ai.orbitAngle += ai.orbitDir * e.def.engage.angularSpeed * dt;
+  ai.orbitAngle += ai.orbitDir * s.angularSpeed * dt;
   const ring = ringPoint(e, w);
-  const t = route(e, w, ring.x, ring.y);
-  return keepPace(e, w, t.x, t.y);
-}
-
-/**
- * Where to head next on the way to a target: straight there if the way is clear, otherwise one
- * step along the flow field toward the Behemoth (around rock and buildings). Never into the hull.
- */
-function route(e: Enemy, w: World, tx: number, ty: number): { x: number; y: number } {
-  const t = aroundHull(e, w, tx, ty);
-  // Hovercraft follow the tracked field (a little cautious over water, but never stuck), skiers the foot one.
-  const flow = w.lastStand?.flow?.[groundMobility(e.def.mobility)];
-  if (!flow || !pathBlocked(w.terrain, e.def.mobility, e.def.radius, e.x, e.y, t.x, t.y)) return t;
-  const step = flowStep(flow, w.terrain.tileSize, e.x, e.y);
-  return step ? aroundHull(e, w, step.x, step.y) : t;
+  const t = aroundHull(e, w, ring.x, ring.y);
+  return { x: t.x, y: t.y, mode: 'pace' };
 }
 
 /** Switch a unit over to the last stand: it closes in from wherever it is now. */
 export function joinSiege(e: Enemy, w: World): void {
   const b = w.behemoth;
   const ai = e.ai;
+  const s = e.def.behavior.siege ?? { minRange: 0, maxRange: 0 };
   ai.orbitAngle = Math.atan2(e.y - b.y, e.x - b.x);
-  ai.orbitRange = w.rng.range(e.def.siege.minRange, e.def.siege.maxRange);
-  ai.retargetIn = w.rng.range(3, 7);
+  ai.orbitRange = w.rng.range(s.minRange, s.maxRange);
+  ai.retargetIn = w.rng.range(...LAST_STAND.replan.every);
   ai.anchor = null;
 }
 
@@ -67,8 +57,9 @@ export function leaveSiege(e: Enemy, w: World): void {
   const b = w.behemoth;
   const ai = e.ai;
   ai.orbitAngle = Math.atan2(e.y - b.y, e.x - b.x);
-  ai.orbitRange = w.rng.range(e.def.engage.minRange, e.def.engage.maxRange);
-  ai.retargetIn = w.rng.range(0.5, 2);
+  const band = behaviorBand(e.def.behavior);
+  ai.orbitRange = w.rng.range(band.minRange, band.maxRange);
+  ai.retargetIn = w.rng.range(...LAST_STAND.release);
   ai.anchor = null;
 }
 
@@ -79,10 +70,10 @@ function ringPoint(e: Enemy, w: World): { x: number; y: number } {
 }
 
 /** Cover within walking reach that sits inside the siege ring; nearest first. */
-function siegeCover(e: Enemy, w: World): { x: number; y: number } | null {
+function siegeCover(e: Enemy, s: SiegeDef, w: World): { x: number; y: number } | null {
   const b = w.behemoth;
-  const { minRange, maxRange } = e.def.siege;
-  return bestCover(e, w, e.def.engage.maxRange, (x, y, d) => {
+  const { minRange, maxRange } = s;
+  return bestCover(e, w, s.coverReach, (x, y, d) => {
     const r = Math.hypot(x - b.x, y - b.y);
     return r < minRange || r > maxRange ? null : d;
   });
@@ -95,7 +86,8 @@ function siegeCover(e: Enemy, w: World): { x: number; y: number } | null {
 function aroundHull(e: Enemy, w: World, tx: number, ty: number): { x: number; y: number } {
   const b = w.behemoth;
   // Distance from the hull's center inside which a unit would be touching it.
-  const clear = Math.hypot(b.chassis.length / 2, hullWidth(b) / 2) + e.def.radius + 4;
+  const k = LAST_STAND.aroundHull;
+  const clear = Math.hypot(b.chassis.length / 2, hullWidth(b) / 2) + e.def.radius + k.clearance;
   const ta = Math.atan2(ty - b.y, tx - b.x);
   if (Math.hypot(tx - b.x, ty - b.y) < clear) {
     tx = b.x + Math.cos(ta) * clear;
@@ -110,6 +102,6 @@ function aroundHull(e: Enemy, w: World, tx: number, ty: number): { x: number; y:
   const near = Math.hypot(e.x + dx * s - b.x, e.y + dy * s - b.y);
   if (near >= clear) return { x: tx, y: ty };
   const ua = Math.atan2(e.y - b.y, e.x - b.x);
-  const wa = ua + Math.sign(angleDiff(ua, ta) || 1) * 0.8;
-  return { x: b.x + Math.cos(wa) * clear * 1.15, y: b.y + Math.sin(wa) * clear * 1.15 };
+  const wa = ua + Math.sign(angleDiff(ua, ta) || 1) * k.wayAngle;
+  return { x: b.x + Math.cos(wa) * clear * k.wayOut, y: b.y + Math.sin(wa) * clear * k.wayOut };
 }

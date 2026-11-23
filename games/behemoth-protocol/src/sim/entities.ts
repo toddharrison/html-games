@@ -1,5 +1,6 @@
 import type { EnemyDef, EnemyTurretDef } from '../content/enemies';
 import type { PoolSpec, ProjectileKind, ShellSpec, WeaponDef } from '../content/weapons';
+import type { NavState } from './ai/nav';
 import type { Owner } from './events';
 
 /** Plain-data entities. Systems in other modules operate on them. */
@@ -52,7 +53,7 @@ export interface Enemy extends EnemyGun {
   ai: AiMemory;
 }
 
-/** Behavior state. Each behavior uses the fields it needs (see content/enemies.ts BehaviorId). */
+/** Behavior state. Each behavior uses the fields it needs (content/behaviors.ts). */
 export interface AiMemory {
   /** Bearing from the Behemoth to the unit's target point (radians). */
   orbitAngle: number;
@@ -62,6 +63,8 @@ export interface AiMemory {
   orbitRange: number;
   /** Seconds until the behavior rethinks its plan. */
   retargetIn: number;
+  /** Its planned route (`sim/ai/nav.ts`); missing until its first step. */
+  nav?: NavState;
   /** Ambusher: the cover spot it's heading for or holding; null = none chosen yet. */
   anchor: { x: number; y: number } | null;
   /** Convoy: its place across the lane (world units off the lane's center). */
@@ -71,7 +74,7 @@ export interface AiMemory {
   minesLeft?: number;
   /** Too big to crush: seconds until it can be rammed again (`RAM.again`). */
   ramIn?: number;
-  /** An evasive unit (ski troops): its sideways jink (±1) and seconds until it flips. */
+  /** A weaving unit (ski troops, a behavior's `weave`): its sideways jink (±1) and seconds until it flips. */
   weave?: 1 | -1;
   weaveIn?: number;
   /** Seconds since its last jink (the fire control needs `EVASION.settle` to track it). */

@@ -1,44 +1,46 @@
+import type { AmbusherDef } from '../../content/behaviors';
 import { COVER } from '../../content/tuning';
 import { hullWidth } from '../behemoth';
 import type { Enemy } from '../entities';
 import { clamp } from '../math';
 import type { World } from '../world';
-import { goTo } from './steer';
+import type { Goal } from './nav';
 
 /**
- * Ambusher behavior (infantry): walk to the best cover within `engage.maxRange` (forest, a
+ * Ambusher behavior (infantry): walk to the best cover within `reach` (forest, a
  * building to garrison, or rubble) beside the Behemoth's path and hold there, firing as it rolls
  * past. Buildings protect best, so they win over trees nearby. Too slow to keep
  * up, so once passed they're left behind. If their cover burns or is flattened they move on to
  * the next bit; with no cover nearby they stand in the open off to one side of its path.
  */
-export function ambusher(e: Enemy, w: World, dt: number): { vx: number; vy: number } {
+export function ambusher(e: Enemy, d: AmbusherDef, w: World, dt: number): Goal {
   const ai = e.ai;
   ai.retargetIn -= dt;
   if (!ai.anchor || ai.retargetIn <= 0) {
-    ai.retargetIn = 1;
+    ai.retargetIn = d.recheck;
     const ts = w.terrain.tileSize;
     const lost = ai.anchor && !w.terrain.isCover(Math.floor(ai.anchor.x / ts), Math.floor(ai.anchor.y / ts));
-    if (!ai.anchor || lost) ai.anchor = findCover(e, w) ?? openGround(e, w);
+    if (!ai.anchor || lost) ai.anchor = findCover(e, d, w) ?? openGround(e, d, w);
   }
-  return goTo(e, ai.anchor.x, ai.anchor.y);
+  return { x: ai.anchor.x, y: ai.anchor.y, mode: 'arrive' };
 }
 
 /** Lateral distance band from the Behemoth's path where a squad wants to be. */
-function lane(e: Enemy, w: World): { min: number; max: number } {
-  return { min: hullWidth(w.behemoth) / 2 + 18, max: e.def.fireRange * 0.7 };
+function lane(e: Enemy, d: AmbusherDef, w: World): { min: number; max: number } {
+  return { min: hullWidth(w.behemoth) / 2 + d.laneClear, max: e.def.fireRange * d.laneReach };
 }
 
 /** The best cover tile within reach, or null. Favors close tiles beside (not in) the path, ahead. */
-export function findCover(e: Enemy, w: World): { x: number; y: number } | null {
+export function findCover(e: Enemy, d: AmbusherDef, w: World): { x: number; y: number } | null {
   const b = w.behemoth;
-  const { min, max } = lane(e, w);
-  return bestCover(e, w, e.def.engage.maxRange, (x, y, d) => {
+  const { min, max } = lane(e, d, w);
+  const k = d.score;
+  return bestCover(e, w, d.reach, (x, y, dist) => {
     const lat = Math.abs(y - b.y);
-    let score = d;
-    if (lat < min) score += (min - lat) * 3;
-    else if (lat > max) score += (lat - max) * 2;
-    if (x < b.x) score += (b.x - x) * 2;
+    let score = dist;
+    if (lat < min) score += (min - lat) * k.inPath;
+    else if (lat > max) score += (lat - max) * k.farOff;
+    if (x < b.x) score += (b.x - x) * k.behind;
     return score;
   });
 }
@@ -83,7 +85,7 @@ export function bestCover(
     }
   }
   if (!best) return null;
-  return { x: best.x + w.rng.range(-4, 4), y: best.y + w.rng.range(-4, 4) };
+  return { x: best.x + w.rng.range(-COVER.jitter, COVER.jitter), y: best.y + w.rng.range(-COVER.jitter, COVER.jitter) };
 }
 
 /** A tile has an open neighbor (one that doesn't stop fire) on a side facing direction (dx, dy). */
@@ -95,11 +97,11 @@ function hasWindow(w: World, c: number, r: number, dx: number, dy: number): bool
 }
 
 /** No cover: stand in the open, off to the side of the Behemoth's path. */
-function openGround(e: Enemy, w: World): { x: number; y: number } {
+function openGround(e: Enemy, d: AmbusherDef, w: World): { x: number; y: number } {
   const b = w.behemoth;
-  const { min, max } = lane(e, w);
+  const { min, max } = lane(e, d, w);
   const side = Math.sign(e.y - b.y) || e.ai.orbitDir;
   const lat = clamp(Math.abs(e.y - b.y), min, max);
   const y = clamp(b.y + side * lat, e.def.radius, w.terrain.height - e.def.radius);
-  return { x: e.x, y: clamp(y, e.y - e.def.engage.maxRange, e.y + e.def.engage.maxRange) };
+  return { x: e.x, y: clamp(y, e.y - d.reach, e.y + d.reach) };
 }

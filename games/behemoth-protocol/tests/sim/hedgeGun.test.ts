@@ -59,7 +59,7 @@ describe('hedge gun', () => {
   it('is temperate’s own unit: fixed, hidden, laid for crossfire, dug into the hedges', () => {
     expect(DEF.biome).toBe('temperate');
     expect(DEF.spawn).toBe('hedge');
-    expect(DEF.behavior).toBe('fixed');
+    expect(DEF.behavior.kind).toBe('fixed');
     expect(DEF.canHide).toBe(true);
     expect(DEF.crossfire?.arc).toBe(45);
     expect(DEF.callout?.per).toBe('run');

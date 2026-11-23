@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MATERIALS, type MaterialId } from '../../src/content/terrain';
 import { WEAPONS } from '../../src/content/weapons';
 import { IDLE_COMMAND } from '../../src/sim/behemoth';
+import type { AmbusherDef } from '../../src/content/behaviors';
 import { findCover } from '../../src/sim/ai/ambusher';
 import { spawnEnemy } from '../../src/sim/enemies';
 import type { Enemy } from '../../src/sim/entities';
@@ -124,14 +125,14 @@ describe('garrisoned buildings', () => {
     setTile(w, wood.col, wood.row, 'forest');
     setTile(w, house.col, house.row, 'building');
     const e = parked(w, (wood.x + house.x) / 2, (wood.y + house.y) / 2);
-    const pick = findCover(e, w)!;
+    const pick = findCover(e, e.def.behavior as AmbusherDef, w)!;
     expect(Math.floor(pick.y / ts)).toBe(house.row);
 
     // Walled in on the sides facing the hull (behind and toward its path): nothing to shoot at.
     const toward = Math.sign(w.behemoth.y - house.y);
     setTile(w, house.col - 1, house.row, 'building');
     setTile(w, house.col, house.row + toward, 'building');
-    const again = findCover(e, w)!;
+    const again = findCover(e, e.def.behavior as AmbusherDef, w)!;
     expect(Math.floor(again.y / ts)).not.toBe(house.row);
   });
 });

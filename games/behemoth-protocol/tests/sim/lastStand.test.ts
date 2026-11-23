@@ -2,7 +2,6 @@ import { LAST_STAND, TERRAIN_GEN } from '../../src/content/tuning';
 import { describe, expect, it } from 'vitest';
 import { ENEMIES } from '../../src/content/enemies';
 import { MATERIALS, type MaterialId } from '../../src/content/terrain';
-import { buildFlow, flowStep, pathBlocked } from '../../src/sim/ai/flow';
 import { IDLE_COMMAND, damageComponent, revealRadius } from '../../src/sim/behemoth';
 import { spawnEnemy } from '../../src/sim/enemies';
 import type { SimEvent } from '../../src/sim/events';
@@ -103,8 +102,8 @@ describe('last stand', () => {
     steps(w, 60 * 20);
     for (const e of units) {
       const d = Math.hypot(e.x - b.x, e.y - b.y);
-      expect(d).toBeGreaterThan(e.def.siege.minRange * 0.6);
-      expect(d).toBeLessThan(e.def.siege.maxRange + 25);
+      expect(d).toBeGreaterThan(e.def.behavior.siege!.minRange * 0.6);
+      expect(d).toBeLessThan(e.def.behavior.siege!.maxRange + 25);
     }
   });
 
@@ -127,7 +126,7 @@ describe('last stand', () => {
     for (const e of units) {
       expect(e.y).toBeGreaterThanOrEqual(e.def.radius);
       expect(e.y).toBeLessThanOrEqual(t.height - e.def.radius);
-      expect(Math.hypot(e.x - b.x, e.y - b.y)).toBeLessThan(e.def.siege.maxRange + 25);
+      expect(Math.hypot(e.x - b.x, e.y - b.y)).toBeLessThan(e.def.behavior.siege!.maxRange + 25);
     }
   });
 
@@ -169,7 +168,7 @@ describe('last stand', () => {
     e.hp = 1e6;
     steps(w, 60 * 25);
     expect(e.x).toBeLessThan(wall * TS);
-    expect(Math.hypot(e.x - b.x, e.y - b.y)).toBeLessThan(e.def.siege.maxRange + 25);
+    expect(Math.hypot(e.x - b.x, e.y - b.y)).toBeLessThan(e.def.behavior.siege!.maxRange + 25);
   });
 
   it('nobody drives into the stopped hull and gets crushed', () => {
@@ -203,48 +202,5 @@ describe('last stand', () => {
     for (let i = 0; i < 60 * 240 && !w.behemoth.destroyed; i++) steps(w, 1);
     expect(w.behemoth.destroyed).toBe(true);
     expect(w.lastStand!.time).toBeGreaterThan(30);
-  });
-});
-
-describe('flow field', () => {
-  function field() {
-    const w = createWorld({ ...OPTS, fieldRows: 12 });
-    const c0 = Math.floor(w.behemoth.x / TS);
-    clearGround(w, c0 - 4, c0 + 14);
-    return { w, c0 };
-  }
-
-  it('routes around a wall to the tiles beside the goal, never into it', () => {
-    const { w, c0 } = field();
-    for (let r = 0; r < 10; r++) setTile(w, c0 + 6, r, 'rock');
-    const goal = { x0: c0 * TS + 2, y0: 4 * TS + 2, x1: (c0 + 2) * TS - 2, y1: 6 * TS - 2 };
-    const f = buildFlow(w.terrain, 'tracked', goal, (c0 - 4) * TS, (c0 + 14) * TS);
-    // Walk downhill from behind the wall: the path detours through the gap at rows 10-11.
-    let at = { x: (c0 + 10.5) * TS, y: 2.5 * TS };
-    const rows: number[] = [];
-    for (let i = 0; i < 40; i++) {
-      const next = flowStep(f, TS, at.x, at.y);
-      if (!next) break;
-      at = next;
-      rows.push(Math.floor(at.y / TS));
-      expect(w.terrain.speedAt(at.x, at.y, 'tracked')).toBeGreaterThan(0);
-    }
-    expect(Math.max(...rows)).toBeGreaterThanOrEqual(10);
-    const c = Math.floor(at.x / TS);
-    const r = Math.floor(at.y / TS);
-    // Ends adjacent to the goal rectangle, outside it.
-    expect(c >= c0 - 1 && c <= c0 + 2 && r >= 3 && r <= 6).toBe(true);
-    expect(c >= c0 && c <= c0 + 1 && r >= 4 && r <= 5).toBe(false);
-  });
-
-  it('pathBlocked sees rock across the way, including off to the side of the unit', () => {
-    const { w, c0 } = field();
-    setTile(w, c0 + 5, 6, 'rock');
-    const y = 6.5 * TS;
-    expect(pathBlocked(w.terrain, 'tracked', 7, (c0 + 1) * TS, y, (c0 + 9) * TS, y)).toBe(true);
-    // Passing just beside it: clear for a point, blocked for a unit with some width.
-    const yBeside = 7 * TS + 3;
-    expect(pathBlocked(w.terrain, 'tracked', 0, (c0 + 1) * TS, yBeside, (c0 + 9) * TS, yBeside)).toBe(false);
-    expect(pathBlocked(w.terrain, 'tracked', 7, (c0 + 1) * TS, yBeside, (c0 + 9) * TS, yBeside)).toBe(true);
   });
 });

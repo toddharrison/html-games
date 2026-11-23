@@ -1,8 +1,10 @@
 import { ENEMIES, type EnemyId, type EnemyTurretDef, type Facing, type GunTarget } from '../content/enemies';
 import { CONCEALMENT, ENEMY, TRAPDOOR } from '../content/tuning';
 import { WEAPONS, type WeaponDef } from '../content/weapons';
-import { BEHAVIORS } from './ai';
-import { besiege, joinSiege } from './ai/besiege';
+import { behaviorBand } from '../content/behaviors';
+import { behave } from './ai';
+import { joinSiege } from './ai/besiege';
+import { separation } from './ai/nav';
 import { hiddenNow } from './concealment';
 import { enemyCanSee, hoverScale } from './conditions';
 import { allocId, type Enemy, type EnemyGun } from './entities';
@@ -54,7 +56,7 @@ export function spawnEnemy(w: World, id: EnemyId, x: number, y: number): Enemy {
     ai: {
       orbitAngle: Math.atan2(y - b.y, x - b.x),
       orbitDir: w.rng.sign(),
-      orbitRange: w.rng.range(def.engage.minRange, def.engage.maxRange),
+      orbitRange: w.rng.range(behaviorBand(def.behavior).minRange, behaviorBand(def.behavior).maxRange),
       retargetIn: w.rng.range(2, 5),
       anchor: null,
     },
@@ -201,10 +203,12 @@ function moveEnemy(w: World, e: Enemy, dt: number): void {
   // Fixed positions never move; only their turrets turn.
   if (e.def.maxSpeed <= 0) return;
   const t = w.terrain;
-  // In the last stand everyone drops their usual behavior and closes in, except a convoy, which
-  // keeps running for the far end, and a bomb truck, which was closing in already.
-  const own = e.def.behavior === 'convoy' || e.def.behavior === 'charge';
-  const want = (w.lastStand && !own ? besiege : BEHAVIORS[e.def.behavior])(e, w, dt);
+  // In the last stand everyone with a siege ring drops their usual behavior and closes in (`behave`).
+  // Units keep clear of each other on top of that.
+  const want = behave(e, w, dt);
+  const apart = separation(e, w);
+  want.vx += apart.vx;
+  want.vy += apart.vy;
 
   const mob = e.def.mobility;
   // Terrain slows small units (forest, rubble). Never fully zero, so a unit pushed into a

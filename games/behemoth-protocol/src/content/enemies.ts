@@ -1,26 +1,13 @@
+import { ambusher, charge, convoy, fixed, holdAhead, skirmisher, stalker, type BehaviorDef } from './behaviors';
 import type { BiomeId } from './biomes';
 import type { ObstacleClass } from './obstacles';
 import type { UnitMobility } from './terrain';
 import type { TargetClass, WeaponId } from './weapons';
 
-/** Enemy unit definitions (SPEC §7). Behavior is a reusable piece chosen per unit. */
-
 /**
- * - skirmisher: circles the Behemoth at range (light tanks)
- * - holdAhead: keeps a spot ahead of the Behemoth within an arc, falling back as it advances
- *   (heavy tanks hold close and straight ahead; missile launchers far off and to the side)
- * - ambusher: walks to nearby cover and holds there as the Behemoth passes (infantry)
- * - fixed: never moves; only the turret turns (fortress guns, SPEC §4.4 Breach; field batteries;
- *   hedge guns; trapdoor teams)
- * - convoy: drives up the lane toward the far end at the convoy's speed, slowing as it's damaged
- *   (SPEC §4.4 Chase)
- * - charge: drives flat out at where the Behemoth will be, to ram it (SPEC §7.4 bomb truck)
- * - skier: sweeps round the Behemoth like a skirmisher, weaving as it goes, firing on the move
- *   (SPEC §7.4 ski troops)
- * - stalker: steps out of the Behemoth's path, then works round behind it and holds there, well
- *   inside the frame (SPEC §7.4 spider walker)
+ * Enemy unit definitions (SPEC §7). Where a unit drives is its behavior, a reusable piece with the
+ * unit's own settings (content/behaviors.ts); weapons, armor, and the unit's special rules are here.
  */
-export type BehaviorId = 'skirmisher' | 'holdAhead' | 'ambusher' | 'fixed' | 'convoy' | 'charge' | 'skier' | 'stalker';
 
 export type EnemyId =
   | 'lightTank'
@@ -132,20 +119,8 @@ export interface EnemyDef {
    * (SPEC §7 fairness rules).
    */
   aimTime: number;
-  behavior: BehaviorId;
-  /**
-   * Behavior tuning. `minRange`..`maxRange` is the preferred distance from the Behemoth
-   * (ambusher: how far it will walk to reach cover). `angularSpeed` (rad/s) is how fast it drifts
-   * around its target point. `rearInset` is how far inside the frame's trailing edge (fraction
-   * of frame length) it holds when behind. `arc` (degrees) limits positions to
-   * within that bearing of straight ahead (holdAhead).
-   */
-  engage: { minRange: number; maxRange: number; angularSpeed: number; rearInset: number; arc: number };
-  /**
-   * Last stand (SPEC §5.1): once the Behemoth is Immobilized every unit drops its usual behavior
-   * and closes to a ring this far from it (`besiege`), from any side.
-   */
-  siege: { minRange: number; maxRange: number };
+  /** Where it drives, and its last-stand ring (content/behaviors.ts). */
+  behavior: BehaviorDef;
   spawn: SpawnPlacement;
   /** What it costs from a battle's threat budget (posts, alert waves, last-stand waves). */
   threat: number;
@@ -177,12 +152,6 @@ export interface EnemyDef {
    * at contact (`BOMB`). Enemy fire never sets it off: friendly fire passes it by.
    */
   bomb?: { radius: number; damage: number };
-  /**
-   * It weaves as it moves (SPEC §7.4 ski troops): a sideways jink of `weave` units/s that flips every
-   * `flip` seconds, which throws off a lead, and while it's moving the Behemoth's automatic weapons
-   * can't track it (`EVASION`).
-   */
-  evasive?: { weave: number; flip: readonly [number, number] };
   /**
    * A lidded hole (SPEC §7.4 trapdoor team): shut, nothing touches it but the treads (rounds pass
    * over, blasts and splash do nothing, the autos and missile locks ignore it). It stays unseen until
@@ -218,9 +187,11 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: 'lightTankGun',
     fireRange: 160,
     aimTime: 0.45,
-    behavior: 'skirmisher',
-    engage: { minRange: 70, maxRange: 120, angularSpeed: 0.35, rearInset: 0.15, arc: 180 },
-    siege: { minRange: 60, maxRange: 100 },
+    behavior: skirmisher({
+      orbit: { minRange: 70, maxRange: 120, angularSpeed: 0.35 },
+      rearInset: 0.15,
+      siege: { minRange: 60, maxRange: 100, angularSpeed: 0.35, coverReach: 0 },
+    }),
     spawn: 'edges',
     threat: 1,
     salvage: 5,
@@ -244,9 +215,12 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: 'heavyTankGun',
     fireRange: 210,
     aimTime: 0.7,
-    behavior: 'holdAhead',
-    engage: { minRange: 85, maxRange: 135, angularSpeed: 0.25, rearInset: 0.2, arc: 25 },
-    siege: { minRange: 70, maxRange: 115 },
+    behavior: holdAhead({
+      orbit: { minRange: 85, maxRange: 135, angularSpeed: 0.25 },
+      arc: 25,
+      rearInset: 0.2,
+      siege: { minRange: 70, maxRange: 115, angularSpeed: 0.25, coverReach: 0 },
+    }),
     spawn: 'ahead',
     threat: 2,
     salvage: 12,
@@ -270,9 +244,12 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     fireRange: 300,
     // A missile lock: the longest telegraph so far.
     aimTime: 1.1,
-    behavior: 'holdAhead',
-    engage: { minRange: 150, maxRange: 210, angularSpeed: 0.2, rearInset: 0.2, arc: 65 },
-    siege: { minRange: 140, maxRange: 200 },
+    behavior: holdAhead({
+      orbit: { minRange: 150, maxRange: 210, angularSpeed: 0.2 },
+      arc: 65,
+      rearInset: 0.2,
+      siege: { minRange: 140, maxRange: 200, angularSpeed: 0.2, coverReach: 0 },
+    }),
     spawn: 'ahead',
     threat: 1.5,
     salvage: 8,
@@ -296,9 +273,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     fireRange: 240,
     // The lock: long enough to see it coming and do something about it.
     aimTime: 2.2,
-    behavior: 'ambusher',
-    engage: { minRange: 0, maxRange: 100, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 110, maxRange: 170 },
+    behavior: ambusher({ reach: 100, siege: { minRange: 110, maxRange: 170, angularSpeed: 0, coverReach: 100 } }),
     spawn: 'cover',
     threat: 1.5,
     salvage: 6,
@@ -320,9 +295,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: 'infantryRockets',
     fireRange: 115,
     aimTime: 0.6,
-    behavior: 'ambusher',
-    engage: { minRange: 0, maxRange: 80, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 45, maxRange: 90 },
+    behavior: ambusher({ reach: 80, siege: { minRange: 45, maxRange: 90, angularSpeed: 0, coverReach: 80 } }),
     spawn: 'cover',
     threat: 1,
     salvage: 3,
@@ -345,9 +318,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: 'emplacementGun',
     fireRange: 270,
     aimTime: 0.9,
-    behavior: 'fixed',
-    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 0, maxRange: 0 },
+    behavior: fixed(),
     spawn: 'objective',
     threat: 3,
     salvage: 20,
@@ -369,9 +340,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: 'bunkerRockets',
     fireRange: 190,
     aimTime: 0.7,
-    behavior: 'fixed',
-    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 0, maxRange: 0 },
+    behavior: fixed(),
     spawn: 'objective',
     threat: 3,
     salvage: 20,
@@ -394,9 +363,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: 'towerGuns',
     fireRange: 240,
     aimTime: 0.6,
-    behavior: 'fixed',
-    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 0, maxRange: 0 },
+    behavior: fixed(),
     spawn: 'objective',
     threat: 3,
     salvage: 20,
@@ -420,9 +387,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: null,
     fireRange: 0,
     aimTime: 0,
-    behavior: 'fixed',
-    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 0, maxRange: 0 },
+    behavior: fixed(),
     spawn: 'objective',
     threat: 4,
     salvage: 40,
@@ -446,9 +411,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: null,
     fireRange: 0,
     aimTime: 0,
-    behavior: 'convoy',
-    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 60, maxRange: 100 },
+    behavior: convoy(),
     spawn: 'objective',
     threat: 2,
     // A hold full of supplies.
@@ -471,9 +434,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: null,
     fireRange: 0,
     aimTime: 0,
-    behavior: 'convoy',
-    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 60, maxRange: 100 },
+    behavior: convoy(),
     spawn: 'objective',
     threat: 1.5,
     salvage: 8,
@@ -502,9 +463,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     fireRange: 330,
     // Laying the guns: a long glint before the volley goes up.
     aimTime: 1.2,
-    behavior: 'fixed',
-    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 0, maxRange: 0 },
+    behavior: fixed(),
     spawn: 'edge',
     threat: 2,
     salvage: 14,
@@ -532,9 +491,12 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: 'siegeCannon',
     fireRange: 260,
     aimTime: 1,
-    behavior: 'holdAhead',
-    engage: { minRange: 100, maxRange: 150, angularSpeed: 0.15, rearInset: 0.2, arc: 20 },
-    siege: { minRange: 80, maxRange: 130 },
+    behavior: holdAhead({
+      orbit: { minRange: 100, maxRange: 150, angularSpeed: 0.15 },
+      arc: 20,
+      rearInset: 0.2,
+      siege: { minRange: 80, maxRange: 130, angularSpeed: 0.15, coverReach: 0 },
+    }),
     spawn: 'ahead',
     threat: 4,
     salvage: 45,
@@ -566,9 +528,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     fireRange: 240,
     // A short glint: the ambush is that it's hidden, not that the shot is quick to come.
     aimTime: 0.8,
-    behavior: 'fixed',
-    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 0, maxRange: 0 },
+    behavior: fixed(),
     spawn: 'hedge',
     threat: 1.5,
     salvage: 8,
@@ -601,10 +561,12 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     target: 'support',
     fireRange: 190,
     aimTime: 0.6,
-    behavior: 'stalker',
     // How far behind the hull's tail (or the trailer's) it holds, and how far inside the frame.
-    engage: { minRange: 45, maxRange: 85, angularSpeed: 0, rearInset: 0.12, arc: 180 },
-    siege: { minRange: 60, maxRange: 110 },
+    behavior: stalker({
+      hold: { minRange: 45, maxRange: 85 },
+      rearInset: 0.12,
+      siege: { minRange: 60, maxRange: 110, angularSpeed: 0, coverReach: 0 },
+    }),
     spawn: 'edges',
     threat: 2.5,
     salvage: 18,
@@ -634,9 +596,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     fireRange: 200,
     // A quick pop-up shot: the lid lifting is the telegraph, and they stay up a moment after.
     aimTime: 0.35,
-    behavior: 'fixed',
-    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 0, maxRange: 0 },
+    behavior: fixed(),
     spawn: 'burrow',
     threat: 1.25,
     salvage: 5,
@@ -666,16 +626,19 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: 'infantryRockets',
     fireRange: 125,
     aimTime: 0.6,
-    behavior: 'skier',
     // Wider than a light tank's circle: mostly out past the AP guns' reach (75), dipping into it.
-    engage: { minRange: 85, maxRange: 120, angularSpeed: 0.55, rearInset: 0.15, arc: 180 },
-    siege: { minRange: 45, maxRange: 90 },
+    // The weave throws off a lead, and the autos can't track it (`EVASION`).
+    behavior: skirmisher({
+      orbit: { minRange: 85, maxRange: 120, angularSpeed: 0.55 },
+      rearInset: 0.15,
+      siege: { minRange: 45, maxRange: 90, angularSpeed: 0.55, coverReach: 0 },
+      weave: { speed: 34, flip: [0.35, 0.8], clearance: 20 },
+    }),
     spawn: 'edges',
     threat: 1.25,
     salvage: 4,
     callout: { text: 'Ski troops\nToo quick for the autos', per: 'run' },
     biome: 'arctic',
-    evasive: { weave: 34, flip: [0.35, 0.8] },
   },
   bombTruck: {
     // Industrial's own unit (SPEC §7.4): a truck with a bomb on its bed that drives flat out at the
@@ -700,9 +663,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: null,
     fireRange: 0,
     aimTime: 0,
-    behavior: 'charge',
-    engage: { minRange: 0, maxRange: 0, angularSpeed: 0, rearInset: 0, arc: 180 },
-    siege: { minRange: 0, maxRange: 0 },
+    behavior: charge(),
     // Never from behind the frame: a truck you can't see coming isn't fair.
     spawn: 'ahead',
     threat: 1.25,
@@ -731,9 +692,11 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     weapon: 'hoverGun',
     fireRange: 150,
     aimTime: 0.4,
-    behavior: 'skirmisher',
-    engage: { minRange: 60, maxRange: 110, angularSpeed: 0.6, rearInset: 0.12, arc: 180 },
-    siege: { minRange: 60, maxRange: 100 },
+    behavior: skirmisher({
+      orbit: { minRange: 60, maxRange: 110, angularSpeed: 0.6 },
+      rearInset: 0.12,
+      siege: { minRange: 60, maxRange: 100, angularSpeed: 0.6, coverReach: 0 },
+    }),
     spawn: 'edges',
     threat: 1.25,
     salvage: 6,

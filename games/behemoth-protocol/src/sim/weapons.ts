@@ -405,12 +405,12 @@ function stepAutoGun(w: World, h: HardpointState, weapon: WeaponDef, dt: number)
  * penalty.
  */
 export function evasionSpread(e: Enemy): number {
-  return e.def.evasive ? EVASION.autoSpread : 1;
+  return e.def.behavior.weave ? EVASION.autoSpread : 1;
 }
 
 /** Whether the fire control has a solution on a unit: always, unless it jinked within `EVASION.settle`. */
 export function trackable(e: Enemy): boolean {
-  return !e.def.evasive || (e.ai.weaveAge ?? 0) >= EVASION.settle;
+  return !e.def.behavior.weave || (e.ai.weaveAge ?? 0) >= EVASION.settle;
 }
 
 /**

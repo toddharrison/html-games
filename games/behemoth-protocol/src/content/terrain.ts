@@ -50,11 +50,6 @@ export type MobilityId = 'tracked' | 'foot';
  */
 export type UnitMobility = MobilityId | 'hover' | 'ski' | 'walker';
 
-/** The ground mobility whose rules (fords, last-stand paths) a unit follows. */
-export function groundMobility(m: UnitMobility): MobilityId {
-  return m === 'hover' || m === 'walker' ? 'tracked' : m === 'ski' ? 'foot' : m;
-}
-
 /**
  * A walker's pace on a tile (SPEC §7.4 spider walker): it strides over rock, wrecks, craters,
  * rubble, trap belts, dunes, and drifts as if they were open ground, clambers over standing

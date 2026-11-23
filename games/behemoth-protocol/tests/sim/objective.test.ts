@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { ENEMIES } from '../../src/content/enemies';
 import { MODES, MODE_IDS } from '../../src/content/modes';
 import { TERRAIN_GEN } from '../../src/content/tuning';
 import { IDLE_COMMAND, type PlayerCommand } from '../../src/sim/behemoth';
-import { viaFord } from '../../src/sim/ai/crossing';
-import { destroyEnemy, spawnEnemy } from '../../src/sim/enemies';
+import { pathBlocked } from '../../src/sim/ai/nav';
+import { destroyEnemy } from '../../src/sim/enemies';
 import type { SimEvent } from '../../src/sim/events';
 import { frameRight } from '../../src/sim/frame';
 import { objectiveBonus, objectiveComplete, objectivePercent, planFortress } from '../../src/sim/objective';
@@ -241,7 +242,7 @@ describe('chase', () => {
     expect(w.objective.total).toBe(c.haulers.normal);
     expect(w.enemies.filter((e) => e.def.id === 'mineLayer')).toHaveLength(c.layers.normal);
     expect(w.enemies.filter((e) => e.def.id === 'lightTank' || e.def.id === 'hovercraft')).toHaveLength(c.escorts.normal);
-    for (const e of w.enemies.filter((x) => x.def.behavior === 'convoy')) {
+    for (const e of w.enemies.filter((x) => x.def.behavior.kind === 'convoy')) {
       expect(e.x).toBeGreaterThan(w.behemoth.x + 80);
       expect(e.weapon).toBeNull();
     }
@@ -306,7 +307,9 @@ describe('hovercraft', () => {
     expect(at).not.toBeNull();
     expect(t.speedAt(at!.x, at!.y, 'tracked')).toBe(0);
     expect(t.speedAt(at!.x, at!.y, 'hover')).toBe(1);
-    const hc = spawnEnemy(w, 'hovercraft', at!.x - 200, at!.y);
-    expect(viaFord(hc, w, at!.x + 200, at!.y)).toBeNull();
+    // Straight over it, where tracks are stopped (and have to route to a ford).
+    const r = ENEMIES.hovercraft.radius;
+    expect(pathBlocked(t, 'hover', r, at!.x - 8, at!.y, at!.x + 8, at!.y)).toBe(false);
+    expect(pathBlocked(t, 'tracked', r, at!.x - 8, at!.y, at!.x + 8, at!.y)).toBe(true);
   });
 });

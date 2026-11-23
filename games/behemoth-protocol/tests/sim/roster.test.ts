@@ -1,5 +1,6 @@
 import { TERRAIN_GEN } from '../../src/content/tuning';
 import { describe, expect, it } from 'vitest';
+import type { HoldAheadDef } from '../../src/content/behaviors';
 import { ENEMIES, type EnemyId } from '../../src/content/enemies';
 import { WEAPONS, type BulletSpec } from '../../src/content/weapons';
 import { applyHit, IDLE_COMMAND, type PlayerCommand } from '../../src/sim/behemoth';
@@ -142,6 +143,9 @@ describe('missile launcher', () => {
 describe('heavy tank (hold ahead)', () => {
   it('stays in front of a cruising Behemoth, inside its arc', () => {
     const w = world();
+    // Open ground: seed 1 has an outcrop dead ahead that the hull deflects off, which traps a slow
+    // tank between the two (it gets out sideways and falls behind; nav.test.ts covers routing).
+    openGround(w, 120);
     const b = w.behemoth;
     const e = spawnEnemy(w, 'heavyTank', b.x + 200, b.y + 30);
     e.def = { ...e.def, fireRange: 0 };
@@ -149,7 +153,7 @@ describe('heavy tank (hold ahead)', () => {
     expect(e.alive).toBe(true);
     expect(e.x).toBeGreaterThan(b.x + b.chassis.length / 2);
     const bearing = Math.abs(Math.atan2(e.y - b.y, e.x - b.x));
-    expect(bearing).toBeLessThan(((ENEMIES.heavyTank.engage.arc + 15) * Math.PI) / 180);
+    expect(bearing).toBeLessThan((((ENEMIES.heavyTank.behavior as HoldAheadDef).arc + 15) * Math.PI) / 180);
   });
 
   it('a surge runs it down', () => {

@@ -1,8 +1,8 @@
+import { STEER } from '../../content/tuning';
 import type { Enemy } from '../entities';
 import { frameRight } from '../frame';
 import { clamp } from '../math';
 import type { World } from '../world';
-import { viaFord } from './crossing';
 
 /** Shared steering pieces for behaviors. */
 
@@ -13,9 +13,9 @@ import { viaFord } from './crossing';
 export function inFrame(e: Enemy, w: World, x: number, y: number): { x: number; y: number } {
   const margin = e.def.radius + 4;
   const f = w.frame;
-  const rearHold = f.left + Math.max(margin + 8, f.config.width * e.def.engage.rearInset);
+  const rearHold = f.left + Math.max(margin + STEER.frameMargin, f.config.width * e.def.behavior.rearInset);
   return {
-    x: clamp(x, rearHold, frameRight(f) - margin - 8),
+    x: clamp(x, rearHold, frameRight(f) - margin - STEER.frameMargin),
     y: clamp(y, margin, w.terrain.height - margin),
   };
 }
@@ -30,10 +30,14 @@ export function keepPace(e: Enemy, w: World, tx: number, ty: number): { vx: numb
   const dy = ty - e.y;
   const d = Math.hypot(dx, dy) || 1;
   const max = e.def.maxSpeed;
-  const chase = Math.min(max, d * 1.5);
-  const vx = b.vx + (dx / d) * chase;
-  const vy = b.vy + (dy / d) * chase;
+  const chase = Math.min(max, d * STEER.paceGain);
+  return capped(e, b.vx + (dx / d) * chase, b.vy + (dy / d) * chase);
+}
+
+/** A velocity held to the unit's top speed. */
+export function capped(e: Enemy, vx: number, vy: number): { vx: number; vy: number } {
   const m = Math.hypot(vx, vy);
+  const max = e.def.maxSpeed;
   return m > max ? { vx: (vx * max) / m, vy: (vy * max) / m } : { vx, vy };
 }
 
@@ -42,13 +46,8 @@ export function goTo(e: Enemy, tx: number, ty: number): { vx: number; vy: number
   const dx = tx - e.x;
   const dy = ty - e.y;
   const d = Math.hypot(dx, dy);
-  if (d < 1.5) return { vx: 0, vy: 0 };
-  const speed = Math.min(e.def.maxSpeed, d * 2);
+  if (d < STEER.arrived) return { vx: 0, vy: 0 };
+  const speed = Math.min(e.def.maxSpeed, d * STEER.arriveGain);
   return { vx: (dx / d) * speed, vy: (dy / d) * speed };
 }
 
-/** `keepPace` toward a target, unless it lies across a river this unit can't wade: then a ford first. */
-export function pursue(e: Enemy, w: World, tx: number, ty: number): { vx: number; vy: number } {
-  const ford = viaFord(e, w, tx, ty);
-  return ford ? goTo(e, ford.x, ford.y) : keepPace(e, w, tx, ty);
-}

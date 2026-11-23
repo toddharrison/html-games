@@ -55,7 +55,7 @@ describe('bomb truck', () => {
   it('is industrial’s own unit: unarmed, fast, coming from ahead or the sides, never from behind', () => {
     expect(DEF.biome).toBe('industrial');
     expect(DEF.weapon).toBeNull();
-    expect(DEF.behavior).toBe('charge');
+    expect(DEF.behavior.kind).toBe('charge');
     expect(DEF.spawn).toBe('ahead');
     expect(DEF.callout?.per).toBe('run');
     expect(DEF.bomb).toBeDefined();

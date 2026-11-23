@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { holdAhead } from '../../src/content/behaviors';
 import { ENEMIES, type EnemyId } from '../../src/content/enemies';
 import { WEAPONS, type BulletSpec } from '../../src/content/weapons';
 import { IDLE_COMMAND } from '../../src/sim/behemoth';
@@ -152,7 +153,7 @@ describe('hull heading', () => {
     const w = world();
     const b = w.behemoth;
     const e = spawnEnemy(w, 'lightTank', b.x + 100, b.y);
-    e.def = { ...e.def, fireRange: 0, behavior: 'holdAhead', engage: { ...e.def.engage, minRange: 300, maxRange: 300, arc: 0 } };
+    e.def = { ...e.def, fireRange: 0, behavior: holdAhead({ orbit: { minRange: 300, maxRange: 300, angularSpeed: 0.35 }, arc: 0, rearInset: 0.15, siege: null }) };
     e.ai.orbitAngle = 0;
     e.ai.orbitRange = 300;
     steps(w, 90);

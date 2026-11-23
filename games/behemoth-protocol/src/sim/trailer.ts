@@ -18,6 +18,7 @@ import { destroyEnemy } from './enemies';
 import { allocId, sealed, type Mine } from './entities';
 import { distanceToBox } from './math';
 import type { KillCause, SimEvent } from './events';
+import { TIMER_SLACK } from './loop';
 import type { Rng } from './rng';
 import type { World } from './world';
 
@@ -171,7 +172,7 @@ function stepBunkers(b: BehemothState, t: TrailerState, dt: number, events: SimE
         continue;
       }
       f.timer -= dt;
-      if (f.timer > 0) continue;
+      if (f.timer > TIMER_SLACK) continue;
       h.ammo = h.weapon.ammo;
       bay.loads--;
       bay.feeding = null;

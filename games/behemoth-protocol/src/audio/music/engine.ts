@@ -326,10 +326,17 @@ const VOICES: Record<VoiceId, Voice> = {
   reed,
 };
 
-/** A concert hall: stereo noise decaying 60 dB over `seconds`, its highs dying first, after a short pre-delay. */
-function hall(ctx: BaseAudioContext, seconds: number): AudioBuffer {
+const halls = new WeakMap<BaseAudioContext, AudioBuffer>();
+
+/**
+ * A concert hall: stereo noise decaying 60 dB over `HALL_SECONDS`, its highs dying first, after a
+ * short pre-delay. Made once per audio context (every battle's music shares it).
+ */
+function hall(ctx: BaseAudioContext): AudioBuffer {
+  const have = halls.get(ctx);
+  if (have) return have;
   const sr = ctx.sampleRate;
-  const len = Math.round(sr * seconds);
+  const len = Math.round(sr * HALL_SECONDS);
   const pre = Math.round(sr * 0.02);
   const buf = ctx.createBuffer(2, len, sr);
   for (let ch = 0; ch < 2; ch++) {
@@ -341,6 +348,7 @@ function hall(ctx: BaseAudioContext, seconds: number): AudioBuffer {
       d[i] = y * Math.exp(-6.9 * x);
     }
   }
+  halls.set(ctx, buf);
   return buf;
 }
 
@@ -377,7 +385,7 @@ export class MusicEngine {
     const dry = ctx.createGain();
     dry.connect(lowCut);
     const reverb = ctx.createConvolver();
-    reverb.buffer = hall(ctx, HALL_SECONDS);
+    reverb.buffer = hall(ctx);
     const wet = ctx.createGain();
     wet.gain.value = WET;
     reverb.connect(wet).connect(lowCut);

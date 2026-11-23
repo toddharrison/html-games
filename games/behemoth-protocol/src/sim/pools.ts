@@ -3,6 +3,7 @@ import { POOL } from '../content/tuning';
 import type { PoolSpec, ShellSpec } from '../content/weapons';
 import { damageTreads, groundBox, hitched, type BehemothState } from './behemoth';
 import { allocId, type Pool } from './entities';
+import { TIMER_SLACK } from './loop';
 import { circleIntersectsBox, closestInBox, orientedBox } from './math';
 import { damageEnemy } from './projectiles';
 import { hitTrailer } from './trailer';
@@ -26,8 +27,7 @@ export function stepPools(w: World, dt: number): void {
   for (const p of w.pools) {
     p.age += dt;
     p.tick -= dt;
-    // A hair of slack, so float drift can't push a tick into the next step.
-    if (p.tick <= 1e-9 && p.ticks > 0) {
+    if (p.tick <= TIMER_SLACK && p.ticks > 0) {
       p.tick += POOL.tick;
       p.ticks--;
       burn(w, p, POOL.tick);

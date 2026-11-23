@@ -25,6 +25,7 @@ import { angleDiff, clamp, dist, rotateToward, wrapAngle } from './math';
 import { damageMultiplier, fireBeam, roundRange, roundSpec, shotSpec } from './projectiles';
 import type { World } from './world';
 import { conditionSpread, markFlash } from './conditions';
+import { TIMER_SLACK } from './loop';
 
 /**
  * Weapon firing (SPEC §5.2, §6): spawns projectiles from mounts. Projectile flight lives in
@@ -203,7 +204,7 @@ function stepRipple(w: World, group: HardpointState[], trigger: Trigger, cmd: Pl
 
 /** Ready to fire: reloaded, with ammo and power to spare. */
 function ready(b: BehemothState, h: HardpointState, weapon: WeaponDef): boolean {
-  return h.cooldown <= 0 && (h.ammo === null || h.ammo > 0) && b.power.stored >= (weapon.power ?? 0);
+  return h.cooldown <= TIMER_SLACK && (h.ammo === null || h.ammo > 0) && b.power.stored >= (weapon.power ?? 0);
 }
 
 /** Spend what a shot costs and start the reload (`ready` has already checked there's enough). */
@@ -320,7 +321,7 @@ function stepMissiles(w: World, h: HardpointState, weapon: WeaponDef, start: () 
 
   const s = h.salvo;
   s.timer -= dt;
-  if (s.timer > 0) return;
+  if (s.timer > TIMER_SLACK) return;
   const t = s.targetId === null ? undefined : w.enemies.find((e) => e.id === s.targetId && e.alive);
   if (t) {
     s.x = t.x;

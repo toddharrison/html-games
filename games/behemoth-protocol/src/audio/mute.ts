@@ -1,7 +1,9 @@
 import type Phaser from 'phaser';
 
 /** Mute is a per-browser convenience, kept apart from the run and profile saves. */
-const KEY = 'behemoth-protocol.muted';
+const KEY = 'behemoth-protocol/muted';
+/** Where builds before Nov 2026 kept it; moved to `KEY` on the first load. */
+const OLD_KEY = 'behemoth-protocol.muted';
 
 /**
  * The mute state lives here, not in Phaser: its Web Audio `mute` getter reads a gain node's
@@ -12,6 +14,11 @@ let muted = false;
 /** Applies the saved mute setting (at boot). */
 export function applySavedMute(sound: Phaser.Sound.BaseSoundManager): void {
   try {
+    const old = localStorage.getItem(OLD_KEY);
+    if (old !== null) {
+      if (localStorage.getItem(KEY) === null) localStorage.setItem(KEY, old);
+      localStorage.removeItem(OLD_KEY);
+    }
     muted = localStorage.getItem(KEY) === '1';
   } catch {
     muted = false;

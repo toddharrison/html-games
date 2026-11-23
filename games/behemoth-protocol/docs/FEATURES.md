@@ -348,6 +348,11 @@ Each hardpoint is bound to LMB, RMB, Space, or Auto at the depot (free, no actio
 - Depot: `{kind: 'bind'}` action ("Not allowed", "Set", "No channel"), `bindingOf`, `channelsOf`, fire-control repair; autos are allowed in ring slots on a trigger. DepotScene: "Fires on" button row on hardpoint and pod panels + channel line; fire-control part in the cutaway (`L.fireControl`). HUD: schematic `FIRE_CONTROL_BOX`, `Fire ctrl` readout, hints `LMB RMB SPC  fire`.
 - **Limits:** a damaged-but-working fire control keeps both channels (only destruction matters); auto missiles skip line of fire and ignore hidden units like the guns; no in-battle indicator of which mount a binding row drives. Revisit after playtest.
 
+### Reloads land on their tick
+`M3` · `uncommitted` · `playtest: pending` · SPEC §6
+A fix from the code review (Nov 23): every player weapon fired a tick late, so the beam laser managed ~8.5 pulses/s, not 10. The cause was float drift: `0.1` less six steps of `1/60` leaves `2.08e-17`, not 0. Timers now count as done at `TIMER_SLACK` (1e-9, `sim/loop.ts`): a hardpoint's reload (`ready`, sim/weapons.ts), a missile salvo's interval (`stepMissiles`), and an ammo bunker's feed (sim/trailer.ts); plasma pools (sim/pools.ts) already did this with a bare `1e-9`, now the constant. Every weapon fires a little faster than it used to, so feed this into the economy tuning. Test: `tests/sim/energy.test.ts` (a charged beam laser fires exactly 10 pulses a second).
+- **Gotcha:** compare a timer counted down by `SIM_DT` against `TIMER_SLACK`, never 0. Enemy guns (sim/enemies.ts) still compare against 0; their reloads are jittered, so it matters less there, but a windup can still run a tick long.
+
 ---
 
 ## 6. Damage, power, and the reactor
@@ -949,6 +954,11 @@ Procedural Web Audio: every weapon, blasts, hits, terrain, engine/tread/reactor 
 - `battleAudio.ts` (scene glue on Phaser's context; torn down on scene shutdown), `mute.ts` (own state, since Phaser's `mute` getter lags its setter). Sim change: the `intercept` event carries `weapon`.
 - Verified headless (no page errors; pause/mute/restart OK; offline renders show no NaNs, peaks under 0 dB, engine bed ≈ −28 dB RMS, reactor ≈ −32). After the user's first listen (drive too high and whiny): saturation before the engine's low-pass, a lower firing pitch, duller track links, a darker reactor hum, the capacitor whine only in a meltdown.
 - **Limits:** far sounds have no speed-of-sound delay (left out on purpose: it would feel laggy at this scale).
+
+### Audio fixes from the code review
+`M3` · `uncommitted` · `playtest: n/a` · SPEC §11.4
+- **Mute key:** `behemoth-protocol/muted` (`audio/mute.ts`), the same form as the other keys; it was `behemoth-protocol.muted`. `applySavedMute` copies the old key over once (unless the new one is already set) and removes it.
+- **Hall reverb cached:** `hall()` (`audio/music/engine.ts`) is made once per audio context (a `WeakMap`, like `synth.ts`'s `bank()`) instead of every battle (~250k random samples per channel at each battle start). Offline renders each have their own context, so they still build their own.
 
 ### Music (proof of concept)
 `M5` (pulled forward) · fee5f6d · `playtest: approved` · SPEC §11.4 "Music", §15 "Music", §16 Q33

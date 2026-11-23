@@ -112,9 +112,8 @@ describe('lasers', () => {
     const b = w.behemoth;
     b.power.stored = b.power.max;
     steps(w, Math.round(1 / SIM_DT), { fireSecondary: true });
-    // Charged: a pulse every reload (about 8–10 a second at 60 steps a second).
-    const charged = beams(w).length;
-    expect(charged).toBeGreaterThanOrEqual(8);
+    // Charged: a pulse every reload, on the tick it's due (float drift once made it a tick late: ~8.5/s).
+    expect(beams(w)).toHaveLength(10);
     expect(b.power.stored).toBeLessThan(b.power.max);
     // Dry: the reactor's 10/s pays for about 6 pulses a second (1.6 each).
     b.power.stored = 0;

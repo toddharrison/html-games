@@ -19,6 +19,10 @@ const GM: Record<VoiceId, { program: number } | { drum: number }> = {
   timpani: { program: 47 },
   snare: { drum: 38 },
   tamtam: { drum: 52 }, // Chinese cymbal, the nearest GM has to a tam-tam
+  bells: { program: 14 }, // tubular bells
+  choir: { program: 52 }, // choir aahs
+  anvil: { drum: 56 }, // cowbell, the nearest GM has to an anvil
+  reed: { program: 68 }, // oboe
 };
 
 /** A variable-length quantity, as MIDI writes delta times. */
@@ -48,10 +52,13 @@ function trackChunk(events: { tick: number; bytes: number[] }[]): number[] {
   return chunk('MTrk', body);
 }
 
-export function writeMidi(notes: readonly NoteEvent[], tempo: number, beatsPerBar: number): Uint8Array {
+/** `tempo` and `beat` positions are in the piece's beats, which are eighths when `beatUnit` is 8. */
+export function writeMidi(notes: readonly NoteEvent[], tempo: number, beatsPerBar: number, beatUnit: 4 | 8 = 4): Uint8Array {
+  const quarters = 4 / beatUnit;
   const conductor = trackChunk([
-    { tick: 0, bytes: [0xff, 0x51, 3, ...u32(Math.round(60e6 / tempo)).slice(1)] },
-    { tick: 0, bytes: [0xff, 0x58, 4, beatsPerBar, 2, 24, 8] }, // n/4 time
+    { tick: 0, bytes: [0xff, 0x51, 3, ...u32(Math.round(60e6 / (tempo * quarters))).slice(1)] },
+    // n/4 or n/8 time, a click every beat.
+    { tick: 0, bytes: [0xff, 0x58, 4, beatsPerBar, Math.log2(beatUnit), 24 * quarters, 8] },
   ]);
   const tracks = new Map<string, NoteEvent[]>();
   for (const n of notes) tracks.set(n.track, [...(tracks.get(n.track) ?? []), n]);
@@ -66,9 +73,9 @@ export function writeMidi(notes: readonly NoteEvent[], tempo: number, beatsPerBa
     if (!drum) events.push({ tick: 0, bytes: [0xc0 | ch, gm.program] });
     for (const n of list) {
       const key = drum ? gm.drum : n.pitch;
-      const on = Math.round(n.beat * PPQ);
+      const on = Math.round(n.beat * quarters * PPQ);
       // Drum hits get a short fixed length; offs sort before ons at the same tick.
-      const off = Math.max(on + 1, Math.round((n.beat + (drum ? 0.25 : n.dur)) * PPQ) - 1);
+      const off = Math.max(on + 1, Math.round((n.beat * quarters + (drum ? 0.25 : n.dur * quarters)) * PPQ) - 1);
       // A note's level is its gain; velocity is closer to loudness, so take the square root.
       const vel = Math.max(1, Math.min(127, Math.round(Math.sqrt(n.vel) * 127)));
       events.push({ tick: on, bytes: [0x90 | ch, key, vel] }, { tick: off, bytes: [0x80 | ch, key, 0] });

@@ -3,7 +3,7 @@ import { barEvents, Director, HOLD_BARS, levelFor, timeline, type MusicInput } f
 import { duckFor } from '../../src/audio/music/duck';
 import { vlq, writeMidi } from '../../src/audio/music/midi';
 import { barSeconds, layer, midi, parse, transpose, type Piece } from '../../src/audio/music/score';
-import { ADVANCE } from '../../src/audio/music/scores';
+import { ADVANCE, MIRAGE, PIECES } from '../../src/audio/music/scores';
 
 const calm: MusicInput = { heat: 0, bosses: [] };
 const at = (heat: number, bosses: string[] = [], downed: string[] = []): MusicInput => ({ heat, bosses, downed });
@@ -54,7 +54,12 @@ describe('notation', () => {
 });
 
 describe('scores', () => {
-  const pieces: Piece[] = [ADVANCE];
+  const pieces: Piece[] = Object.values(PIECES);
+
+  it('every biome has a piece of its own', () => {
+    expect(new Set(pieces.map((p) => p.id)).size).toBe(pieces.length);
+  });
+
   for (const piece of pieces) {
     it(`${piece.id}: every name it uses exists, and every layer loops in step`, () => {
       const phrase = Math.max(...Object.values(piece.layers).map((l) => l.bars.length));
@@ -67,6 +72,21 @@ describe('scores', () => {
         expect(theme.floor).toBeLessThan(piece.levels.length);
       }
       for (const s of Object.values(piece.stingers)) for (const id of s.mutes) expect(piece.layers[id], id).toBeDefined();
+    });
+
+    it(`${piece.id}: bars of 2–3 s, so a change in the fight is heard within one`, () => {
+      expect(barSeconds(piece)).toBeGreaterThan(2);
+      expect(barSeconds(piece)).toBeLessThan(3);
+    });
+
+    it(`${piece.id}: the siege tank's theme, stingers, and finale, each a bar long`, () => {
+      expect(piece.themes.siegeTank).toMatchObject({ stinger: 'siegeTank', resolve: 'siegeTankDown' });
+      for (const id of ['siegeTank', 'siegeTankDown', 'finale']) {
+        for (const p of piece.stingers[id]!.parts) expect(p.bars, id).toHaveLength(1);
+      }
+      const { plans } = timeline(piece, [at(0.9, ['siegeTank']), at(0.9, ['siegeTank'])]);
+      expect(plans[1]!.layers).toEqual(expect.arrayContaining(piece.themes.siegeTank!.layers));
+      for (const id of piece.themes.siegeTank!.replaces) expect(plans[1]!.layers).not.toContain(id);
     });
 
     it(`${piece.id}: each level adds to the one below`, () => {
@@ -202,6 +222,16 @@ describe('MIDI export', () => {
     expect(read.tracks).toBe(tracks + 1);
     expect(read.ons).toBe(notes.length);
     expect(read.unmatched).toBe(0);
+  });
+
+  it('writes an eighth-note meter as n/8, with the tempo in quarters', () => {
+    const bytes = writeMidi([], MIRAGE.tempo, MIRAGE.beatsPerBar, MIRAGE.beatUnit);
+    const at = (seq: number[]) => bytes.findIndex((_, i) => seq.every((b, j) => bytes[i + j] === b));
+    const sig = at([0xff, 0x58, 4]);
+    expect([...bytes.subarray(sig + 3, sig + 7)]).toEqual([9, 3, 12, 8]);
+    const t = at([0xff, 0x51, 3]);
+    const us = (bytes[t + 3]! << 16) | (bytes[t + 4]! << 8) | bytes[t + 5]!;
+    expect(60e6 / us).toBeCloseTo(MIRAGE.tempo / 2, 1);
   });
 });
 

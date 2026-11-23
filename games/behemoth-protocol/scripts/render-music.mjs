@@ -2,7 +2,7 @@
 // the game: starts a Vite dev server, loads src/audio/music/render.ts in Playwright's headless
 // Chromium shell over the DevTools protocol, and writes what renderAll() returns.
 //
-//   npm run render:music [-- <out dir>]     (default: renders/music, git-ignored)
+//   npm run render:music [-- [--demos] <out dir>]     (default: renders/music, git-ignored; --demos skips the slow battle renders)
 //
 // Needs the headless shell (`npx playwright install chromium-headless-shell`), or set
 // CHROME_HEADLESS to any Chromium binary.
@@ -14,7 +14,9 @@ import { join, resolve } from 'node:path';
 import { createServer } from 'vite';
 
 const root = resolve(import.meta.dirname, '..');
-const outDir = resolve(root, process.argv[2] ?? 'renders/music');
+const args = process.argv.slice(2);
+const demosOnly = args.includes('--demos');
+const outDir = resolve(root, args.find((a) => !a.startsWith('--')) ?? 'renders/music');
 
 function findShell() {
   if (process.env.CHROME_HEADLESS) return process.env.CHROME_HEADLESS;
@@ -72,14 +74,16 @@ try {
   const { targetId } = await cdp.send('Target.createTarget', { url: `${base}src/audio/music/render.ts` });
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
   await new Promise((r) => setTimeout(r, 500));
-  const { result, exceptionDetails } = await cdp.send(
-    'Runtime.evaluate',
-    { expression: "import('/src/audio/music/render.ts').then((m) => m.renderAll())", awaitPromise: true, returnByValue: true },
-    sessionId,
-  );
-  if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
+  const evaluate = async (expression) => {
+    const { result, exceptionDetails } = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId);
+    if (exceptionDetails) throw new Error(exceptionDetails.exception?.description ?? exceptionDetails.text);
+    return result.value;
+  };
+  // Keep the renders in the page and fetch them one at a time: all at once is too big a message.
+  const count = await evaluate(`import('/src/audio/music/render.ts').then(async (m) => (window.renders = await m.renderAll(${demosOnly})).length)`);
   mkdirSync(outDir, { recursive: true });
-  for (const r of result.value) {
+  for (let i = 0; i < count; i++) {
+    const r = await evaluate(`window.renders[${i}]`);
     writeFileSync(join(outDir, `${r.name}.wav`), Buffer.from(r.wav, 'base64'));
     if (r.mid) writeFileSync(join(outDir, `${r.name}.mid`), Buffer.from(r.mid, 'base64'));
     writeFileSync(join(outDir, `${r.name}.txt`), `${r.log.join('\n')}\n`);

@@ -22,6 +22,10 @@ const CHANNEL: Record<VoiceId, { level: number; pan: number; wet: number }> = {
   timpani: { level: 0.6, pan: -0.1, wet: 0.45 },
   snare: { level: 0.3, pan: 0.1, wet: 0.3 },
   tamtam: { level: 0.6, pan: 0, wet: 0.7 },
+  bells: { level: 0.35, pan: 0.25, wet: 0.7 },
+  choir: { level: 0.18, pan: -0.1, wet: 0.7 },
+  anvil: { level: 0.18, pan: 0.2, wet: 0.35 },
+  reed: { level: 0.2, pan: -0.2, wet: 0.45 },
 };
 const HALL_SECONDS = 2.6;
 /** Ducking: how fast the music dips under a big sound, and how slowly it comes back (time constants, s). */
@@ -206,6 +210,108 @@ const tamtam: Voice = (ctx, out, _f, t, _dur, vel) => {
   n.stop(t + 3.6);
 };
 
+/** Bells (glass high up, a tolling bell low down): a sine frequency-modulated at an inharmonic ratio, its brightness dying first, over a hum an octave down. */
+const bells: Voice = (ctx, out, f, t, _dur, vel) => {
+  const len = Math.min(4.5, 1 + 900 / f);
+  const car = osc(ctx, 'sine', f);
+  const mod = osc(ctx, 'sine', f * 3.5);
+  const index = ctx.createGain();
+  index.gain.setValueAtTime(f * (0.8 + 1.6 * vel), t);
+  index.gain.exponentialRampToValueAtTime(f * 0.05, t + len * 0.5);
+  mod.connect(index).connect(car.frequency);
+  car.connect(hit(ctx, t, vel * 0.5, 0.002, len)).connect(out);
+  const hum = osc(ctx, 'sine', f / 2);
+  hum.connect(hit(ctx, t, vel * 0.15, 0.01, len * 1.2)).connect(out);
+  for (const o of [car, mod, hum]) {
+    o.start(t);
+    o.stop(t + len * 1.2 + 0.05);
+  }
+};
+
+/** Vowel formants ("ah" leaning to "oh"): centre, level, Q. */
+const FORMANTS = [
+  [650, 1, 5],
+  [1080, 0.5, 7],
+  [2650, 0.2, 9],
+] as const;
+
+/** A wordless choir, as Tomita voiced one: detuned sawtooths through vowel formants, a slow swell, vibrato. */
+const choir: Voice = (ctx, out, f, t, dur, vel) => {
+  const attack = Math.min(0.45, dur * 0.4);
+  const end = t + dur;
+  const stop = end + 1.2;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vel, t + attack);
+  g.gain.setTargetAtTime(0, end, 0.25);
+  const lfo = osc(ctx, 'sine', rand(4.5, 5.2));
+  const depth = ctx.createGain();
+  depth.gain.value = 9;
+  lfo.connect(depth);
+  lfo.start(t);
+  lfo.stop(stop);
+  const sum = ctx.createGain();
+  for (const cents of [-10, 0, 10]) {
+    const o = osc(ctx, 'sawtooth', f, cents + rand(-3, 3));
+    depth.connect(o.detune);
+    o.connect(sum);
+    o.start(t);
+    o.stop(stop);
+  }
+  for (const [centre, level, q] of FORMANTS) {
+    const amp = ctx.createGain();
+    amp.gain.value = level * 3;
+    sum.connect(filter(ctx, 'bandpass', centre, q)).connect(amp).connect(g);
+  }
+  g.connect(out);
+};
+
+/** An anvil or a drop forge: a struck bar's inharmonic modes, the high ones dying fast, over a clank of noise. */
+const anvil: Voice = (ctx, out, f, t, _dur, vel) => {
+  const modes = [
+    [1, 1, 0.9],
+    [2.76, 0.55, 0.5],
+    [5.4, 0.35, 0.3],
+    [8.93, 0.2, 0.18],
+  ] as const;
+  for (const [ratio, amp, decay] of modes) {
+    const o = osc(ctx, 'sine', f * ratio * rand(0.995, 1.005));
+    const len = decay * (0.6 + 0.6 * vel);
+    o.connect(hit(ctx, t, amp * vel * 0.5, 0.001, len)).connect(out);
+    o.start(t);
+    o.stop(t + len + 0.05);
+  }
+  const n = noise(ctx);
+  n.connect(filter(ctx, 'bandpass', 3500, 1.2)).connect(hit(ctx, t, vel * 0.4, 0.001, 0.04)).connect(out);
+  n.start(t, rand(0, 1.5));
+  n.stop(t + 0.06);
+};
+
+/** A double reed (a shawm, an oboe): a sawtooth through a nasal formant, scooping into pitch, its vibrato blooming late. */
+const reed: Voice = (ctx, out, f, t, dur, vel) => {
+  const end = Math.max(t + dur, t + 0.06);
+  const o = osc(ctx, 'sawtooth', f);
+  o.detune.setValueAtTime(-40, t);
+  o.detune.linearRampToValueAtTime(0, t + 0.05);
+  const lfo = osc(ctx, 'sine', rand(5.2, 6));
+  const depth = ctx.createGain();
+  depth.gain.setValueAtTime(0, t);
+  depth.gain.linearRampToValueAtTime(12, t + 0.5);
+  lfo.connect(depth).connect(o.detune);
+  const nasal = filter(ctx, 'peaking', 1400, 2.5);
+  nasal.gain.value = 8;
+  const g = ctx.createGain();
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vel, t + 0.03);
+  g.gain.setTargetAtTime(vel * 0.85, t + 0.03, 0.1);
+  g.gain.setTargetAtTime(0, end, 0.05);
+  o.connect(filter(ctx, 'highpass', 350)).connect(nasal).connect(filter(ctx, 'lowpass', 3800)).connect(g).connect(out);
+  for (const x of [o, lfo]) {
+    x.start(t);
+    x.stop(end + 0.4);
+  }
+};
+
 const VOICES: Record<VoiceId, Voice> = {
   legno,
   strings,
@@ -214,6 +320,10 @@ const VOICES: Record<VoiceId, Voice> = {
   timpani,
   snare,
   tamtam,
+  bells,
+  choir,
+  anvil,
+  reed,
 };
 
 /** A concert hall: stereo noise decaying 60 dB over `seconds`, its highs dying first, after a short pre-delay. */

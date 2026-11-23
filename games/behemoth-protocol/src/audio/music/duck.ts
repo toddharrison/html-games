@@ -32,7 +32,8 @@ const DUCK: Partial<Record<SoundId, Duck>> = {
   missileWarning: { depth: 0.55, hold: 1 },
   lockOn: { depth: 0.45, hold: 0.8 },
   incoming: { depth: 0.35, hold: 1.2 },
-  radio: { depth: 0.45, hold: 1.2 },
+  // Deep: a sighting call lands on top of the big enemy's stinger.
+  radio: { depth: 0.7, hold: 1.2 },
   horn: { depth: 0.35, hold: 1.5 },
   detonation: { depth: 1, hold: 4 },
 };

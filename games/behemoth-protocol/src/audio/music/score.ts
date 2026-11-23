@@ -11,7 +11,18 @@
  * Every bar must add up to the meter; the parser throws otherwise.
  */
 
-export type VoiceId = 'legno' | 'strings' | 'brass' | 'lowBrass' | 'timpani' | 'snare' | 'tamtam';
+export type VoiceId =
+  | 'legno'
+  | 'strings'
+  | 'brass'
+  | 'lowBrass'
+  | 'timpani'
+  | 'snare'
+  | 'tamtam'
+  | 'bells'
+  | 'choir'
+  | 'anvil'
+  | 'reed';
 
 export interface Note {
   /** Start, in beats from the bar's downbeat. */
@@ -51,8 +62,11 @@ export interface Theme {
 
 export interface Piece {
   id: string;
+  /** Beats a minute. */
   tempo: number;
   beatsPerBar: number;
+  /** The note value of a beat (4, a quarter, unless it says 8), for the MIDI file's time signature. */
+  beatUnit?: 4 | 8;
   layers: Record<string, Layer>;
   /** The layers at each intensity level, quietest first. */
   levels: string[][];

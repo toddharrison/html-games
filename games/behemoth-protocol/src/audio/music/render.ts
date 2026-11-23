@@ -5,7 +5,7 @@ import { duckFor } from './duck';
 import { MusicEngine } from './engine';
 import { writeMidi } from './midi';
 import { barSeconds, type Piece } from './score';
-import { ADVANCE } from './scores';
+import { PIECES } from './scores';
 
 /**
  * Offline renders for listening outside the game (dev only; nothing in the game imports this).
@@ -51,14 +51,17 @@ async function render(name: string, piece: Piece, inputs: readonly MusicInput[])
     (p) => `${String(p.bar + 1).padStart(2)} L${p.level} ${p.layers.join(' ')}${p.stingers.map((s) => ` [${s.id}]`).join('')}`,
   );
   const data = [audio.getChannelData(0), audio.getChannelData(1)];
-  return { name, wav: base64(wav(data, audio.sampleRate)), mid: base64(writeMidi(notes, piece.tempo, piece.beatsPerBar)), log };
+  return { name, wav: base64(wav(data, audio.sampleRate)), mid: base64(writeMidi(notes, piece.tempo, piece.beatsPerBar, piece.beatUnit)), log };
 }
 
-export async function renderAll(): Promise<Render[]> {
-  return [
-    await render('advance-demo', ADVANCE, DEMO),
-    ...(await renderBattle()),
-  ];
+/** Every piece: the demo on its own, and (unless `demosOnly`: they're slow) under the scripted battle. */
+export async function renderAll(demosOnly = false): Promise<Render[]> {
+  const out: Render[] = [];
+  for (const piece of new Set(Object.values(PIECES))) {
+    out.push(await render(`${piece.id}-demo`, piece, DEMO));
+    if (!demosOnly) out.push(await renderBattle(piece));
+  }
+  return out;
 }
 
 /** A sound effect at a time in the scripted battle; no position = on board the Behemoth. */
@@ -166,12 +169,12 @@ const ONSET = 0.15;
  * The scripted battle through the game's own sound effects (`Synth`) with the demo's music
  * ducking under it, rendered as stems in one pass: the sound effects on channels 1–2, the music
  * on 3–4. The render pauses every step to fire that step's sounds and update the engine loop, as
- * the battle scene would each frame. Writes the stems and their sum, and reports how far each
- * kind of sound stands above the music in the moment it lands.
+ * the battle scene would each frame. Writes their sum, and reports how far each kind of sound
+ * stands above the music in the moment it lands.
  */
-async function renderBattle(): Promise<Render[]> {
-  const { plans, notes } = timeline(ADVANCE, DEMO);
-  const bar = barSeconds(ADVANCE);
+async function renderBattle(piece: Piece): Promise<Render> {
+  const { plans, notes } = timeline(piece, DEMO);
+  const bar = barSeconds(piece);
   const ctx = new OfflineAudioContext(4, Math.ceil((plans.length * bar + TAIL_SECONDS) * SAMPLE_RATE), SAMPLE_RATE);
   const merge = ctx.createChannelMerger(4);
   merge.connect(ctx.destination);
@@ -192,7 +195,7 @@ async function renderBattle(): Promise<Render[]> {
   const voices = synth as unknown as { voices: number };
   synth.startMachine();
   const music = new MusicEngine(ctx, stem(2));
-  music.playBar(notes, 0, bar / ADVANCE.beatsPerBar);
+  music.playBar(notes, 0, bar / piece.beatsPerBar);
   const sfx = battle(bar);
   let next = 0;
   for (let frame = STEP; frame < ctx.length - STEP; frame += STEP) {
@@ -216,8 +219,7 @@ async function renderBattle(): Promise<Render[]> {
   const fx = [ch[0]!, ch[1]!];
   const mu = [ch[2]!, ch[3]!];
   const sum = [0, 1].map((c) => fx[c]!.map((v, i) => v + mu[c]![i]!));
-  const out = (name: string, data: Float32Array[], log: string[] = []): Render => ({ name, wav: base64(wav(data, audio.sampleRate)), log });
-  return [out('battle-sfx', fx), out('battle-music', mu), out('battle-mix', sum, audibility(sfx, fx, mu, audio.sampleRate))];
+  return { name: `${piece.id}-battle`, wav: base64(wav(sum, audio.sampleRate)), log: audibility(sfx, fx, mu, audio.sampleRate) };
 }
 
 /** RMS level in dB over a window, both channels together. */

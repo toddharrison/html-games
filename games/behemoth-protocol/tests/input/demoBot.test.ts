@@ -75,7 +75,7 @@ describe('autopilot', () => {
       lane += run(seed, laneBot).treads;
     }
     expect(auto).toBeGreaterThan(lane);
-  });
+  }, 30_000); // Full battles: ~2.6 s here, over vitest's 5 s default on a CI runner.
 
   it('steers round a block of buildings on its line, and brakes into one it can’t miss', () => {
     const w = quiet(createWorld(OPTS));

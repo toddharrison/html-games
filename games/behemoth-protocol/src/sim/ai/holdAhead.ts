@@ -3,7 +3,9 @@ import { hullWidth } from '../behemoth';
 import type { Enemy } from '../entities';
 import { clamp } from '../math';
 import type { World } from '../world';
+import { AI } from '../../content/tuning';
 import type { Goal } from './nav';
+import { weakerFront } from './smarts';
 import { inFrame } from './steer';
 
 /**
@@ -28,6 +30,9 @@ export function holdAhead(e: Enemy, d: HoldAheadDef, w: World, dt: number): Goal
     ai.retargetIn = w.rng.range(...d.replan.every);
     if (w.rng.chance(d.replan.flip)) ai.orbitDir = ai.orbitDir === 1 ? -1 : 1;
     ai.orbitRange = w.rng.range(o.minRange, o.maxRange);
+    // Smart: to the side of the arc in front of the weaker front armor half, if one is.
+    const side = AI.smarts > 0 ? weakerFront(b) : 0;
+    if (side !== 0) ai.orbitDir = side;
   }
   ai.orbitAngle = clamp(ai.orbitAngle + ai.orbitDir * o.angularSpeed * dt, -arc, arc);
   if (Math.abs(ai.orbitAngle) >= arc) ai.orbitDir = ai.orbitAngle > 0 ? -1 : 1;

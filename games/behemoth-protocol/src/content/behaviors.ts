@@ -55,6 +55,8 @@ interface Common {
   /** Its last-stand ring; null = it keeps its own behavior (a convoy runs on, a bomb truck was closing in already). */
   siege: SiegeDef | null;
   weave?: WeaveDef;
+  /** Hurt (under `AI.hurt.share` of its HP), it holds this much farther from the hull (goals that move with it only). */
+  fallBack?: number;
 }
 
 /**

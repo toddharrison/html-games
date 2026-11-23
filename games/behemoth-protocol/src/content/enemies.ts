@@ -190,6 +190,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     behavior: skirmisher({
       orbit: { minRange: 70, maxRange: 120, angularSpeed: 0.35 },
       rearInset: 0.15,
+      fallBack: 50,
       siege: { minRange: 60, maxRange: 100, angularSpeed: 0.35, coverReach: 0 },
     }),
     spawn: 'edges',
@@ -219,6 +220,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
       orbit: { minRange: 85, maxRange: 135, angularSpeed: 0.25 },
       arc: 25,
       rearInset: 0.2,
+      fallBack: 40,
       siege: { minRange: 70, maxRange: 115, angularSpeed: 0.25, coverReach: 0 },
     }),
     spawn: 'ahead',
@@ -248,6 +250,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
       orbit: { minRange: 150, maxRange: 210, angularSpeed: 0.2 },
       arc: 65,
       rearInset: 0.2,
+      fallBack: 40,
       siege: { minRange: 140, maxRange: 200, angularSpeed: 0.2, coverReach: 0 },
     }),
     spawn: 'ahead',
@@ -566,6 +569,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     behavior: stalker({
       hold: { minRange: 45, maxRange: 85 },
       rearInset: 0.12,
+      fallBack: 30,
       siege: { minRange: 60, maxRange: 110, angularSpeed: 0, coverReach: 0 },
     }),
     spawn: 'edges',
@@ -632,6 +636,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     behavior: skirmisher({
       orbit: { minRange: 85, maxRange: 120, angularSpeed: 0.55 },
       rearInset: 0.15,
+      fallBack: 40,
       siege: { minRange: 45, maxRange: 90, angularSpeed: 0.55, coverReach: 0 },
       weave: { speed: 34, flip: [0.35, 0.8], clearance: 20 },
     }),

@@ -10,6 +10,7 @@ import { holdAhead } from './holdAhead';
 import { navigate, type Goal, type Velocity } from './nav';
 import { raider } from './raider';
 import { screen } from './screen';
+import { fallBack } from './smarts';
 import { skirmisher } from './skirmisher';
 import { stalker } from './stalker';
 import { weave } from './weave';
@@ -49,6 +50,7 @@ export function behave(e: Enemy, w: World, dt: number): Velocity {
       goal = step(e, own, w, dt);
     }
   }
+  if (goal && !sieging) goal = fallBack(e, w, goal);
   const v = goal ? navigate(e, w, goal, dt) : { vx: 0, vy: 0 };
   return own.weave && !sieging ? weave(e, own.weave, w, dt, v) : v;
 }

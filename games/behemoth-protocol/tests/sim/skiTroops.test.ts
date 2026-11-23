@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { DOCTRINES, DOCTRINE_IDS } from '../../src/content/doctrines';
 import { ENEMIES } from '../../src/content/enemies';
 import { MATERIALS } from '../../src/content/terrain';
-import { EVASION, SKI } from '../../src/content/tuning';
+import { AI, EVASION, SKI } from '../../src/content/tuning';
 import { IDLE_COMMAND } from '../../src/sim/behemoth';
 import { spawnEnemy } from '../../src/sim/enemies';
 import { encounterMix } from '../../src/sim/encounter';
@@ -92,6 +92,9 @@ describe('ski troops', () => {
     expect(evasionSpread(spawnEnemy(w, 'skiTroops', 300, 80))).toBe(EVASION.autoSpread);
     expect(evasionSpread(spawnEnemy(w, 'infantry', 300, 80))).toBe(1);
     // The stock autos against one team, and against the same team that doesn't weave or dodge the fire control.
+    // Smarts off: they'd also work round to where the autos don't reach, which isn't what this measures.
+    const smarts = AI.smarts;
+    AI.smarts = 0;
     const lasts = (evasive: boolean) => {
       let total = 0;
       for (let seed = 1; seed <= 6; seed++) {
@@ -105,7 +108,11 @@ describe('ski troops', () => {
       }
       return total;
     };
-    expect(lasts(true)).toBeGreaterThan(lasts(false) * 1.5);
+    try {
+      expect(lasts(true)).toBeGreaterThan(lasts(false) * 1.5);
+    } finally {
+      AI.smarts = smarts;
+    }
   });
 
   it('the autos hold fire until a skier has held a line for a moment after each jink', () => {

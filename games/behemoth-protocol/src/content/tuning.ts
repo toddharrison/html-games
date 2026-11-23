@@ -293,6 +293,32 @@ export const STEER = {
 };
 
 /**
+ * Enemy smarts (`sim/ai/smarts.ts`; SPEC §15 "Enemy AI (M3)", phase 5). One global level (user's
+ * call): `smarts` scales every one of them, 0 = the AI as it was before (circling skirmishers, random
+ * sides), 1 = full.
+ */
+export const AI = {
+  smarts: 1,
+  /**
+   * Skirmishers work toward the best bearing round the hull, rethought every `rethink` s over
+   * `candidates` bearings. A bearing scores worse inside `gunCone` of where the main gun is laid (×
+   * `gun`), better the more worn the armor arc it would hit (× `weakArc`), worse inside `spreadCone`
+   * of another skirmisher (× `spread` each), and worse the farther round it is from where the unit is
+   * now (× `stay` per half turn).
+   */
+  bearing: { rethink: 0.5, candidates: 16, gun: 1.2, gunCone: (70 * Math.PI) / 180, weakArc: 1, spread: 0.8, spreadCone: (45 * Math.PI) / 180, stay: 0.6 },
+  /** Hold-ahead units drift to the side of their arc in front of the weaker front armor half, once it's `weaker` (share of max) worse. */
+  front: { weaker: 0.05 },
+  /** A unit under `share` of its HP holds its behavior's `fallBack` farther off, but within `reach` × its fire range. */
+  hurt: { share: 0.4, reach: 0.9 },
+  /**
+   * Bomb trucks: while farther than `until` from the hull, with the main gun laid within `cone` of
+   * them, they come in `offset` to the side it isn't covering.
+   */
+  charge: { until: 90, cone: (60 * Math.PI) / 180, offset: 50 },
+};
+
+/**
  * Navigation (`sim/ai/nav.ts`): how every moving unit routes to where its behavior wants it.
  * Straight when the way is clear; otherwise along a route planned over the tiles (A*), costed by
  * 1 / the ground's speed for the unit, plus hazards.

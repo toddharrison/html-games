@@ -4,6 +4,7 @@ import type { Enemy } from '../entities';
 import { frameRight } from '../frame';
 import type { World } from '../world';
 import type { Goal } from './nav';
+import { chargeOffset } from './smarts';
 
 /**
  * Charge (SPEC §7.4 bomb truck): drive flat out at where the Behemoth will be by the time it gets
@@ -19,5 +20,7 @@ export function charge(e: Enemy, c: ChargeDef, w: World, _dt: number): Goal {
   const dist = Math.hypot(b.x - e.x, b.y - e.y);
   e.ai.close = dist < BOMB.close;
   const lead = Math.min(c.maxLead, dist / e.def.maxSpeed);
-  return { x: b.x + b.vx * lead, y: b.y + b.vy * lead, mode: 'speed', speed: e.def.maxSpeed, contact: true };
+  // Smart: wide of the main gun's line while it's still out there.
+  const p = chargeOffset(e, w, b.x + b.vx * lead, b.y + b.vy * lead);
+  return { x: p.x, y: p.y, mode: 'speed', speed: e.def.maxSpeed, contact: true };
 }

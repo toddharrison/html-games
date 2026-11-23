@@ -85,6 +85,9 @@ export interface AiMemory {
   weaveIn?: number;
   /** Seconds since its last jink (the fire control needs `EVASION.settle` to track it). */
   weaveAge?: number;
+  /** Skirmisher with smarts: the bearing round the hull it's working toward, and seconds until it rethinks it. */
+  aim?: number;
+  aimIn?: number;
   /** Raider: the step of its cycle, seconds left in it, its HP when the run began, and the staging spot it rolled (ahead of the hull's middle, out beyond its side). */
   raid?: 'stage' | 'run' | 'break';
   raidT?: number;

@@ -53,6 +53,7 @@ const LEVEL: Record<SoundId, number> = {
   emp: 0.7,
   railgun: 0.8,
   arc: 0.6,
+  thunder: 0.9,
   detonation: 1,
 };
 
@@ -615,6 +616,16 @@ const RECIPES: Record<SoundId, Recipe> = {
     v.noise({ type: 'highpass', f: 2500, peak: 0.8, attack: 0.0005, decay: 0.04 });
     v.tone({ type: 'square', f: vary(900, 0.2), f1: 300, glide: 0.08, peak: 0.08, attack: 0.001, decay: 0.1 });
     v.noise({ color: 'brown', f: 400, f1: 120, glide: 0.6, peak: 0.6 * s, attack: 0.02, decay: 0.4 + 0.8 * s, delay: 0.04 });
+  },
+  // Thunder after a lightning strike: a sharp tearing crack overhead, then a long low roll that
+  // swells and grumbles away.
+  thunder: (v, s) => {
+    v.noise({ type: 'highpass', f: 1800, peak: 0.7 * s, attack: 0.001, decay: 0.08 });
+    v.noise({ color: 'pink', f: 2400, f1: 300, glide: 0.5, peak: 0.8 * s, attack: 0.004, decay: 0.6, dest: v.driven, delay: 0.03 });
+    v.noise({ color: 'brown', f: 320, f1: 70, glide: 2.5, peak: 1.1 * s, attack: 0.25, decay: 2.6, delay: 0.12 });
+    v.noise({ color: 'brown', f: 180, f1: 50, glide: 2, peak: 0.7 * s, attack: 0.4, decay: 2.2, delay: vary(0.9, 0.3) });
+    v.tone({ f: 48, f1: 28, glide: 2, peak: 0.5 * s, attack: 0.3, decay: 2.4, delay: 0.15 });
+    v.send.gain.value *= 1.8;
   },
   detonation: (v) => {
     v.noise({ type: 'highpass', f: 600, peak: 1, attack: 0.001, decay: 0.15 });

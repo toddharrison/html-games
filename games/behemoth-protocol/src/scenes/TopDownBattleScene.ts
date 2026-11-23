@@ -577,8 +577,8 @@ export class TopDownBattleScene extends Phaser.Scene {
     if (!c || w.lastStand || w.extractedAt !== null) return null;
     const start = this.objectiveShown?.at === 0 ? 3 : 0;
     const name = conditionName(c.id, w.terrain.recipe.biome);
-    if (w.time >= start && w.time < start + 3) return c.id === 'night' ? CONDITIONS.night.banner : `${name}\n${CONDITIONS.storm.banner}`;
-    if (this.squallShownAt !== null && w.time - this.squallShownAt < 2.5) return `${name}: squall\nSight closing in`;
+    if (w.time >= start && w.time < start + 3) return c.id === 'night' ? CONDITIONS.night.banner : `${name}\n${CONDITIONS[c.id].banner}`;
+    if (this.squallShownAt !== null && w.time - this.squallShownAt < 2.5) return `${name}: squall\n${c.lightning ? 'Steer off the glow' : 'Sight closing in'}`;
     return null;
   }
 
@@ -827,6 +827,16 @@ export class TopDownBattleScene extends Phaser.Scene {
         case 'arc':
           this.fx.lightning(ev.points, WEAPONS[ev.weapon].size === 'L', ev.hit);
           break;
+        case 'lightning': {
+          // From the sky: a bolt from the very top of the screen down onto where it struck (slanting
+          // a little), then its leaps. View y = -sim x, so the top edge is -scrollY (`syncCamera`).
+          const at = ev.points[0]!;
+          const sky = { x: Math.max(at.x, -cam.scrollY + 2), y: at.y + (Math.random() - 0.5) * 60 };
+          this.fx.lightning([sky, ...ev.points], true, true);
+          if (!ev.hit) this.units.addDecal('scorch', at.x, at.y, Math.random() * Math.PI * 2, 1.5, 0.6);
+          this.shake(140, 1.5);
+          break;
+        }
         case 'explosion':
           // A shell landing in a river splashes; nothing to scorch.
           if (this.wet(ev.x, ev.y)) {

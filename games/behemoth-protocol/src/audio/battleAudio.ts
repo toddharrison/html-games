@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { stormy } from '../content/conditions';
 import type { PlayerCommand } from '../sim/behemoth';
 import type { SimEvent } from '../sim/events';
 import type { World } from '../sim/world';
@@ -87,7 +88,8 @@ export class BattleAudio {
 
   update(w: World, cmd: PlayerCommand, wet: (x: number, y: number) => boolean): void {
     const b = w.behemoth;
-    this.synth.setWeather(w.condition?.id ?? null, w.condition?.squall ?? 0);
+    const c = w.condition;
+    this.synth.setWeather(c ? (stormy(c.id) ? 'storm' : 'night') : null, c?.squall ?? 0);
     if (this.dead) return;
     const cruiseFrac = b.chassis.speed.cruise / b.chassis.speed.top;
     this.synth.update(engineState(b, cmd), wet(b.x, b.y), cruiseFrac, reactorState(b, this.fuseStart));

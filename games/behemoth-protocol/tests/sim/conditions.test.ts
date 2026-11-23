@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CONDITIONS, CONDITION_IDS, conditionName, STORM_NAMES } from '../../src/content/conditions';
+import { CONDITIONS, CONDITION_IDS, conditionName, STORM_NAMES, stormy, THUNDER_NAMES } from '../../src/content/conditions';
 import { BIOME_IDS } from '../../src/content/biomes';
 import { CONCEALMENT, CONDITION } from '../../src/content/tuning';
 import { WEAPONS } from '../../src/content/weapons';
@@ -224,7 +224,7 @@ describe('conditions on the map', () => {
           if (!n.battle || n.battle.seed === seed) continue;
           battles++;
           if (n.battle.condition) withCondition++;
-          expect(n.battle.condition === null || CONDITION_IDS.includes(n.battle.condition)).toBe(true);
+          expect(n.battle.condition === null || n.battle.condition in CONDITIONS).toBe(true);
         }
     }
     expect(withCondition / battles).toBeGreaterThan(CONDITION.chance - 0.08);
@@ -246,5 +246,121 @@ describe('conditions on the map', () => {
     node.battle!.condition = 'storm';
     expect(battleCondition(run)).toBe('storm');
     expect(battleCondition(run, null)).toBeNull();
+  });
+});
+
+describe('thunderstorm: lightning', () => {
+  /** A thunderstorm battle with nothing scheduled to strike: marks are placed by hand. */
+  function thunder(): World {
+    return world({ condition: 'thunderstorm' });
+  }
+  const armorLeft = (w: World) => Object.values(w.behemoth.armor).reduce((sum, z) => sum + z.hp, 0);
+
+  it('a storm by its biome name, with squalls like any storm', () => {
+    expect(conditionName('thunderstorm', 'temperate')).toBe('Thunderstorm');
+    expect(conditionName('thunderstorm', 'wasteland')).toBe('Dirty thunderstorm');
+    for (const biome of BIOME_IDS) expect(THUNDER_NAMES[biome].length).toBeGreaterThan(0);
+    expect(stormy('thunderstorm') && stormy('storm') && !stormy('night')).toBe(true);
+    const w = thunder();
+    expect(w.condition!.gust).not.toBeNull();
+    w.condition!.squall = 1;
+    expect(sightRadius(w)).toBeCloseTo(CONDITION.storm.sight * autoReach(w.behemoth));
+    expect(conditionSpread(w)).toBeCloseTo(CONDITION.storm.spread);
+    expect(hoverScale(w)).toBeCloseTo(CONDITION.storm.hover);
+    expect(world({ condition: 'storm' }).condition!.lightning).toBeNull();
+  });
+
+  it('only a storm turns into one, only in the biomes that have them, at about the tuned share', () => {
+    const storms: Record<string, { all: number; thunder: number }> = {};
+    for (let seed = 1; seed <= 300; seed++) {
+      const map = generateMap(seed);
+      for (const s of map.sectors)
+        for (const n of s.nodes) {
+          const c = n.battle?.condition;
+          if (!c || c === 'night') continue;
+          const t = (storms[s.biome] ??= { all: 0, thunder: 0 });
+          t.all++;
+          if (c === 'thunderstorm') t.thunder++;
+        }
+    }
+    for (const [biome, t] of Object.entries(storms)) {
+      const chance = CONDITION.lightning.chance[biome as keyof typeof CONDITION.lightning.chance];
+      if (chance === 0) expect(t.thunder).toBe(0);
+      else expect(Math.abs(t.thunder / t.all - chance)).toBeLessThan(0.1);
+    }
+    expect(storms['temperate']!.thunder).toBeGreaterThan(0);
+  });
+
+  it('no lightning between squalls; in a squall it marks a spot, then strikes there', () => {
+    const w = thunder();
+    const g = w.condition!.gust!;
+    const calm = step(w, Math.floor(g.start * 60) - 1);
+    expect(calm.some((e) => e.type === 'lightningMark' || e.type === 'lightning')).toBe(false);
+    const events = step(w, Math.ceil((g.ease - w.time) * 60));
+    const marks = events.filter((e) => e.type === 'lightningMark');
+    const strikes = events.filter((e) => e.type === 'lightning');
+    expect(marks.length).toBeGreaterThan(0);
+    expect(strikes.length).toBeGreaterThan(0);
+    const m = marks[0]!;
+    const s = strikes[0]!;
+    if (m.type !== 'lightningMark' || s.type !== 'lightning') throw new Error('unreachable');
+    expect(m.time).toBe(CONDITION.lightning.warn);
+    expect(s.points[0]).toEqual({ x: m.x, y: m.y });
+  });
+
+  it('a strike on a unit leaps on through its neighbors, losing strength each leap', () => {
+    const w = thunder();
+    const a = unitAhead(w, 150, 'lightTank');
+    const b = spawnEnemy(w, 'lightTank', a.x + 30, a.y);
+    const far = spawnEnemy(w, 'lightTank', a.x + 30 + CONDITION.lightning.jumpRange + 40, a.y + 60);
+    const hp = [a.hp, b.hp, far.hp];
+    w.condition!.lightning!.marks.push({ x: a.x, y: a.y, lands: w.time });
+    const events = step(w, 1);
+    const strike = events.find((e) => e.type === 'lightning');
+    expect(strike && strike.type === 'lightning' && strike.hit && strike.points.length).toBe(3);
+    expect(a.hp).toBeLessThan(hp[0]!);
+    expect(b.hp).toBeLessThan(hp[1]!);
+    expect(hp[0]! - a.hp).toBeGreaterThan(hp[1]! - b.hp);
+    expect(far.hp).toBe(hp[2]);
+    // The flash shows everything in the frame for a moment.
+    expect(far.exposed).toBeGreaterThan(0);
+  });
+
+  it('a strike on the hull comes from above and costs it armor; one beside it can leap onto it', () => {
+    const w = thunder();
+    const b = w.behemoth;
+    let before = armorLeft(w);
+    w.condition!.lightning!.marks.push({ x: b.x, y: b.y, lands: w.time });
+    let events = step(w, 1);
+    expect(events.some((e) => e.type === 'behemothHit' && e.arc === 'top')).toBe(true);
+    expect(before - armorLeft(w)).toBeCloseTo(CONDITION.lightning.damage);
+
+    const e = spawnEnemy(w, 'lightTank', b.x + b.chassis.length / 2 + 20, b.y);
+    e.cooldown = 1e9;
+    before = armorLeft(w);
+    w.condition!.lightning!.marks.push({ x: e.x, y: e.y, lands: w.time });
+    events = step(w, 1);
+    expect(events.some((ev) => ev.type === 'behemothHit' && ev.arc === 'top')).toBe(true);
+    expect(before - armorLeft(w)).toBeCloseTo(CONDITION.lightning.damage * CONDITION.lightning.falloff);
+  });
+
+  it('a strike on open ground hurts nobody', () => {
+    const w = thunder();
+    const b = w.behemoth;
+    const before = armorLeft(w);
+    w.condition!.lightning!.marks.push({ x: b.x + 120, y: b.y + 60, lands: w.time });
+    const events = step(w, 1);
+    const strike = events.find((e) => e.type === 'lightning');
+    expect(strike && strike.type === 'lightning' && strike.hit).toBe(false);
+    expect(armorLeft(w)).toBe(before);
+  });
+
+  it('the lightning has its own stream: the same seed strikes the same, and combat draws are left alone', () => {
+    const a = thunder();
+    const b = thunder();
+    const t = Math.ceil((a.condition!.gust!.ease) * 60);
+    const marks = (w: World) => step(w, t).filter((e) => e.type === 'lightningMark');
+    expect(marks(a)).toEqual(marks(b));
+    expect(thunder().rng.next()).toBe(world({ condition: 'storm' }).rng.next());
   });
 });

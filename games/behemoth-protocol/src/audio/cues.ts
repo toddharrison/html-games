@@ -51,6 +51,7 @@ export type SoundId =
   | 'emp'
   | 'railgun'
   | 'arc'
+  | 'thunder'
   | 'detonation';
 
 /** Sustained sounds that keep going while their events keep coming, and fade once they stop. */
@@ -222,7 +223,17 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
     case 'wave':
       return [{ sound: 'horn', size: 1 }];
     // A battery's volley on its way: the shells' whistle over the target zone, ending as they land.
-    case 'barrage':
+    // Lightning: a faint crackle building where it's about to strike, then the strike's crack and thunder.
+    case 'lightningMark':
+      return [{ sound: 'arc', size: 0.15, x: ev.x, y: ev.y }];
+    case 'lightning': {
+      const at = ev.points[0]!;
+      return [
+        { sound: 'arc', size: 1.4, x: at.x, y: at.y },
+        { sound: 'thunder', size: 1, x: at.x, y: at.y },
+      ];
+    }
+        case 'barrage':
       return [{ sound: 'incoming', size: ev.flight, x: ev.x, y: ev.y }];
     // The alert clock's reinforcements: the same siren, further off (it comes every 15-30 s).
     case 'alert':
@@ -340,6 +351,7 @@ export const MIN_GAP: Record<SoundId, number> = {
   emp: 0.2,
   railgun: 0.1,
   arc: 0.08,
+  thunder: 0.5,
   detonation: 1,
 };
 
@@ -386,6 +398,7 @@ export const PITCH_SPREAD: Record<SoundId, number> = {
   emp: 1.5,
   railgun: 1,
   arc: 2,
+  thunder: 1.5,
   detonation: 0.6,
 };
 

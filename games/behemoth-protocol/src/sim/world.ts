@@ -27,6 +27,7 @@ import { centerFrame, createFrame, frameRight, stepFrame, type FrameState } from
 import { SIM_DT } from './loop';
 import { stepPools } from './pools';
 import { stepFire } from './fire';
+import { stepLightning } from './lightning';
 import { stepProjectiles } from './projectiles';
 import { Rng, hashSeed } from './rng';
 import { newRun, restoreBehemoth, type BehemothSnapshot } from './run';
@@ -253,6 +254,7 @@ export function stepWorld(w: World, cmd: PlayerCommand): void {
   stepProjectiles(w, dt);
   stepPools(w, dt);
   stepFire(w, dt);
+  stepLightning(w);
   stepHazards(w, dt);
   stepMines(w, dt);
   stepConcealment(w, dt);

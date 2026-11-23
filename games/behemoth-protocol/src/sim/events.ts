@@ -121,6 +121,10 @@ export type SimEvent =
   /** The Behemoth crossed the extraction line: battle won (SPEC §4.4). */
   /** A storm's squall building (rising) or dying away (SPEC §4.6). */
   | { type: 'squall'; rising: boolean }
+  /** Lightning will strike at (x, y) in `time` s (SPEC §4.6 thunderstorm): the warning glow. */
+  | { type: 'lightningMark'; x: number; y: number; time: number }
+  /** Lightning struck: down onto the first point, then leaping through the rest; `hit`: it struck a unit (not just the ground). */
+  | { type: 'lightning'; points: { x: number; y: number }[]; hit: boolean }
   | { type: 'extracted' }
   | { type: 'reactorCritical'; fuse: number }
   | { type: 'detonation'; x: number; y: number; radius: number; kills: number };

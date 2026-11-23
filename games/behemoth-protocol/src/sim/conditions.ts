@@ -1,7 +1,8 @@
-import type { ConditionId } from '../content/conditions';
+import { stormy, type ConditionId } from '../content/conditions';
 import { CONDITION } from '../content/tuning';
 import { autoReach } from './behemoth';
 import type { Enemy } from './entities';
+import type { LightningState } from './lightning';
 import { Rng, hashSeed } from './rng';
 import type { World } from './world';
 
@@ -25,13 +26,16 @@ export interface ConditionState {
   gust: { start: number; full: number; ease: number; end: number } | null;
   /** The squall schedule's own stream, so the weather never shifts the battle's combat draws. */
   rng: Rng;
+  /** Thunderstorm only: the lightning (`sim/lightning.ts`), on a stream of its own. */
+  lightning: LightningState | null;
 }
 
 /** `firstSquall`: sim time the first squall starts building (default: `CONDITION.storm.first` into the battle). */
 export function createCondition(id: ConditionId | null, seed: number, firstSquall?: number): ConditionState | null {
   if (!id) return null;
-  const c: ConditionState = { id, flashAt: -Infinity, squall: 0, gust: null, rng: new Rng(hashSeed(seed, 0x57a4)) };
-  if (id === 'storm') c.gust = nextGust(c, firstSquall ?? c.rng.range(...CONDITION.storm.first));
+  const lightning = id === 'thunderstorm' ? { rng: new Rng(hashSeed(seed, 0x1e7b)), next: null, marks: [] } : null;
+  const c: ConditionState = { id, flashAt: -Infinity, squall: 0, gust: null, rng: new Rng(hashSeed(seed, 0x57a4)), lightning };
+  if (stormy(id)) c.gust = nextGust(c, firstSquall ?? c.rng.range(...CONDITION.storm.first));
   return c;
 }
 
@@ -45,7 +49,7 @@ function nextGust(c: ConditionState, start: number): NonNullable<ConditionState[
 
 export function stepCondition(w: World): void {
   const c = w.condition;
-  if (!c || c.id !== 'storm' || !c.gust) return;
+  if (!c || !stormy(c.id) || !c.gust) return;
   const g = c.gust;
   const t = w.time;
   if (t >= g.end) {
@@ -115,13 +119,13 @@ export function markFlash(w: World): void {
 /** The condition's multiplier on a round's spread: a squall's wind pushes everyone's fire about. */
 export function conditionSpread(w: World): number {
   const c = w.condition;
-  if (!c || c.id !== 'storm') return 1;
+  if (!c || !stormy(c.id)) return 1;
   return 1 + (CONDITION.storm.spread - 1) * c.squall;
 }
 
 /** The condition's multiplier on hovercraft speed (a squall knocks them about). */
 export function hoverScale(w: World): number {
   const c = w.condition;
-  if (!c || c.id !== 'storm') return 1;
+  if (!c || !stormy(c.id)) return 1;
   return 1 - (1 - CONDITION.storm.hover) * c.squall;
 }

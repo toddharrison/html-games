@@ -3,7 +3,7 @@ import { BIOME_IDS } from '../../src/content/biomes';
 import { MODE_IDS } from '../../src/content/modes';
 import { BOT, demoCommand } from '../../src/input/demoBot';
 import type { MaterialId } from '../../src/content/terrain';
-import { TERRAIN_GEN } from '../../src/content/tuning';
+import { CONDITION, TERRAIN_GEN } from '../../src/content/tuning';
 import { spawnEnemy } from '../../src/sim/enemies';
 import { frameRight } from '../../src/sim/frame';
 import { createWorld, stepWorld, type World } from '../../src/sim/world';
@@ -192,10 +192,11 @@ describe('attract-mode clips', () => {
     for (const b of BIOME_IDS) expect(new Set(clips.filter((c) => c.biome === b).map((c) => c.mode)).size).toBe(MODE_IDS.length);
     for (const c of clips) expect(c.length).toBe(DEMO.length);
     expect(clips.find((c) => c.mode === 'breach')!.battleLength).toBeDefined();
-    // Every so often a clip at night or in a storm, both turning up.
+    // Every so often a clip at night or in a storm (a thunderstorm where the biome has them), both turning up.
     const weather = clips.filter((c) => c.condition !== null);
     expect(weather.length).toBe(Math.floor(clips.length / DEMO.conditionEvery));
-    expect(new Set(weather.map((c) => c.condition))).toEqual(new Set(['night', 'storm']));
+    expect(new Set(weather.map((c) => (c.condition === 'night' ? 'night' : 'storm')))).toEqual(new Set(['night', 'storm']));
+    for (const c of weather) if (c.condition !== 'night') expect(c.condition).toBe(CONDITION.lightning.chance[c.biome] > 0 ? 'thunderstorm' : 'storm');
   });
 
   it('fits each clip out at random: everything fits, nothing crawls, and the show samples most of the armory', () => {

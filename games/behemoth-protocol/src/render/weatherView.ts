@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import type { BiomeId } from '../content/biomes';
-import type { ConditionId } from '../content/conditions';
-import { CONCEALMENT } from '../content/tuning';
+import { stormy, type ConditionId } from '../content/conditions';
+import { CONCEALMENT, CONDITION } from '../content/tuning';
 import type { BattleLayout } from '../config';
 import { sightRadius } from '../sim/conditions';
 import type { SimEvent } from '../sim/events';
@@ -15,7 +15,9 @@ import { viewX, viewY } from './viewTransform';
  * light: the Behemoth's sight, muzzle flashes and blasts for a moment, plasma burning, and a fading
  * glow on a unit that has just fired (it gave itself away). The veil sits over the ground and the
  * units but under rounds and effects, so tracers and fireballs light up the dark. A storm also
- * blows particles across the column (rain, snow, sand, or ash) that thicken in a squall.
+ * blows particles across the column (rain, snow, sand, or ash) that thicken in a squall. In a
+ * thunderstorm, a glow builds where lightning is about to strike, and a strike whitens the column
+ * and lifts the haze for a moment.
  */
 
 /** What the veil and the particles look like per biome (storm) and for the night. */
@@ -54,6 +56,10 @@ export class WeatherView {
   private readonly glows: Glow[] = [];
   private readonly motes: Mote[] = [];
   private readonly g: Phaser.GameObjects.Graphics | null;
+  /** A lightning strike's white flash over the column (thunderstorm only). */
+  private readonly flashRect: Phaser.GameObjects.Rectangle | null;
+  /** Seconds left of the haze lifting after a strike. */
+  private flashLeft = 0;
   private wind = 0;
 
   private constructor(
@@ -64,7 +70,11 @@ export class WeatherView {
   ) {
     makeLightTexture(scene);
     this.rt = scene.add.renderTexture(layout.fieldX, 0, layout.fieldW, layout.height).setOrigin(0, 0).setScrollFactor(0).setDepth(VEIL_DEPTH);
-    this.g = id === 'storm' ? scene.add.graphics().setScrollFactor(0).setDepth(VEIL_DEPTH + 0.1) : null;
+    this.g = stormy(id) ? scene.add.graphics().setScrollFactor(0).setDepth(VEIL_DEPTH + 0.1) : null;
+    this.flashRect =
+      id === 'thunderstorm'
+        ? scene.add.rectangle(layout.fieldX, 0, layout.fieldW, layout.height, 0xeef4ff, 0).setOrigin(0, 0).setScrollFactor(0).setDepth(7.6).setBlendMode(Phaser.BlendModes.ADD)
+        : null;
     if (this.g) for (let i = 0; i < 260; i++) this.motes.push({ x: Math.random() * layout.fieldW, y: Math.random() * layout.height, k: Math.random() });
   }
 
@@ -78,11 +88,30 @@ export class WeatherView {
   destroy(): void {
     this.rt.destroy();
     this.g?.destroy();
+    this.flashRect?.destroy();
     for (const img of this.lights) img.destroy();
   }
 
   /** Flashes and blasts light the dark for a moment. */
   handle(events: readonly SimEvent[]): void {
+    if (this.flashRect) {
+      for (const ev of events) {
+        if (ev.type !== 'lightning') continue;
+        this.flashLeft = CONDITION.lightning.flash;
+        // A double flicker, as real lightning does.
+        const r = this.flashRect;
+        this.scene.tweens.killTweensOf(r);
+        r.setAlpha(ev.hit ? 0.5 : 0.4);
+        this.scene.tweens.chain({
+          targets: r,
+          tweens: [
+            { alpha: 0.08, duration: 50 },
+            { alpha: 0.3, duration: 30 },
+            { alpha: 0, duration: 260, ease: 'quad.in' },
+          ],
+        });
+      }
+    }
     if (this.id !== 'night') return;
     for (const ev of events) {
       if (ev.type === 'fire') this.glow(ev.x, ev.y, 26, 0.18);
@@ -130,7 +159,10 @@ export class WeatherView {
       }
     } else {
       const look = STORM[this.biome];
-      rt.fill(look.color, look.haze + look.squall * c.squall);
+      // A strike lifts the haze for a moment: the glimpse of what the squall was hiding.
+      this.flashLeft = Math.max(0, this.flashLeft - dt);
+      const lift = 1 - this.flashLeft / CONDITION.lightning.flash;
+      rt.fill(look.color, (look.haze + look.squall * c.squall) * lift);
       if (sight !== null && !b.destroyed) lights.push({ ...local(bp.x, bp.y), r: sight * 1.3, a: 1 });
     }
 
@@ -146,7 +178,35 @@ export class WeatherView {
     if (lights.length > 0) rt.erase(this.lights.slice(0, lights.length));
     rt.render();
 
-    if (this.g) this.drawMotes(c.squall, dt);
+    if (this.g) {
+      this.drawMotes(c.squall, dt);
+      if (c.lightning) this.drawMarks(c.lightning.marks, w.time, local);
+    }
+  }
+
+  /**
+   * Where lightning is about to strike: a flickering glow that tightens and brightens until it
+   * lands, with sparks crawling over it (St Elmo's fire), so there's a moment to steer off it.
+   */
+  private drawMarks(marks: readonly { x: number; y: number; lands: number }[], time: number, local: (x: number, y: number) => { x: number; y: number }): void {
+    const g = this.g!;
+    const warn = CONDITION.lightning.warn;
+    for (const m of marks) {
+      const k = Math.max(0, Math.min(1, 1 - (m.lands - time) / warn));
+      const p = local(m.x, m.y);
+      const x = this.layout.fieldX + p.x;
+      const flicker = 0.7 + 0.3 * Math.random();
+      const r = 16 - 9 * k;
+      g.fillStyle(0x9fd4ff, (0.25 + 0.35 * k) * flicker).fillCircle(x, p.y, r);
+      g.lineStyle(2, 0xdff2ff, (0.6 + 0.4 * k) * flicker).strokeCircle(x, p.y, r);
+      g.lineStyle(1, 0x9fd4ff, 0.5 * flicker).strokeCircle(x, p.y, r + 5 - 3 * k);
+      g.fillStyle(0xffffff, 0.6 + 0.4 * k).fillRect(Math.round(x) - 1, Math.round(p.y) - 1, 3, 3);
+      for (let i = 0; i < 2 + Math.round(4 * k); i++) {
+        const a = Math.random() * Math.PI * 2;
+        const d = Math.random() * r;
+        g.fillStyle(0xeaf6ff, 0.9).fillRect(Math.round(x + Math.cos(a) * d), Math.round(p.y + Math.sin(a) * d), 1, 1);
+      }
+    }
   }
 
   /** The storm blowing across the column: more, faster, and longer in a squall. */

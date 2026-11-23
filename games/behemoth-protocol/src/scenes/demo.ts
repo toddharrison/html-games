@@ -6,6 +6,7 @@ import { ADDONS, type AddonId } from '../content/addons';
 import { DEPOT_ADDONS, DEPOT_MODULES, DEPOT_WEAPONS } from '../content/depot';
 import type { ModuleId } from '../content/trailer';
 import { WEAPONS, type WeaponId } from '../content/weapons';
+import { CONDITION } from '../content/tuning';
 import type { HardpointSize } from '../content/chassis';
 import { fits, loadOf, slotsOf } from '../sim/depot';
 import { hashSeed, Rng } from '../sim/rng';
@@ -32,7 +33,7 @@ export interface DemoClip {
   /** A shorter strip for a Breach, so its fortress is in view. */
   battleLength?: number;
   threat: number;
-  /** Now and then a clip at night or in a storm (SPEC §4.6), to show them off. */
+  /** Now and then a clip at night or in a storm (or a thunderstorm; SPEC §4.6), to show them off. */
   condition: ConditionId | null;
   /** A Behemoth fitted out at random (`demoLoadout`), so the show samples the weapons and setups. */
   loadout: DemoLoadout;
@@ -77,7 +78,9 @@ export function demoClip(i: number, seed: number): DemoClip {
   const approaches: (ApproachId | null)[] = [null, ...APPROACH_IDS];
   const approach = approaches[hashSeed(seed, 0xde30) % approaches.length]!;
   const turn = Math.floor(i / DEMO.conditionEvery);
-  const condition: ConditionId | null = i % DEMO.conditionEvery === DEMO.conditionEvery - 1 ? (turn % 2 === 0 ? 'night' : 'storm') : null;
+  // A storm where the biome has thunderstorms brings its lightning, to show it off.
+  const storm: ConditionId = CONDITION.lightning.chance[biome] > 0 ? 'thunderstorm' : 'storm';
+  const condition: ConditionId | null = i % DEMO.conditionEvery === DEMO.conditionEvery - 1 ? (turn % 2 === 0 ? 'night' : storm) : null;
   const base = { seed, biome, approach, mode, length: DEMO.length, threat: DEMO.threat, condition, loadout: demoLoadout(seed) };
   // Start where the action is: a few posts in (Assault), the convoy just caught up with (Chase),
   // the fortress coming into range (Breach, on a short strip).

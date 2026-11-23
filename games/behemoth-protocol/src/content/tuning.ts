@@ -4,6 +4,7 @@
  * a chassis' own speeds and steering. Type-only imports, so any module can import this without
  * cycles.
  */
+import type { BiomeId } from './biomes';
 import type { WaveSide } from './enemies';
 
 // ── Movement ────────────────────────────────────────────────────────────────────────────────────
@@ -448,6 +449,36 @@ export const CONDITION = {
     spread: 1.6,
     /** Hovercraft speed at full strength. */
     hover: 0.55,
+  },
+  /**
+   * Lightning in a thunderstorm's squalls (SPEC §4.6, `sim/lightning.ts`). A strike marks a spot,
+   * then lands on the nearest unit within `reach` of it (the Behemoth included), or the ground, and
+   * leaps on like a tesla bolt, whoever's units they are.
+   */
+  lightning: {
+    /** Chance a storm battle in each biome is a thunderstorm instead (drawn on its own stream). */
+    chance: { temperate: 0.4, arctic: 0, industrial: 0.4, desert: 0, wasteland: 0.25 } as Record<BiomeId, number>,
+    /** Strikes come only while the squall is at least this strong. */
+    squall: 0.5,
+    /** Seconds between strikes (a range), and from the mark to the strike landing. */
+    interval: [2, 4] as const,
+    warn: 1,
+    /**
+     * Where a strike is aimed (weights): the Behemoth (the tallest metal on the field: a mild pull,
+     * user's call), each enemy in the frame, or open ground in the frame.
+     */
+    pull: { behemoth: 2.5, enemy: 1, ground: 2 },
+    /** A strike lands on a unit whose body is this close to the marked spot. */
+    reach: 6,
+    /** The bolt: damage to what it strikes, leaps (body to body), what it keeps each leap. */
+    damage: 25,
+    jumps: 3,
+    jumpRange: 50,
+    falloff: 0.75,
+    /** Damage to the tile under a ground strike (enough to set off a fuel tank or derrick). */
+    tileDamage: 60,
+    /** Seconds every unit in the frame shows in the flash. */
+    flash: 0.3,
   },
 };
 

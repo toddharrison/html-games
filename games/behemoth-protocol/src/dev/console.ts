@@ -434,7 +434,7 @@ export class DevConsole {
   }
 
   private weatherSection(): HTMLElement {
-    const buttons = (['clear', 'night', 'storm'] as const).map((id) =>
+    const buttons = (['clear', 'night', 'storm', 'thunderstorm'] as const).map((id) =>
       button(id, this.act((d) => d.setCondition(id === 'clear' ? null : (id as ConditionId)))),
     );
     this.syncs.push(() => {

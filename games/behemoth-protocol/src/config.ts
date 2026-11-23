@@ -17,7 +17,7 @@
  * then the track after the last dot). `?depot=N` (also a practice run) opens the depot after N
  * battles won, with salvage to spend, to try the depot without playing a battle.
  * `?biome=arctic&approach=pass` (also a practice run) fights every battle over that biome and
- * approach (see `recipeFromUrl`). `?condition=night|storm|none` (also a practice run) fights every
+ * approach (see `recipeFromUrl`). `?condition=night|storm|thunderstorm|none` (also a practice run) fights every
  * battle in that condition; `?event=convoy` (also a practice run) opens that event (or a random one).
  * `?doctrine=longGuns` (also a practice run) has every battle's defenders fight that doctrine;
  * `?mix=siegeTank:1,lightTank:2` (also a practice run) sets the units they field and their odds.
@@ -89,7 +89,7 @@ export function summaryFromUrl(): 'won' | 'failed' | 'destroyed' | null {
   return s === 'failed' || s === 'destroyed' ? s : 'won';
 }
 
-/** Playtest shortcut: every battle in this condition (`?condition=night`, `storm`; `none` for clear); undefined = the node's own. */
+/** Playtest shortcut: every battle in this condition (`?condition=night`, `storm`, `thunderstorm`; `none` for clear); undefined = the node's own. */
 export function conditionFromUrl(): ConditionId | null | undefined {
   const c = params.get('condition');
   if (c === 'none') return null;

@@ -264,7 +264,8 @@ export class MapScene extends Phaser.Scene {
     const by = y - MAP_ICON / 2 + 3;
 
     // The condition (SPEC §4.6) under the icon's left shoulder: a moon and a star for night, a
-    // raincloud for a storm (shapes, not letters, so they never read as a mode's initial).
+    // raincloud for a storm, with a bolt for a thunderstorm (shapes, not letters, so they never read
+    // as a mode's initial).
     const cond = n.battle!.condition;
     if (cond) {
       const cx = x - MAP_ICON / 2 + 3;
@@ -278,6 +279,11 @@ export class MapScene extends Phaser.Scene {
       if (cond === 'night') {
         px('#e8e2b0', [[-2, -1, 2], [-3, 0, 4], [-3, 1, 4], [-2, 2, 2]]);
         px('#fff6d0', [[2, -2], [3, -1]]);
+      } else if (cond === 'thunderstorm') {
+        // The raincloud with a bolt out of it.
+        px('#e4e9ee', [[-1, -3, 3], [-3, -2, 7], [-3, -1, 7]]);
+        px('#f2d64b', [[0, 0, 2], [-1, 1, 2], [0, 2, 2], [0, 3]]);
+        px('#8fb4d8', [[-3, 1], [3, 1], [-2, 3], [2, 3]]);
       } else {
         px('#e4e9ee', [[-1, -3, 3], [-3, -2, 7], [-3, -1, 7]]);
         px('#8fb4d8', [[-2, 1], [0, 1], [2, 1], [-1, 3], [1, 3]]);

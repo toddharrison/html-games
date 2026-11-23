@@ -294,11 +294,17 @@ function battleIntel(rng: Rng, seed: number, s: number, n: MapNode, layers: numb
   };
 }
 
-/** A battle node's condition: none, or one weighted by the biome (SPEC §4.6). */
+/**
+ * A battle node's condition: none, or one weighted by the biome (SPEC §4.6). A storm may then be a
+ * thunderstorm, drawn on a stream of its own so the draw above (and every map drawn before
+ * thunderstorms) stays as it was.
+ */
 function conditionFor(seed: number, s: number, node: number, biome: BiomeId): ConditionId | null {
   const rng = new Rng(hashSeed(seed, 0xc0d1, s, node));
   if (!rng.chance(CONDITION.chance)) return null;
-  return rng.weighted(CONDITION_IDS, (id) => CONDITIONS[id].weight[biome])!;
+  const id = rng.weighted(CONDITION_IDS, (c) => CONDITIONS[c].weight[biome])!;
+  if (id === 'storm' && new Rng(hashSeed(seed, 0x7d0e, s, node)).chance(CONDITION.lightning.chance[biome])) return 'thunderstorm';
+  return id;
 }
 
 function shuffle<T>(rng: Rng, items: T[]): T[] {

@@ -1,4 +1,4 @@
-import { ambusher, charge, convoy, fixed, holdAhead, skirmisher, stalker, type BehaviorDef } from './behaviors';
+import { ambusher, charge, convoy, fixed, holdAhead, raider, skirmisher, stalker, type BehaviorDef } from './behaviors';
 import type { BiomeId } from './biomes';
 import type { ObstacleClass } from './obstacles';
 import type { UnitMobility } from './terrain';
@@ -691,10 +691,13 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     accel: 110,
     turretDegPerSec: 220,
     weapon: 'hoverGun',
+    // What a raid from behind finds first: a drone that's out, the trailer, then the hull.
+    target: 'support',
     fireRange: 150,
     aimTime: 0.4,
-    behavior: skirmisher({
-      orbit: { minRange: 60, maxRange: 110, angularSpeed: 0.6 },
+    // Hit-and-run from the rear: waits wide on a flank (on the water if it can), sweeps in over the
+    // rear quarter, and breaks off fast (`raider`).
+    behavior: raider({
       rearInset: 0.12,
       siege: { minRange: 60, maxRange: 100, angularSpeed: 0.6, coverReach: 0 },
     }),

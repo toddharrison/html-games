@@ -8,6 +8,7 @@ import { convoy } from './convoy';
 import { fixed } from './fixed';
 import { holdAhead } from './holdAhead';
 import { navigate, type Goal, type Velocity } from './nav';
+import { raider } from './raider';
 import { screen } from './screen';
 import { skirmisher } from './skirmisher';
 import { stalker } from './stalker';
@@ -25,6 +26,7 @@ const STEPS: { [K in BehaviorKind]: Step<K> } = {
   charge,
   stalker,
   screen,
+  raider,
 };
 
 const step = (e: Enemy, d: BehaviorDef, w: World, dt: number) => (STEPS[d.kind] as (e: Enemy, d: BehaviorDef, w: World, dt: number) => Goal | null)(e, d, w, dt);

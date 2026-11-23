@@ -186,13 +186,17 @@ function clearOfZones(e: Enemy, w: World, g: Goal): Goal {
   return x === g.x && y === g.y ? g : { ...g, x, y };
 }
 
-/** The ground the Behemoth will drive over in the next `NAV.hull.lead` s, widened by a unit's radius and `NAV.hull.pad`. */
+/**
+ * The ground the Behemoth will drive over in the next `NAV.hull.lead` s, widened by a unit's radius
+ * and `NAV.hull.pad` at the sides and front. Behind the tail only the unit's radius: the hull is
+ * driving away from there, and a wide berth behind it sends routes out of the back of the frame.
+ */
 function hullZone(e: Enemy, w: World): Rect {
   const b = w.behemoth;
   const f = footprint(b);
   const pad = e.def.radius + NAV.hull.pad;
   const ahead = Math.max(0, b.vx) * NAV.hull.lead;
-  return { x0: f.x0 - pad, y0: f.y0 - pad, x1: f.x1 + ahead + pad, y1: f.y1 + pad };
+  return { x0: f.x0 - e.def.radius, y0: f.y0 - pad, x1: f.x1 + ahead + pad, y1: f.y1 + pad };
 }
 
 /** Explosive terrain still standing (fuel tanks, derricks; not mines, which enemies know and never set off). */
@@ -349,7 +353,10 @@ function costGrid(e: Enemy, w: World, g: Goal): CostGrid {
     }
   }
   // The route it's on is a little cheaper, so it doesn't flip between two near-equal ways round.
-  for (const k of e.ai.nav?.tiles ?? []) {
+  // Not for a goal that moves with the hull: its route's tiles slide back relative to the hull every
+  // replan, and favoring them drags the unit back with them (out of the back of the frame).
+  const kept = g.mode === 'pace' ? [] : (e.ai.nav?.tiles ?? []);
+  for (const k of kept) {
     const c = Math.floor(k / rows) - c0;
     if (c >= 0 && c < cols) cost[c * rows + (k % rows)] = cost[c * rows + (k % rows)]! * NAV.stick;
   }

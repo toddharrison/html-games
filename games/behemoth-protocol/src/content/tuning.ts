@@ -311,7 +311,7 @@ export const NAV = {
   snap: 4,
   snapBias: 0.5,
   snapAway: 3,
-  /** A replan multiplies the cost of the tiles on the unit's current route by this, so it sticks to it. */
+  /** A replan multiplies the cost of the tiles on the unit's current route by this, so it sticks to it (not for goals that move with the hull). */
   stick: 0.6,
   /** A waypoint counts as passed within this distance. */
   reached: 6,

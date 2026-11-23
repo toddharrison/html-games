@@ -85,6 +85,12 @@ export interface AiMemory {
   weaveIn?: number;
   /** Seconds since its last jink (the fire control needs `EVASION.settle` to track it). */
   weaveAge?: number;
+  /** Raider: the step of its cycle, seconds left in it, its HP when the run began, and the staging spot it rolled (ahead of the hull's middle, out beyond its side). */
+  raid?: 'stage' | 'run' | 'break';
+  raidT?: number;
+  raidHp?: number;
+  raidAhead?: number;
+  raidOut?: number;
   /** Trapdoor team: the lid's state, seconds left in it, and whether the hole has been seen (it stays marked). */
   lid?: 'shut' | 'lifting' | 'open' | 'lingering';
   lidT?: number;

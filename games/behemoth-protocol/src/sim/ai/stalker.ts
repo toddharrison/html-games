@@ -1,9 +1,9 @@
 import type { StalkerDef } from '../../content/behaviors';
-import { hitched, hullWidth } from '../behemoth';
+import { hullWidth } from '../behemoth';
 import type { Enemy } from '../entities';
 import type { World } from '../world';
 import type { Goal } from './nav';
-import { inFrame } from './steer';
+import { inFrame, tailX } from './steer';
 
 /**
  * Stalker (SPEC §7.4 spider walker): works round behind the Behemoth and holds there, `hold`
@@ -22,8 +22,7 @@ export function stalker(e: Enemy, d: StalkerDef, w: World, dt: number): Goal {
     if (w.rng.chance(d.replan.flip)) ai.orbitDir = ai.orbitDir === 1 ? -1 : 1;
     ai.orbitRange = w.rng.range(o.minRange, o.maxRange);
   }
-  const t = hitched(b);
-  const tail = b.x - b.chassis.length / 2 - (t ? t.def.towBar + t.def.length : 0);
+  const tail = tailX(b);
   const lane = hullWidth(b) / 2 + d.sideGap;
   const across = e.y - b.y;
   // Still ahead of the tail and within the hull's lane: step out of the way first, on the side

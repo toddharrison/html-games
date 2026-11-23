@@ -153,7 +153,31 @@ export interface ScreenDef extends Common {
   spread: number;
 }
 
-export type BehaviorDef = SkirmisherDef | HoldAheadDef | AmbusherDef | FixedDef | ConvoyDef | ChargeDef | StalkerDef | ScreenDef;
+/**
+ * Hit-and-run from the rear (SPEC §7 hovercraft): a cycle of three steps, each in view.
+ * - stage: hold wide off its side of the hull, `stage.out` beyond the hull's side and `stage.ahead`
+ *   of its middle (rolled each time), for `stage.wait` s;
+ * - run: a pass across the rear quarter, firing as it goes: in from its side toward a point
+ *   `run.depth` behind the tail (the trailer's, when one is in tow) and `run.lane` past the hull's
+ *   line; it ends once it has crossed the hull's line behind the tail, after `run.max` s, or as soon
+ *   as it has lost `run.flinch` of its HP on the way in;
+ * - break: on across, sprinting out to `break.out` beyond the far side of the hull, `break.ahead` of
+ *   its middle, for at most `break.max` s, then stage again there, or back on the first side `flip`
+ *   of the time.
+ * A point counts as reached within `arrive`. When it stages or breaks it rides deep water within
+ * `water` of its point if there is any (nothing on tracks can follow it there).
+ */
+export interface RaiderDef extends Common {
+  kind: 'raider';
+  stage: { out: readonly [number, number]; ahead: readonly [number, number]; wait: readonly [number, number] };
+  run: { depth: number; lane: number; max: number; flinch: number };
+  break: { out: number; ahead: number; max: number };
+  arrive: number;
+  flip: number;
+  water: number;
+}
+
+export type BehaviorDef = SkirmisherDef | HoldAheadDef | AmbusherDef | FixedDef | ConvoyDef | ChargeDef | StalkerDef | ScreenDef | RaiderDef;
 export type BehaviorKind = BehaviorDef['kind'];
 
 /** A behavior's settings: the unit's own numbers, with the preset's defaults for anything it leaves out. */
@@ -204,6 +228,19 @@ export function convoy(o: Partial<Omit<ConvoyDef, 'kind'>> = {}): ConvoyDef {
 
 export function charge(o: Partial<Omit<ChargeDef, 'kind'>> = {}): ChargeDef {
   return { kind: 'charge', rearInset: 0, siege: null, maxLead: 1.5, ...o };
+}
+
+export function raider(o: Opts<RaiderDef, 'siege' | 'rearInset'>): RaiderDef {
+  return {
+    kind: 'raider',
+    arrive: 16,
+    flip: 0.2,
+    water: 64,
+    ...o,
+    stage: o.stage ?? { out: [70, 110], ahead: [-10, 50], wait: [1.5, 3] },
+    run: o.run ?? { depth: 30, lane: 50, max: 4, flinch: 0.25 },
+    break: o.break ?? { out: 130, ahead: 20, max: 2.5 },
+  };
 }
 
 /** A role, not a unit's own behavior: the unit's own `rearInset`, last-stand ring, and weave still apply. */

@@ -1,4 +1,5 @@
 import { STEER } from '../../content/tuning';
+import { hitched, type BehemothState } from '../behemoth';
 import type { Enemy } from '../entities';
 import { frameRight } from '../frame';
 import { clamp } from '../math';
@@ -51,3 +52,8 @@ export function goTo(e: Enemy, tx: number, ty: number): { vx: number; vy: number
   return { vx: (dx / d) * speed, vy: (dy / d) * speed };
 }
 
+/** World x of the Behemoth's tail: the back of the hull, or of the trailer when one is in tow. */
+export function tailX(b: BehemothState): number {
+  const t = hitched(b);
+  return b.x - b.chassis.length / 2 - (t ? t.def.towBar + t.def.length : 0);
+}

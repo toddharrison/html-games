@@ -407,7 +407,7 @@ Phase 4 of the AI review: the hovercraft's hit-and-run from the rear. My calls, 
 - **Gotcha:** the run aims at a point clamped by `inFrame`; with the frame's trailing edge close behind a slow hull there's little room behind the tail, so the pass can end beside the rear quarter rather than behind it.
 
 ### Enemy smarts
-`M3` · `uncommitted` · `playtest: pending` · SPEC §15 "Enemy AI (M3)"
+`M3` · `3865498` · `playtest: pending` · SPEC §15 "Enemy AI (M3)"
 Phase 5 of the AI review: units read the Behemoth, not just where it is. One global level (user's call), `AI.smarts` in tuning.ts: 0 = the AI as it was before this phase, 1 = full. My calls, numbers provisional.
 - `sim/ai/smarts.ts`: `gunBearing(b)` (the `main` ring's world angle), `arcAt(b, bearing)` (`hitArc`'s rule for a bearing from the hull's middle).
 - **Skirmishers** (light tanks, ski troops): every `AI.bearing.rethink` (0.5 s) `bestBearing` scores 16 bearings round the hull, smarts × (−`gun` 1.2 inside `gunCone` 70° of the main gun's line, + `weakArc` 1 × how worn the arc it would hit is, − `spread` 0.8 inside `spreadCone` 45° of each other skirmisher not on a role) − `stay` 0.6 per half turn from where it is now. `skirmisher` then moves `orbitAngle` toward it (`ai.aim`, `aimIn`) at its `angularSpeed` instead of drifting at random; the replan still rolls its range.

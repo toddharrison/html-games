@@ -1,6 +1,6 @@
 import type { BehaviorDef } from '../content/behaviors';
 import type { EnemyDef, EnemyTurretDef } from '../content/enemies';
-import type { PoolSpec, ProjectileKind, ShellSpec, WeaponDef } from '../content/weapons';
+import type { PoolSpec, ProjectileKind, RoundSpec, ShellSpec, WeaponDef } from '../content/weapons';
 import type { NavState } from './ai/nav';
 import type { Owner } from './events';
 
@@ -57,6 +57,18 @@ export interface Enemy extends EnemyGun {
    */
   role?: BehaviorDef;
   ai: AiMemory;
+  /** On fire (SPEC §6 flamethrower): damage a second, seconds left, and the round whose `vs` scales it. */
+  burn?: { dps: number; left: number; spec: RoundSpec };
+  /** Knocked out by an EMP (SPEC §6): seconds until it can drive, aim, and fire again. */
+  stunned?: number;
+}
+
+/** A burning tile (SPEC §6 flamethrower): it burns until it's down, then goes out. */
+export interface TileFire {
+  col: number;
+  row: number;
+  /** Seconds it has burned. */
+  age: number;
 }
 
 /** Behavior state. Each behavior uses the fields it needs (content/behaviors.ts). */

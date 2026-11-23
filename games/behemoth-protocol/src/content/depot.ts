@@ -29,6 +29,17 @@ export const DEPOT_WEAPONS: Partial<Record<WeaponId, DepotWeapon>> = {
   beamLaser: { price: 130, weight: 2 },
   heavyLaser: { price: 190, weight: 1.5 },
   plasmaThrower: { price: 150, weight: 2 },
+  swarmPod: { price: 150, weight: 2, roundPrice: 4 },
+  empEmitter: { price: 140, weight: 1.5 },
+  // Fuel is counted per lick of flame (250 a tank): a full tank is 50 on top of the rearm's base.
+  flamethrower: { price: 110, weight: 2, roundPrice: 0.2 },
+  railgun: { price: 210, weight: 1.5 },
+  ballisticMissile: { price: 210, weight: 1.5, roundPrice: 12 },
+  arcProjector: { price: 190, weight: 1.5 },
+  coilgun: { price: 140, weight: 2 },
+  teslaCoil: { price: 90, weight: 2 },
+  rocketArtillery: { price: 150, weight: 2, roundPrice: 5 },
+  thermobaric: { price: 140, weight: 2, roundPrice: 4 },
 };
 
 export interface DepotAddon {
@@ -61,6 +72,7 @@ export interface DepotModule {
 /** Trailer modules depots sell. Each arrives in working order, full. */
 export const DEPOT_MODULES: Record<ModuleId, DepotModule> = {
   missilePod: { price: 130, weight: 2, roundPrice: 3 },
+  missileErector: { price: 170, weight: 1.5, roundPrice: 15 },
   ammoBunker: { price: 110, weight: 2, loadPrice: 30 },
   auxGenerator: { price: 90, weight: 1.5 },
   droneBay: { price: 150, weight: 1.5, loadPrice: 25 },

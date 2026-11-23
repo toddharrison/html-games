@@ -145,6 +145,37 @@ export const FIRE_CONTROL = {
 };
 
 /** Pools (`PoolSpec`) apply their damage in ticks, not every step. */
+/** Swarm missiles (SPEC §6 swarm pod). Provisional. */
+export const SWARM = {
+  /** A missile whose target dies turns onto the nearest unit in view within this (world units). */
+  retarget: 250,
+};
+
+/**
+ * Fire (SPEC §6 flamethrower, `sim/fire.ts`): burning units, and burning terrain (each material's
+ * `burns`). Provisional.
+ */
+export const FIRE = {
+  /** Seconds between burn ticks, for units and tiles alike. */
+  tick: 0.25,
+  /** How finely a flame is traced for cover, mines, and what it sets alight. */
+  traceStep: 4,
+  /** A burning tile scorches every unit standing in it this much a second, and sets it alight. */
+  tileDps: 4,
+  /** What a burning tile sets a unit burning with. */
+  burn: { dps: 4, duration: 2 },
+  /** Most tiles burning at once: past it, no new fires start (keeps a forest fire in bounds). */
+  maxTiles: 160,
+};
+
+/** EMP (SPEC §6 EMP emitter). Provisional. */
+export const EMP = {
+  /** On Auto it fires once this many working vehicles are in reach (or a bomb truck, or a missile). */
+  autoMin: 2,
+  /** A vehicle with less stun than this left counts as working again (Auto can renew it). */
+  renew: 0.5,
+};
+
 export const POOL = {
   /** Seconds between damage ticks. */
   tick: 0.25,

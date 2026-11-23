@@ -9,6 +9,8 @@ import { BehemothView, TrackMarks } from '../render/compositor';
 import { Effects } from '../render/effects';
 import { Hud, type HudRun } from '../render/hud';
 import { capturePose, Interp, pose } from '../render/interp';
+import { LaserView } from '../render/laserView';
+import { FireView } from '../render/fireView';
 import { ENEMY_ART, TILE } from '../render/placeholder';
 import { TerrainView } from '../render/terrainView';
 import { ThreatIndicators } from '../render/threatIndicators';
@@ -24,13 +26,13 @@ import { sightRadius } from '../sim/conditions';
 import { UnitViews } from '../render/unitViews';
 import { ComponentFx, componentAnchors, hullToSim, trailerPartAt, UnitFx, type UnitStatus } from '../render/statusFx';
 import { canSelfDestruct, damageComponent, damageTreads, firingBinding, hitched } from '../sim/behemoth';
-import { FixedStepper, SIM_DT } from '../sim/loop';
+import { FixedStepper } from '../sim/loop';
 import { createWorld, START_X, stepWorld, type World } from '../sim/world';
 import { OBSTACLE_CLASSES } from '../content/obstacles';
 import { isWet, MATERIALS } from '../content/terrain';
 import { WEAPONS } from '../content/weapons';
 import { IDLE_COMMAND, type PlayerCommand } from '../sim/behemoth';
-import { missileLockTarget } from '../sim/weapons';
+import { missileLockTarget, swarmTargets } from '../sim/weapons';
 import { roundSpec } from '../sim/projectiles';
 import { viewX, viewY } from '../render/viewTransform';
 import {
@@ -58,9 +60,8 @@ import { objectiveBonus, objectiveComplete, objectivePercent } from '../sim/obje
 import { FONT_KEY, fontText } from '../render/pixelFont';
 import { hex, PAL } from '../render/palette';
 import { checkpoint, endRun, enterNode, randomSeed, recordRun, showSummary, type RunContext } from './flow';
-import { DEMO, demoClip, type DemoClip } from './demo';
+import { createDemoWorld, DEMO, demoClip, demoRun, prerollDemo, type DemoClip } from './demo';
 import { demoCommand } from '../input/demoBot';
-import { newRun } from '../sim/run';
 import { APPROACHES } from '../content/approaches';
 import { BIOMES } from '../content/biomes';
 import type { ConditionId } from '../content/conditions';
@@ -85,6 +86,8 @@ export interface BattleDev {
 
 /** Seconds the battle keeps running after extraction before the depot opens. */
 const OUTRO_TIME = 2.5;
+/** Blasts at least this wide (a ballistic missile's) get the big explosion and a heavy shake. */
+const BIG_BLAST = 40;
 
 /**
  * Top-down battle (SPEC §4.1), scrolling vertically: the Behemoth drives up a centered column
@@ -110,6 +113,10 @@ export class TopDownBattleScene extends Phaser.Scene {
   /** The condition's veil and weather (SPEC §4.6); null for a clear battle. */
   private weather: WeatherView | null = null;
   private fx!: Effects;
+  private lasers!: LaserView;
+  private fires!: FireView;
+  /** Where each ballistic missile in flight will come down. */
+  private landing!: Phaser.GameObjects.Graphics;
   private status!: ComponentFx;
   private unitFx!: UnitFx;
   /** Null in the title's attract mode. */
@@ -117,7 +124,8 @@ export class TopDownBattleScene extends Phaser.Scene {
   private audio: BattleAudio | null = null;
   private threats: ThreatIndicators | null = null;
   private reticle!: Phaser.GameObjects.Image;
-  private lockMark!: Phaser.GameObjects.Image;
+  /** Missile lock brackets, one per unit locked on to (a swarm pod locks on to several). */
+  private lockMarks: Phaser.GameObjects.Image[] = [];
   private lastCmd: PlayerCommand = IDLE_COMMAND;
   private layout!: BattleLayout;
   private paused = false;
@@ -177,22 +185,27 @@ export class TopDownBattleScene extends Phaser.Scene {
 
     // The sim's frame runs along the direction of travel (screen height); its lateral rows span
     // the battlefield column.
-    const recipe = demo ? { biome: demo.biome, approach: demo.approach } : battleRecipe(run, recipeFromUrl());
-    const urlMix = demo ? undefined : mixFromUrl();
-    this.world = createWorld({
-      seed: battleSeed(run),
-      recipe,
-      frameWidth: height,
-      fieldRows: this.layout.fieldTiles,
-      behemoth: run.behemoth,
-      ...battleEnemy(run, recipe, demo ? undefined : doctrineFromUrl()),
-      ...(urlMix ? { mix: urlMix } : {}),
-      ...(demo ? { threat: demo.threat, battleLength: demo.battleLength } : { battleLength: battleLengthFromUrl() ?? battleLength(run), alertPace: battleAlertPace(run) }),
-      objective: demo ? { mode: demo.mode, strength: 'normal' } : battleObjective(run, modeFromUrl()),
-      condition: demo ? demo.condition : battleCondition(run, conditionFromUrl()),
-      sighted: run.sighted,
-    });
-    if (demo) this.prerollDemo(demo);
+    if (demo) {
+      this.world = createDemoWorld(demo, height, this.layout.fieldTiles);
+      prerollDemo(this.world, demo);
+    } else {
+      const recipe = battleRecipe(run, recipeFromUrl());
+      const urlMix = mixFromUrl();
+      this.world = createWorld({
+        seed: battleSeed(run),
+        recipe,
+        frameWidth: height,
+        fieldRows: this.layout.fieldTiles,
+        behemoth: run.behemoth,
+        ...battleEnemy(run, recipe, doctrineFromUrl()),
+        ...(urlMix ? { mix: urlMix } : {}),
+        battleLength: battleLengthFromUrl() ?? battleLength(run),
+        alertPace: battleAlertPace(run),
+        objective: battleObjective(run, modeFromUrl()),
+        condition: battleCondition(run, conditionFromUrl()),
+        sighted: run.sighted,
+      });
+    }
     this.stepper = new FixedStepper();
     if (!demo) this.controls = new Controls(this);
     this.terrainView = new TerrainView(this, this.world.terrain, demo ? undefined : lookFromUrl());
@@ -210,6 +223,9 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.barrages = new BarrageViews(this);
     this.weather = WeatherView.create(this, this.layout, this.world);
     this.fx = new Effects(this);
+    this.lasers = new LaserView(this, this.fx);
+    this.fires = new FireView(this);
+    this.landing = this.add.graphics().setDepth(5);
     // The attract mode is silent: the title shouldn't blare before anyone has asked to play.
     this.audio = demo ? null : BattleAudio.create(this);
     this.status = new ComponentFx();
@@ -234,7 +250,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     } else {
       this.startDemo(demo);
     }
-    this.lockMark = this.add.image(0, 0, 'lock').setDepth(9).setVisible(false);
+    this.lockMarks = [];
     this.paused = false;
     this.waveShownAt = null;
     this.alertShownAt = null;
@@ -404,17 +420,6 @@ export class TopDownBattleScene extends Phaser.Scene {
 
   // ── Attract mode (the title's background) ─────────────────────────────────────────────────────
 
-  /** Runs the clip's battle ahead unseen, so it opens mid-fight. */
-  private prerollDemo(clip: DemoClip): void {
-    const w = this.world;
-    // The first reinforcements come early: there's only time for a glimpse.
-    w.encounter.alert.next = Math.min(w.encounter.alert.next, clip.preroll + 3);
-    for (let t = 0; t < clip.preroll && !w.behemoth.destroyed && w.extractedAt === null; t += SIM_DT) {
-      stepWorld(w, demoCommand(w));
-      w.events.length = 0;
-    }
-  }
-
   /** The clip's caption and fade-in; the scene sits below the title. */
   private startDemo(clip: DemoClip): void {
     this.demoLeft = clip.length;
@@ -423,7 +428,9 @@ export class TopDownBattleScene extends Phaser.Scene {
     const where = clip.approach ? `${BIOMES[clip.biome].name} - ${APPROACHES[clip.approach].name}` : BIOMES[clip.biome].name;
     const mode = MODES[clip.mode].name;
     const weather = clip.condition ? ` - ${conditionName(clip.condition, clip.biome)}` : '';
-    this.add.bitmapText(6, height - 6, FONT_KEY, fontText(`${where}\n${mode}${weather}`)).setOrigin(0, 1).setTint(hex(PAL.hudText)).setScrollFactor(0).setDepth(150);
+    // What it's fighting with: the guns on its turret rings.
+    const guns = this.world.behemoth.hardpoints.filter((h) => h.slot.size === 'L' && h.weapon).map((h) => h.weapon!.name);
+    this.add.bitmapText(6, height - 6, FONT_KEY, fontText(`${where}\n${mode}${weather}\n${guns.join(', ')}`)).setOrigin(0, 1).setTint(hex(PAL.hudText)).setScrollFactor(0).setDepth(150);
     this.cameras.main.fadeIn(DEMO.fade * 1000);
   }
 
@@ -639,6 +646,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.interp.capture(w.frame, [w.frame.left]);
     capturePose(this.interp, w.behemoth);
     for (const t of w.behemoth.turrets) this.interp.capture(t, [t.angle]);
+    for (const h of w.behemoth.hardpoints) this.interp.capture(h, [h.angle]);
     if (w.behemoth.trailer) capturePose(this.interp, w.behemoth.trailer);
     for (const m of w.mines) capturePose(this.interp, m);
     for (const d of w.drones) capturePose(this.interp, d);
@@ -662,7 +670,9 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.terrainView.update(w.frame.left, this.layout.height, w.time);
     const bp = pose(this.interp, b);
     const rings = b.turrets.map((t) => this.interp.lerpAngle(t, 0, t.angle));
-    this.behemothView.update(b, bp, rings, dt, w.time);
+    const mounts = b.hardpoints.map((h) => this.interp.lerpAngle(h, 0, h.angle));
+    this.behemothView.update(b, bp, rings, mounts, dt, w.time);
+    this.lasers.update(dt, (slot) => this.behemothView.drawnMuzzle(b, slot));
     this.trailerView?.update(b, w.mines, this.interp, dt, w.time);
     this.tracks.update(this.behemothView, b, (x, y) => this.wet(x, y));
     this.units.update(w.enemies, w.projectiles, this.interp, dt, w.frame.left - 64);
@@ -676,6 +686,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.unitFx.update(damaged, dt, this.fx);
     this.drones.update(w.drones, this.interp, dt, w.time, this.fx);
     this.pools.update(w.pools, dt, w.time, this.fx);
+    this.fires.update(w.fires, w.enemies, w.terrain.tileSize, this.interp, dt, w.time, this.fx);
     this.barrages.update(w.barrages, w.time);
     this.locks.update(w.enemies, b, this.interp, w.time);
     // Salvage flies to the hull (a gone hull: it scatters and fades).
@@ -684,10 +695,26 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.weather?.update(w, this.interp, this.cameras.main, dt);
     this.threats?.update(w.enemies, w.frame, w.time);
     this.updateLockMark();
+    this.landing.clear();
     for (const p of w.projectiles) {
-      if (p.alive && p.kind === 'missile' && Math.random() < 0.7) {
+      if (!p.alive) continue;
+      const spec = p.weapon.projectile;
+      const look = spec.kind === 'shell' ? spec.look : undefined;
+      if ((p.kind === 'missile' || look === 'rocket' || look === 'ballistic') && Math.random() < 0.7) {
         const at = pose(this.interp, p);
         this.fx.missileTrail(at.x, at.y);
+        if (look === 'ballistic') this.fx.missileTrail(at.x, at.y);
+      }
+      // A ballistic missile marks where it will come down, closing in as it falls.
+      if (look === 'ballistic' && spec.kind === 'shell') {
+        const left = Math.max(0, p.fuse - p.traveled);
+        const speed = Math.hypot(p.vx, p.vy) || 1;
+        const lx = p.x + (p.vx / speed) * left;
+        const ly = p.y + (p.vy / speed) * left;
+        const t = Math.min(1, p.traveled / Math.max(1, p.fuse));
+        this.landing.lineStyle(1, hex(PAL.bad), 0.5 + 0.4 * Math.sin(w.time * 18));
+        this.landing.strokeCircle(viewX(lx, ly), viewY(lx), spec.blastRadius * (1.4 - 0.4 * t));
+        this.landing.strokeCircle(viewX(lx, ly), viewY(lx), 2);
       }
     }
 
@@ -710,29 +737,38 @@ export class TopDownBattleScene extends Phaser.Scene {
   }
 
   /**
-   * Missile lock bracket: on the unit a salvo would lock on to (while a rack on a trigger is
-   * ready), or on the one a salvo in flight is locked on to. Racks on Auto pick their own.
+   * Missile lock brackets: on the unit a salvo would lock on to (while a rack on a trigger is
+   * ready), or on the one a salvo in flight is locked on to. A swarm pod brackets every unit its
+   * missiles would be shared out over. Racks on Auto pick their own.
    */
   private updateLockMark(): void {
     const w = this.world;
     const b = w.behemoth;
     const racks = b.hardpoints.filter((h) => h.weapon?.projectile.kind === 'missile' && h.integrity.hp > 0 && firingBinding(b, h) !== 'auto');
     const rack = racks.find((h) => h.salvo) ?? racks.find((h) => h.cooldown <= 0 && (h.ammo ?? 1) > 0) ?? racks[0];
-    let id: number | null = null;
-    if (rack?.salvo) id = rack.salvo.targetId;
+    let ids: number[] = [];
+    if (rack?.salvo) ids = rack.salvo.targets ?? (rack.salvo.targetId === null ? [] : [rack.salvo.targetId]);
     else if (rack?.weapon && rack.cooldown <= 0 && (rack.ammo ?? 1) > 0 && !w.behemoth.destroyed) {
       const spec = roundSpec(rack.weapon);
-      if (spec.kind === 'missile') id = missileLockTarget(w, this.lastCmd.aimX, this.lastCmd.aimY, spec.lockRadius)?.id ?? null;
+      if (spec.kind === 'missile') {
+        const lock = missileLockTarget(w, this.lastCmd.aimX, this.lastCmd.aimY, spec.lockRadius);
+        if (spec.swarm) ids = swarmTargets(w, lock?.x ?? this.lastCmd.aimX, lock?.y ?? this.lastCmd.aimY, rack.weapon.salvo?.count ?? 1).map((e) => e.id);
+        else if (lock) ids = [lock.id];
+      }
     }
     // A salvo keeps homing on a unit that slips back into the trees, but the bracket mustn't show where.
-    const e = id === null ? undefined : w.enemies.find((en) => en.id === id && en.alive && !en.hidden);
-    if (!e) {
-      this.lockMark.setVisible(false);
-      return;
-    }
-    const at = pose(this.interp, e);
+    const shown = ids.map((id) => w.enemies.find((en) => en.id === id && en.alive && !en.hidden)).filter((e) => e !== undefined);
+    while (this.lockMarks.length < shown.length) this.lockMarks.push(this.add.image(0, 0, 'lock').setDepth(9));
     const pulse = rack?.salvo ? 1 : 0.6 + 0.4 * Math.sin(w.time * 10);
-    this.lockMark.setPosition(viewX(at.x, at.y), viewY(at.x)).setAlpha(pulse).setVisible(true);
+    this.lockMarks.forEach((mark, i) => {
+      const e = shown[i];
+      if (!e) {
+        mark.setVisible(false);
+        return;
+      }
+      const at = pose(this.interp, e);
+      mark.setPosition(viewX(at.x, at.y), viewY(at.x)).setAlpha(pulse).setVisible(true);
+    });
   }
 
   private handleEvents(): void {
@@ -745,9 +781,18 @@ export class TopDownBattleScene extends Phaser.Scene {
         case 'fire': {
           const role = WEAPONS[ev.weapon].role;
           if (ev.owner === 'player') this.behemothView.onFire(ev.slot ?? '', ev.weapon);
-          // Lasers make no muzzle flash: the beam event draws them.
-          if (WEAPONS[ev.weapon].projectile.kind === 'beam') {
-            if (role === 'main') this.shake(50, 0.5);
+          const spec = WEAPONS[ev.weapon].projectile;
+          const kind = spec.kind;
+          const launched = spec.kind === 'shell' && (spec.look === 'rocket' || spec.look === 'ballistic');
+          // Lasers, flames, slugs, lightning, and the EMP make no muzzle flash: their own events draw them.
+          if (kind === 'beam' || kind === 'rail' || kind === 'arc') {
+            if (role === 'main') this.shake(kind === 'rail' ? 120 : 50, kind === 'rail' ? 1.5 : 0.5);
+          } else if (kind === 'flame' || kind === 'pulse') {
+            // Drawn by the flame and emp events.
+          } else if (launched) {
+            // Rockets and missiles leave the rails in a puff of smoke.
+            this.fx.smokePuff(ev.x, ev.y);
+            if (spec.kind === 'shell' && spec.look === 'ballistic') this.shake(150, 1);
           } else if (ev.owner === 'player' && role === 'main') {
             const m = (ev.slot && this.behemothView.muzzle(w.behemoth, ev.slot)) || ev;
             this.fx.muzzle(m.x, m.y, m.angle, true);
@@ -763,10 +808,24 @@ export class TopDownBattleScene extends Phaser.Scene {
           this.fx.beam(ev.x0, ev.y0, ev.x, ev.y, ev.hit);
           break;
         case 'beam':
-          this.fx.laser(ev.x0, ev.y0, ev.x1, ev.y1, WEAPONS[ev.weapon].size ?? 'M', ev.hit);
+          // Drawn from the barrel as it's drawn each frame, so it pivots with the mount.
+          this.lasers.pulse(ev.slot, WEAPONS[ev.weapon], ev);
           break;
         case 'plasmaBurn':
           this.fx.plasmaBurn(ev.x, ev.y);
+          break;
+        case 'flame':
+          this.fx.flameJet(ev.x, ev.y, ev.angle, ev.reach, ev.cone);
+          break;
+        case 'emp':
+          this.fx.empRing(ev.x, ev.y, ev.radius);
+          this.shake(120, 1);
+          break;
+        case 'rail':
+          this.fx.railStreak(ev.x0, ev.y0, ev.x1, ev.y1, WEAPONS[ev.weapon].size === 'L', ev.hits);
+          break;
+        case 'arc':
+          this.fx.lightning(ev.points, WEAPONS[ev.weapon].size === 'L', ev.hit);
           break;
         case 'explosion':
           // A shell landing in a river splashes; nothing to scorch.
@@ -775,7 +834,13 @@ export class TopDownBattleScene extends Phaser.Scene {
             break;
           }
           if (ev.plasma) this.fx.plasmaBurst(ev.x, ev.y, ev.radius);
-          else this.fx.explosion(ev.x, ev.y, ev.radius);
+          else if (ev.fire) this.fx.fireball(ev.x, ev.y, ev.radius);
+          else if (ev.radius >= BIG_BLAST) {
+            // A ballistic missile coming down: the biggest blast short of the reactor.
+            this.fx.bigExplosion(ev.x, ev.y);
+            this.fx.explosion(ev.x, ev.y, ev.radius);
+            this.shake(400, 3);
+          } else this.fx.explosion(ev.x, ev.y, ev.radius);
           this.units.addDecal('scorch', ev.x, ev.y, Math.random() * Math.PI * 2, 1.5);
           break;
         case 'impact':
@@ -1003,7 +1068,7 @@ export class DemoBattleScene extends TopDownBattleScene {
 
   override init(): void {
     const clip = demoClip(DemoBattleScene.next++, randomSeed());
-    super.init({ run: newRun(clip.seed), persist: false, demo: clip });
+    super.init({ run: demoRun(clip), persist: false, demo: clip });
   }
 }
 

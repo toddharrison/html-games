@@ -4,7 +4,8 @@ import type { WeaponId } from './weapons';
  * Trailer modules (SPEC §5.5): what goes in the trailer's bays (the frame is the `trailer` add-on,
  * content/addons.ts). Each works through a system that already exists:
  * - a **pod** is a hardpoint on the trailer with its weapon built in (its integrity is the
- *   hardpoint's); the missile pod fires with the rack on Space;
+ *   hardpoint's); the missile pod fires with the rack on Space, and so does the missile erector's
+ *   pair of ballistic missiles;
  * - a **bunker** holds spare loads of ammo and refills any munitions weapon that runs dry;
  * - a **generator** adds power output and capacitor;
  * - a **drone bay** launches repair drones that patch the treads from a per-battle pool, and once
@@ -12,7 +13,7 @@ import type { WeaponId } from './weapons';
  * Everything a module carries feeds the trailer's cook-off when it blows.
  */
 
-export type ModuleId = 'missilePod' | 'ammoBunker' | 'auxGenerator' | 'droneBay';
+export type ModuleId = 'missilePod' | 'missileErector' | 'ammoBunker' | 'auxGenerator' | 'droneBay';
 
 interface ModuleBase {
   id: ModuleId;
@@ -94,6 +95,19 @@ export const TRAILER_MODULES: Record<ModuleId, ModuleDef> = {
     hp: 35,
     weapon: 'podMissiles',
     blast: { radius: 24, damage: 50 },
+  },
+  // A towed launcher for the ballistic missile (SPEC §6): no main gun given up, but it goes if the trailer does.
+  missileErector: {
+    id: 'missileErector',
+    kind: 'pod',
+    name: 'Missile erector',
+    short: 'Erector',
+    blurb: 'Two heavy ballistic missiles, fired on Space.',
+    mass: 45,
+    hp: 40,
+    weapon: 'erectorMissile',
+    // Two big warheads: a trailer that blows with them aboard goes up hard.
+    blast: { radius: 50, damage: 160 },
   },
   ammoBunker: {
     id: 'ammoBunker',

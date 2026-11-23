@@ -294,6 +294,11 @@ export function fits(s: BehemothSnapshot, slot: string, weapon: WeaponId): boole
   return def !== undefined && def.position !== 'trailer' && w.size === def.size && allowedBindings(w, def).length > 0;
 }
 
+/** Whether the Behemoth already carries this weapon on some hardpoint (the depot shows it dimmed). */
+export function onBoard(s: BehemothSnapshot, weapon: WeaponId): boolean {
+  return s.hardpoints.some((h) => h.weapon === weapon);
+}
+
 /** The shell a main gun is loaded with: its choice, or its default. Null for an empty slot or a gun with no choice. */
 export function shellOf(s: BehemothSnapshot, slot: string): ShellType | null {
   const h = hardpoint(s, slot);
@@ -500,6 +505,8 @@ export function quote(run: RunState, action: DepotAction): Quote {
       if (!item || item.sold) return no('Sold');
       if (!slotDef(s, action.slot)) return no('No such slot');
       if (!fits(s, action.slot, item.weapon)) return no('Wrong size');
+      // Swapping a weapon for its twin buys nothing a repair and rearm don't, for far more.
+      if (hardpoint(s, action.slot)?.weapon === item.weapon) return no('Fitted');
       salvage = (DEPOT_WEAPONS[item.weapon]?.price ?? 0) - weaponResale(s, action.slot);
       break;
     }

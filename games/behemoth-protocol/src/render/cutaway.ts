@@ -387,6 +387,13 @@ function drawWeapon(g: Phaser.GameObjects.Graphics, weapon: WeaponDef, x: number
     if (!dead) fill(x + w / 2 + 2, y + h - 4, 4, 2, weapon.category === 'energy' ? PAL.glow : PAL.steelHi);
     return;
   }
+  if (spec.kind === 'pulse') {
+    // A coil dish on a squat base, its core glowing.
+    fill(x + 2, y + h - 4, w - 4, 4, body);
+    g.fillStyle(hex(body)).fillCircle(x + w / 2, y + h - 6, Math.min(w, h * 2) / 2.5);
+    if (!dead) g.fillStyle(hex(PAL.glow)).fillCircle(x + w / 2, y + h - 6, 2);
+    return;
+  }
   // Guns: a housing and a barrel. Main guns are long; lobbed guns point up and forward.
   const lobbed = spec.kind === 'shell' && spec.lobbed === true;
   fill(x, y + 2, w, h - 2, body);
@@ -406,8 +413,20 @@ function drawWeapon(g: Phaser.GameObjects.Graphics, weapon: WeaponDef, x: number
   fill(x + w + len - 4, y + Math.floor(h / 2) - Math.floor(thick / 2) - 1, 4, thick + 2, PAL.steelMid);
   if (weapon.id === 'flakCannon') fill(x + w, y + Math.floor(h / 2) + 2, len - 2, 2, PAL.steelMid);
   // Energy weapons: a glowing lens (lasers) or a violet chamber (plasma).
-  if (spec.kind === 'beam') fill(x + w + len - 2, y + Math.floor(h / 2) - Math.floor(thick / 2), 2, thick, PAL.glow);
+  if (spec.kind === 'beam' || spec.kind === 'rail' || spec.kind === 'arc') fill(x + w + len - 2, y + Math.floor(h / 2) - Math.floor(thick / 2), 2, thick, PAL.glow);
+  // Railguns and coilguns: coil clamps along the barrel. Arc weapons: amber insulator rings.
+  if (spec.kind === 'rail' || spec.kind === 'arc') {
+    for (let cx = x + w + 6; cx < x + w + len - 6; cx += 12) fill(cx, y + Math.floor(h / 2) - Math.floor(thick / 2) - 1, 2, thick + 2, spec.kind === 'rail' ? PAL.steelMid : PAL.amber);
+  }
+  // Thermobaric: a hazard band at the muzzle. A ballistic missile: its red nose in the tube.
+  if (spec.kind === 'shell' && spec.incendiary) fill(x + w + len - 4, y + Math.floor(h / 2) - Math.floor(thick / 2) - 1, 2, thick + 2, PAL.amber);
+  if (spec.kind === 'shell' && spec.vertical) fill(x + w + len - 3, y + Math.floor(h / 2) - Math.floor(thick / 2), 3, thick, PAL.enemy);
   if (spec.kind === 'shell' && spec.pool) fill(x + 2, y + 4, w - 4, h - 5, PAL.plasma);
+  // Flamethrower: a rust-red fuel tank in the housing, a pilot light at the nozzle.
+  if (spec.kind === 'flame') {
+    fill(x + 2, y + 4, w - 4, h - 5, PAL.rust);
+    fill(x + w + len - 2, y + Math.floor(h / 2) - Math.floor(thick / 2), 2, thick, PAL.ember);
+  }
 }
 
 /** Side-view placeholder for a trailer module in its bay (front to the right). */

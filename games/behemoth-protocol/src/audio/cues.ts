@@ -48,10 +48,13 @@ export type SoundId =
   | 'radio'
   | 'lockOn'
   | 'pickup'
+  | 'emp'
+  | 'railgun'
+  | 'arc'
   | 'detonation';
 
 /** Sustained sounds that keep going while their events keep coming, and fade once they stop. */
-export type HoldId = 'beam' | 'scrape' | 'burn';
+export type HoldId = 'beam' | 'scrape' | 'burn' | 'flame';
 
 export interface Cue {
   sound: SoundId | HoldId;
@@ -62,7 +65,7 @@ export interface Cue {
   y?: number;
 }
 
-export const HOLDS: ReadonlySet<string> = new Set<HoldId>(['beam', 'scrape', 'burn']);
+export const HOLDS: ReadonlySet<string> = new Set<HoldId>(['beam', 'scrape', 'burn', 'flame']);
 
 /** Every weapon's report. A Record, so a new weapon doesn't compile until it has one. */
 export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: number }> = {
@@ -82,6 +85,19 @@ export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: nu
   beamLaser: { sound: 'beam', size: 0.6 },
   heavyLaser: { sound: 'heavyLaser', size: 1 },
   plasmaThrower: { sound: 'plasmaShot', size: 0.7 },
+  // Small motors in a quick ripple: lighter than the rack's.
+  swarmPod: { sound: 'missile', size: 0.3 },
+  empEmitter: { sound: 'emp', size: 1 },
+  flamethrower: { sound: 'flame', size: 1 },
+  railgun: { sound: 'railgun', size: 1 },
+  coilgun: { sound: 'railgun', size: 0.45 },
+  // A heavy motor lighting and roaring away upward.
+  ballisticMissile: { sound: 'missile', size: 1.4 },
+  erectorMissile: { sound: 'missile', size: 1.4 },
+  arcProjector: { sound: 'arc', size: 1 },
+  teslaCoil: { sound: 'arc', size: 0.35 },
+  rocketArtillery: { sound: 'rocket', size: 0.5 },
+  thermobaric: { sound: 'mortar', size: 0.8 },
   lightTankGun: { sound: 'cannon', size: 0.3 },
   heavyTankGun: { sound: 'cannon', size: 0.55 },
   infantryRockets: { sound: 'rocket', size: 0.4 },
@@ -319,6 +335,9 @@ export const MIN_GAP: Record<SoundId, number> = {
   radio: 1,
   lockOn: 0.5,
   pickup: 0.05,
+  emp: 0.2,
+  railgun: 0.1,
+  arc: 0.08,
   detonation: 1,
 };
 
@@ -362,6 +381,9 @@ export const PITCH_SPREAD: Record<SoundId, number> = {
   radio: 0,
   lockOn: 0,
   pickup: 1.5,
+  emp: 1.5,
+  railgun: 1,
+  arc: 2,
   detonation: 0.6,
 };
 

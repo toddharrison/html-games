@@ -1,5 +1,5 @@
 import { DEGRADE, EVASION, RIPPLE_GAP } from '../content/tuning';
-import type { InterceptSpec, MissileSpec, RoundSpec, WeaponDef } from '../content/weapons';
+import type { InterceptSpec, MissileSpec, PulseSpec, RoundSpec, ShellSpec, WeaponDef } from '../content/weapons';
 import {
   autoGroupOf,
   autoReach,
@@ -25,6 +25,10 @@ import { angleDiff, clamp, dist, rotateToward, wrapAngle } from './math';
 import { damageMultiplier, fireBeam, roundRange, roundSpec, shotSpec } from './projectiles';
 import type { World } from './world';
 import { conditionSpread, markFlash } from './conditions';
+import { firePulse, pulseWorth } from './emp';
+import { shootFlame } from './fire';
+import { shootRail } from './rail';
+import { shootArc } from './arc';
 import { TIMER_SLACK } from './loop';
 
 /**
@@ -100,14 +104,13 @@ function spawnRound(w: World, owner: Owner, weapon: WeaponDef, x: number, y: num
  * Fire a laser from a muzzle (SPEC §6): the beam resolves at once (`fireBeam`). Pushes the usual
  * `fire` event (recoil, heat) and a `beam` event to draw it.
  */
-export function shootBeam(w: World, weapon: WeaponDef, x: number, y: number, angle: number, opts: { spreadMul?: number; slot?: string } = {}): void {
+export function shootBeam(w: World, weapon: WeaponDef, x: number, y: number, angle: number, opts: { spreadMul?: number; slot: string }): void {
   const spread = shotSpec(weapon).spread * (opts.spreadMul ?? 1) * conditionSpread(w);
   const a = angle + w.rng.range(-spread, spread);
   markFlash(w);
   const end = fireBeam(w, weapon, x, y, a);
-  const ev = { type: 'fire', owner: 'player', weapon: weapon.id, x, y, angle: a } as const;
-  w.events.push(opts.slot ? { ...ev, slot: opts.slot } : ev);
-  w.events.push({ type: 'beam', weapon: weapon.id, x0: x, y0: y, x1: end.x, y1: end.y, hit: end.hit });
+  w.events.push({ type: 'fire', owner: 'player', weapon: weapon.id, x, y, angle: a, slot: opts.slot });
+  w.events.push({ type: 'beam', weapon: weapon.id, x0: x, y0: y, x1: end.x, y1: end.y, hit: end.hit, slot: opts.slot });
 }
 
 /**
@@ -164,11 +167,14 @@ export function stepWeapons(w: World, cmd: PlayerCommand, dt: number): void {
     if (binding === 'auto') {
       if (!b.autoEnabled[autoGroupOf(weapon) - 1]) continue;
       if (spec.kind === 'intercept') stepPointDefense(w, h, weapon, spec, dt);
-      else if (spec.kind === 'missile') stepMissiles(w, h, weapon, () => autoLock(w, h, spec), fireControlSpread(b), dt);
+      else if (spec.kind === 'pulse') stepPulse(w, h, weapon, spec, 'auto');
+      else if (salvoSpec(weapon)) stepSalvo(w, h, weapon, () => autoLock(w, h, salvoSpec(weapon)!), fireControlSpread(b), dt);
       else stepAutoGun(w, h, weapon, dt);
-    } else if (spec.kind === 'missile') {
+    } else if (salvoSpec(weapon)) {
       const fire = held(cmd, binding);
-      stepMissiles(w, h, weapon, () => (fire ? cursorLock(w, cmd, spec) : null), 1, dt);
+      stepSalvo(w, h, weapon, () => (fire ? cursorLock(w, cmd, salvoSpec(weapon)!) : null), 1, dt);
+    } else if (spec.kind === 'pulse') {
+      stepPulse(w, h, weapon, spec, held(cmd, binding));
     } else if (spec.kind !== 'intercept') {
       stepAimedWeapon(w, h, weapon, cmd, held(cmd, binding), dt);
     }
@@ -261,8 +267,34 @@ function stepAimedWeapon(w: World, h: HardpointState, weapon: WeaponDef, cmd: Pl
   const b = w.behemoth;
   const onTarget = aimMount(b, h, weapon, cmd.aimX, cmd.aimY, dt);
   const turret = h.slot.ring !== undefined;
-  if (!trigger || !ready(b, h, weapon) || (!turret && !onTarget)) return;
+  // A round launched straight up needs no barrel lined up.
+  const spec = shotSpec(weapon);
+  const vertical = spec.kind === 'shell' && spec.vertical === true;
+  if (!trigger || !ready(b, h, weapon) || (!turret && !onTarget && !vertical)) return;
   fireAimed(w, h, weapon, cmd);
+}
+
+/**
+ * Weapons resolved the moment they fire (lasers, flames, slugs, lightning): fire one from the
+ * muzzle `m`. False for rounds that fly, which the caller spawns.
+ */
+function shootInstant(w: World, weapon: WeaponDef, spec: RoundSpec, m: { x: number; y: number; angle: number }, opts: { spreadMul: number; slot: string }): boolean {
+  switch (spec.kind) {
+    case 'beam':
+      shootBeam(w, weapon, m.x, m.y, m.angle, opts);
+      return true;
+    case 'flame':
+      shootFlame(w, weapon, m.x, m.y, m.angle, opts.slot);
+      return true;
+    case 'rail':
+      shootRail(w, weapon, m.x, m.y, m.angle, opts);
+      return true;
+    case 'arc':
+      shootArc(w, weapon, m.x, m.y, m.angle, opts);
+      return true;
+    default:
+      return false;
+  }
 }
 
 /** Fire an aimed weapon from its muzzle toward the cursor (`ready` has already been checked). */
@@ -270,12 +302,18 @@ function fireAimed(w: World, h: HardpointState, weapon: WeaponDef, cmd: PlayerCo
   const b = w.behemoth;
   const spec = shotSpec(weapon);
   const m = muzzleOf(b, h, weapon);
-  if (spec.kind === 'beam') {
-    shootBeam(w, weapon, m.x, m.y, m.angle, { spreadMul: spreadScale(h), slot: h.slot.id });
+  if (shootInstant(w, weapon, spec, m, { spreadMul: spreadScale(h), slot: h.slot.id })) {
     spend(b, h, weapon);
     return;
   }
   const p = mountPosition(b, h);
+  // Launched straight up from the deck: it comes down on the cursor, wherever the mount points.
+  if (spec.kind === 'shell' && spec.vertical) {
+    const fuse = clamp(dist(p.x, p.y, cmd.aimX, cmd.aimY), spec.minRange, spec.maxRange);
+    spawnProjectile(w, 'player', weapon, p.x, p.y, Math.atan2(cmd.aimY - p.y, cmd.aimX - p.x), { fuse, spreadMul: spreadScale(h), slot: h.slot.id });
+    spend(b, h, weapon);
+    return;
+  }
   const fuse =
     spec.kind === 'shell' ? clamp(dist(p.x, p.y, cmd.aimX, cmd.aimY) - weapon.muzzle, spec.minRange, spec.maxRange) : roundRange(spec);
   spawnProjectile(w, 'player', weapon, m.x, m.y, m.angle, { fuse, spreadMul: spreadScale(h), slot: h.slot.id });
@@ -289,8 +327,21 @@ interface Lock {
   y: number;
 }
 
-/** A trigger-fired salvo locks on to the unit nearest the cursor, or flies to the cursor point. */
-function cursorLock(w: World, cmd: PlayerCommand, spec: MissileSpec): Lock {
+/**
+ * What a weapon fires in salvos (SPEC §6): missiles, or shells with a `salvo` (rocket artillery).
+ * Null for anything else, which fires a round per trigger.
+ */
+function salvoSpec(weapon: WeaponDef): MissileSpec | ShellSpec | null {
+  const spec = weapon.projectile;
+  return spec.kind === 'missile' || (spec.kind === 'shell' && weapon.salvo) ? spec : null;
+}
+
+/**
+ * A trigger-fired salvo locks on to the unit nearest the cursor, or flies to the cursor point.
+ * A shell salvo is laid on the cursor point.
+ */
+function cursorLock(w: World, cmd: PlayerCommand, spec: MissileSpec | ShellSpec): Lock {
+  if (spec.kind === 'shell') return { targetId: null, x: cmd.aimX, y: cmd.aimY };
   const t = missileLockTarget(w, cmd.aimX, cmd.aimY, spec.lockRadius);
   return { targetId: t?.id ?? null, x: t?.x ?? cmd.aimX, y: t?.y ?? cmd.aimY };
 }
@@ -299,22 +350,37 @@ function cursorLock(w: World, cmd: PlayerCommand, spec: MissileSpec): Lock {
  * A salvo on Auto locks on to the best target in reach, on screen only (it shouldn't spend its
  * ammo on what the player can't see). Missiles fly over cover, so no line of fire is needed.
  */
-function autoLock(w: World, h: HardpointState, spec: MissileSpec): Lock | null {
-  const t = autoTarget(w, h, spec, { lineOfFire: false, minRange: 0, onScreen: true });
+function autoLock(w: World, h: HardpointState, spec: MissileSpec | ShellSpec): Lock | null {
+  const t = autoTarget(w, h, spec, { lineOfFire: false, minRange: spec.kind === 'shell' ? spec.minRange : 0, onScreen: true });
   return t && { targetId: t.id, x: t.x, y: t.y };
 }
 
 /**
- * Missiles: once `start` gives a lock (the trigger is pulled, or an auto target turns up), launch
- * a salvo. Missiles leave the rack in a spread and home in. The salvo is one shot of ammo.
+ * The units a swarm salvo spreads over (SPEC §6 swarm pod): every one in view (on screen, not
+ * hidden), nearest the point first, at most `n`. Empty when there's nothing to see.
  */
-function stepMissiles(w: World, h: HardpointState, weapon: WeaponDef, start: () => Lock | null, spreadMul: number, dt: number): void {
+export function swarmTargets(w: World, x: number, y: number, n: number): Enemy[] {
+  const seen = w.enemies.filter((e) => e.alive && !e.hidden && !sealed(e) && e.x >= w.frame.left && e.x <= frameRight(w.frame));
+  seen.sort((a, b) => Math.hypot(a.x - x, a.y - y) - Math.hypot(b.x - x, b.y - y));
+  return seen.slice(0, n);
+}
+
+/**
+ * Salvos: once `start` gives a lock (the trigger is pulled, or an auto target turns up), launch
+ * a salvo. Missiles leave the rack in a spread and home in; a swarm's each go for their own unit in
+ * view, the locked one first. Shells (rocket artillery) are lobbed onto the lock point, each landing
+ * somewhere within its `scatter`. The salvo is one shot of ammo.
+ */
+function stepSalvo(w: World, h: HardpointState, weapon: WeaponDef, start: () => Lock | null, spreadMul: number, dt: number): void {
   const b = w.behemoth;
+  const count = weapon.salvo?.count ?? 1;
+  const spec = roundSpec(weapon);
   if (!h.salvo) {
     if (!ready(b, h, weapon)) return;
     const lock = start();
     if (!lock) return;
-    h.salvo = { left: weapon.salvo?.count ?? 1, timer: 0, ...lock };
+    h.salvo = { left: count, timer: 0, ...lock };
+    if (spec.kind === 'missile' && spec.swarm) h.salvo.targets = swarmTargets(w, lock.x, lock.y, count).map((e) => e.id);
     // Ammo counts shots (SPEC §6): a whole salvo is one round out of the rack.
     if (h.ammo !== null) h.ammo = Math.max(0, h.ammo - 1);
   }
@@ -322,26 +388,54 @@ function stepMissiles(w: World, h: HardpointState, weapon: WeaponDef, start: () 
   const s = h.salvo;
   s.timer -= dt;
   if (s.timer > TIMER_SLACK) return;
-  const t = s.targetId === null ? undefined : w.enemies.find((e) => e.id === s.targetId && e.alive);
-  if (t) {
-    s.x = t.x;
-    s.y = t.y;
+  if (spec.kind === 'shell') {
+    lobScattered(w, h, weapon, spec, s.x, s.y, spreadMul);
+    endSalvoRound(h, weapon);
+    return;
   }
+  const alive = (id: number | null | undefined) => (id == null ? undefined : w.enemies.find((e) => e.id === id && e.alive));
+  const lead = alive(s.targetId);
+  if (lead) {
+    s.x = lead.x;
+    s.y = lead.y;
+  }
+  // A swarm missile takes the next unit in turn; if that one's died, the lock's, else whatever is
+  // nearest the lock point now.
+  const t = s.targets ? (alive(s.targets[(count - s.left) % s.targets.length]) ?? lead ?? swarmTargets(w, s.x, s.y, 1)[0]) : lead;
+  const tx = t?.x ?? s.x;
+  const ty = t?.y ?? s.y;
   const p = mountPosition(b, h);
-  const angle = Math.atan2(s.y - p.y, s.x - p.x);
+  const angle = Math.atan2(ty - p.y, tx - p.x);
   spawnProjectile(w, 'player', weapon, p.x, p.y, angle, {
     spreadMul: spreadScale(h) * spreadMul,
     targetId: t ? t.id : null,
-    tx: s.x,
-    ty: s.y,
+    tx,
+    ty,
     slot: h.slot.id,
   });
+  endSalvoRound(h, weapon);
+}
+
+/** One round of a salvo is away: count it, and start the reload after the last. */
+function endSalvoRound(h: HardpointState, weapon: WeaponDef): void {
+  const s = h.salvo!;
   s.left--;
   s.timer = weapon.salvo?.interval ?? 0;
   if (s.left <= 0) {
     h.salvo = null;
     h.cooldown = weapon.reload * reloadScale(h);
   }
+}
+
+/** A lobbed round of a shell salvo, from the mount onto a random point within `scatter` of (x, y). */
+function lobScattered(w: World, h: HardpointState, weapon: WeaponDef, spec: ShellSpec, x: number, y: number, spreadMul: number): void {
+  const p = mountPosition(w.behemoth, h);
+  const r = (spec.scatter ?? 0) * Math.sqrt(w.rng.range(0, 1));
+  const a = w.rng.range(0, Math.PI * 2);
+  const tx = x + Math.cos(a) * r;
+  const ty = y + Math.sin(a) * r;
+  const fuse = clamp(dist(p.x, p.y, tx, ty), spec.minRange, spec.maxRange);
+  spawnProjectile(w, 'player', weapon, p.x, p.y, Math.atan2(ty - p.y, tx - p.x), { fuse, spreadMul: spreadScale(h) * spreadMul, slot: h.slot.id });
 }
 
 /**
@@ -382,21 +476,33 @@ function stepAutoGun(w: World, h: HardpointState, weapon: WeaponDef, dt: number)
   const target = autoTarget(w, h, spec, { lineOfFire: !lobbed, minRange: spec.kind === 'shell' ? spec.minRange : 0 });
   if (!target) return;
 
-  // Beams arrive at once: nothing to lead.
-  const lead = spec.kind === 'beam' ? 0 : Math.hypot(target.x - p.x, target.y - p.y) / spec.speed;
+  // Beams, flames, slugs, and lightning arrive at once: nothing to lead.
+  const lead = 'speed' in spec ? Math.hypot(target.x - p.x, target.y - p.y) / spec.speed : 0;
   const ax = target.x + target.vx * lead;
   const ay = target.y + target.vy * lead;
   if (!aimMount(b, h, weapon, ax, ay, dt) || !ready(b, h, weapon) || !trackable(target)) return;
   const m = muzzleOf(b, h, weapon);
   const spreadMul = spreadScale(h) * fireControlSpread(b) * evasionSpread(target);
-  if (spec.kind === 'beam') {
-    shootBeam(w, weapon, m.x, m.y, m.angle, { spreadMul, slot: h.slot.id });
+  if (shootInstant(w, weapon, spec, m, { spreadMul, slot: h.slot.id })) {
     spend(b, h, weapon);
     return;
   }
   // Shells burst where the target will be, not at their maximum range.
   const fuse = spec.kind === 'shell' ? clamp(dist(m.x, m.y, ax, ay), spec.minRange, spec.maxRange) : undefined;
   spawnProjectile(w, 'player', weapon, m.x, m.y, m.angle, { spreadMul, slot: h.slot.id, ...(fuse !== undefined ? { fuse } : {}) });
+  spend(b, h, weapon);
+}
+
+/**
+ * EMP (SPEC §6): fires when its trigger is held, or on Auto when a pulse is worth it (`pulseWorth`),
+ * from the emitter out all round.
+ */
+function stepPulse(w: World, h: HardpointState, weapon: WeaponDef, spec: PulseSpec, fire: boolean | 'auto'): void {
+  const b = w.behemoth;
+  if (!fire || !ready(b, h, weapon)) return;
+  const p = mountPosition(b, h);
+  if (fire === 'auto' && !pulseWorth(w, p.x, p.y, spec)) return;
+  firePulse(w, weapon, p.x, p.y, h.slot.id);
   spend(b, h, weapon);
 }
 

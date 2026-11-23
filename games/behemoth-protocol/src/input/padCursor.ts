@@ -5,13 +5,15 @@ import { DirRepeat, moveByStick, nearestInDirection, PadReader, usingPad } from 
 
 /**
  * A mouse cursor driven by the pad, for screens built for the mouse (the depot). The left stick
- * moves it, the D-pad jumps it to the next clickable thing that way, and A clicks. It sends real
+ * moves it, the D-pad jumps it to the next clickable thing that way, A clicks, and the right stick
+ * scrolls (when the screen has something to scroll). It sends real
  * mouse events to the canvas, so hover and click work exactly as they do with a mouse. It shows
  * only while the pad is in use; touching the mouse hides it.
  */
 export class PadCursor {
   private readonly pad = new PadReader();
   private readonly repeat: DirRepeat;
+  private readonly scrollRepeat = new DirRepeat();
   private readonly img: Phaser.GameObjects.Image;
   private x: number;
   private y: number;
@@ -19,10 +21,14 @@ export class PadCursor {
   /** The camera zoom, kept for a release sent while the scene shuts down. */
   private zoom: number;
 
-  /** `targets` lists the centers of what can be clicked, in internal pixels. */
+  /**
+   * `targets` lists the centers of what can be clicked, in internal pixels. `scroll`, if given,
+   * gets a row at a time from the right stick (+1 down, -1 up), repeating while it's held.
+   */
   constructor(
     private readonly scene: Phaser.Scene,
     private readonly targets: () => { x: number; y: number }[],
+    private readonly scroll?: (rows: number) => void,
   ) {
     const p = scene.input.activePointer;
     const zoom = scene.cameras.main.zoom;
@@ -68,6 +74,12 @@ export class PadCursor {
         this.y = t.y;
         moved = true;
       }
+    }
+    if (this.scroll) {
+      const r = this.pad.stick('right');
+      const dir = Math.abs(r.y) >= PAD.menuThreshold && Math.abs(r.y) > Math.abs(r.x) ? (r.y < 0 ? 'up' : 'down') : null;
+      const step = this.scrollRepeat.step(dir, dt);
+      if (step) this.scroll(step === 'up' ? -1 : 1);
     }
     if (moved) this.send('mousemove');
     if (this.pad.pressed('a')) {

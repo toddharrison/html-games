@@ -58,6 +58,8 @@ function launch(bin, profile) {
     '--no-first-run',
     `--user-data-dir=${profile}`,
     '--autoplay-policy=no-user-gesture-required',
+    // The game's sound plays, but nothing comes out of the speakers.
+    '--mute-audio',
     '--use-angle=swiftshader',
     '--enable-unsafe-swiftshader',
     '--enable-webgl',

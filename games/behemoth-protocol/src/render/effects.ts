@@ -25,6 +25,7 @@ export class Effects implements StatusEmitter {
   private readonly plasma: Emitter;
   private readonly blackSmoke: Emitter;
   private readonly embers: Emitter;
+  private readonly arcs: Emitter;
 
   constructor(private readonly scene: Phaser.Scene) {
     this.fire = scene.add
@@ -128,6 +129,16 @@ export class Effects implements StatusEmitter {
         blendMode: Phaser.BlendModes.ADD,
       })
       .setDepth(7);
+    // Electric crackle off a unit knocked out by an EMP: quick blue-white sparks.
+    this.arcs = scene.add
+      .particles(0, 0, 'px', {
+        emitting: false,
+        lifespan: { min: 60, max: 180 },
+        speed: { min: 15, max: 70 },
+        color: [hex(PAL.glowHot), hex(PAL.glow), hex(PAL.glowDim)],
+        blendMode: Phaser.BlendModes.ADD,
+      })
+      .setDepth(7.5);
     this.blackSmoke = this.makeBlackSmoke();
     this.embers = this.makeEmbers();
   }
@@ -309,25 +320,11 @@ export class Effects implements StatusEmitter {
     }
   }
 
-  /**
-   * A laser shot: a bright line from the muzzle to where the beam stopped, fading fast. The heavy
-   * laser's is thick with a white core; the beam laser's pulses overlap into one steady beam.
-   */
-  laser(x0: number, y0: number, x1: number, y1: number, size: 'S' | 'M' | 'L', hit: boolean): void {
-    const draw = (width: number, color: string, alpha: number) =>
-      this.scene.add
-        .line(0, 0, viewX(x0, y0), viewY(x0), viewX(x1, y1), viewY(x1), hex(color), alpha)
-        .setOrigin(0, 0)
-        .setLineWidth(width)
-        .setDepth(7.5)
-        .setBlendMode(Phaser.BlendModes.ADD);
-    const lines = size === 'L' ? [draw(3, PAL.glow, 0.7), draw(1, PAL.white, 1)] : [draw(1, size === 'S' ? PAL.glow : PAL.glowHot, 1)];
-    const duration = size === 'L' ? 200 : size === 'M' ? 130 : 90;
-    this.scene.tweens.add({ targets: lines, alpha: 0, duration, ease: 'quad.in', onComplete: () => lines.forEach((l) => l.destroy()) });
-    if (!hit) return;
-    const [x, y] = [viewX(x1, y1), viewY(x1)];
-    this.sparkBurst.explode(size === 'L' ? 8 : 1, x, y);
-    if (size === 'L') this.fire.explode(4, x, y);
+  /** Where a laser strikes (sim coordinates): sparks, and a lick of fire from a heavy one. */
+  laserSpark(simX: number, simY: number, sparks: number, heavy: boolean): void {
+    const [x, y] = [viewX(simX, simY), viewY(simX)];
+    this.sparkBurst.explode(sparks, x, y);
+    if (heavy) this.fire.explode(4, x, y);
   }
 
   /** A plasma glob splashing: violet droplets and a quick ring. */
@@ -377,6 +374,106 @@ export class Effects implements StatusEmitter {
   flame(x: number, y: number): void {
     [x, y] = [viewX(x, y), viewY(x)];
     this.flames.explode(3, x, y);
+  }
+
+  /**
+   * A railgun or coilgun slug (sim coordinates): a straight streak from the muzzle to where it
+   * stopped, a hot core in a blue halo, fading; sparks and chips at each unit and wall it went through.
+   */
+  railStreak(x0: number, y0: number, x1: number, y1: number, heavy: boolean, hits: readonly { x: number; y: number }[]): void {
+    const line = (width: number, color: string, alpha: number) =>
+      this.scene.add
+        .line(0, 0, viewX(x0, y0), viewY(x0), viewX(x1, y1), viewY(x1), hex(color), alpha)
+        .setOrigin(0, 0)
+        .setLineWidth(width)
+        .setDepth(7.5)
+        .setBlendMode(Phaser.BlendModes.ADD);
+    const lines = heavy ? [line(4, PAL.glowDim, 0.6), line(2, PAL.glow, 0.9), line(1, PAL.white, 1)] : [line(2, PAL.glowDim, 0.5), line(1, PAL.glowHot, 1)];
+    this.scene.tweens.add({ targets: lines, alpha: 0, duration: heavy ? 380 : 180, ease: 'quad.in', onComplete: () => lines.forEach((l) => l.destroy()) });
+    for (const h of hits) {
+      const [x, y] = [viewX(h.x, h.y), viewY(h.x)];
+      this.sparkBurst.explode(heavy ? 8 : 3, x, y);
+      if (heavy) this.debris.explode(4, x, y);
+    }
+  }
+
+  /**
+   * Lightning through `points` (sim coordinates, muzzle first): a jagged bolt between each pair, a
+   * white core in a cyan glow, redrawn once mid-flash for flicker; a crackle at each strike.
+   */
+  lightning(points: readonly { x: number; y: number }[], heavy: boolean, hit: boolean): void {
+    const g = this.scene.add.graphics().setDepth(7.5).setBlendMode(Phaser.BlendModes.ADD);
+    const draw = () => {
+      g.clear();
+      for (let i = 1; i < points.length; i++) {
+        const a = points[i - 1]!;
+        const b = points[i]!;
+        const len = Math.hypot(b.x - a.x, b.y - a.y);
+        const n = Math.max(2, Math.round(len / 8));
+        const path: [number, number][] = [];
+        for (let k = 0; k <= n; k++) {
+          const t = k / n;
+          const jag = k === 0 || k === n ? 0 : (Math.random() - 0.5) * (heavy ? 7 : 4);
+          // Sideways off the line by `jag`.
+          const x = a.x + (b.x - a.x) * t - ((b.y - a.y) / (len || 1)) * jag;
+          const y = a.y + (b.y - a.y) * t + ((b.x - a.x) / (len || 1)) * jag;
+          path.push([viewX(x, y), viewY(x)]);
+        }
+        for (const [width, color, alpha] of heavy ? ([[3, PAL.glowDim, 0.7], [1, PAL.white, 1]] as const) : ([[1, PAL.glow, 1]] as const)) {
+          g.lineStyle(width, hex(color), alpha);
+          g.beginPath();
+          g.moveTo(path[0]![0], path[0]![1]);
+          for (const [x, y] of path.slice(1)) g.lineTo(x, y);
+          g.strokePath();
+        }
+      }
+    };
+    draw();
+    this.scene.time.delayedCall(60, draw);
+    this.scene.tweens.add({ targets: g, alpha: 0, duration: heavy ? 220 : 120, delay: 60, ease: 'quad.in', onComplete: () => g.destroy() });
+    if (!hit) return;
+    for (const p of points.slice(1)) this.arcs.explode(heavy ? 6 : 2, viewX(p.x, p.y), viewY(p.x));
+  }
+
+  /** A thermobaric fireball (sim coordinates): a rolling ball of flame, then black smoke. */
+  fireball(x: number, y: number, radius: number): void {
+    this.explosion(x, y, radius * 0.6);
+    [x, y] = [viewX(x, y), viewY(x)];
+    this.fire.explode(14 + Math.round(radius), x, y);
+    this.flames.explode(10, x, y);
+    const ring = this.scene.add.circle(x, y, radius, hex(PAL.ember), 0.35).setDepth(7).setBlendMode(Phaser.BlendModes.ADD).setScale(0.3);
+    this.scene.tweens.add({ targets: ring, scale: 1, alpha: 0, duration: 320, ease: 'quad.out', onComplete: () => ring.destroy() });
+    this.scene.time.delayedCall(200, () => this.blackSmoke.explode(4, x, y));
+  }
+
+  /** A crackle of electricity: a unit knocked out by an EMP. */
+  arc(x: number, y: number): void {
+    [x, y] = [viewX(x, y), viewY(x)];
+    this.arcs.explode(2 + Math.floor(Math.random() * 3), x, y);
+  }
+
+  /**
+   * A lick of flame from a flamethrower's nozzle (sim coordinates): fire scattered down the cone,
+   * thin at the nozzle and widening, bigger and redder toward the far end.
+   */
+  flameJet(x: number, y: number, angle: number, reach: number, cone: number): void {
+    for (let i = 0; i < 6; i++) {
+      const t = Math.sqrt(Math.random());
+      const d = t * reach;
+      const a = angle + (Math.random() * 2 - 1) * cone * t;
+      const [px, py] = [x + Math.cos(a) * d, y + Math.sin(a) * d];
+      if (t < 0.6) this.flames.explode(1, viewX(px, py), viewY(px));
+      else this.fire.explode(1, viewX(px, py), viewY(px));
+    }
+  }
+
+  /** An EMP pulse rolling out from (x, y) to `radius`: a fast ring and a pale flash. */
+  empRing(x: number, y: number, radius: number): void {
+    [x, y] = [viewX(x, y), viewY(x)];
+    const ring = this.scene.add.circle(x, y, radius).setStrokeStyle(2, hex(PAL.glow), 0.9).setDepth(7.5).setScale(0.1);
+    const flash = this.scene.add.circle(x, y, radius, hex(PAL.glowHot), 0.18).setDepth(7.4).setBlendMode(Phaser.BlendModes.ADD).setScale(0.1);
+    this.scene.tweens.add({ targets: ring, scale: 1, alpha: 0, duration: 380, ease: 'quad.out', onComplete: () => ring.destroy() });
+    this.scene.tweens.add({ targets: flash, scale: 1, alpha: 0, duration: 260, ease: 'quad.out', onComplete: () => flash.destroy() });
   }
 
   /** A badly damaged part pouring black smoke. */

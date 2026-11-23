@@ -25,6 +25,7 @@ import {
   loadOf,
   quote,
   shellOf,
+  onBoard,
   slotsOf,
   tracksOf,
   type DepotAction,
@@ -33,6 +34,7 @@ import { currentBiome, leaveDepot, type BehemothSnapshot, type RunState } from '
 import { checkpoint, enterNode, type RunContext } from './flow';
 import { fitCamera } from './screen';
 import { keyLabel, usingPad } from '../input/gamepad';
+import { clampScroll, WheelRows } from '../input/listScroll';
 import { PadCursor } from '../input/padCursor';
 import { padMenu } from '../input/padMenu';
 
@@ -89,6 +91,13 @@ export class DepotScene extends Phaser.Scene {
   private ui: Phaser.GameObjects.GameObject[] = [];
   /** Mass and cruise readout; buttons that change the load preview their effect on it. */
   private loadText: Phaser.GameObjects.BitmapText | null = null;
+  /** The For sale list's first shown row, when it has more rows than fit above the bottom edge. */
+  private stockScroll = 0;
+  /** Rows in the For sale list, and how many fit; set each time it's drawn. */
+  private stockRows = { total: 0, visible: 0 };
+  /** The For sale list's area, where the mouse wheel scrolls it. */
+  private stockArea = { x: 0, y: 0, w: 0, h: 0 };
+  private wheel = new WheelRows();
   /** The cutaway's origin: room behind the hull for a trailer, and above for the header. */
   private readonly cut = { x: 12 + cutawayRear('class2'), y: 30 };
   private readonly panel = { x: 362, w: 202 };
@@ -104,6 +113,8 @@ export class DepotScene extends Phaser.Scene {
     this.hover = null;
     this.confirmLeave = false;
     this.gone = false;
+    this.stockScroll = 0;
+    this.wheel = new WheelRows();
   }
 
   create(): void {
@@ -125,14 +136,20 @@ export class DepotScene extends Phaser.Scene {
       const id = this.partAt(p.worldX, p.worldY);
       if (id) this.select({ kind: 'part', id });
     });
+    this.input.on('wheel', (p: Phaser.Input.Pointer, _over: unknown, _dx: number, dy: number) => {
+      const a = this.stockArea;
+      if (p.worldX < a.x || p.worldX > a.x + a.w || p.worldY < a.y || p.worldY > a.y + a.h) return;
+      const rows = this.wheel.step(dy, (p.event as WheelEvent).deltaMode);
+      if (rows !== 0) this.scrollStock(rows);
+    });
     const kb = this.input.keyboard!;
     kb.on('keydown-ENTER', () => this.leave());
     kb.on('keydown-Z', () => this.undo());
     kb.on('keydown-BACKSPACE', () => this.undo());
     kb.on('keydown-ESC', () => this.select(null));
-    // The pad: a cursor (left stick, D-pad jumps between buttons and parts, A clicks), B clears
-    // the selection, Y undoes, Start rolls out.
-    new PadCursor(this, () => this.clickTargets());
+    // The pad: a cursor (left stick, D-pad jumps between buttons and parts, A clicks), the right
+    // stick scrolls the For sale list, B clears the selection, Y undoes, Start rolls out.
+    new PadCursor(this, () => this.clickTargets(), (rows) => this.scrollStock(rows));
     padMenu(this, { b: () => this.select(null), y: () => this.undo(), start: () => this.leave() }, () => this.refresh());
     this.refresh();
   }
@@ -160,6 +177,14 @@ export class DepotScene extends Phaser.Scene {
     }
     for (const p of this.parts) out.push({ x: this.cut.x + p.box.x + p.box.w / 2, y: this.cut.y + p.box.y + p.box.h / 2 });
     return out;
+  }
+
+  /** Moves the For sale list by `rows` (+ is down); nothing when it all fits or it's at the end. */
+  private scrollStock(rows: number): void {
+    const next = clampScroll(this.stockScroll + rows, this.stockRows.total, this.stockRows.visible);
+    if (next === this.stockScroll) return;
+    this.stockScroll = next;
+    this.refresh();
   }
 
   private select(sel: Selection): void {
@@ -261,19 +286,23 @@ export class DepotScene extends Phaser.Scene {
     enabled: boolean,
     onClick: () => void,
     preview?: BehemothSnapshot,
+    /** Still clickable, but drawn greyed out (a weapon for sale that's already fitted). */
+    dim = false,
   ): number {
-    const bg = this.add.rectangle(x, y, w, 11, hex(PAL.hudLine), enabled ? 1 : 0.4).setOrigin(0, 0);
+    const live = enabled && !dim;
+    const alpha = live ? 1 : 0.4;
+    const bg = this.add.rectangle(x, y, w, 11, hex(PAL.hudLine), alpha).setOrigin(0, 0);
     this.ui.push(bg);
-    this.text(x + 3, y + 3, label, enabled ? PAL.hudText : PAL.hudDim);
-    this.text(x + w - 3, y + 3, right, enabled ? PAL.amber : PAL.hudDim).setOrigin(1, 0);
+    this.text(x + 3, y + 3, label, live ? PAL.hudText : PAL.hudDim);
+    this.text(x + w - 3, y + 3, right, live ? PAL.amber : PAL.hudDim).setOrigin(1, 0);
     if (enabled) {
       bg.setInteractive({ useHandCursor: true });
       bg.on('pointerover', () => {
-        bg.setFillStyle(hex(PAL.hudDim));
+        bg.setFillStyle(hex(PAL.hudDim), alpha);
         if (preview) this.showLoad(preview);
       });
       bg.on('pointerout', () => {
-        bg.setFillStyle(hex(PAL.hudLine));
+        bg.setFillStyle(hex(PAL.hudLine), alpha);
         if (preview) this.showLoad();
       });
       // Deferred a tick: the click rebuilds the panel, and this button with it.
@@ -349,6 +378,11 @@ export class DepotScene extends Phaser.Scene {
     for (const p of this.parts) if (p.label) this.text(this.cut.x + p.box.x + p.box.w / 2, this.cut.y + p.box.y + p.box.h + 2, p.label, PAL.hudDim).setOrigin(0.5, 0);
   }
 
+  /**
+   * Everything for sale, a row each. When there are more rows than fit above the bottom edge, the
+   * list scrolls (wheel, the gutter's arrows, or the pad's right stick) and a gutter on the right
+   * shows where the window is.
+   */
   private drawStock(): void {
     const depot = this.run.depot;
     if (!depot) return;
@@ -356,39 +390,73 @@ export class DepotScene extends Phaser.Scene {
     this.text(14, y0, 'For sale', PAL.hudDim);
     this.loadText = this.text(314, y0, '').setOrigin(1, 0);
     this.showLoad();
-    let y = y0 + 9;
-    const row = (label: string, price: number, sold: boolean, onClick: () => void) => {
-      this.button(14, y, 300, label, sold ? 'Sold' : String(price), !sold, onClick);
-      y += STOCK_ROW;
-    };
+    const rows: { label: string; price: number; sold: boolean; dim?: boolean; onClick: () => void }[] = [];
     depot.stock.forEach((item, i) => {
       const w = WEAPONS[item.weapon];
       const selected = this.selection?.kind === 'stock' && this.selection.index === i;
       const name = `${selected ? '> ' : ''}${w.name}`;
-      const label = `${name.padEnd(24)}${w.size}  ${`${w.mass ?? 0}t`.padStart(4)}  ${bindingName(defaultBinding(w))}`;
-      row(label, DEPOT_WEAPONS[item.weapon]?.price ?? 0, item.sold, () => this.select({ kind: 'stock', index: i }));
+      // One the Behemoth already carries is greyed out and says so, so it isn't bought twice by mistake.
+      const fitted = onBoard(this.run.behemoth, item.weapon);
+      const label = `${name.padEnd(24)}${w.size}  ${`${w.mass ?? 0}t`.padStart(4)}  ${fitted ? 'fitted' : bindingName(defaultBinding(w))}`;
+      rows.push({ label, price: DEPOT_WEAPONS[item.weapon]?.price ?? 0, sold: item.sold, dim: fitted, onClick: () => this.select({ kind: 'stock', index: i }) });
     });
     depot.addons.forEach((item, i) => {
       const a = ADDONS[item.addon];
       const selected = this.selection?.kind === 'addon' && this.selection.index === i;
       const name = `${selected ? '> ' : ''}${a.name}`;
       const label = `${name.padEnd(27)}${`${a.mass}t`.padStart(4)}  add-on`;
-      row(label, DEPOT_ADDONS[item.addon]?.price ?? 0, item.sold, () => this.select({ kind: 'addon', index: i }));
+      rows.push({ label, price: DEPOT_ADDONS[item.addon]?.price ?? 0, sold: item.sold, onClick: () => this.select({ kind: 'addon', index: i }) });
     });
     depot.modules.forEach((item, i) => {
       const m = TRAILER_MODULES[item.module];
       const selected = this.selection?.kind === 'module' && this.selection.index === i;
       const name = `${selected ? '> ' : ''}${m.name}`;
       const label = `${name.padEnd(27)}${`${m.mass}t`.padStart(4)}  module`;
-      row(label, DEPOT_MODULES[item.module].price, item.sold, () => this.select({ kind: 'module', index: i }));
+      rows.push({ label, price: DEPOT_MODULES[item.module].price, sold: item.sold, onClick: () => this.select({ kind: 'module', index: i }) });
     });
     depot.grades.forEach((item, i) => {
       const g = GRADES[item.component][item.gen];
       const selected = this.selection?.kind === 'grade' && this.selection.index === i;
       const name = `${selected ? '> ' : ''}${gradeName(item.gen, CORE_INFO[item.component][0])}`;
       const label = `${name.padEnd(26)}${`+${g.mass}t`.padStart(5)}  upgrade`;
-      row(label, DEPOT_GRADES[item.component][item.gen].price, item.sold, () => this.select({ kind: 'grade', index: i }));
+      rows.push({ label, price: DEPOT_GRADES[item.component][item.gen].price, sold: item.sold, onClick: () => this.select({ kind: 'grade', index: i }) });
     });
+
+    const x = 14;
+    const w = 300;
+    const top = y0 + 9;
+    const bottom = RESOLUTION.height - STOCK_MARGIN;
+    const visible = Math.max(1, Math.floor((bottom - top + STOCK_ROW - 11) / STOCK_ROW));
+    const scrolls = rows.length > visible;
+    this.stockRows = { total: rows.length, visible };
+    this.stockScroll = clampScroll(this.stockScroll, rows.length, visible);
+    this.stockArea = { x, y: top, w, h: bottom - top };
+    const rowW = scrolls ? w - STOCK_GUTTER - 2 : w;
+    const first = scrolls ? this.stockScroll : 0;
+    rows.slice(first, first + visible).forEach((r, i) => {
+      this.button(x, top + i * STOCK_ROW, rowW, r.label, r.sold ? 'Sold' : String(r.price), !r.sold, r.onClick, undefined, r.dim);
+    });
+    if (scrolls) this.stockGutter(x + w - STOCK_GUTTER, top, visible);
+  }
+
+  /**
+   * The For sale list's scroll gutter: an up arrow on the first row, a down arrow on the last (each
+   * dimmed at its end), and a thumb on the track between them showing which rows are in view.
+   */
+  private stockGutter(x: number, top: number, visible: number): void {
+    const { total } = this.stockRows;
+    const scroll = this.stockScroll;
+    const lastY = top + (visible - 1) * STOCK_ROW;
+    this.button(x, top, STOCK_GUTTER, '^', '', scroll > 0, () => this.scrollStock(-1));
+    this.button(x, lastY, STOCK_GUTTER, 'v', '', scroll + visible < total, () => this.scrollStock(1));
+    const trackY = top + 13;
+    const trackH = lastY - 2 - trackY;
+    if (trackH < 4) return;
+    const track = this.add.rectangle(x + STOCK_GUTTER / 2, trackY, 1, trackH, hex(PAL.hudLine)).setOrigin(0.5, 0);
+    const thumbH = Math.max(3, Math.round((trackH * visible) / total));
+    const thumbY = trackY + Math.round(((trackH - thumbH) * scroll) / (total - visible));
+    const thumb = this.add.rectangle(x + 2, thumbY, STOCK_GUTTER - 4, thumbH, hex(PAL.hudDim)).setOrigin(0, 0);
+    this.ui.push(track, thumb);
   }
 
   private drawPanel(): void {
@@ -478,7 +546,7 @@ export class DepotScene extends Phaser.Scene {
       y += 10;
       for (const slot of slots) {
         const cur = s.hardpoints.find((h) => h.slot === slot.id)?.weapon;
-        const label = cur ? `${slot.name} (replaces ${WEAPONS[cur].short})` : `${slot.name} (empty)`;
+        const label = cur === item.weapon ? `${slot.name} (has one)` : cur ? `${slot.name} (replaces ${WEAPONS[cur].short})` : `${slot.name} (empty)`;
         y = this.actionButton(x, y, w, label, { kind: 'install', slot: slot.id, stock: sel.index });
       }
       return;
@@ -807,6 +875,10 @@ export class DepotScene extends Phaser.Scene {
 
 /** Stock list row spacing. */
 const STOCK_ROW = 12;
+/** Room the stock list leaves below its last row. */
+const STOCK_MARGIN = 4;
+/** Width of the stock list's scroll gutter (arrows and thumb), when it scrolls. */
+const STOCK_GUTTER = 9;
 
 /** Actions whose buttons preview the change in load. */
 const LOAD_ACTIONS = new Set<DepotAction['kind']>(['install', 'remove', 'installAddon', 'removeAddon', 'repair', 'installModule', 'removeModule', 'installGrade']);
@@ -886,6 +958,8 @@ function weaponStats(w: WeaponDef): string {
   const parts: string[] = [];
   if (p.kind === 'intercept') {
     parts.push(`hit ${Math.round(p.chance.missile * 100)}% vs missiles`, `range ${p.range}`);
+  } else if (p.kind === 'pulse') {
+    parts.push(`stuns ${p.stun}s`, `reach ${p.radius}`, `reload ${w.reload}s`);
   } else {
     const pellets = p.kind === 'bullet' ? p.pellets : undefined;
     const n = w.salvo ? `${w.salvo.count}x` : pellets ? `${pellets}x` : '';
@@ -893,6 +967,10 @@ function weaponStats(w: WeaponDef): string {
     if ((p.kind === 'shell' || p.kind === 'missile') && p.blastRadius > 0) parts.push(`blast ${p.blastRadius}`);
     parts.push(`reload ${w.reload}s`, `range ${p.kind === 'shell' ? p.maxRange : p.range}`);
     if (p.kind === 'shell' && p.pool) parts.push(`burns ${p.pool.dps}/s ${p.pool.duration}s`);
+    if (p.kind === 'flame') parts.push(`burns ${p.burn.dps}/s ${p.burn.duration}s`);
+    if (p.kind === 'shell' && p.incendiary) parts.push(`burns ${p.incendiary.dps}/s ${p.incendiary.duration}s`);
+    if (p.kind === 'rail') parts.push(`pierces, -${Math.round((1 - p.falloff) * 100)}% each`);
+    if (p.kind === 'arc') parts.push(`leaps ${p.jumps}`);
   }
   if (w.ammo !== undefined) parts.push(`${w.ammo} shots`);
   if (w.power !== undefined) parts.push(`power ${w.power}`);

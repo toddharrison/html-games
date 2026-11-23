@@ -1,7 +1,7 @@
 import Phaser from 'phaser';
 import { ARMOR_ARCS, type ArmorArc } from '../content/chassis';
 import type { WeaponId } from '../content/weapons';
-import { addonOf, fraction, mountPosition, treadIntegrity, type BehemothState } from '../sim/behemoth';
+import { addonOf, fraction, mountPosition, mountWorldAngle, treadIntegrity, type BehemothState, type HardpointState } from '../sim/behemoth';
 import type { Arc } from '../sim/events';
 import type { Pose } from './interp';
 import { BH, MOUNT_ART, TURRET_ART, TURRET_BARREL } from './placeholder';
@@ -104,6 +104,8 @@ export class BehemothView {
   /** Hits from above shake and flash the whole hull. */
   private hullFlash = 0;
   private hullShake = 0;
+  /** What was last drawn: the interpolated pose, ring angles, and own-mount angles (for `drawnMuzzle`). */
+  private drawn: { at: Pose; rings: readonly number[]; mounts: readonly number[] } | null = null;
 
   constructor(scene: Phaser.Scene, b: BehemothState) {
     // The bottom tread is the top one mirrored, so both show their links on the outer edge.
@@ -226,9 +228,11 @@ export class BehemothView {
   /**
    * @param at interpolated pose to draw at.
    * @param rings interpolated angle of each turret ring relative to the hull, in `b.turrets` order.
+   * @param mounts interpolated angle of each own-mount weapon relative to the hull, in `b.hardpoints` order.
    */
-  update(b: BehemothState, at: Pose, rings: readonly number[], dt: number, time: number): void {
+  update(b: BehemothState, at: Pose, rings: readonly number[], mounts: readonly number[], dt: number, time: number): void {
     this.root.setVisible(!b.destroyed);
+    this.drawn = { at, rings, mounts };
     if (b.destroyed) return;
     this.root.setPosition(viewX(at.x, at.y), viewY(at.x));
     this.root.rotation = viewAngle(at.heading);
@@ -255,7 +259,7 @@ export class BehemothView {
       const h = b.hardpoints[m.index]!;
       const dead = h.integrity.hp <= 0;
       // A ring mount turns with its rig.
-      const angle = m.onRing ? 0 : h.angle;
+      const angle = m.onRing ? 0 : (mounts[m.index] ?? h.angle);
       m.img.rotation = angle;
       retexture(m.img, dead ? `wpn_${m.weapon}_stub` : `wpn_${m.weapon}`);
       if (m.heat) {
@@ -326,6 +330,25 @@ export class BehemothView {
     return { x: p.x + Math.cos(angle) * len, y: p.y + Math.sin(angle) * len, angle };
   }
 
+  /**
+   * Sim position and angle of the muzzle of the weapon in `slot` as it was last drawn (the
+   * interpolated hull, rings, and mounts), so a beam drawn from it stays fixed to the barrel between
+   * sim steps. A turret gun's muzzle is the tip of its drawn barrel; any other, its weapon's `muzzle`.
+   */
+  drawnMuzzle(b: BehemothState, slot: string): { x: number; y: number; angle: number } | null {
+    const i = b.hardpoints.findIndex((hp) => hp.slot.id === slot);
+    const h = b.hardpoints[i];
+    if (!h?.weapon || !this.drawn) return null;
+    const { at, rings, mounts } = this.drawn;
+    const posed: BehemothState = { ...b, x: at.x, y: at.y, heading: at.heading, turrets: b.turrets.map((t, j) => ({ ...t, angle: rings[j] ?? t.angle })) };
+    const ph: HardpointState = { ...h, angle: mounts[i] ?? h.angle };
+    const p = mountPosition(posed, ph);
+    const angle = mountWorldAngle(posed, ph);
+    const barrel = h.slot.id === ringSlot(b, h) ? TURRET_BARREL[h.weapon.id] : undefined;
+    const len = barrel ? BH.barrelRoot + barrel.w : h.weapon.muzzle;
+    return { x: p.x + Math.cos(angle) * len, y: p.y + Math.sin(angle) * len, angle };
+  }
+
   /** Rear of each tread pod in sim space, for track marks and dust. */
   treadRears(b: BehemothState): { x: number; y: number }[] {
     const c = Math.cos(b.heading);
@@ -368,4 +391,9 @@ export class TrackMarks {
     img.setPosition(viewX(x, y), viewY(x)).setRotation(viewAngle(rotation));
     this.next = (this.next + 1) % this.capacity;
   }
+}
+
+/** The slot a hardpoint's ring draws its barrel for (the ring's main slot); null off a ring. */
+function ringSlot(b: BehemothState, h: HardpointState): string | null {
+  return b.turrets.find((t) => t.def.id === h.slot.ring)?.def.slot ?? null;
 }

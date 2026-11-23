@@ -90,6 +90,17 @@ export function stepEnemies(w: World, dt: number): void {
   if (w.behemoth.destroyed) return;
   for (const e of w.enemies) {
     if (!e.alive) continue;
+    // Knocked out by an EMP (SPEC §6): dead in the water, guns frozen, until it comes back.
+    if (e.stunned) {
+      e.stunned = Math.max(0, e.stunned - dt);
+      if (e.stunned > 0) {
+        e.vx = 0;
+        e.vy = 0;
+        if (!e.ai.sighted && !e.hidden && e.x <= frameRight(w.frame) && e.x >= w.frame.left) sight(w, e);
+        continue;
+      }
+      delete e.stunned;
+    }
     moveEnemy(w, e, dt);
     // A bomb truck that reaches the hull goes up against it (a moving hull runs it down first, in
     // collision.ts; this catches one driving into a stopped or slower hull, which it stops against

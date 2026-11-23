@@ -34,8 +34,11 @@ export interface HardpointState {
   angle: number;
   /** Rounds left for munitions weapons; null = unlimited. */
   ammo: number | null;
-  /** Salvo in progress: rounds left, time to the next one, and what it's locked on to. */
-  salvo: { left: number; timer: number; targetId: number | null; x: number; y: number } | null;
+  /**
+   * Salvo in progress: rounds left, time to the next one, and what it's locked on to. A swarm's
+   * `targets` are the units its missiles are shared out over, in turn.
+   */
+  salvo: { left: number; timer: number; targetId: number | null; x: number; y: number; targets?: number[] } | null;
   /** What fires it (SPEC §5.2): set at the depot; meaningless for an empty slot. See `firingBinding`. */
   binding: Binding;
   /**
@@ -1052,7 +1055,7 @@ export function magazineRounds(b: BehemothState): HardpointState[] {
 export function magazineLoad(b: BehemothState): number {
   return magazineRounds(b).reduce((sum, h) => {
     const spec = h.weapon!.projectile;
-    return sum + h.ammo! * (spec.kind === 'intercept' ? 0 : spec.damage);
+    return sum + h.ammo! * ('damage' in spec ? spec.damage : 0);
   }, 0);
 }
 

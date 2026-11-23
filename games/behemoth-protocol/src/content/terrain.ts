@@ -135,6 +135,12 @@ export interface MaterialDef {
   scars?: number;
   /** What knocking it down throws off (effects and sound). */
   debris?: Debris;
+  /**
+   * It burns once set alight (SPEC §6 flamethrower, `sim/fire.ts`), while it stands: the fire eats
+   * `dps` of its hit points a second until it's down (a forest burns to a clearing), and each
+   * second has `spread` odds of catching each burnable neighbor (side by side, not corners).
+   */
+  burns?: { dps: number; spread: number };
 }
 
 const ALL_CLEAR = { intact: 1, damaged: 1, destroyed: 1, flattened: 1 };
@@ -197,6 +203,8 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     // Trees soak up some shrapnel; thinned out, less.
     protection: { intact: 0.3, damaged: 0.2, destroyed: 0, flattened: 0 },
     debris: 'wood',
+    // Dry timber: it burns down in about 6 s, and a forest fire runs through a wood.
+    burns: { dps: 5, spread: 0.35 },
   },
   building: {
     id: 'building',
@@ -217,6 +225,8 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     protection: { intact: 0.6, damaged: 0.5, destroyed: 0.2, flattened: 0 },
     salvage: 2,
     debris: 'masonry',
+    // A slow burn (about 20 s) that only now and then jumps to the house next door.
+    burns: { dps: 6, spread: 0.08 },
   },
   rock: {
     // Outcrops and ridges: indestructible, block direct fire, deflect the Behemoth (SPEC §4.5).
@@ -397,6 +407,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     conceals: standing(true, false),
     protection: { intact: 0.25, damaged: 0.15, destroyed: 0, flattened: 0 },
     debris: 'wood',
+    burns: { dps: 5, spread: 0.4 },
   },
   farmland: {
     // Crop fields: open ground that the treads flatten as they pass (cosmetic).
@@ -498,6 +509,8 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     breaksTo: 'crater',
     debris: 'metal',
     salvage: 2,
+    // It burns a few seconds, then goes up.
+    burns: { dps: 8, spread: 0 },
   },
   rail: {
     // Rail lines along the direction of travel (armored train routes in M4). The treads twist them.
@@ -557,6 +570,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     explodes: { radius: 44, damage: 60, fuse: 0.4 },
     breaksTo: 'crater',
     debris: 'metal',
+    burns: { dps: 6, spread: 0 },
   },
 
   // ── Blasted wasteland (SPEC §4.6) ──────────────────────────────────────────────────────────

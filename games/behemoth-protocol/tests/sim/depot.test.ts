@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { CHASSIS } from '../../src/content/chassis';
 import { DEPOT_WEAPONS } from '../../src/content/depot';
 import { WEAPONS, type WeaponId } from '../../src/content/weapons';
-import { applyAction, loadOf, openDepot, quote, type DepotAction } from '../../src/sim/depot';
+import { applyAction, loadOf, onBoard, openDepot, quote, type DepotAction } from '../../src/sim/depot';
 import { loadMass, speedLimits } from '../../src/sim/behemoth';
 import { newRun, leaveDepot, restoreBehemoth, type RunState } from '../../src/sim/run';
 import { parseRun, serializeRun } from '../../src/save/runSave';
@@ -139,6 +139,16 @@ describe('depot actions', () => {
     expect(run.salvage).toBe(1000 - DEPOT_WEAPONS.mortar!.price + Math.floor(DEPOT_WEAPONS.missileRack!.price * DEPOT.resale * (3 / 40)));
     expect(run.depot!.stock[0]!.sold).toBe(true);
     expect(quote(run, { kind: 'install', slot: 'prow', stock: 0 })).toEqual({ ok: false, reason: 'Sold' });
+  });
+
+  it("a weapon can't replace its twin, but can go on another slot; onBoard spots what's fitted", () => {
+    // The stock Class II carries AP guns on both flanks; the pulse laser isn't fitted.
+    const run = atDepot(1000, ['apGuns', 'pulseLaser']);
+    expect(onBoard(run.behemoth, 'apGuns')).toBe(true);
+    expect(onBoard(run.behemoth, 'pulseLaser')).toBe(false);
+    expect(quote(run, { kind: 'install', slot: 'flankL', stock: 0 })).toEqual({ ok: false, reason: 'Fitted' });
+    hp(run, 'flankR').weapon = 'pdGuns';
+    expect(quote(run, { kind: 'install', slot: 'flankR', stock: 0 }).ok).toBe(true);
   });
 
   it('removing a weapon takes no action and pays back its resale value, even with no actions left', () => {

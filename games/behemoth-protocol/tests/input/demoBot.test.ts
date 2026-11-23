@@ -7,11 +7,16 @@ import { TERRAIN_GEN } from '../../src/content/tuning';
 import { spawnEnemy } from '../../src/sim/enemies';
 import { frameRight } from '../../src/sim/frame';
 import { createWorld, stepWorld, type World } from '../../src/sim/world';
-import { DEMO, demoClip } from '../../src/scenes/demo';
+import { DEMO, demoClip, demoLoadout, demoRun } from '../../src/scenes/demo';
+import { benchReport, runBench } from '../../src/dev/bench';
+import { DEPOT_WEAPONS } from '../../src/content/depot';
+import { fits, loadOf, slotsOf } from '../../src/sim/depot';
 
 const OPTS = { seed: 2, frameWidth: 324, fieldRows: 36 };
 
 const TS = TERRAIN_GEN.tileSize;
+
+const w0 = () => createWorld(OPTS);
 
 /** Clears the ground ahead of the hull (open ground, nothing hidden), so a test can lay out what it needs. */
 function clearAhead(w: World): void {
@@ -76,6 +81,28 @@ describe('autopilot', () => {
     }
     expect(auto).toBeGreaterThan(lane);
   }, 30_000); // Full battles: ~2.6 s here, over vitest's 5 s default on a CI runner.
+
+  it("holds a line instead of weaving: few steering reversals, little sideways speed", () => {
+    // Before the fix (Nov 23, 2026) it reversed ~27 times a minute and averaged half its top sideways speed.
+    let reversals = 0;
+    let sideways = 0;
+    let steps = 0;
+    for (const seed of [100, 105, 109]) {
+      const w = createWorld({ ...OPTS, seed, threat: DEMO.threat });
+      let last = 0;
+      for (let i = 0; i < 60 * 60 && !w.behemoth.destroyed; i++) {
+        const cmd = demoCommand(w);
+        if (cmd.steer !== 0 && last !== 0 && cmd.steer !== last) reversals++;
+        if (cmd.steer !== 0) last = cmd.steer;
+        stepWorld(w, cmd);
+        w.events.length = 0;
+        sideways += Math.abs(w.behemoth.vy);
+        steps++;
+      }
+    }
+    expect(reversals / 3).toBeLessThan(14);
+    expect(sideways / steps).toBeLessThan(0.3 * w0().behemoth.chassis.lateral.maxSpeed);
+  }, 30_000);
 
   it('steers round a block of buildings on its line, and brakes into one it can’t miss', () => {
     const w = quiet(createWorld(OPTS));
@@ -169,5 +196,37 @@ describe('attract-mode clips', () => {
     const weather = clips.filter((c) => c.condition !== null);
     expect(weather.length).toBe(Math.floor(clips.length / DEMO.conditionEvery));
     expect(new Set(weather.map((c) => c.condition))).toEqual(new Set(['night', 'storm']));
+  });
+
+  it('fits each clip out at random: everything fits, nothing crawls, and the show samples most of the armory', () => {
+    const loadouts = Array.from({ length: 40 }, (_, i) => demoLoadout(500 + i));
+    expect(demoLoadout(500)).toEqual(loadouts[0]);
+    const seenWeapons = new Set<string>();
+    const seenAddons = new Set<string>();
+    for (const [i, l] of loadouts.entries()) {
+      const run = demoRun({ ...demoClip(0, 500 + i), loadout: l });
+      for (const [slot, id] of Object.entries(l.weapons)) {
+        expect(fits(run.behemoth, slot, id)).toBe(true);
+        seenWeapons.add(id);
+      }
+      // Every hull hardpoint is armed.
+      for (const slot of slotsOf(run.behemoth)) if (slot.position !== 'trailer') expect(l.weapons[slot.id]).toBeDefined();
+      const load = loadOf(run.behemoth);
+      expect(load.mass).toBeLessThanOrEqual(load.capacity * DEMO.maxLoad);
+      for (const a of l.addons) seenAddons.add(a);
+    }
+    expect(seenWeapons.size).toBeGreaterThanOrEqual(Object.keys(DEPOT_WEAPONS).length * 0.8);
+    expect(seenAddons.has('trailer')).toBe(true);
+    expect(seenAddons.size).toBeGreaterThanOrEqual(5);
+  });
+
+  it('the bench plays clips in the bare sim and reports each', () => {
+    const rows = runBench({ count: 2, seconds: 3 });
+    expect(rows).toHaveLength(2);
+    for (const r of rows) {
+      expect(r.seconds).toBeGreaterThan(0);
+      expect(r.progress).toBeGreaterThan(0);
+    }
+    expect(benchReport(rows)).toContain('extracted 0/2');
   });
 });

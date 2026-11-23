@@ -250,6 +250,46 @@ function makeBehemoth(scene: Phaser.Scene): void {
     p.rect(26, 2, 2, 2, PAL.glow);
     p.px(27, 2, PAL.glowHot);
   });
+  // Railgun: two long rails side by side, braced by coil clamps, a blue glow between their tips.
+  canvasTexture(scene, 'bh_barrel_rail', 30, 7, (p) => {
+    for (const y of [0, 4]) {
+      p.rect(0, y, 30, 3, PAL.outline);
+      p.rect(0, y + 1, 29, 1, PAL.steelHi);
+    }
+    p.rect(0, 3, 26, 1, PAL.steelDark);
+    for (const x of [4, 11, 18]) {
+      p.rect(x, 0, 3, 7, PAL.outline);
+      p.rect(x + 1, 1, 1, 5, PAL.steelMid);
+    }
+    p.rect(26, 3, 4, 1, PAL.glow);
+    p.px(29, 3, PAL.glowHot);
+  });
+  // Arc projector: an insulated emitter, ringed with coils, ending in a glowing ball.
+  canvasTexture(scene, 'bh_barrel_arc', 24, 8, (p) => {
+    p.rect(0, 2, 19, 4, PAL.outline);
+    p.rect(0, 3, 18, 2, PAL.steelMid);
+    for (const x of [3, 7, 11, 15]) {
+      p.rect(x, 0, 2, 8, PAL.outline);
+      p.rect(x, 1, 1, 6, PAL.amber);
+    }
+    p.disc(20.5, 4, 3.5, PAL.outline);
+    p.disc(20.5, 4, 2.5, PAL.glowDim);
+    p.disc(20.5, 4, 1.4, PAL.glow);
+    p.px(20, 3, PAL.glowHot);
+  });
+  // Ballistic missile: the missile lying on its erector, a red warhead and fins at the back.
+  canvasTexture(scene, 'bh_barrel_ballistic', 22, 10, (p) => {
+    p.rect(0, 1, 18, 8, PAL.outline);
+    p.rect(1, 2, 16, 6, PAL.steelDark);
+    p.rect(2, 3, 18, 4, PAL.outline);
+    p.rect(2, 4, 15, 2, PAL.tankWhite);
+    p.rect(2, 4, 15, 1, PAL.white);
+    p.rect(17, 3, 4, 4, PAL.outline);
+    p.rect(17, 4, 3, 2, PAL.enemy);
+    p.px(21, 4, PAL.outline);
+    p.px(21, 5, PAL.outline);
+    p.rect(2, 2, 2, 6, PAL.steel);
+  });
   // Siege howitzer: a short, fat tube with a big slotted muzzle brake.
   canvasTexture(scene, 'bh_barrel_howitzer', 22, 8, (p) => {
     p.rect(0, 1, 17, 6, PAL.outline);
@@ -296,6 +336,13 @@ export const MOUNT_ART: Record<string, MountArt> = {
   pulseLaser: { w: 8, h: 5, pivotX: 2.5 / 8 },
   beamLaser: { w: 14, h: 6, pivotX: 2.5 / 14, stubKeep: 8, heatFrom: 8 },
   plasmaThrower: { w: 13, h: 8, pivotX: 3.5 / 13, stubKeep: 8, heatFrom: 8 },
+  swarmPod: { w: 11, h: 12, pivotX: 0.5, stubHoles: 0.15 },
+  empEmitter: { w: 10, h: 10, pivotX: 0.5, stubHoles: 0.1 },
+  flamethrower: { w: 14, h: 7, pivotX: 3.5 / 14, stubKeep: 9, heatFrom: 9 },
+  coilgun: { w: 15, h: 6, pivotX: 2.5 / 15, stubKeep: 8, heatFrom: 9 },
+  teslaCoil: { w: 8, h: 7, pivotX: 0.4, stubHoles: 0.1 },
+  rocketArtillery: { w: 12, h: 13, pivotX: 0.5, stubHoles: 0.15 },
+  thermobaric: { w: 13, h: 8, pivotX: 3.5 / 13, stubKeep: 8, heatFrom: 9 },
 };
 
 /** Turret texture per ring id (each has a `_stub` variant); rings not listed use the main one. */
@@ -309,6 +356,9 @@ export const TURRET_BARREL: Partial<Record<string, { key: string; w: number; h: 
   heavyCannon: { key: 'bh_barrel', w: BH.barrel.w, h: BH.barrel.h, stub: BH.barrelStub, heatFrom: BH.barrelHeatFrom },
   siegeHowitzer: { key: 'bh_barrel_howitzer', w: 22, h: 8, stub: 10, heatFrom: 8 },
   heavyLaser: { key: 'bh_barrel_laser', w: 28, h: 6, stub: 12, heatFrom: 12 },
+  railgun: { key: 'bh_barrel_rail', w: 30, h: 7, stub: 12, heatFrom: 14 },
+  arcProjector: { key: 'bh_barrel_arc', w: 24, h: 8, stub: 10, heatFrom: 12 },
+  ballisticMissile: { key: 'bh_barrel_ballistic', w: 22, h: 10, stub: 9, heatFrom: 22 },
 };
 
 interface MountArt {
@@ -380,6 +430,17 @@ function makeTrailer(scene: Phaser.Scene): void {
       p.rect(2, y, mw - 4, 2, PAL.steelDark);
       p.px(mw - 3, y, PAL.amber);
       p.px(mw - 3, y + 1, PAL.ember);
+    }
+    roundCorners(p, mw, mh);
+  });
+  // Missile erector: one big white missile lying on its rail, a second beside it, red noses forward.
+  canvasTexture(scene, 'tr_missileErector', mw, mh, (p) => {
+    housing(p);
+    const lane = Math.floor((mh - 4) / 2);
+    for (const y of [2, 2 + lane]) {
+      p.rect(2, y, mw - 4, lane - 1, PAL.outline);
+      p.rect(3, y + 1, mw - 7, Math.max(1, lane - 3), PAL.tankWhite);
+      p.rect(mw - 4, y + 1, 2, Math.max(1, lane - 3), PAL.enemy);
     }
     roundCorners(p, mw, mh);
   });
@@ -576,6 +637,82 @@ function makeMounts(scene: Phaser.Scene): void {
     p.px(4, 4, PAL.plasmaHot);
     p.px(2, 2, PAL.steelHi);
   });
+  // Swarm pod: a squat box of nine small tubes, their warheads showing.
+  canvasTexture(scene, 'wpn_swarmPod', 11, 12, (p) => {
+    p.rect(0, 0, 11, 12, PAL.outline);
+    p.rect(1, 1, 9, 10, PAL.steelDark);
+    for (const y of [1, 4.5, 8]) {
+      for (const x of [1, 4, 7]) {
+        p.rect(x, Math.round(y), 3, 3, PAL.steel);
+        p.px(x + 2, Math.round(y) + 1, PAL.amber);
+      }
+    }
+    p.rect(1, 1, 9, 1, PAL.steelHi);
+  });
+  // EMP emitter: a coil dish on a squat base, its core glowing.
+  canvasTexture(scene, 'wpn_empEmitter', 10, 10, (p) => {
+    p.disc(5, 5, 5, PAL.outline);
+    p.disc(5, 5, 4, PAL.steelMid);
+    p.disc(5, 5, 3, PAL.steelDark);
+    p.disc(5, 5, 2, PAL.glowDim);
+    p.px(5, 5, PAL.glowHot);
+    p.px(4, 4, PAL.glow);
+    for (const [x, y] of [[5, 1], [9, 5], [5, 9], [1, 5]] as const) p.px(x, y, PAL.amber);
+    p.px(3, 2, PAL.steelHi);
+  });
+  // Flamethrower: a round fuel tank behind a short nozzle, scorched at the tip, a pilot light.
+  canvasTexture(scene, 'wpn_flamethrower', 14, 7, (p) => {
+    p.rect(6, 2, 7, 3, PAL.outline);
+    p.rect(6, 3, 6, 1, PAL.steelHi);
+    p.rect(11, 1, 3, 5, PAL.outline);
+    p.rect(12, 2, 1, 3, PAL.ash);
+    p.px(13, 3, PAL.ember);
+    p.disc(3.5, 3.5, 3.5, PAL.outline);
+    p.disc(3.5, 3.5, 2.5, PAL.rust);
+    p.px(2, 2, PAL.rustHi);
+    p.px(4, 4, PAL.amber);
+  });
+  // Coilgun: a slim barrel threaded through three glowing coils.
+  canvasTexture(scene, 'wpn_coilgun', 15, 6, (p) => {
+    p.rect(4, 2, 11, 2, PAL.outline);
+    p.rect(4, 2, 10, 1, PAL.steelHi);
+    for (const x of [6, 9, 12]) {
+      p.rect(x, 0, 2, 6, PAL.outline);
+      p.rect(x, 1, 1, 4, PAL.glowDim);
+    }
+    p.disc(2.5, 3, 2.6, PAL.outline);
+    p.disc(2.5, 3, 1.6, PAL.steelMid);
+  });
+  // Tesla coil: a stubby insulated post with a glowing crown.
+  canvasTexture(scene, 'wpn_teslaCoil', 8, 7, (p) => {
+    p.disc(3, 3.5, 3, PAL.outline);
+    p.disc(3, 3.5, 2, PAL.steelMid);
+    p.rect(3, 2, 4, 3, PAL.outline);
+    p.rect(3, 3, 3, 1, PAL.amber);
+    p.disc(6.5, 3.5, 1.5, PAL.glow);
+    p.px(6, 3, PAL.glowHot);
+  });
+  // Rocket artillery: a launcher box of tubes in a grid, nose caps showing.
+  canvasTexture(scene, 'wpn_rocketArtillery', 12, 13, (p) => {
+    p.rect(0, 0, 12, 13, PAL.outline);
+    p.rect(1, 1, 10, 11, PAL.steelDark);
+    for (let y = 1; y < 12; y += 3) {
+      p.rect(1, y, 10, 2, PAL.steel);
+      p.px(10, y, PAL.ember);
+      p.px(10, y + 1, PAL.amber);
+    }
+  });
+  // Thermobaric launcher: a fat short tube on a round mount, a hazard band at the muzzle.
+  canvasTexture(scene, 'wpn_thermobaric', 13, 8, (p) => {
+    p.rect(5, 1, 8, 6, PAL.outline);
+    p.rect(5, 2, 7, 4, PAL.steel);
+    p.rect(5, 2, 7, 1, PAL.steelHi);
+    p.rect(10, 1, 2, 6, PAL.amber);
+    p.px(11, 2, PAL.outline);
+    p.px(10, 5, PAL.outline);
+    p.disc(3.5, 4, 3.5, PAL.outline);
+    p.disc(3.5, 4, 2.4, PAL.steelMid);
+  });
   // Point-defense laser: a small dome with a glowing emitter.
   canvasTexture(scene, 'wpn_pdLaser', 6, 6, (p) => {
     p.disc(3, 3, 3, PAL.outline);
@@ -700,6 +837,7 @@ function makeStatusArt(scene: Phaser.Scene): void {
   // Trailer: wrecked modules, and the burnt-out bed left where it blew (a decal).
   makeStub(scene, 'tr_missilePod', 51, Infinity, 0.15);
   makeStub(scene, 'tr_ammoBunker', 52, Infinity, 0.25);
+  makeStub(scene, 'tr_missileErector', 56, Infinity, 0.2);
   makeStub(scene, 'tr_auxGenerator', 53, Infinity, 0.15);
   makeStub(scene, 'tr_droneBay', 55, Infinity, 0.15);
   makeStub(scene, 'tr_body', 54, Infinity, 0.3);
@@ -1567,6 +1705,35 @@ function makeFx(scene: Phaser.Scene): void {
     p.rect(1, 1, 4, 1, PAL.steelGlint);
     p.px(5, 1, PAL.amber);
     p.px(0, 1, PAL.amberHot);
+  });
+  // An artillery rocket: a thin dart with a hot motor.
+  canvasTexture(scene, 'rocket', 5, 2, (p) => {
+    p.rect(1, 0, 4, 2, PAL.outline);
+    p.rect(1, 0, 3, 1, PAL.steelHi);
+    p.px(4, 1, PAL.enemy);
+    p.px(0, 0, PAL.amberHot);
+  });
+  // A ballistic missile: big, white, red-nosed.
+  canvasTexture(scene, 'ballistic', 10, 4, (p) => {
+    p.rect(1, 0, 8, 4, PAL.outline);
+    p.rect(2, 1, 6, 2, PAL.tankWhite);
+    p.rect(2, 1, 6, 1, PAL.white);
+    p.rect(8, 1, 2, 2, PAL.enemy);
+    p.px(0, 1, PAL.amberHot);
+    p.px(0, 2, PAL.amber);
+  });
+  // A thermobaric canister: a stubby can with a hazard band.
+  canvasTexture(scene, 'canister', 4, 3, (p) => {
+    p.rect(0, 0, 4, 3, PAL.outline);
+    p.rect(1, 1, 2, 1, PAL.amber);
+    p.px(3, 1, PAL.ember);
+  });
+  // A swarm missile: a dart half the size of the rack's.
+  canvasTexture(scene, 'swarmMissile', 4, 2, (p) => {
+    p.rect(1, 0, 3, 2, PAL.outline);
+    p.px(2, 0, PAL.steelGlint);
+    p.px(3, 1, PAL.amber);
+    p.px(0, 0, PAL.amberHot);
   });
   canvasTexture(scene, 'emissile', 6, 3, (p) => {
     p.rect(1, 0, 4, 3, PAL.outline);

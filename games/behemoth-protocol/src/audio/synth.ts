@@ -50,6 +50,9 @@ const LEVEL: Record<SoundId, number> = {
   radio: 0.25,
   lockOn: 0.22,
   pickup: 0.12,
+  emp: 0.7,
+  railgun: 0.8,
+  arc: 0.6,
   detonation: 1,
 };
 
@@ -588,6 +591,31 @@ const RECIPES: Record<SoundId, Recipe> = {
     v.noise({ type: 'bandpass', f: 2000, q: 2, peak: 0.3, attack: 0.002, decay: 0.1, delay: 0.38 });
   },
   // The reactor going: the biggest sound in the game.
+  // The emitter dumping its charge at once: a falling electric whine, a deep thump through the
+  // ground, and the air crackling as the pulse rolls out.
+  emp: (v) => {
+    v.tone({ type: 'sawtooth', f: 70, f1: 28, glide: 0.4, peak: 0.8, attack: 0.002, decay: 0.7, dest: v.driven });
+    v.noise({ type: 'bandpass', f: 4200, f1: 300, glide: 0.5, q: 2, peak: 0.8, attack: 0.001, decay: 0.6 });
+    v.tone({ type: 'square', f: 1800, f1: 120, glide: 0.35, peak: 0.12, attack: 0.001, decay: 0.4 });
+    v.noise({ color: 'crackle', type: 'bandpass', f: 3000, q: 0.7, peak: 0.7, attack: 0.02, decay: 0.9, delay: 0.05 });
+    v.send.gain.value *= 1.5;
+  },
+  // Capacitors dumping into the rails: an electric crack, the slug's supersonic snap, and a
+  // falling whine as the rails ring down.
+  railgun: (v, s) => {
+    v.noise({ type: 'highpass', f: 3000, peak: 1, attack: 0.0003, decay: 0.03 });
+    v.tone({ type: 'sawtooth', f: vary(5200, 0.06), f1: 600, glide: 0.25 + 0.2 * s, peak: 0.12 + 0.1 * s, attack: 0.001, decay: 0.3 + 0.3 * s });
+    v.noise({ color: 'pink', f: 2600, f1: 400, glide: 0.2, peak: 0.6 + 0.4 * s, attack: 0.001, decay: 0.25 + 0.3 * s, dest: v.driven });
+    v.tone({ f: 90, f1: 35, glide: 0.25, peak: 0.2 + 0.6 * s, attack: 0.002, decay: 0.35 + 0.3 * s });
+    v.send.gain.value *= 1 + s;
+  },
+  // Lightning: a ripping crackle, the snap of the strike, and a short roll of thunder after.
+  arc: (v, s) => {
+    v.noise({ color: 'crackle', type: 'bandpass', f: vary(3200, 0.15), q: 0.6, peak: 1, attack: 0.001, decay: 0.12 + 0.15 * s });
+    v.noise({ type: 'highpass', f: 2500, peak: 0.8, attack: 0.0005, decay: 0.04 });
+    v.tone({ type: 'square', f: vary(900, 0.2), f1: 300, glide: 0.08, peak: 0.08, attack: 0.001, decay: 0.1 });
+    v.noise({ color: 'brown', f: 400, f1: 120, glide: 0.6, peak: 0.6 * s, attack: 0.02, decay: 0.4 + 0.8 * s, delay: 0.04 });
+  },
   detonation: (v) => {
     v.noise({ type: 'highpass', f: 600, peak: 1, attack: 0.001, decay: 0.15 });
     v.noise({ color: 'pink', f: 4000, f1: 100, glide: 2.5, peak: 1.4, attack: 0.004, decay: 4, dest: v.driven });
@@ -688,6 +716,13 @@ class Hold {
       lfo(7.3, 160, band.frequency);
       add(loopSource(ctx, b.noise.pink)).connect(filt('lowpass', 500, 0.7)).connect(gain(0.8)).connect(this.ch.input);
       add(loopSource(ctx, b.noise.crackle)).connect(filt('bandpass', 2400, 0.8)).connect(gain(0.8)).connect(this.ch.input);
+    } else if (id === 'flame') {
+      // A flamethrower: the roar of burning fuel (low noise that flutters), the jet's hiss, a crackle.
+      const roar = filt('lowpass', 700, 0.8);
+      add(loopSource(ctx, b.noise.pink)).connect(roar).connect(gain(1.6)).connect(this.ch.input);
+      lfo(9, 180, roar.frequency);
+      add(loopSource(ctx, b.noise.white)).connect(filt('bandpass', 1800, 1.2)).connect(gain(0.3)).connect(this.ch.input);
+      add(loopSource(ctx, b.noise.crackle)).connect(filt('bandpass', 2200, 0.8)).connect(gain(0.6)).connect(this.ch.input);
     } else {
       // Plasma eating into the treads: a hiss and a fierce crackle.
       add(loopSource(ctx, b.noise.white)).connect(filt('highpass', 3200, 0.7)).connect(gain(0.35)).connect(this.ch.input);
@@ -723,6 +758,7 @@ const HOLD_LEVEL: Record<HoldId, { level: number; hold: number }> = {
   beam: { level: 0.2, hold: 0.16 },
   scrape: { level: 0.35, hold: 0.12 },
   burn: { level: 0.25, hold: 0.2 },
+  flame: { level: 0.3, hold: 0.16 },
 };
 
 /**

@@ -45,6 +45,10 @@ export const HEAT_PER_SHOT: Partial<Record<WeaponId, number>> = {
   heavyLaser: 0.25,
   beamLaser: 0.008,
   plasmaThrower: 0.08,
+  flamethrower: 0.012,
+  railgun: 0.3,
+  coilgun: 0.07,
+  thermobaric: 0.06,
 };
 /** Heat lost per second. Sustained fire outpaces it; a few shots don't. */
 export const HEAT_COOL_PER_SEC = 0.1;

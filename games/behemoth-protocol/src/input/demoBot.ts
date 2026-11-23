@@ -1,7 +1,7 @@
 import { OBSTACLE_CLASSES } from '../content/obstacles';
 import { MATERIALS } from '../content/terrain';
-import { TERRAIN_GEN } from '../content/tuning';
-import { IDLE_COMMAND, loadMass, type PlayerCommand } from '../sim/behemoth';
+import { MOVEMENT, TERRAIN_GEN } from '../content/tuning';
+import { IDLE_COMMAND, loadMass, type BehemothState, type PlayerCommand } from '../sim/behemoth';
 import type { Enemy } from '../sim/entities';
 import { frameRight } from '../sim/frame';
 import type { World } from '../sim/world';
@@ -29,9 +29,9 @@ export const BOT = {
   replan: 0.1,
   /** Cost per unit off the guaranteed lane (it's rock-free and crosses rivers where it can), and per unit of swerve. */
   lanePull: 0.012,
-  swerve: 0.01,
+  swerve: 0.03,
   /** A new line must beat the current one by this much, so the hull doesn't flap between two. */
-  stickiness: 0.6,
+  stickiness: 3,
   /** Close enough to the line not to steer. */
   deadband: 3,
   /** Ground costs. */
@@ -83,7 +83,7 @@ export function demoCommand(w: World): PlayerCommand {
   const target = pickTarget(w, seen);
 
   const plan = planLine(w);
-  const steer: -1 | 0 | 1 = Math.abs(plan.y - b.y) <= BOT.deadband ? 0 : plan.y > b.y ? 1 : -1;
+  const steer = steerFor(b, plan.y);
 
   // A convoy still ahead: run it down. Fortress guns ahead and in sight: slow down and shoot.
   const objectivesAhead = w.enemies.filter((e) => e.alive && e.objective && e.x > b.x);
@@ -106,6 +106,24 @@ export function demoCommand(w: World): PlayerCommand {
     fireSecondary: target !== null && dist(b, target) < BOT.secondaryRange,
     fireMissile: target !== null && (target.objective || target.def.threat >= BOT.missileThreat),
   };
+}
+
+/**
+ * Steer for line `y` without overshooting it: steering eases in and out (SPEC §4.2), so it lets go
+ * once the hull, easing its sideways speed to nothing from here, would come to rest on the line.
+ */
+function steerFor(b: BehemothState, y: number): -1 | 0 | 1 {
+  const err = y - b.y;
+  // On ice the treads grip less, so the hull eases off more slowly and drifts further.
+  const grip = Math.max(MOVEMENT.minGrip, b.wading.grip);
+  const accel = b.chassis.lateral.accel * grip;
+  const jerk = b.chassis.lateral.jerk * grip;
+  // How far the hull drifts sideways while it eases its sideways speed down to nothing.
+  const v = Math.abs(b.vy);
+  const drift = (v * v) / (2 * accel) + (v * accel) / (2 * jerk);
+  const closing = Math.sign(b.vy) === Math.sign(err);
+  if (Math.abs(err) <= BOT.deadband || (closing && Math.abs(err) <= drift)) return 0;
+  return err > 0 ? 1 : -1;
 }
 
 /** A battle mode's targets first; then the most dangerous for its distance, a clear shot preferred. */

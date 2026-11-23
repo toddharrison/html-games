@@ -132,8 +132,9 @@ function showGlint(glint: Phaser.GameObjects.Image, g: EnemyGun, aimTime: number
 function roundTexture(p: Projectile): string {
   // An armor-piercing round from a main gun reads as a shell, not a bullet; canister pellets are bullets.
   if (p.kind === 'bullet') return p.weapon.size === 'L' && !(p.weapon.projectile.kind === 'bullet' && p.weapon.projectile.pellets) ? 'shell' : 'bullet';
-  if (p.kind === 'missile') return p.owner === 'player' ? 'missile' : 'emissile';
+  if (p.kind === 'missile') return p.owner === 'enemy' ? 'emissile' : p.weapon.projectile.kind === 'missile' && p.weapon.projectile.swarm ? 'swarmMissile' : 'missile';
   if (p.kind === 'shell' && p.weapon.projectile.kind === 'shell' && p.weapon.projectile.pool) return 'plasma';
+  if (p.kind === 'shell' && p.weapon.projectile.kind === 'shell' && p.weapon.projectile.look) return p.weapon.projectile.look;
   return p.owner === 'player' ? 'shell' : 'eshell';
 }
 

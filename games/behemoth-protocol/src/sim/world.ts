@@ -21,11 +21,12 @@ import { stepReactor } from './detonation';
 import { stepEnemies } from './enemies';
 import { stepLastStand, type LastStandState } from './lastStand';
 import { createObjective, planFortress, startObjective, stepObjective, type ObjectiveSpec, type ObjectiveState } from './objective';
-import type { Barrage, Drone, Enemy, Mine, Pool, Projectile } from './entities';
+import type { Barrage, Drone, Enemy, Mine, Pool, Projectile, TileFire } from './entities';
 import type { SimEvent } from './events';
 import { centerFrame, createFrame, frameRight, stepFrame, type FrameState } from './frame';
 import { SIM_DT } from './loop';
 import { stepPools } from './pools';
+import { stepFire } from './fire';
 import { stepProjectiles } from './projectiles';
 import { Rng, hashSeed } from './rng';
 import { newRun, restoreBehemoth, type BehemothSnapshot } from './run';
@@ -83,6 +84,9 @@ export interface World {
   drones: Drone[];
   /** Plasma burning on the ground (SPEC §6). */
   pools: Pool[];
+  /** Burning tiles (SPEC §6 flamethrower), keyed by `fireKey`; and seconds to the next burn tick. */
+  fires: Map<number, TileFire>;
+  fireTick: number;
   /** Explosive terrain set off and waiting out its fuse (SPEC §4.6). */
   blasts: TerrainBlast[];
   /** Artillery target zones with a volley on the way (SPEC §7). */
@@ -162,6 +166,8 @@ export function createWorld(opts: WorldOptions): World {
     mines: [],
     drones: [],
     pools: [],
+    fires: new Map(),
+    fireTick: 0,
     blasts: [],
     barrages: [],
     revive: null,
@@ -246,6 +252,7 @@ export function stepWorld(w: World, cmd: PlayerCommand): void {
   if (!w.dev.frozen) stepEnemies(w, dt);
   stepProjectiles(w, dt);
   stepPools(w, dt);
+  stepFire(w, dt);
   stepHazards(w, dt);
   stepMines(w, dt);
   stepConcealment(w, dt);

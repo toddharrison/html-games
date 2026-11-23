@@ -1,11 +1,13 @@
-import { BARRAGE, CONCEALMENT } from '../content/tuning';
-import type { BeamSpec, ProjectileSpec, RoundSpec, ShellSpec, TargetClass, WeaponDef } from '../content/weapons';
+import { BARRAGE, CONCEALMENT, SWARM } from '../content/tuning';
+import type { BeamSpec, BurnSpec, ProjectileSpec, RoundSpec, ShellSpec, TargetClass, WeaponDef } from '../content/weapons';
 import { applyHit, hitArc, hitched, hullBox, inTrailer } from './behemoth';
 import { sealed, type Enemy, type Projectile } from './entities';
 import type { KillCause } from './events';
 import { damageDrone, droneAt } from './drones';
 import { breakLock, destroyEnemy, hitFacing } from './enemies';
+import { frameRight } from './frame';
 import { closestInBox, pointInBox, rotateToward } from './math';
+import { igniteEnemy, igniteTile } from './fire';
 import { spawnPool } from './pools';
 import { hitTrailer, mineAt, triggerMine } from './trailer';
 import type { World } from './world';
@@ -27,14 +29,14 @@ const MISSILE_ARRIVE = 5;
 /** The projectile a weapon fires. Point defense and lasers fire none, so this throws for them. */
 export function roundSpec(weapon: WeaponDef): ProjectileSpec {
   const spec = weapon.projectile;
-  if (spec.kind === 'intercept' || spec.kind === 'beam') throw new Error(`${weapon.id} fires no projectiles`);
+  if (spec.kind !== 'shell' && spec.kind !== 'bullet' && spec.kind !== 'missile') throw new Error(`${weapon.id} fires no projectiles`);
   return spec;
 }
 
-/** What a weapon fires that does damage: a projectile or a beam. Throws for point defense. */
+/** What a weapon fires that does damage: a projectile, a beam, or a flame. Throws for point defense and EMP. */
 export function shotSpec(weapon: WeaponDef): RoundSpec {
   const spec = weapon.projectile;
-  if (spec.kind === 'intercept') throw new Error(`${weapon.id} fires no rounds`);
+  if (spec.kind === 'intercept' || spec.kind === 'pulse') throw new Error(`${weapon.id} fires no rounds`);
   return spec;
 }
 
@@ -120,8 +122,11 @@ function steerMissile(w: World, p: Projectile, dt: number): void {
   const spec = roundSpec(p.weapon);
   if (spec.kind !== 'missile') return;
   if (p.owner === 'player') {
-    const t = p.targetId === null ? undefined : w.enemies.find((e) => e.id === p.targetId && e.alive);
+    let t = p.targetId === null ? undefined : w.enemies.find((e) => e.id === p.targetId && e.alive);
+    // A swarm missile whose target is gone turns onto the nearest unit in view, if one's close.
+    if (!t && p.targetId !== null && spec.swarm) t = swarmRetarget(w, p) ?? undefined;
     if (t) {
+      p.targetId = t.id;
       p.tx = t.x;
       p.ty = t.y;
     } else {
@@ -134,6 +139,21 @@ function steerMissile(w: World, p: Projectile, dt: number): void {
   const heading = rotateToward(Math.atan2(p.vy, p.vx), Math.atan2(p.ty - p.y, p.tx - p.x), spec.turnRate * dt);
   p.vx = Math.cos(heading) * spec.speed;
   p.vy = Math.sin(heading) * spec.speed;
+}
+
+/** The nearest unit in view within `SWARM.retarget` of a swarm missile, or null. */
+function swarmRetarget(w: World, p: Projectile): Enemy | null {
+  let best: Enemy | null = null;
+  let bestD = SWARM.retarget;
+  for (const e of w.enemies) {
+    if (!e.alive || e.hidden || sealed(e) || e.x < w.frame.left || e.x > frameRight(w.frame)) continue;
+    const d = Math.hypot(e.x - p.x, e.y - p.y);
+    if (d < bestD) {
+      best = e;
+      bestD = d;
+    }
+  }
+  return best;
 }
 
 /** True if the round has gone its full distance (or, for a missile, reached an empty destination). */
@@ -306,8 +326,11 @@ function detonate(w: World, p: Projectile, target?: Enemy): void {
     return;
   }
   const pool = spec.kind === 'shell' ? spec.pool : undefined;
-  w.events.push(pool ? { type: 'explosion', x: p.x, y: p.y, radius: r, plasma: true } : { type: 'explosion', x: p.x, y: p.y, radius: r });
+  const fire = spec.kind === 'shell' ? spec.incendiary : undefined;
+  const ev = { type: 'explosion', x: p.x, y: p.y, radius: r } as const;
+  w.events.push(pool ? { ...ev, plasma: true } : fire ? { ...ev, fire: true } : ev);
   if (spec.kind === 'shell' && spec.pool) spawnPool(w, p.x, p.y, spec, spec.pool);
+  if (fire) ignitedBurst(w, p.x, p.y, r, spec, fire);
   for (const m of w.mines) if (Math.hypot(m.x - p.x, m.y - p.y) <= r + m.radius) triggerMine(m);
 
   // A lobbed shell comes down on top of whatever it catches.
@@ -319,6 +342,17 @@ function detonate(w: World, p: Projectile, target?: Enemy): void {
   }
 
   burstTerrain(w, p.x, p.y, r, spec.tileDamage, true);
+}
+
+/** A thermobaric fireball (SPEC §6): every unit in it burns, and so does everything in it that can. */
+function ignitedBurst(w: World, x: number, y: number, r: number, spec: RoundSpec, burn: BurnSpec): void {
+  for (const e of w.enemies) if (e.alive && Math.hypot(e.x - x, e.y - y) - e.def.radius < r) igniteEnemy(e, spec, burn);
+  const ts = w.terrain.tileSize;
+  for (let c = Math.floor((x - r) / ts); c <= Math.floor((x + r) / ts); c++) {
+    for (let row = Math.floor((y - r) / ts); row <= Math.floor((y + r) / ts); row++) {
+      if (Math.hypot((c + 0.5) * ts - x, (row + 0.5) * ts - y) < r + ts * 0.5) igniteTile(w, c, row);
+    }
+  }
 }
 
 /** Share of the damage a unit avoids where it stands: troops on foot use cover (SPEC §4.5). */

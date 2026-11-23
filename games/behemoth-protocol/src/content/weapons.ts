@@ -71,6 +71,17 @@ export interface ShellSpec extends RoundBase {
   lobbed?: boolean;
   /** Leaves a burning pool where it bursts (plasma). */
   pool?: PoolSpec;
+  /**
+   * Launched straight up (SPEC §6 ballistic missile): it heads for the aim point whatever way the
+   * mount faces, from the mount itself, so it needs no barrel lined up.
+   */
+  vertical?: boolean;
+  /** Each round of a salvo comes down somewhere within this of the aim point (SPEC §6 rocket artillery). */
+  scatter?: number;
+  /** The burst sets every unit in it burning and lights whatever burns in it (SPEC §6 thermobaric). */
+  incendiary?: BurnSpec;
+  /** What it looks like in flight (render only): a rocket, a big missile, a canister; missing = a shell. */
+  look?: 'rocket' | 'ballistic' | 'canister';
 }
 
 /** Small direct-fire round: hits the first unit or cover in its path, or fizzles at max range. */
@@ -95,6 +106,12 @@ export interface MissileSpec extends RoundBase {
    * target to lock on and to launch, where an ordinary homing missile flies over cover.
    */
   sight?: boolean;
+  /**
+   * Swarm (SPEC §6 swarm pod): each missile of a salvo goes for a unit of its own, spread over
+   * everything in view, nearest the lock first; with fewer units than missiles they're shared out
+   * in turn. One whose target dies turns onto the nearest unit in view (`SWARM.retarget`).
+   */
+  swarm?: boolean;
 }
 
 /** Point defense: instant intercept of an incoming projectile, with a hit chance per kind. */
@@ -113,10 +130,72 @@ export interface BeamSpec extends HitBase {
   range: number;
 }
 
+/**
+ * Burning (SPEC §6 flamethrower): a unit set alight takes `dps` (scaled by the round's `vs`) for
+ * `duration` seconds, renewed by every fresh lick of flame.
+ */
+export interface BurnSpec {
+  dps: number;
+  duration: number;
+}
+
+/**
+ * Flamethrower (SPEC §6): a short cone of burning fuel out of the nozzle, resolved at once like a
+ * beam. It strikes every unit in the cone it has a clear line to (`damage` a shot), sets them
+ * burning, and sets alight what burns in its path (forest, hedges, buildings: `FIRE`), stopping at
+ * the first cover that blocks shots.
+ */
+export interface FlameSpec extends HitBase {
+  kind: 'flame';
+  range: number;
+  /** Half-width of the cone (radians). */
+  cone: number;
+  burn: BurnSpec;
+}
+
+/**
+ * EMP (SPEC §6): a pulse out from the emitter that knocks out every vehicle within `radius` for
+ * `stun` seconds (dead in the water: no driving, no aiming, no firing) and fries enemy missiles in
+ * flight. Troops on foot shrug it off. It does no damage.
+ */
+export interface PulseSpec {
+  kind: 'pulse';
+  radius: number;
+  stun: number;
+  /** Stun multiplier per target class (missing = 1): heavier machines come back sooner. */
+  stunVs?: Partial<Record<TargetClass, number>>;
+}
+
+/**
+ * Railgun (SPEC §6): a hypervelocity slug, resolved at once along the barrel out to its range. It
+ * goes through every unit in its line, keeping `falloff` of its damage past each, and punches
+ * through cover, keeping `wallLoss` past each tile that blocks shots (and leaving it damaged), until
+ * it meets ground nothing breaks (rock) or has spent itself.
+ */
+export interface RailSpec extends HitBase {
+  kind: 'rail';
+  range: number;
+  falloff: number;
+  wallLoss: number;
+}
+
+/**
+ * Arc projector (SPEC §6): a bolt along the barrel to the first unit or cover in its path, which
+ * then leaps to the nearest unit not yet struck within `jumpRange` (with a clear line), up to `jumps`
+ * times, keeping `falloff` of its damage each leap.
+ */
+export interface ArcSpec extends HitBase {
+  kind: 'arc';
+  range: number;
+  jumps: number;
+  jumpRange: number;
+  falloff: number;
+}
+
 export type ProjectileSpec = ShellSpec | BulletSpec | MissileSpec;
 export type ProjectileKind = ProjectileSpec['kind'];
-/** Anything a weapon fires that does damage: a projectile, or a beam. */
-export type RoundSpec = ProjectileSpec | BeamSpec;
+/** Anything a weapon fires that does damage: a projectile, a beam, or a flame. */
+export type RoundSpec = ProjectileSpec | BeamSpec | FlameSpec | RailSpec | ArcSpec;
 
 export type WeaponId =
   | 'heavyCannon'
@@ -135,6 +214,17 @@ export type WeaponId =
   | 'beamLaser'
   | 'heavyLaser'
   | 'plasmaThrower'
+  | 'swarmPod'
+  | 'empEmitter'
+  | 'flamethrower'
+  | 'railgun'
+  | 'ballisticMissile'
+  | 'erectorMissile'
+  | 'arcProjector'
+  | 'coilgun'
+  | 'teslaCoil'
+  | 'rocketArtillery'
+  | 'thermobaric'
   | 'lightTankGun'
   | 'heavyTankGun'
   | 'infantryRockets'
@@ -185,7 +275,7 @@ export interface WeaponDef {
   muzzle: number;
   /** Mount traverse (deg/s) for weapons on their own mounts; turret weapons use the turret's. */
   traverseDegPerSec: number;
-  projectile: ProjectileSpec | BeamSpec | InterceptSpec;
+  projectile: RoundSpec | InterceptSpec | PulseSpec;
   /** Energy weapons: capacitor power per shot (SPEC §5.4). */
   power?: number;
   /**
@@ -276,6 +366,27 @@ const CANNON_CANISTER: BulletSpec = {
   spread: 0.2,
   pellets: 10,
   vs: { infantry: 2, light: 0.6, heavy: 0.15 },
+};
+
+/**
+ * The ballistic missile (SPEC §6): launched straight up, it comes down on the aim point a couple of
+ * seconds later with a blast that craters the ground around it. Shared by the L launcher and the
+ * trailer's missile erector.
+ */
+const BALLISTIC: ShellSpec = {
+  kind: 'shell',
+  speed: 170,
+  damage: 110,
+  blastRadius: 48,
+  // Enough to crater all the open ground in the blast (`SCARS`, content/terrain.ts).
+  tileDamage: 320,
+  minRange: 110,
+  maxRange: 440,
+  spread: 0.01,
+  lobbed: true,
+  vertical: true,
+  look: 'ballistic',
+  vs: { heavy: 1.2 },
 };
 
 export const WEAPONS: Record<WeaponId, WeaponDef> = {
@@ -606,6 +717,231 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       maxRange: 170,
       spread: 0.03,
       pool: { radius: 13, duration: 3, dps: 8, tileDps: 20 },
+    },
+  },
+  swarmPod: {
+    id: 'swarmPod',
+    size: 'M',
+    mass: 50,
+    name: 'Swarm missile pod',
+    short: 'Swarm',
+    blurb: 'Eight small missiles, each to its own target.',
+    role: 'missile',
+    category: 'munitions',
+    reload: 6,
+    muzzle: 2,
+    traverseDegPerSec: 0,
+    ammo: 12,
+    // A quick ripple: the pod empties in about half a second, missiles fanning out to their targets.
+    salvo: { count: 8, interval: 0.06 },
+    projectile: {
+      kind: 'missile',
+      // Small, quick, and agile: light warheads that shred troops and soft vehicles, not tanks.
+      speed: 200,
+      turnRate: 6.5,
+      damage: 9,
+      blastRadius: 8,
+      tileDamage: 10,
+      range: 400,
+      spread: 0.9,
+      lockRadius: 40,
+      swarm: true,
+      vs: { infantry: 1.3, heavy: 0.45 },
+    },
+  },
+  empEmitter: {
+    id: 'empEmitter',
+    size: 'M',
+    mass: 40,
+    name: 'EMP emitter',
+    short: 'EMP',
+    blurb: 'A pulse that stops vehicles dead for a few seconds.',
+    // On Auto it waits for a crowd (`EMP.autoMin` vehicles in reach), a bomb truck, or a missile.
+    role: 'auto',
+    category: 'energy',
+    reload: 9,
+    muzzle: 0,
+    traverseDegPerSec: 0,
+    autoGroup: 4,
+    // Half a stock capacitor: firing it leaves little for the lasers.
+    power: 30,
+    projectile: { kind: 'pulse', radius: 110, stun: 3.5, stunVs: { heavy: 0.6 } },
+  },
+  flamethrower: {
+    id: 'flamethrower',
+    size: 'M',
+    mass: 45,
+    name: 'Flamethrower',
+    short: 'Flamer',
+    blurb: 'Sets troops, trees, and buildings burning. Short reach.',
+    role: 'auto',
+    category: 'munitions',
+    // A steady gout: ten licks a second, fuel counted per lick (250 is about 25 s of flame).
+    reload: 0.1,
+    muzzle: 11,
+    traverseDegPerSec: 200,
+    autoGroup: 1,
+    ammo: 250,
+    projectile: {
+      kind: 'flame',
+      damage: 1.6,
+      tileDamage: 1,
+      range: 90,
+      cone: 0.2,
+      spread: 0,
+      burn: { dps: 5, duration: 3 },
+      vs: { infantry: 1.6, light: 0.8, heavy: 0.3 },
+    },
+  },
+  railgun: {
+    id: 'railgun',
+    size: 'L',
+    mass: 125,
+    name: 'Railgun',
+    short: 'Railgun',
+    blurb: 'A slug through every unit in a line; ignores armor.',
+    role: 'main',
+    category: 'energy',
+    reload: 2.6,
+    muzzle: 30,
+    traverseDegPerSec: 0,
+    power: 24,
+    // Through the front armor as if it weren't there; best on heavy armor, wasted on troops.
+    projectile: { kind: 'rail', damage: 70, tileDamage: 60, range: 440, spread: 0.002, falloff: 0.8, wallLoss: 0.55, penetration: 1, vs: { infantry: 0.5, heavy: 1.3 } },
+  },
+  ballisticMissile: {
+    id: 'ballisticMissile',
+    size: 'L',
+    mass: 130,
+    name: 'Ballistic missile launcher',
+    short: 'Ballistic',
+    blurb: 'One huge missile, arcing in: a crater and a blast.',
+    role: 'main',
+    category: 'munitions',
+    reload: 6,
+    muzzle: 4,
+    traverseDegPerSec: 0,
+    ammo: 6,
+    projectile: BALLISTIC,
+  },
+  // Built into the trailer's missile erector (content/trailer.ts), not sold on its own. Its mass is the module's.
+  erectorMissile: {
+    id: 'erectorMissile',
+    name: 'Erector missile',
+    short: 'Erector',
+    role: 'missile',
+    category: 'munitions',
+    reload: 8,
+    muzzle: 4,
+    traverseDegPerSec: 0,
+    ammo: 2,
+    projectile: BALLISTIC,
+  },
+  arcProjector: {
+    id: 'arcProjector',
+    size: 'L',
+    mass: 115,
+    name: 'Arc projector',
+    short: 'Arc proj',
+    blurb: 'Lightning that leaps from unit to unit. Big power.',
+    role: 'main',
+    category: 'energy',
+    reload: 1.5,
+    muzzle: 26,
+    traverseDegPerSec: 0,
+    power: 18,
+    projectile: { kind: 'arc', damage: 28, tileDamage: 10, range: 240, spread: 0.01, jumps: 4, jumpRange: 70, falloff: 0.75, vs: { infantry: 1.3, heavy: 0.7 } },
+  },
+  // The railgun's smaller sibling: quicker, cheaper on power, through a unit or two rather than a column.
+  coilgun: {
+    id: 'coilgun',
+    size: 'M',
+    mass: 50,
+    name: 'Coilgun',
+    short: 'Coilgun',
+    blurb: 'Fast flat slugs that go through a unit or two.',
+    role: 'secondary',
+    category: 'energy',
+    reload: 0.8,
+    muzzle: 11,
+    traverseDegPerSec: 200,
+    power: 6,
+    projectile: { kind: 'rail', damage: 22, tileDamage: 15, range: 340, spread: 0.006, falloff: 0.6, wallLoss: 0.3, penetration: 0.6, vs: { infantry: 0.6, heavy: 1.1 } },
+  },
+  // The arc projector's small, automatic cousin: short leaps through troops close to the hull.
+  teslaCoil: {
+    id: 'teslaCoil',
+    size: 'S',
+    mass: 16,
+    name: 'Tesla coil',
+    short: 'Tesla',
+    blurb: 'Auto lightning that leaps through nearby troops.',
+    role: 'auto',
+    category: 'energy',
+    reload: 0.7,
+    muzzle: 3,
+    traverseDegPerSec: 360,
+    autoGroup: 1,
+    power: 3,
+    projectile: { kind: 'arc', damage: 6, tileDamage: 2, range: 90, spread: 0.01, jumps: 2, jumpRange: 45, falloff: 0.7, vs: { infantry: 1.4, heavy: 0.3 } },
+  },
+  rocketArtillery: {
+    id: 'rocketArtillery',
+    size: 'M',
+    mass: 55,
+    name: 'Rocket artillery',
+    short: 'Rkt arty',
+    blurb: 'Twelve rockets carpet the ground around the cursor.',
+    role: 'missile',
+    category: 'munitions',
+    reload: 8,
+    muzzle: 4,
+    traverseDegPerSec: 0,
+    ammo: 10,
+    // A ripple about a second long; a salvo is one shot of ammo.
+    salvo: { count: 12, interval: 0.07 },
+    projectile: {
+      kind: 'shell',
+      // Unguided, over cover, each landing somewhere in the zone: a carpet, not a precise strike.
+      speed: 230,
+      damage: 9,
+      blastRadius: 12,
+      tileDamage: 25,
+      minRange: 80,
+      maxRange: 360,
+      spread: 0,
+      lobbed: true,
+      scatter: 32,
+      look: 'rocket',
+      vs: { infantry: 1.3, heavy: 0.4 },
+    },
+  },
+  thermobaric: {
+    id: 'thermobaric',
+    size: 'M',
+    mass: 50,
+    name: 'Thermobaric launcher',
+    short: 'Thermo',
+    blurb: 'Lobbed canisters burst into fireballs that set all alight.',
+    role: 'secondary',
+    category: 'munitions',
+    reload: 2.4,
+    muzzle: 9,
+    traverseDegPerSec: 160,
+    ammo: 18,
+    projectile: {
+      kind: 'shell',
+      speed: 190,
+      damage: 18,
+      blastRadius: 22,
+      tileDamage: 40,
+      minRange: 50,
+      maxRange: 230,
+      spread: 0.03,
+      lobbed: true,
+      incendiary: { dps: 6, duration: 3 },
+      look: 'canister',
+      vs: { infantry: 1.6, heavy: 0.5 },
     },
   },
   lightTankGun: {

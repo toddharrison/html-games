@@ -13,7 +13,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "render:music": "node scripts/render-music.mjs",
-    "playtest": "node scripts/playtest.mjs"
+    "playtest": "node scripts/playtest.mjs",
+    "bench": "node scripts/bench.mjs"
   },
   "dependencies": {
     "phaser": "^4.2.1"

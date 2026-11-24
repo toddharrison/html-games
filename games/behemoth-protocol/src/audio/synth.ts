@@ -1,10 +1,17 @@
-import { levelFactor, pitchFactor, type EngineState, type HoldId, type Placement, type ReactorState, type SoundId } from './cues';
+import { STEREO } from '../content/tuning';
+import { HEARING, levelFactor, pitchFactor, type EngineState, type HoldId, type Placement, type ReactorState, type SoundId } from './cues';
 
 /**
  * Procedural battle sound (SPEC §11.4) on Web Audio. No sample files: every sound is built from
  * noise, oscillators, and filters the way a foley artist layers a real one — a sharp transient,
- * a filtered body, a sub-bass drop, a tail — and placed in an outdoor reverb with distance
- * muffling and stereo pan. Recipes take a `size` (caliber, blast radius, hit weight).
+ * a filtered body, a sub-bass drop, a tail. Recipes take a `size` (caliber, blast radius, hit weight).
+ *
+ * Where a sound is decides how it's heard, from the cab:
+ * - far off it's quieter, duller (distance muffling), panned by screen side, and more of it
+ *   arrives as the land's reverb and as distinct echoes rolling back (`ECHOES`);
+ * - close by, its big layers spread across both ears (`wide`), and a recipe can add what's only
+ *   heard up close (`Voice.near`: a breech slamming, a case ringing on the deck);
+ * - on board, it rings in the cab's steel box (`cabImpulse`).
  *
  * Mixing levels are all in `LEVEL`, `ENGINE`, and `REACTOR`: tune by ear there.
  */
@@ -17,27 +24,29 @@ const MAX_VOICES = 48;
 /** Overall level of each one-shot, before distance. */
 const LEVEL: Record<SoundId, number> = {
   cannon: 0.9,
+  howitzer: 0.9,
   autocannon: 0.7,
   rotary: 0.7,
+  machineGun: 0.8,
   mortar: 0.5,
   missile: 0.6,
   rocket: 1,
   pulseLaser: 0.6,
   heavyLaser: 0.85,
   plasmaShot: 0.55,
-  airburst: 0.35,
+  airburst: 0.45,
   explosion: 0.85,
   plasmaSplash: 0.6,
   splash: 0.6,
   impact: 0.6,
   pierce: 0.6,
   ricochet: 0.5,
-  hullHit: 0.7,
+  hullHit: 0.62,
   vehicleKill: 0.8,
   crush: 0.7,
   wood: 0.8,
   collapse: 0.7,
-  ram: 0.65,
+  ram: 0.56,
   clank: 0.45,
   droneLost: 0.4,
   revive: 0.6,
@@ -46,7 +55,7 @@ const LEVEL: Record<SoundId, number> = {
   alarm: 0.22,
   missileWarning: 0.25,
   incoming: 0.3,
-  horn: 0.3,
+  horn: 0.26,
   radio: 0.25,
   lockOn: 0.22,
   pickup: 0.12,
@@ -66,6 +75,20 @@ const ENGINE = { level: 0.065, rumble: 0.35, treads: 0.4, wade: 0.35 };
 const WEATHER = { night: 0.018, base: 0.02, squall: 0.11, hiss: 0.05 };
 /** Reactor hum bed, meltdown whine, and siren. */
 const REACTOR = { level: 0.025, whine: 0.008, siren: 0.08 };
+/**
+ * The land answering a loud report: each echo's delay (s), side, low-pass (Hz: each comes back
+ * duller), and level. A recipe sends into them with `Voice.echo`. The sides scale with `STEREO.pan`.
+ */
+const ECHOES = [
+  [0.21, -0.6, 1400, 0.5],
+  [0.34, 0.55, 1000, 0.36],
+  [0.52, -0.25, 750, 0.26],
+  [0.83, 0.7, 520, 0.16],
+] as const;
+/** Within this distance a sound's wide layers spread fully, and its close-up details are heard. */
+const NEAR = 160;
+/** How much of an on-board sound, and of one right alongside, rings in the cab. */
+const CAB = { aboard: 0.35, alongside: 0.2, reach: 80, wet: 0.5 };
 
 type Color = 'white' | 'pink' | 'brown' | 'crackle';
 
@@ -73,6 +96,7 @@ interface Bank {
   noise: Record<Color, AudioBuffer>;
   treads: AudioBuffer;
   impulse: AudioBuffer;
+  cab: AudioBuffer;
   drive: Float32Array<ArrayBuffer>;
 }
 
@@ -127,24 +151,29 @@ function bank(ctx: BaseAudioContext): Bank {
       for (let j = 0; j < len && i + j < d.length; j++) d[i + j]! += amp * Math.exp((-5 * j) / len) * (Math.random() * 2 - 1);
     }
   });
-  const made: Bank = { noise: { white, pink, brown, crackle }, treads: treadBuffer(ctx), impulse: outdoorImpulse(ctx), drive: driveCurve(2.4) };
+  const made: Bank = { noise: { white, pink, brown, crackle }, treads: treadBuffer(ctx), impulse: outdoorImpulse(ctx), cab: cabImpulse(ctx), drive: driveCurve(2.4) };
   banks.set(ctx, made);
   return made;
 }
 
+/** Seconds of track clatter before it repeats: long enough that the ear doesn't catch the loop. */
+const TREAD_SECONDS = 3;
+const LINKS_A_SECOND = 11;
+
 /**
- * One second of track links slapping over the drive sprockets at cruise speed, both pods: a
- * clack (noise burst) and a short metallic ring per link. Written with wrap-around so it loops
+ * Track links slapping over the drive sprockets at cruise speed, both pods: a clack (noise burst)
+ * and a short metallic ring per link, no two alike. Written with wrap-around so it loops
  * seamlessly; its playback rate follows ground speed.
  */
 function treadBuffer(ctx: BaseAudioContext): AudioBuffer {
   const sr = ctx.sampleRate;
-  const buf = ctx.createBuffer(2, sr, sr);
+  const size = sr * TREAD_SECONDS;
+  const buf = ctx.createBuffer(2, size, sr);
+  const links = LINKS_A_SECOND * TREAD_SECONDS;
   for (let ch = 0; ch < 2; ch++) {
     const d = buf.getChannelData(ch);
-    const links = 11;
     for (let k = 0; k < links; k++) {
-      const at = Math.floor(((k + rand(-0.12, 0.12) + ch * 0.5) / links) * sr);
+      const at = Math.floor(((k + rand(-0.12, 0.12) + ch * 0.5) / links) * size);
       const amp = rand(0.55, 1);
       const ring = rand(110, 240);
       const thunk = rand(80, 110);
@@ -154,7 +183,7 @@ function treadBuffer(ctx: BaseAudioContext): AudioBuffer {
         const t = j / sr;
         lp += 0.15 * (Math.random() * 2 - 1 - lp);
         const v = lp * Math.exp(-t * 160) * 1.4 + Math.sin(2 * Math.PI * ring * t) * Math.exp(-t * 70) * 0.25 + Math.sin(2 * Math.PI * thunk * t) * Math.exp(-t * 40) * 0.6;
-        const idx = (at + j + sr) % sr;
+        const idx = (at + j + size) % size;
         d[idx]! += v * amp;
       }
     }
@@ -163,27 +192,62 @@ function treadBuffer(ctx: BaseAudioContext): AudioBuffer {
 }
 
 /**
- * An open battlefield: a slap off the ground and tree lines in the first ~80 ms, then a long,
- * darkening diffuse tail (T60 ≈ 2.2 s). Decorrelated per channel for width.
+ * An open battlefield. No walls, so no hall: a scatter of slaps off the ground, tree lines, and
+ * buildings in the first half second, each duller than the last, then a thin diffuse tail in
+ * three bands, the low end rolling on longest (a far boom outlasts its crack) and the highs dying
+ * in the air at once. Decorrelated per channel for width.
  */
 function outdoorImpulse(ctx: BaseAudioContext): AudioBuffer {
   const sr = ctx.sampleRate;
   const len = Math.floor(sr * 2.6);
   const buf = ctx.createBuffer(2, len, sr);
+  const kLow = 1 - Math.exp((-2 * Math.PI * 300) / sr);
+  const kMid = 1 - Math.exp((-2 * Math.PI * 2500) / sr);
+  const fall = (t: number, t60: number) => Math.exp((-6.9 * t) / t60);
   for (let ch = 0; ch < 2; ch++) {
     const d = buf.getChannelData(ch);
     const pre = Math.floor(sr * 0.012);
+    let low = 0;
+    let mid = 0;
+    for (let i = pre; i < len; i++) {
+      const t = (i - pre) / sr;
+      const x = Math.random() * 2 - 1;
+      low += kLow * (x - low);
+      mid += kMid * (x - mid);
+      d[i] = 0.3 * Math.min(1, t / 0.08) * (low * 2 * fall(t, 2.4) + (mid - low) * fall(t, 1.5) + (x - mid) * 0.6 * fall(t, 0.5));
+    }
+    for (let r = 0; r < 9; r++) {
+      const t = rand(0.02, 0.45);
+      const at = pre + Math.floor(sr * t);
+      const amp = rand(0.5, 1) * Math.exp(-t / 0.25) * (Math.random() < 0.5 ? -1 : 1);
+      // A later slap has come further: smeared over more samples, so duller.
+      const smear = 2 + Math.floor(t * 60);
+      for (let j = 0; j < smear * 4; j++) d[at + j]! += (amp / smear) * Math.exp(-j / smear);
+    }
+  }
+  return buf;
+}
+
+/**
+ * Inside the Behemoth: a steel box. A quarter second of close, dense reflections, with a few of
+ * the box's own resonances ringing in it, so what happens on board sounds like it's in here with you.
+ */
+function cabImpulse(ctx: BaseAudioContext): AudioBuffer {
+  const sr = ctx.sampleRate;
+  const len = Math.floor(sr * 0.26);
+  const buf = ctx.createBuffer(2, len, sr);
+  const kLow = 1 - Math.exp((-2 * Math.PI * 2600) / sr);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    const pre = Math.floor(sr * 0.003);
+    const modes = [210, 340, 520, 760].map((f) => ({ w: (2 * Math.PI * vary(f, 0.05)) / sr, phase: rand(0, 6.28) }));
     let lp = 0;
     for (let i = pre; i < len; i++) {
       const t = (i - pre) / sr;
-      // The tail gets darker as it goes: the highs die in the air first.
-      const a = 0.55 - 0.45 * Math.min(1, t / 1.5);
-      lp += a * (Math.random() * 2 - 1 - lp);
-      d[i] = lp * Math.exp((-6.9 * t) / 2.2) * 0.5;
-    }
-    for (let r = 0; r < 6; r++) {
-      const at = pre + Math.floor(sr * rand(0.008, 0.085));
-      d[at]! += rand(0.25, 0.6) * (Math.random() < 0.5 ? -1 : 1);
+      lp += kLow * (Math.random() * 2 - 1 - lp);
+      let ring = 0;
+      for (const m of modes) ring += Math.sin(m.w * i + m.phase);
+      d[i] = (lp + ring * 0.12) * Math.exp((-6.9 * t) / 0.22);
     }
   }
   return buf;
@@ -207,6 +271,10 @@ interface Shape {
   decay: number;
   delay?: number;
   dest?: AudioNode;
+  /** A buzz: the level chopped at `f` Hz (an arc, a discharge). `depth` 0–1. */
+  am?: { f: number; depth: number };
+  /** Turbulence: the level shaken at random, 0–1 (a rocket motor, a fire). */
+  rough?: number;
 }
 
 interface Filter {
@@ -218,25 +286,37 @@ interface Filter {
   q?: number;
 }
 
-type NoiseOpts = Shape & Filter & { color?: Color; rate?: number };
+type NoiseOpts = Shape &
+  Filter & {
+    color?: Color;
+    rate?: number;
+    /** 0–1: how far this layer spreads across both ears when the sound is close (`Voice.near`). */
+    wide?: number;
+  };
 type ToneOpts = Shape & { type?: OscillatorType; f: number; f1?: number; glide?: number; filter?: Filter };
 
-/** Builds one sound's node graph, starting at `t`, into `out`. */
+/** Builds one sound's node graph, starting at `t`, into its channel. */
 class Voice {
   end: number;
+  readonly out: AudioNode;
+  /** Reverb send for this voice; recipes may push it up. */
+  readonly send: GainNode;
   private drive: WaveShaperNode | null = null;
+  private side: GainNode | null = null;
 
   constructor(
     readonly ctx: AudioContext,
     private readonly bank: Bank,
     readonly t: number,
-    readonly out: AudioNode,
-    /** Reverb send for this voice; recipes may push it up. */
-    readonly send: GainNode,
+    private readonly ch: Channel,
     /** This play's random pitch shift: scales every frequency and noise rate in the voice. */
     readonly pitch = 1,
+    /** 1 on board or right alongside, falling to 0 at `NEAR` and beyond. */
+    readonly near = 1,
   ) {
     this.end = t;
+    this.out = ch.input;
+    this.send = ch.send;
   }
 
   /** A soft-clipping stage into `out`, shared by this voice's loud layers. */
@@ -252,6 +332,29 @@ class Voice {
     return this.drive;
   }
 
+  /** How much of this sound comes back off the land as distinct echoes (`ECHOES`). */
+  echo(amount: number): void {
+    this.ch.echo.gain.value = amount;
+    this.end = Math.max(this.end, this.t + ECHOES[ECHOES.length - 1]![0] + 0.5);
+  }
+
+  /**
+   * Where a wide layer's second, unrelated copy goes: added to one ear and taken from the other,
+   * so the two ears hear different noise (it spreads) and a mono speaker hears only the first.
+   */
+  private get spread(): AudioNode {
+    if (!this.side) {
+      this.side = this.ctx.createGain();
+      const flip = this.ctx.createGain();
+      flip.gain.value = -1;
+      const ears = this.ctx.createChannelMerger(2);
+      this.side.connect(ears, 0, 0);
+      this.side.connect(flip).connect(ears, 0, 1);
+      ears.connect(this.ch.wide);
+    }
+    return this.side;
+  }
+
   private envelope(s: Shape): { gain: GainNode; t0: number; stop: number } {
     const t0 = this.t + (s.delay ?? 0);
     const attack = Math.max(0.0005, s.attack ?? 0.001);
@@ -260,9 +363,38 @@ class Voice {
     g.gain.setValueAtTime(0, t0);
     g.gain.linearRampToValueAtTime(s.peak, t0 + attack);
     g.gain.setTargetAtTime(0, t0 + attack, s.decay / 6.9);
-    g.connect(s.dest ?? this.out);
     const stop = t0 + attack + s.decay * 1.05;
     this.end = Math.max(this.end, stop);
+    let last: AudioNode = g;
+    if (s.am || s.rough) {
+      const shaken = this.ctx.createGain();
+      g.connect(shaken);
+      last = shaken;
+      const by = this.ctx.createGain();
+      by.connect(shaken.gain);
+      if (s.am) {
+        // Between 1 - depth and 1.
+        shaken.gain.value = 1 - s.am.depth / 2;
+        by.gain.value = s.am.depth / 2;
+        const osc = this.ctx.createOscillator();
+        osc.type = 'square';
+        osc.frequency.value = s.am.f * this.pitch;
+        osc.connect(by);
+        osc.start(t0);
+        osc.stop(stop);
+      } else {
+        by.gain.value = s.rough!;
+        const src = this.ctx.createBufferSource();
+        src.buffer = this.bank.noise.brown;
+        src.loop = true;
+        // Slowed down: a shudder, not a hiss, but quick enough to shake a short sound more than once.
+        src.playbackRate.value = 0.45;
+        src.connect(by);
+        src.start(t0, Math.random());
+        src.stop(stop);
+      }
+    }
+    last.connect(s.dest ?? this.out);
     return { gain: g, t0, stop };
   }
 
@@ -279,7 +411,12 @@ class Voice {
   }
 
   noise(o: NoiseOpts): void {
-    const { gain, t0, stop } = this.envelope(o);
+    this.noiseInto(o, this.envelope(o));
+    const width = (o.wide ?? 0) * this.near * STEREO.width;
+    if (width > 0.05) this.noiseInto(o, this.envelope({ ...o, peak: o.peak * width * 0.8, dest: this.spread }));
+  }
+
+  private noiseInto(o: NoiseOpts, { gain, t0, stop }: { gain: GainNode; t0: number; stop: number }): void {
     const src = this.ctx.createBufferSource();
     const buf = this.bank.noise[o.color ?? 'white'];
     src.buffer = buf;
@@ -319,15 +456,24 @@ const BAR = [1, 2.76, 5.4, 8.93] as const;
 
 type Recipe = (v: Voice, size: number) => void;
 
-/** A blast: shock-front crack, fireball roar, concussion drop, rolling rumble, falling debris. */
+/** A blast: shock-front crack, fireball roar, concussion drop, rolling rumble, falling debris, and its echo off the land. */
 function blast(v: Voice, size: number): void {
   const k = Math.min(size, 1.5);
+  const big = Math.min(k, 1);
   v.noise({ type: 'highpass', f: 1000, peak: 0.8, attack: 0.0008, decay: 0.05 + 0.05 * k });
-  v.noise({ color: 'pink', f: vary(3200 - 900 * Math.min(k, 1)), f1: 170, glide: 0.3 + 0.4 * k, peak: 1.1, attack: 0.002, decay: 0.6 + 1.1 * k, dest: v.driven });
-  v.noise({ color: 'brown', f: 420, f1: 90, glide: 1, peak: 0.25 + 0.8 * k, attack: 0.01, decay: 1.2 + 2 * k, delay: 0.02 });
-  v.tone({ f: vary(72 - 25 * Math.min(k, 1)), f1: 22, glide: 0.4 + 0.4 * k, peak: 0.7 + 0.6 * k, attack: 0.003, decay: 0.6 + 1.2 * k, dest: v.driven });
-  v.noise({ color: 'crackle', type: 'bandpass', f: vary(1400, 0.15), q: 0.7, peak: 0.6 + 0.6 * k, attack: 0.03, decay: 0.5 + 1.2 * k, delay: 0.06 });
+  // The body of it: what a small speaker can carry of a bang.
+  v.noise({ color: 'pink', type: 'bandpass', f: vary(520 - 200 * big), q: 1.2, peak: 4.5, attack: 0.001, decay: 0.35 + 0.35 * k });
+  v.noise({ color: 'pink', f: vary(3200 - 900 * big), f1: 170, glide: 0.3 + 0.4 * k, peak: 1.1, attack: 0.002, decay: 0.6 + 1.1 * k, dest: v.driven, wide: 0.7 });
+  v.noise({ color: 'brown', f: 420, f1: 90, glide: 1, peak: 0.25 + 0.8 * k, attack: 0.01, decay: 1.2 + 2 * k, delay: 0.02, wide: 1 });
+  v.tone({ f: vary(72 - 25 * big), f1: 22, glide: 0.4 + 0.4 * k, peak: 0.7 + 0.6 * k, attack: 0.003, decay: 0.6 + 1.2 * k, dest: v.driven });
+  // A big one comes back off the ground a moment later.
+  if (k > 0.6) v.tone({ f: vary(55), f1: 24, glide: 0.5, peak: 0.45 * k, attack: 0.01, decay: 0.9 * k, delay: 0.09, dest: v.driven });
+  // What it threw: the bigger the blast, the later and longer it rains, the heavy pieces thudding.
+  const rain = 0.06 + 0.12 * k;
+  v.noise({ color: 'crackle', type: 'bandpass', f: vary(1400, 0.15), q: 0.7, peak: 0.6 + 0.6 * k, attack: 0.03, decay: 0.5 + 1.2 * k, delay: rain });
+  if (k > 0.5) v.noise({ color: 'crackle', type: 'bandpass', f: vary(380, 0.15), q: 0.6, peak: 0.9 * k, attack: 0.05, decay: 0.6 + 0.9 * k, delay: rain + 0.15 });
   v.send.gain.value *= 1 + 0.6 * k;
+  v.echo(0.4 * k);
 }
 
 /** Steel being struck: a contact tick, the ringing plate, and the thud of the mass behind it. */
@@ -338,6 +484,12 @@ function strike(v: Voice, base: number, size: number, ring: readonly number[] = 
   v.tone({ f: 95, f1: 40, glide: 0.12, peak: 0.2 + 0.5 * Math.min(size, 1), attack: 0.001, decay: 0.2 + 0.15 * size });
 }
 
+/** The Behemoth's own frame answering a blow: a low gong through the hull, longer the harder it's hit. */
+function hullGong(v: Voice, size: number): void {
+  const k = Math.min(size, 1.2);
+  v.modes(vary(92 - 18 * Math.min(k, 1), 0.08), PLATE.slice(0, 3), 0.1 + 0.14 * k, 0.9 + 0.9 * k);
+}
+
 /** Cab warning tones through a small speaker. */
 function beeps(v: Voice, freqs: readonly number[], on: number, every: number, type: OscillatorType = 'square'): void {
   freqs.forEach((f, i) => {
@@ -345,27 +497,83 @@ function beeps(v: Voice, freqs: readonly number[], on: number, every: number, ty
   });
 }
 
+interface Gun {
+  /** The muzzle crack's low edge (Hz): lower for a bigger bore. */
+  crack: number;
+  /** The barrel's own note (Hz): what makes it a gun and not a bang. */
+  bark: number;
+  /** Where the blast's roar starts its sweep down (Hz). */
+  roar: number;
+  /** The concussion's starting pitch (Hz). */
+  sub: number;
+  /** Seconds the report rolls on. */
+  tail: number;
+  /** How much comes back off the land, at full size. */
+  echo: number;
+}
+
+/**
+ * A gun's report: the supersonic muzzle crack, the barrel's bark, the blast's roar sweeping down,
+ * a concussive sub drop, and the report rolling back off the land.
+ */
+function report(v: Voice, s: number, g: Gun): void {
+  v.noise({ type: 'highpass', f: g.crack, peak: 0.9, attack: 0.0008, decay: 0.05 + 0.05 * s });
+  // Clean, past the drive: the sub would crush it there, and it's what a small speaker has to go on.
+  v.noise({ color: 'pink', type: 'bandpass', f: vary(g.bark), q: 1.6, peak: 5, attack: 0.001, decay: 0.3 + 0.3 * s });
+  v.noise({ color: 'pink', f: vary(g.roar), f1: 220, glide: 0.25, peak: 1.1, attack: 0.002, decay: 0.45 + 0.9 * s, dest: v.driven, wide: 0.7 });
+  v.tone({ f: vary(g.sub, 0.08), f1: g.sub * 0.32, glide: 0.25 + 0.2 * s, peak: 0.3 + 1.1 * s, attack: 0.003, decay: 0.45 + 0.8 * s, dest: v.driven });
+  v.noise({ color: 'brown', f: 280, peak: 0.6 * s, attack: 0.02, decay: g.tail, delay: 0.03, wide: 1 });
+  v.send.gain.value *= 1 + s;
+  v.echo(g.echo * s);
+}
+
+/** Heard only on board, after a big gun fires: the breech slamming back and the spent case ringing on the deck. */
+function breech(v: Voice, s: number): void {
+  if (v.near < 0.6 || s < 0.7) return;
+  v.modes(vary(120, 0.1), BAR, 0.1, 0.3, 0.11);
+  v.noise({ color: 'pink', f: 450, peak: 0.25, attack: 0.002, decay: 0.07, delay: 0.11 });
+  v.modes(vary(640, 0.1), BAR.slice(0, 2), 0.03, 0.22, rand(0.4, 0.55));
+}
+
 const RECIPES: Record<SoundId, Recipe> = {
-  // A big gun: the supersonic muzzle crack, the blast's roar sweeping down, a concussive sub
-  // drop, and the report rolling back off the land.
+  // A tank or turret gun: a high-velocity crack and a hard bark.
   cannon: (v, s) => {
-    v.noise({ type: 'highpass', f: 1800, peak: 0.9, attack: 0.0008, decay: 0.05 + 0.05 * s });
-    v.noise({ color: 'pink', f: vary(4200 - 1800 * s), f1: 220, glide: 0.25, peak: 1.1, attack: 0.002, decay: 0.45 + 0.9 * s, dest: v.driven });
-    v.tone({ f: vary(100 - 50 * s, 0.08), f1: 32, glide: 0.25 + 0.2 * s, peak: 0.3 + 1.1 * s, attack: 0.003, decay: 0.45 + 0.8 * s, dest: v.driven });
-    v.noise({ color: 'brown', f: 280, peak: 0.6 * s, attack: 0.02, decay: 1.2 + 1.6 * s, delay: 0.03 });
-    v.send.gain.value *= 1 + s;
+    report(v, s, { crack: 1800, bark: 700 - 280 * s, roar: 4200 - 1800 * s, sub: 100 - 50 * s, tail: 1.2 + 1.6 * s, echo: 0.5 });
+    breech(v, s);
+  },
+  // Heavy artillery: less crack, a deep hollow boom, and a long roll across the land after it.
+  howitzer: (v, s) => {
+    report(v, s, { crack: 1100, bark: 330, roar: 2400, sub: 58, tail: 3.2, echo: 0.8 });
+    v.noise({ color: 'brown', f: 160, f1: 60, glide: 1.5, peak: 0.7 * s, attack: 0.05, decay: 3, delay: 0.08, wide: 1 });
+    breech(v, s);
   },
   autocannon: (v, s) => {
     v.noise({ type: 'highpass', f: 2200, peak: 0.7, attack: 0.0006, decay: 0.025 });
+    v.noise({ color: 'pink', type: 'bandpass', f: vary(950 - 250 * s), q: 2, peak: 3.5, attack: 0.001, decay: 0.16 + 0.12 * s });
     v.noise({ color: 'pink', f: 3200, f1: 500, glide: 0.08, peak: 0.85, attack: 0.001, decay: 0.16 + 0.16 * s, dest: v.driven });
     v.tone({ f: vary(150 - 40 * s), f1: 55, glide: 0.08, peak: 0.7, attack: 0.002, decay: 0.15 + 0.12 * s });
-    v.noise({ color: 'brown', f: 300, peak: 0.25, decay: 0.5, delay: 0.01 });
+    v.noise({ color: 'brown', f: 300, peak: 0.25 + 0.2 * s, decay: 0.5 + 0.4 * s, delay: 0.01 });
+    // On board: the action cycling.
+    if (v.near > 0.6) v.modes(vary(520, 0.08), BAR, 0.05, 0.12, 0.07);
+    v.echo(0.25 * s);
   },
-  // Rapid fire: each round is a short bark, so a stream of them makes the brrrt.
+  // Rapid fire from spinning barrels: each round is a short bark with the barrels' ring in it, so
+  // a stream of them makes the brrrt.
   rotary: (v, s) => {
     v.noise({ type: 'bandpass', f: vary(2500, 0.12), q: 0.7, peak: 0.45, attack: 0.0005, decay: 0.018 });
+    v.noise({ color: 'pink', type: 'bandpass', f: 1100, q: 3, peak: 2.2, attack: 0.0008, decay: 0.035 });
     v.noise({ color: 'pink', f: 1800, peak: 0.5, attack: 0.001, decay: 0.06 + 0.04 * s });
-    v.tone({ f: vary(170), f1: 80, glide: 0.04, peak: 0.35, attack: 0.001, decay: 0.05 });
+    v.tone({ f: vary(170), f1: 80, glide: 0.04, peak: 0.25 + 0.3 * s, attack: 0.001, decay: 0.05 });
+    v.echo(0.12);
+  },
+  // A machine gun (the anti-personnel and point-defense mounts): lighter and drier, a hard rap
+  // per round, and on board a link or a case tinkling after it.
+  machineGun: (v, s) => {
+    v.noise({ type: 'highpass', f: 2800, peak: 0.4, attack: 0.0004, decay: 0.014 });
+    v.noise({ color: 'pink', type: 'bandpass', f: vary(1300, 0.08), q: 1.6, peak: 1.5, attack: 0.0008, decay: 0.045 + 0.03 * s });
+    v.tone({ f: vary(210), f1: 110, glide: 0.03, peak: 0.4, attack: 0.001, decay: 0.045 });
+    if (v.near > 0.6) v.noise({ type: 'highpass', f: 5500, peak: 0.07, attack: 0.0005, decay: 0.012, delay: rand(0.03, 0.05) });
+    v.echo(0.1);
   },
   // Tube artillery: the hollow "thoonk" of a round leaving a resonant pipe.
   mortar: (v) => {
@@ -373,41 +581,51 @@ const RECIPES: Record<SoundId, Recipe> = {
     v.noise({ color: 'pink', type: 'bandpass', f: 380, q: 3, peak: 1.4, attack: 0.001, decay: 0.2, dest: v.driven });
     v.tone({ f: 80, f1: 40, glide: 0.2, peak: 0.9, attack: 0.002, decay: 0.35 });
     v.noise({ type: 'highpass', f: 3000, peak: 0.2, attack: 0.001, decay: 0.03 });
+    v.echo(0.2);
   },
-  // Ignition pop, then the motor's roar and hiss sweeping up as it leaves.
+  // Ignition pop, then the motor's roar (it tears and shudders, as burning propellant does) and
+  // hiss sweeping up as it leaves. A heavy missile shakes the ground under it.
   missile: (v, s) => {
     const dur = 0.7 + 0.5 * s;
     v.noise({ color: 'pink', f: 2500, peak: 0.7, attack: 0.001, decay: 0.07 });
-    v.noise({ type: 'bandpass', f: vary(350), f1: vary(2600), glide: dur * 0.7, q: 1.2, peak: 0.55, attack: 0.04, decay: dur });
-    v.noise({ color: 'brown', f: 700, peak: 0.7, attack: 0.02, decay: dur * 1.2 });
+    v.noise({ type: 'bandpass', f: vary(350), f1: vary(2600), glide: dur * 0.7, q: 1.2, peak: 0.55, attack: 0.04, decay: dur, rough: 0.6 });
+    v.noise({ color: 'brown', f: 700, peak: 0.7, attack: 0.02, decay: dur * 1.2, rough: 0.7, wide: 0.5 });
     v.noise({ color: 'crackle', type: 'bandpass', f: 1800, q: 0.8, peak: 0.6, attack: 0.02, decay: dur });
+    if (s > 0.9) {
+      v.tone({ f: 60, f1: 38, glide: dur, peak: 0.15, attack: 0.05, decay: dur * 1.3, dest: v.driven, rough: 0.5 });
+      v.noise({ color: 'brown', f: 220, peak: 0.28, attack: 0.05, decay: dur * 1.6, wide: 1, rough: 0.6 });
+    }
   },
   rocket: (v) => {
     v.noise({ color: 'pink', f: 2200, peak: 0.6, attack: 0.001, decay: 0.06 });
-    v.noise({ type: 'bandpass', f: vary(600), f1: vary(2400), glide: 0.25, q: 1.4, peak: 0.5, attack: 0.02, decay: 0.4 });
+    v.noise({ type: 'bandpass', f: vary(600), f1: vary(2400), glide: 0.25, q: 1.4, peak: 0.5, attack: 0.02, decay: 0.4, rough: 0.6 });
+    v.noise({ color: 'brown', f: 520, peak: 0.4, attack: 0.01, decay: 0.35, rough: 0.6 });
     v.noise({ color: 'crackle', type: 'bandpass', f: 2000, q: 0.8, peak: 0.4, attack: 0.01, decay: 0.35 });
   },
-  // A capacitor bank dumping into the emitter: an electrical snap, the sizzle of air ionizing
-  // along the path, and the transformer's thump.
+  // A capacitor bank dumping into the emitter: an electrical snap, the buzz of air ionizing
+  // along the path, and the thump in the housing.
   pulseLaser: (v, s) => {
     v.noise({ type: 'highpass', f: 2500, peak: 0.7, attack: 0.0004, decay: 0.02 });
-    v.noise({ type: 'bandpass', f: vary(5200, 0.1), q: 2.5, peak: 0.4, attack: 0.001, decay: 0.09 + 0.1 * s });
+    v.noise({ type: 'bandpass', f: vary(5200, 0.1), q: 2.5, peak: 0.45, attack: 0.001, decay: 0.09 + 0.1 * s, am: { f: vary(120, 0.1), depth: 0.8 } });
     v.tone({ type: 'triangle', f: vary(2400, 0.1), f1: 900, glide: 0.1, peak: 0.1 + 0.1 * s, attack: 0.001, decay: 0.12 });
+    v.noise({ color: 'pink', type: 'bandpass', f: 700, q: 1.5, peak: 0.2 + 0.3 * s, attack: 0.001, decay: 0.06 });
     v.tone({ f: 120, f1: 60, glide: 0.06, peak: 0.1 + 0.35 * s, attack: 0.002, decay: 0.1 });
   },
   // A beam that hot flashes the air along its path into plasma: thunder, close up.
   heavyLaser: (v) => {
     v.noise({ type: 'highpass', f: 1500, peak: 1, attack: 0.0005, decay: 0.05 });
-    v.noise({ type: 'bandpass', f: 3200, f1: 700, glide: 0.2, q: 0.9, peak: 0.7, attack: 0.001, decay: 0.35 });
-    v.noise({ color: 'brown', f: 500, f1: 120, glide: 0.8, peak: 0.9, attack: 0.01, decay: 1.8, delay: 0.04 });
+    v.noise({ type: 'bandpass', f: 3200, f1: 700, glide: 0.2, q: 0.9, peak: 0.75, attack: 0.001, decay: 0.35, am: { f: vary(110, 0.1), depth: 0.6 } });
+    v.noise({ color: 'pink', type: 'bandpass', f: 480, q: 1.4, peak: 2.5, attack: 0.001, decay: 0.4 });
+    v.noise({ color: 'brown', f: 500, f1: 120, glide: 0.8, peak: 0.9, attack: 0.01, decay: 1.8, delay: 0.04, wide: 1 });
     v.noise({ color: 'crackle', type: 'bandpass', f: 900, q: 0.6, peak: 0.8, attack: 0.02, decay: 1.2, delay: 0.05 });
     v.tone({ f: 70, f1: 28, glide: 0.5, peak: 0.9, attack: 0.003, decay: 0.8, dest: v.driven });
     v.tone({ f: 3600, f1: 700, glide: 0.35, peak: 0.08, attack: 0.001, decay: 0.35 });
     v.send.gain.value *= 2;
+    v.echo(0.6);
   },
-  // A gas charge igniting: a soft "whumpf" that opens up, with a hiss.
+  // A gas charge igniting: a soft "whumpf" that opens up and flutters, with a hiss.
   plasmaShot: (v) => {
-    v.noise({ color: 'pink', f: 300, f1: 1600, glide: 0.08, peak: 1, attack: 0.03, decay: 0.45, dest: v.driven });
+    v.noise({ color: 'pink', f: 300, f1: 1600, glide: 0.08, peak: 1, attack: 0.03, decay: 0.45, dest: v.driven, rough: 0.5 });
     v.noise({ type: 'highpass', f: 4500, peak: 0.25, attack: 0.01, decay: 0.35 });
     v.tone({ f: 75, f1: 45, glide: 0.3, peak: 0.6, attack: 0.02, decay: 0.35 });
     v.noise({ color: 'crackle', type: 'bandpass', f: 2500, q: 0.8, peak: 0.4, attack: 0.02, decay: 0.4 });
@@ -416,6 +634,7 @@ const RECIPES: Record<SoundId, Recipe> = {
     v.noise({ type: 'highpass', f: 1200, peak: 0.6, attack: 0.0005, decay: 0.04 });
     v.noise({ color: 'pink', f: 1500, peak: 0.5, attack: 0.001, decay: 0.2 });
     v.noise({ color: 'crackle', type: 'bandpass', f: 3000, q: 0.8, peak: 0.3, attack: 0.005, decay: 0.25, delay: 0.02 });
+    v.echo(0.15);
   },
   explosion: blast,
   plasmaSplash: (v, s) => {
@@ -427,7 +646,7 @@ const RECIPES: Record<SoundId, Recipe> = {
   splash: (v, s) => {
     v.noise({ color: 'pink', f: 1200, peak: 0.7, attack: 0.002, decay: 0.25 });
     v.tone({ f: 80, f1: 40, glide: 0.2, peak: 0.2 + 0.5 * s, attack: 0.002, decay: 0.3 });
-    v.noise({ type: 'bandpass', f: 1500, f1: 600, glide: 0.4, q: 0.8, peak: 0.5, attack: 0.02, decay: 0.6 + 0.4 * s, delay: 0.02 });
+    v.noise({ type: 'bandpass', f: 1500, f1: 600, glide: 0.4, q: 0.8, peak: 0.5, attack: 0.02, decay: 0.6 + 0.4 * s, delay: 0.02, rough: 0.4 });
     v.noise({ color: 'crackle', type: 'bandpass', f: 3500, q: 1, peak: 0.7, attack: 0.05, decay: 0.9 + 0.5 * s, delay: 0.15 });
   },
   // A round into dirt or cover: a dull thud and a patter of thrown earth.
@@ -457,12 +676,17 @@ const RECIPES: Record<SoundId, Recipe> = {
       v.tone({ f, f1: f * rand(0.35, 0.5), glide: rand(0.25, 0.45), peak: 0.1, attack: 0.008, decay: rand(0.3, 0.5), delay: 0.012 });
     }
   },
-  // Heavy armor taking a round: lower and longer the harder the hit; big ones throw spall.
+  // The Behemoth's armor taking a round: lower and longer the harder the hit, the frame ringing
+  // under it; big ones throw spall and shake the fittings loose.
   hullHit: (v, s) => {
     strike(v, vary(270 - 100 * Math.min(s, 1), 0.15), s);
-    if (s > 0.5) v.noise({ color: 'crackle', type: 'bandpass', f: 2500, q: 0.8, peak: 0.5, attack: 0.002, decay: 0.4, delay: 0.01 });
+    hullGong(v, s);
+    if (s > 0.5) {
+      v.noise({ color: 'crackle', type: 'bandpass', f: 2500, q: 0.8, peak: 0.5, attack: 0.002, decay: 0.4, delay: 0.01 });
+      v.noise({ color: 'crackle', type: 'bandpass', f: 800, q: 0.7, peak: 0.35, attack: 0.01, decay: 0.5, delay: 0.03 });
+    }
   },
-  // A vehicle brewing up: the blast, its hull ringing, then ammunition cooking off.
+  // A vehicle brewing up: the blast, its hull ringing, ammunition cooking off, and plate coming down.
   vehicleKill: (v, s) => {
     blast(v, s * 0.9);
     v.modes(vary(180, 0.15), BAR, 0.15, 0.6, 0.05);
@@ -471,17 +695,26 @@ const RECIPES: Record<SoundId, Recipe> = {
       const delay = rand(0.25, 1.4);
       v.noise({ color: 'pink', f: 2000, peak: 0.35, attack: 0.001, decay: 0.12, delay });
       v.noise({ type: 'highpass', f: 2000, peak: 0.25, attack: 0.0005, decay: 0.02, delay });
+      v.tone({ f: vary(140, 0.1), f1: 70, glide: 0.05, peak: 0.25, attack: 0.001, decay: 0.08, delay });
     }
+    for (let i = 0; i < 2; i++) v.modes(vary(210, 0.3), BAR, 0.07, 0.3, rand(0.5, 1.3));
   },
-  // Steel buckling under the treads: a groan of folding plate and a crunch.
+  // Steel buckling under the treads: a groan of folding plate, and it gives in stages, crunch by crunch.
   crush: (v, s) => {
     v.tone({ type: 'sawtooth', f: vary(70), f1: 36, glide: 0.45, peak: 0.4, attack: 0.01, decay: 0.55, filter: { f: 420, f1: 170, glide: 0.45, q: 8 } });
     v.noise({ color: 'crackle', type: 'bandpass', f: 1100, q: 0.6, peak: 1, attack: 0.005, decay: 0.45 });
     v.noise({ color: 'pink', f: 500, peak: 0.6 + 0.3 * s, attack: 0.002, decay: 0.2, dest: v.driven });
+    let at = rand(0.06, 0.12);
+    for (let i = 0; i < 2; i++) {
+      v.noise({ color: 'pink', type: 'bandpass', f: vary(750, 0.3), q: 1, peak: 0.45 + 0.25 * s, attack: 0.002, decay: 0.12, delay: at, dest: v.driven });
+      at += rand(0.07, 0.16);
+    }
     v.modes(vary(320, 0.15), BAR, 0.15, 0.4);
+    v.modes(vary(240, 0.2), BAR, 0.08, 0.3, at);
   },
-  // A tree going down: trunk snaps, splintering, the canopy thrashing, the thud.
+  // A tree going down: the trunk creaks and snaps, splintering, the canopy thrashing, the thud.
   wood: (v, s) => {
+    v.tone({ type: 'sawtooth', f: vary(260, 0.2), f1: 150, glide: 0.18, peak: 0.12 * s, attack: 0.02, decay: 0.2, filter: { type: 'bandpass', f: 700, q: 6 } });
     const snaps = 2 + Math.floor(Math.random() * 3);
     let at = 0;
     for (let i = 0; i < snaps; i++) {
@@ -492,19 +725,28 @@ const RECIPES: Record<SoundId, Recipe> = {
     v.noise({ color: 'pink', type: 'highpass', f: 2500, peak: 0.2 * s, attack: 0.05, decay: 0.6, delay: 0.05 });
     v.noise({ color: 'pink', f: 300, peak: 0.6 * s, attack: 0.005, decay: 0.25, delay: 0.12 });
   },
-  // A building coming down: a crack, a long rumble of masonry, rubble, a tinkle of glass.
+  // A building coming down: a crack, a long rumble of masonry, the big pieces landing one after
+  // another, rubble, a tinkle of glass.
   collapse: (v, s) => {
     v.noise({ type: 'highpass', f: 1500, peak: 0.5, attack: 0.001, decay: 0.04 });
-    v.noise({ color: 'brown', f: 350, peak: 1, attack: 0.03, decay: 1.6 + 0.6 * s, dest: v.driven });
+    v.noise({ color: 'brown', f: 350, peak: 1, attack: 0.03, decay: 1.6 + 0.6 * s, dest: v.driven, wide: 0.8 });
     v.noise({ color: 'crackle', type: 'bandpass', f: 900, q: 0.6, peak: 1.2, attack: 0.05, decay: 1.6, delay: 0.05 });
     v.noise({ color: 'crackle', type: 'bandpass', f: 4500, q: 1, peak: 0.25 * s, attack: 0.02, decay: 0.8, delay: 0.03 });
     v.tone({ f: 55, f1: 30, glide: 0.8, peak: 0.6, attack: 0.02, decay: 1.2 });
+    const thuds = 2 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < thuds; i++) {
+      const delay = rand(0.2, 1.3);
+      v.tone({ f: vary(75, 0.2), f1: 38, glide: 0.1, peak: 0.3 * s, attack: 0.002, decay: 0.2, delay });
+      v.noise({ color: 'pink', f: 350, peak: 0.3 * s, attack: 0.002, decay: 0.12, delay });
+    }
+    v.echo(0.2 * s);
   },
-  // The prow striking something solid.
+  // The prow striking something solid, and the whole frame taking it.
   ram: (v, s) => {
     v.noise({ color: 'pink', f: 700, peak: 0.9, attack: 0.001, decay: 0.18 + 0.2 * s, dest: v.driven });
     v.tone({ f: 75, f1: 35, glide: 0.2, peak: 0.2 + 0.8 * s, attack: 0.001, decay: 0.3 });
     v.modes(vary(140, 0.15), PLATE, 0.25 * s, 0.5 + 0.4 * s);
+    hullGong(v, s);
     v.noise({ color: 'crackle', type: 'bandpass', f: 1200, q: 0.7, peak: 0.7 * s, attack: 0.005, decay: 0.4 });
   },
   // Machinery on board: an autoloader slamming home, a hitch letting go (with a hydraulic hiss).
@@ -528,7 +770,8 @@ const RECIPES: Record<SoundId, Recipe> = {
   componentBlown: (v) => {
     blast(v, 0.55);
     strike(v, vary(150, 0.1), 1);
-    v.noise({ color: 'crackle', type: 'bandpass', f: 5000, q: 1, peak: 0.5, attack: 0.01, decay: 0.7, delay: 0.05 });
+    hullGong(v, 1);
+    v.noise({ color: 'crackle', type: 'bandpass', f: 5000, q: 1, peak: 0.5, attack: 0.01, decay: 0.7, delay: 0.05, am: { f: vary(100, 0.1), depth: 0.7 } });
   },
   // Track links parting and the drivetrain winding down to nothing.
   immobilized: (v) => {
@@ -544,13 +787,15 @@ const RECIPES: Record<SoundId, Recipe> = {
   },
   // Missile launch detected: rapid high beeps.
   missileWarning: (v) => beeps(v, [1500, 1500, 1500, 1500], 0.045, 0.085, 'sine'),
-  // Incoming artillery: a falling whistle that swells as the shells come down over the zone and
-  // cuts off as the first one lands (`size` = seconds of flight).
+  // Incoming artillery: falling whistles (two shells, a little apart) that swell as they come down
+  // over the zone and cut off as the first one lands (`size` = seconds of flight).
   incoming: (v, s) => {
     const dur = Math.max(0.6, s);
     const start = Math.max(0, dur - 1.6);
-    v.tone({ type: 'sine', f: vary(1900, 0.05), f1: vary(700, 0.05), glide: dur - start, peak: 0.5, attack: dur - start - 0.05, decay: 0.05, delay: start });
-    v.noise({ type: 'bandpass', f: 2600, f1: 900, glide: dur - start, q: 4, peak: 0.25, attack: dur - start - 0.05, decay: 0.05, delay: start });
+    const fall = dur - start;
+    v.tone({ type: 'sine', f: vary(1900, 0.05), f1: vary(700, 0.05), glide: fall, peak: 0.5, attack: fall - 0.05, decay: 0.05, delay: start });
+    v.tone({ type: 'sine', f: vary(2050, 0.05), f1: vary(780, 0.05), glide: fall, peak: 0.3, attack: fall - 0.05, decay: 0.05, delay: start });
+    v.noise({ type: 'bandpass', f: 2600, f1: 900, glide: fall, q: 4, peak: 0.25, attack: fall - 0.05, decay: 0.05, delay: start });
   },
   // The enemy's attack siren, far across the field: a slow wail up and back down.
   horn: (v) => {
@@ -575,6 +820,7 @@ const RECIPES: Record<SoundId, Recipe> = {
     }
     v.end = Math.max(v.end, v.t + 3.5);
     v.send.gain.value = 0.9;
+    v.echo(0.5);
   },
   // A designator on the hull (heavy weapons team): the cab's lock warning, a rising three-note
   // trill, lower and slower than the missile-launch beeps.
@@ -584,36 +830,41 @@ const RECIPES: Record<SoundId, Recipe> = {
     v.tone({ type: 'triangle', f: vary(2300, 0.04), f1: 1900, glide: 0.06, peak: 0.4 + 0.3 * s, attack: 0.002, decay: 0.09 });
     v.tone({ type: 'sine', f: vary(3450, 0.04), peak: 0.18, attack: 0.002, decay: 0.05 });
   },
-  // Extraction confirmed over the radio: a squelch and a two-note chirp.
+  // A call over the radio: the squelch opening, a two-note chirp over the carrier's hiss, the squelch closing.
   radio: (v) => {
     v.noise({ type: 'bandpass', f: 2000, q: 2, peak: 0.4, attack: 0.002, decay: 0.08 });
+    v.noise({ type: 'bandpass', f: 2600, q: 1, peak: 0.07, attack: 0.02, decay: 0.9 });
     v.tone({ f: 1250, peak: 0.5, attack: 0.005, decay: 0.12, delay: 0.06, filter: { type: 'bandpass', f: 1800, q: 1 } });
     v.tone({ f: 1650, peak: 0.5, attack: 0.005, decay: 0.2, delay: 0.17, filter: { type: 'bandpass', f: 1800, q: 1 } });
     v.noise({ type: 'bandpass', f: 2000, q: 2, peak: 0.3, attack: 0.002, decay: 0.1, delay: 0.38 });
   },
-  // The reactor going: the biggest sound in the game.
   // The emitter dumping its charge at once: a falling electric whine, a deep thump through the
-  // ground, and the air crackling as the pulse rolls out.
+  // ground, and the air buzzing and crackling as the pulse rolls out.
   emp: (v) => {
     v.tone({ type: 'sawtooth', f: 70, f1: 28, glide: 0.4, peak: 0.8, attack: 0.002, decay: 0.7, dest: v.driven });
-    v.noise({ type: 'bandpass', f: 4200, f1: 300, glide: 0.5, q: 2, peak: 0.8, attack: 0.001, decay: 0.6 });
+    v.noise({ type: 'bandpass', f: 4200, f1: 300, glide: 0.5, q: 2, peak: 0.85, attack: 0.001, decay: 0.6, am: { f: vary(90, 0.1), depth: 0.7 } });
     v.tone({ type: 'square', f: 1800, f1: 120, glide: 0.35, peak: 0.12, attack: 0.001, decay: 0.4 });
     v.noise({ color: 'crackle', type: 'bandpass', f: 3000, q: 0.7, peak: 0.7, attack: 0.02, decay: 0.9, delay: 0.05 });
+    v.noise({ color: 'brown', f: 300, f1: 90, glide: 0.6, peak: 0.5, attack: 0.02, decay: 1, delay: 0.03, wide: 1 });
     v.send.gain.value *= 1.5;
+    v.echo(0.3);
   },
   // Capacitors dumping into the rails: an electric crack, the slug's supersonic snap, and a
   // falling whine as the rails ring down.
   railgun: (v, s) => {
     v.noise({ type: 'highpass', f: 3000, peak: 1, attack: 0.0003, decay: 0.03 });
     v.tone({ type: 'sawtooth', f: vary(5200, 0.06), f1: 600, glide: 0.25 + 0.2 * s, peak: 0.12 + 0.1 * s, attack: 0.001, decay: 0.3 + 0.3 * s });
-    v.noise({ color: 'pink', f: 2600, f1: 400, glide: 0.2, peak: 0.6 + 0.4 * s, attack: 0.001, decay: 0.25 + 0.3 * s, dest: v.driven });
+    v.noise({ color: 'pink', type: 'bandpass', f: vary(900, 0.08), q: 2, peak: 2.4 + 1.2 * s, attack: 0.001, decay: 0.18 + 0.12 * s });
+    v.noise({ color: 'pink', f: 2600, f1: 400, glide: 0.2, peak: 0.6 + 0.4 * s, attack: 0.001, decay: 0.25 + 0.3 * s, dest: v.driven, wide: 0.5 });
     v.tone({ f: 90, f1: 35, glide: 0.25, peak: 0.2 + 0.6 * s, attack: 0.002, decay: 0.35 + 0.3 * s });
     v.send.gain.value *= 1 + s;
+    v.echo(0.5 * s);
   },
-  // Lightning: a ripping crackle, the snap of the strike, and a short roll of thunder after.
+  // An arc: a ripping crackle, the snap of the strike, the buzz of it holding, and a short roll after.
   arc: (v, s) => {
     v.noise({ color: 'crackle', type: 'bandpass', f: vary(3200, 0.15), q: 0.6, peak: 1, attack: 0.001, decay: 0.12 + 0.15 * s });
     v.noise({ type: 'highpass', f: 2500, peak: 0.8, attack: 0.0005, decay: 0.04 });
+    v.noise({ type: 'highpass', f: 1500, peak: 0.45, attack: 0.002, decay: 0.1 + 0.25 * s, am: { f: vary(105, 0.1), depth: 1 } });
     v.tone({ type: 'square', f: vary(900, 0.2), f1: 300, glide: 0.08, peak: 0.08, attack: 0.001, decay: 0.1 });
     v.noise({ color: 'brown', f: 400, f1: 120, glide: 0.6, peak: 0.6 * s, attack: 0.02, decay: 0.4 + 0.8 * s, delay: 0.04 });
   },
@@ -622,20 +873,28 @@ const RECIPES: Record<SoundId, Recipe> = {
   thunder: (v, s) => {
     v.noise({ type: 'highpass', f: 1800, peak: 0.7 * s, attack: 0.001, decay: 0.08 });
     v.noise({ color: 'pink', f: 2400, f1: 300, glide: 0.5, peak: 0.8 * s, attack: 0.004, decay: 0.6, dest: v.driven, delay: 0.03 });
-    v.noise({ color: 'brown', f: 320, f1: 70, glide: 2.5, peak: 1.1 * s, attack: 0.25, decay: 2.6, delay: 0.12 });
-    v.noise({ color: 'brown', f: 180, f1: 50, glide: 2, peak: 0.7 * s, attack: 0.4, decay: 2.2, delay: vary(0.9, 0.3) });
+    v.noise({ color: 'brown', f: 320, f1: 70, glide: 2.5, peak: 1.1 * s, attack: 0.25, decay: 2.6, delay: 0.12, wide: 1, rough: 0.4 });
+    v.noise({ color: 'brown', f: 180, f1: 50, glide: 2, peak: 0.7 * s, attack: 0.4, decay: 2.2, delay: vary(0.9, 0.3), wide: 1, rough: 0.4 });
     v.tone({ f: 48, f1: 28, glide: 2, peak: 0.5 * s, attack: 0.3, decay: 2.4, delay: 0.15 });
     v.send.gain.value *= 1.8;
+    v.echo(0.5);
   },
+  // The reactor going: the biggest sound in the game. The flash's crack, the fireball, a second
+  // shock as the magazines follow, and the land answering for seconds after.
   detonation: (v) => {
     v.noise({ type: 'highpass', f: 600, peak: 1, attack: 0.001, decay: 0.15 });
-    v.noise({ color: 'pink', f: 4000, f1: 100, glide: 2.5, peak: 1.4, attack: 0.004, decay: 4, dest: v.driven });
-    v.noise({ color: 'brown', f: 260, f1: 60, glide: 4, peak: 1.3, attack: 0.05, decay: 7, delay: 0.05 });
+    v.noise({ color: 'pink', type: 'bandpass', f: 420, q: 1.2, peak: 6, attack: 0.001, decay: 1 });
+    v.noise({ color: 'pink', f: 4000, f1: 100, glide: 2.5, peak: 1.4, attack: 0.004, decay: 4, dest: v.driven, wide: 0.8 });
+    v.noise({ color: 'brown', f: 260, f1: 60, glide: 4, peak: 1.3, attack: 0.05, decay: 7, delay: 0.05, wide: 1 });
     v.tone({ f: 55, f1: 16, glide: 3, peak: 1.5, attack: 0.005, decay: 4.5, dest: v.driven });
     v.tone({ f: 38, f1: 20, glide: 4, peak: 0.8, attack: 0.2, decay: 6 });
+    v.noise({ type: 'highpass', f: 500, peak: 0.5, attack: 0.001, decay: 0.2, delay: 0.38 });
+    v.tone({ f: 48, f1: 18, glide: 2, peak: 0.9, attack: 0.01, decay: 3, delay: 0.38, dest: v.driven });
     v.noise({ color: 'crackle', type: 'bandpass', f: 1100, q: 0.5, peak: 1.2, attack: 0.1, decay: 4, delay: 0.3 });
+    v.noise({ color: 'crackle', type: 'bandpass', f: 350, q: 0.6, peak: 1, attack: 0.2, decay: 3.5, delay: 0.6 });
     v.noise({ type: 'bandpass', f: 500, f1: 150, glide: 1.5, q: 0.7, peak: 0.6, attack: 0.05, decay: 2, delay: 0.02 });
     v.send.gain.value = 0.8;
+    v.echo(0.7);
   },
 };
 
@@ -649,8 +908,28 @@ function reverbSend(d: number, onBoard: boolean): number {
   return onBoard ? 0.06 : 0.12 + 0.45 * clamp(d / 500, 0, 1);
 }
 
-/** A placed channel into the bus: gain → distance low-pass → pan, plus a reverb send. */
-function channel(s: Synth, level: number, at: Placement): { input: GainNode; lp: BiquadFilterNode; pan: StereoPannerNode; send: GainNode } {
+/** How much of a sound rings in the cab: everything on board, some of what's right alongside. */
+function cabSend(d: number): number {
+  return d === 0 ? CAB.aboard : CAB.alongside * clamp(1 - d / CAB.reach, 0, 1);
+}
+
+interface Channel {
+  input: GainNode;
+  lp: BiquadFilterNode;
+  pan: StereoPannerNode;
+  /** Into the outdoor reverb. */
+  send: GainNode;
+  /** Into the land's echoes; shut until a recipe opens it. */
+  echo: GainNode;
+  /** Past the pan, for layers spread across both ears. */
+  wide: GainNode;
+}
+
+/**
+ * A placed channel into the bus: gain → distance low-pass → pan, with sends to the outdoor
+ * reverb, the echoes, and the cab, and a second way in that skips the pan (`wide`).
+ */
+function channel(s: Synth, level: number, at: Placement): Channel {
   const ctx = s.ctx;
   const input = ctx.createGain();
   input.gain.value = level;
@@ -661,9 +940,23 @@ function channel(s: Synth, level: number, at: Placement): { input: GainNode; lp:
   pan.pan.value = at.pan;
   const send = ctx.createGain();
   send.gain.value = reverbSend(at.distance, at.distance === 0);
+  const echo = ctx.createGain();
+  echo.gain.value = 0;
+  const cab = ctx.createGain();
+  cab.gain.value = cabSend(at.distance);
+  const wide = ctx.createGain();
+  wide.gain.value = level;
   input.connect(lp).connect(pan).connect(s.bus);
   pan.connect(send).connect(s.reverbIn);
-  return { input, lp, pan, send };
+  pan.connect(echo).connect(s.echoIn);
+  lp.connect(cab).connect(s.cabIn);
+  wide.connect(s.bus);
+  return { input, lp, pan, send, echo, wide };
+}
+
+/** Lets a finished channel go. */
+function release(ch: Channel): void {
+  for (const n of [ch.input, ch.lp, ch.pan, ch.send, ch.echo, ch.wide]) n.disconnect();
 }
 
 /** A looping source of a bank buffer. */
@@ -678,7 +971,7 @@ function loopSource(ctx: AudioContext, buf: AudioBuffer): AudioBufferSourceNode 
 /** Sounds that run while their events keep coming (a beam held on, armor grinding rock). */
 class Hold {
   private last = -Infinity;
-  private readonly ch: ReturnType<typeof channel>;
+  private readonly ch: Channel;
   private readonly sources: AudioScheduledSourceNode[] = [];
   private on = false;
 
@@ -706,19 +999,19 @@ class Hold {
       o.start();
     };
     if (id === 'beam') {
-      // A held laser: ionized air sizzling, the power train's buzz, and an unsteady high warble.
-      add(loopSource(ctx, b.noise.white)).connect(filt('bandpass', 2600, 3)).connect(gain(0.9)).connect(this.ch.input);
+      // A held laser: the air along it ionizing in step with the power train, so the sizzle
+      // rasps at the supply's own rate (an arc welder's sound) over the train's buzz.
       const hum = add(ctx.createOscillator());
       hum.type = 'sawtooth';
       hum.frequency.value = 100;
       hum.connect(filt('lowpass', 500, 2)).connect(gain(0.35)).connect(this.ch.input);
+      const sizzle = gain(0.55);
+      add(loopSource(ctx, b.noise.white)).connect(filt('bandpass', 2600, 1.5)).connect(sizzle).connect(this.ch.input);
+      hum.connect(gain(0.45)).connect(sizzle.gain);
       hum.start();
-      const tone = add(ctx.createOscillator());
-      tone.frequency.value = 4200;
-      const trem = gain(0.04);
-      tone.connect(trem).connect(this.ch.input);
-      lfo(31, 0.03, trem.gain);
-      tone.start();
+      // The beam wanders a hair: the rasp never quite steady.
+      lfo(0.7, 4, hum.frequency);
+      lfo(31, 0.1, sizzle.gain);
     } else if (id === 'scrape') {
       // Steel grinding along rock: resonant noise whose pitch wanders, over a low grind.
       const band = filt('bandpass', 1300, 5);
@@ -732,6 +1025,7 @@ class Hold {
       const roar = filt('lowpass', 700, 0.8);
       add(loopSource(ctx, b.noise.pink)).connect(roar).connect(gain(1.6)).connect(this.ch.input);
       lfo(9, 180, roar.frequency);
+      lfo(13.7, 110, roar.frequency);
       add(loopSource(ctx, b.noise.white)).connect(filt('bandpass', 1800, 1.2)).connect(gain(0.3)).connect(this.ch.input);
       add(loopSource(ctx, b.noise.crackle)).connect(filt('bandpass', 2200, 0.8)).connect(gain(0.6)).connect(this.ch.input);
     } else {
@@ -761,7 +1055,7 @@ class Hold {
 
   stop(): void {
     for (const n of this.sources) n.stop();
-    this.ch.input.disconnect();
+    release(this.ch);
   }
 }
 
@@ -774,7 +1068,7 @@ const HOLD_LEVEL: Record<HoldId, { level: number; hold: number }> = {
 
 /**
  * The Behemoth's drive: a huge, slow engine (detuned saws, soft clipped, then darkened by a
- * load-following low-pass so it growls rather than buzzes), ground rumble, a dull clank of
+ * load-following low-pass so it growls rather than buzzes, drifting a little), ground rumble, a dull clank of
  * track links at ground speed, and churned water when fording.
  */
 class EngineLoop {
@@ -823,6 +1117,20 @@ class EngineLoop {
       o.start();
       this.oscs.push(o);
       this.sources.push(o);
+    }
+    // No engine holds a note: two slow, unrelated drifts of a few cents keep it from droning.
+    for (const [rate, cents] of [
+      [0.23, 14],
+      [0.37, 9],
+    ] as const) {
+      const drift = ctx.createOscillator();
+      drift.frequency.value = rate;
+      const depth = ctx.createGain();
+      depth.gain.value = cents;
+      drift.connect(depth);
+      for (const o of this.oscs) depth.connect(o.detune);
+      drift.start();
+      this.sources.push(drift);
     }
 
     this.rumble = ctx.createGain();
@@ -1032,6 +1340,8 @@ export class Synth {
   /** Everything in battle goes through here (pause fades it). */
   readonly bus: GainNode;
   readonly reverbIn: GainNode;
+  readonly echoIn: GainNode;
+  readonly cabIn: GainNode;
   private readonly holds = new Map<HoldId, Hold>();
   private engine: EngineLoop | null = null;
   private reactor: ReactorLoop | null = null;
@@ -1062,6 +1372,26 @@ export class Synth {
     const wet = ctx.createGain();
     wet.gain.value = 0.55;
     this.reverbIn.connect(verb).connect(wet).connect(this.bus);
+    // The land's echoes: each a delayed, duller copy from its own side, with a little of the reverb's tail.
+    this.echoIn = ctx.createGain();
+    for (const [seconds, side, cutoff, level] of ECHOES) {
+      const delay = ctx.createDelay(1);
+      delay.delayTime.value = seconds;
+      const dull = ctx.createBiquadFilter();
+      dull.frequency.value = cutoff;
+      const back = ctx.createGain();
+      back.gain.value = level;
+      const pan = ctx.createStereoPanner();
+      pan.pan.value = side * STEREO.pan;
+      this.echoIn.connect(delay).connect(dull).connect(back).connect(pan).connect(this.bus);
+      pan.connect(this.reverbIn);
+    }
+    this.cabIn = ctx.createGain();
+    const cab = ctx.createConvolver();
+    cab.buffer = this.bank.cab;
+    const box = ctx.createGain();
+    box.gain.value = CAB.wet;
+    this.cabIn.connect(cab).connect(box).connect(this.bus);
   }
 
   /** Audio only plays once the browser lets it (after the first click or key). */
@@ -1073,15 +1403,14 @@ export class Synth {
     if (!this.running || this.voices >= MAX_VOICES) return;
     const ctx = this.ctx;
     const ch = channel(this, LEVEL[sound] * levelFactor(sound, Math.random()) * at.gain, at);
-    const v = new Voice(ctx, this.bank, ctx.currentTime + 0.005, ch.input, ch.send, pitchFactor(sound, Math.random()));
+    const near = clamp(1 - (at.distance - HEARING.near) / (NEAR - HEARING.near), 0, 1);
+    const v = new Voice(ctx, this.bank, ctx.currentTime + 0.005, ch, pitchFactor(sound, Math.random()), near);
     RECIPES[sound](v, size);
     this.voices++;
     // Disconnect once it (and its reverb send) has died away.
     const life = v.end - ctx.currentTime + 0.1;
     setTimeout(() => {
-      ch.input.disconnect();
-      ch.pan.disconnect();
-      ch.send.disconnect();
+      release(ch);
       this.voices--;
     }, life * 1000);
   }

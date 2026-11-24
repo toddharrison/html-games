@@ -1,6 +1,7 @@
 import { ENEMIES } from '../content/enemies';
 import type { ObstacleClass } from '../content/obstacles';
 import { MATERIALS } from '../content/terrain';
+import { STEREO } from '../content/tuning';
 import type { WeaponId } from '../content/weapons';
 import { component, fraction, speedLimits, type BehemothState, type PlayerCommand } from '../sim/behemoth';
 import type { SimEvent } from '../sim/events';
@@ -15,8 +16,10 @@ import { viewX } from '../render/viewTransform';
 /** One-shot sounds. Each has a recipe in `synth.ts`; `size` scales it (caliber, blast radius, hit weight). */
 export type SoundId =
   | 'cannon'
+  | 'howitzer'
   | 'autocannon'
   | 'rotary'
+  | 'machineGun'
   | 'mortar'
   | 'missile'
   | 'rocket'
@@ -71,7 +74,7 @@ export const HOLDS: ReadonlySet<string> = new Set<HoldId>(['beam', 'scrape', 'bu
 /** Every weapon's report. A Record, so a new weapon doesn't compile until it has one. */
 export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: number }> = {
   heavyCannon: { sound: 'cannon', size: 0.8 },
-  siegeHowitzer: { sound: 'cannon', size: 1 },
+  siegeHowitzer: { sound: 'howitzer', size: 1 },
   autocannon: { sound: 'autocannon', size: 0.6 },
   rotaryGun: { sound: 'rotary', size: 0.5 },
   flakCannon: { sound: 'autocannon', size: 0.9 },
@@ -79,9 +82,9 @@ export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: nu
   podMissiles: { sound: 'missile', size: 0.45 },
   bunkerBuster: { sound: 'missile', size: 1 },
   mortar: { sound: 'mortar', size: 0.7 },
-  apGuns: { sound: 'rotary', size: 0.3 },
+  apGuns: { sound: 'machineGun', size: 0.3 },
   pdLaser: { sound: 'pulseLaser', size: 0.2 },
-  pdGuns: { sound: 'rotary', size: 0.25 },
+  pdGuns: { sound: 'machineGun', size: 0.25 },
   pulseLaser: { sound: 'pulseLaser', size: 0.45 },
   beamLaser: { sound: 'beam', size: 0.6 },
   heavyLaser: { sound: 'heavyLaser', size: 1 },
@@ -109,8 +112,8 @@ export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: nu
   towerGuns: { sound: 'autocannon', size: 0.4 },
   hoverGun: { sound: 'autocannon', size: 0.3 },
   // Big guns well off: a deep boom per gun, the volley rippling along the battery.
-  batteryShells: { sound: 'cannon', size: 1 },
-  siegeCannon: { sound: 'cannon', size: 0.95 },
+  batteryShells: { sound: 'howitzer', size: 1 },
+  siegeCannon: { sound: 'howitzer', size: 0.95 },
   siegeAutocannon: { sound: 'autocannon', size: 0.4 },
   // A sharp crack from the hedge, smaller than a tank's gun.
   hedgeGunShot: { sound: 'cannon', size: 0.45 },
@@ -280,18 +283,23 @@ export class AlarmWatch {
   }
 }
 
-/** Hearing from the cab: full volume up close, falling off with distance, panned left/right. */
+/** Hearing from the cab: full volume up close, falling off with distance. Left and right are `STEREO`'s (tuning.ts). */
 export const HEARING = {
   /** Within this distance a sound plays at full volume. */
   near: 40,
   /** Falloff: gain = ref / (ref + distance past `near`). */
   ref: 160,
-  /** Sideways offset (view units) that pans fully. */
-  panSpan: 220,
-  maxPan: 0.85,
   /** Quieter than this isn't worth playing. */
   cutoff: 0.06,
 };
+
+/** Who's listening: the Behemoth, and (for panning by screen side) the sim y at the middle of the screen. */
+export interface Listener {
+  x: number;
+  y: number;
+  /** Missing: sounds pan by their side of the Behemoth, whatever `STEREO.screen` says. */
+  center?: number;
+}
 
 export interface Placement {
   gain: number;
@@ -300,13 +308,18 @@ export interface Placement {
   distance: number;
 }
 
-/** Where a cue sits relative to the listener (the Behemoth). */
-export function place(listener: { x: number; y: number }, cue: Pick<Cue, 'x' | 'y'>): Placement {
+/**
+ * Where a cue sits for the listener: how loud by its distance from the Behemoth, and how far left
+ * or right by its side of the screen's middle, of the Behemoth, or of a point between (`STEREO`).
+ */
+export function place(listener: Listener, cue: Pick<Cue, 'x' | 'y'>): Placement {
   if (cue.x === undefined || cue.y === undefined) return { gain: 1, pan: 0, distance: 0 };
   const distance = Math.hypot(cue.x - listener.x, cue.y - listener.y);
   const gain = distance <= HEARING.near ? 1 : HEARING.ref / (HEARING.ref + distance - HEARING.near);
-  const side = viewX(cue.x, cue.y) - viewX(listener.x, listener.y);
-  return { gain, pan: clamp(side / HEARING.panSpan, -1, 1) * HEARING.maxPan, distance };
+  const own = viewX(listener.x, listener.y);
+  const middle = listener.center === undefined ? own : own + (viewX(listener.x, listener.center) - own) * STEREO.screen;
+  const side = viewX(cue.x, cue.y) - middle;
+  return { gain, pan: clamp(side / STEREO.span, -1, 1) * STEREO.pan, distance };
 }
 
 /**
@@ -315,8 +328,10 @@ export function place(listener: { x: number; y: number }, cue: Pick<Cue, 'x' | '
  */
 export const MIN_GAP: Record<SoundId, number> = {
   cannon: 0.04,
+  howitzer: 0.04,
   autocannon: 0.04,
   rotary: 0.03,
+  machineGun: 0.03,
   mortar: 0.05,
   missile: 0.06,
   rocket: 0.06,
@@ -362,8 +377,11 @@ export const MIN_GAP: Record<SoundId, number> = {
  */
 export const PITCH_SPREAD: Record<SoundId, number> = {
   cannon: 1,
+  howitzer: 1,
   autocannon: 1.2,
-  rotary: 1,
+  // A gun's rounds are alike: only a little, or a burst sounds like several guns.
+  rotary: 0.6,
+  machineGun: 0.7,
   mortar: 1.2,
   missile: 1.5,
   rocket: 1.5,

@@ -18,6 +18,7 @@ import {
   type Cue,
   type CueContext,
 } from '../../src/audio/cues';
+import { STEREO } from '../../src/content/tuning';
 import { createBehemoth, damageComponent } from '../../src/sim/behemoth';
 import type { SimEvent } from '../../src/sim/events';
 
@@ -47,7 +48,7 @@ describe('cuesFor', () => {
 
   it('adds an airburst when point defense kills a round', () => {
     const ev = { type: 'intercept', weapon: 'pdGuns', x0: 0, y0: 0, x: 30, y: 0 } as const;
-    expect(sounds({ ...ev, hit: false })).toEqual(['rotary']);
+    expect(sounds({ ...ev, hit: false })).toEqual(['machineGun']);
     expect(cuesFor({ ...ev, hit: true }, context())[1]).toMatchObject({ sound: 'airburst', x: 30 });
   });
 
@@ -123,9 +124,30 @@ describe('place', () => {
   it('pans by screen side: sim +y is screen right', () => {
     expect(place(listener, { x: 100, y: 150 }).pan).toBeGreaterThan(0);
     expect(place(listener, { x: 100, y: -50 }).pan).toBeLessThan(0);
-    expect(Math.abs(place(listener, { x: 100, y: 5000 }).pan)).toBeLessThanOrEqual(HEARING.maxPan);
+    expect(Math.abs(place(listener, { x: 100, y: 5000 }).pan)).toBe(STEREO.pan);
     // Straight ahead (up the screen) is centered.
     expect(place(listener, { x: 400, y: 50 }).pan).toBe(0);
+  });
+
+  it('pans by the side of the screen when it knows its middle, and by the side of the Behemoth when told to', () => {
+    const onLeft = { x: 100, y: 50, center: 150 };
+    // Its own gun, left of the screen's middle: from the left.
+    expect(place(onLeft, { x: 110, y: 50 }).pan).toBeLessThan(0);
+    expect(place(onLeft, { x: 300, y: 150 }).pan).toBe(0);
+    // Loudness is still by distance from the Behemoth.
+    expect(place(onLeft, { x: 110, y: 50 }).gain).toBe(1);
+    const was = STEREO.screen;
+    STEREO.screen = 0;
+    expect(place(onLeft, { x: 110, y: 50 }).pan).toBe(0);
+    expect(place(onLeft, { x: 300, y: 150 }).pan).toBeGreaterThan(0);
+    STEREO.screen = was;
+  });
+
+  it('puts everything in the middle with the pan turned off', () => {
+    const was = STEREO.pan;
+    STEREO.pan = 0;
+    expect(place(listener, { x: 100, y: 5000 }).pan).toBe(0);
+    STEREO.pan = was;
   });
 });
 

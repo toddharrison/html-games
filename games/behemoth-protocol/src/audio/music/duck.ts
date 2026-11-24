@@ -18,6 +18,7 @@ export interface Duck {
 
 const DUCK: Partial<Record<SoundId, Duck>> = {
   cannon: { depth: 0.45, hold: 0.25 },
+  howitzer: { depth: 0.5, hold: 0.3 },
   heavyLaser: { depth: 0.45, hold: 0.25 },
   rocket: { depth: 0.3, hold: 0.2 },
   missile: { depth: 0.25, hold: 0.2 },

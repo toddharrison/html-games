@@ -1,4 +1,4 @@
-import { place, type EngineState, type ReactorState, type SoundId } from '../cues';
+import { place, type EngineState, type HoldId, type ReactorState, type SoundId } from '../cues';
 import { Synth } from '../synth';
 import { barEvents, timeline, type BarPlan, type MusicInput } from './director';
 import { duckFor } from './duck';
@@ -138,12 +138,14 @@ async function renderVoices(): Promise<Render> {
 }
 
 /**
- * The instruments alone (`voices`), then every piece: its demo and the scripted battle. `only`
- * stops short: the battles are slow, and the instruments alone are all a change to a voice needs.
+ * The sound effects alone (`sounds`), the instruments alone (`voices`), then every piece: its demo
+ * and the scripted battle. `only` stops short: the battles are slow, and a change to one sound or
+ * one voice only needs its audition.
  */
-export async function renderAll(only?: 'voices' | 'demos'): Promise<Render[]> {
-  const out: Render[] = [await renderVoices()];
-  if (only === 'voices') return out;
+export async function renderAll(only?: 'sounds' | 'voices' | 'demos'): Promise<Render[]> {
+  if (only === 'sounds') return [await renderSounds()];
+  const out: Render[] = [await renderSounds(), await renderVoices()];
+  if (only === 'voices') return out.slice(1);
   for (const piece of new Set(Object.values(PIECES))) {
     out.push(await render(`${piece.id}-demo`, piece, DEMO));
     if (!only) out.push(await renderBattle(piece));
@@ -202,7 +204,7 @@ function battle(bar: number): Sfx[] {
       else at(t + 0.3, 'impact', 0.3, r(30, 80), r(-60, 60));
     });
     each(a.autos, (t) => {
-      if (rng() < 0.5) for (let i = 0; i < 6; i++) at(t + i * 0.08, 'rotary', 0.3);
+      if (rng() < 0.5) for (let i = 0; i < 6; i++) at(t + i * 0.08, 'machineGun', 0.3);
       else for (let i = 0; i < 3; i++) at(t + i * 0.25, 'autocannon', 0.6);
     });
     each(a.mainGun, (t) => {
@@ -230,7 +232,7 @@ function battle(bar: number): Sfx[] {
   stretch(b(16), b(28), hot);
   at(b(16) + 0.3, 'radio', 1);
   for (let t = b(16) + 2; t < b(28) - 1; t += 5) {
-    at(t, 'cannon', 1, 220, 30);
+    at(t, 'howitzer', 0.95, 220, 30);
     if (rng() < 0.6) at(t + 0.4, 'hullHit', 0.9);
     else at(t + 0.4, 'impact', 0.6, 50, 10);
   }
@@ -315,6 +317,158 @@ async function renderBattle(piece: Piece): Promise<Render> {
   const mu = [ch[2]!, ch[3]!];
   const sum = [0, 1].map((c) => fx[c]!.map((v, i) => v + mu[c]![i]!));
   return { name: `${piece.id}-battle`, wav: base64(wav(sum, audio.sampleRate)), log: audibility(sfx, fx, mu, audio.sampleRate) };
+}
+
+/** One entry of the sound effects' audition: a sound (or a burst of it), its size, how far off, and how long it gets. */
+interface Take {
+  name: string;
+  sound: SoundId;
+  size: number;
+  /** Sim units ahead of the Behemoth; missing = on board. */
+  far?: number;
+  /** Shots in the burst and seconds between them. */
+  burst?: [count: number, every: number];
+  seconds: number;
+}
+
+const take = (name: string, sound: SoundId, size: number, seconds: number, far?: number, burst?: [number, number]): Take => ({ name, sound, size, seconds, far, burst });
+
+/** Every one-shot at the sizes and distances the game plays it, each alone. */
+const TAKES: Take[] = [
+  take('cannon: own main gun', 'cannon', 0.8, 3.5, 20),
+  take('cannon: light tank, mid', 'cannon', 0.3, 2.5, 200),
+  take('cannon: heavy tank, far', 'cannon', 0.55, 3, 350),
+  take('howitzer: own', 'howitzer', 1, 4.5, 20),
+  take('howitzer: battery, far', 'howitzer', 1, 4.5, 400),
+  take('autocannon: own', 'autocannon', 0.6, 2, 20, [3, 0.25]),
+  take('autocannon: flak', 'autocannon', 0.9, 2, 20),
+  take('autocannon: tower, mid', 'autocannon', 0.4, 2, 220, [3, 0.25]),
+  take('rotary: own burst', 'rotary', 0.5, 2, 20, [10, 0.05]),
+  take('machineGun: AP burst', 'machineGun', 0.3, 2, 20, [8, 0.08]),
+  take('machineGun: point defense', 'machineGun', 0.25, 2, 20, [8, 0.06]),
+  take('mortar', 'mortar', 0.7, 2, 20),
+  take('missile: rack', 'missile', 0.6, 3, 20),
+  take('missile: ballistic', 'missile', 1.4, 3.5, 20),
+  take('missile: enemy launcher, far', 'missile', 0.5, 3, 300),
+  take('rocket: infantry, mid', 'rocket', 0.4, 2, 180),
+  take('pulseLaser', 'pulseLaser', 0.45, 1.5, 20, [3, 0.2]),
+  take('heavyLaser', 'heavyLaser', 1, 4, 20),
+  take('plasmaShot', 'plasmaShot', 0.7, 2, 20),
+  take('airburst', 'airburst', 0.4, 1.5, 100),
+  take('explosion: small, mid', 'explosion', 0.5, 4, 180),
+  take('explosion: big, close', 'explosion', 1.2, 6, 60),
+  take('plasmaSplash', 'plasmaSplash', 0.6, 4, 150),
+  take('splash', 'splash', 0.8, 3, 150),
+  take('impact', 'impact', 0.4, 1.5, 60, [3, 0.3]),
+  take('pierce: rear', 'pierce', 1, 1.5, 150),
+  take('ricochet', 'ricochet', 0.5, 2.5, 150, [4, 0.5]),
+  take('hullHit: light', 'hullHit', 0.4, 2.5, 10),
+  take('hullHit: heavy', 'hullHit', 1.2, 3.5, 10),
+  take('vehicleKill', 'vehicleKill', 0.85, 5, 150),
+  take('crush', 'crush', 1, 2, 20),
+  take('wood', 'wood', 1, 2, 40),
+  take('collapse', 'collapse', 1, 4, 100),
+  take('ram', 'ram', 1, 2.5, 25),
+  take('clank: reload', 'clank', 0.4, 2),
+  take('clank: jettison', 'clank', 1, 2.5),
+  take('droneLost', 'droneLost', 0.3, 2.5, 80),
+  take('revive', 'revive', 1, 3),
+  take('componentBlown', 'componentBlown', 1, 4),
+  take('immobilized', 'immobilized', 1, 3.5),
+  take('alarm: reactor', 'alarm', 1, 1.5),
+  take('alarm: component', 'alarm', 0.6, 1.5),
+  take('missileWarning', 'missileWarning', 1, 1.2),
+  take('lockOn', 'lockOn', 1, 1.5, 200),
+  take('incoming', 'incoming', 1.6, 2.5, 200),
+  take('horn', 'horn', 1, 5),
+  take('radio', 'radio', 1, 1.5),
+  take('pickup', 'pickup', 0.6, 1, undefined, [3, 0.15]),
+  take('emp', 'emp', 1, 3, 20),
+  take('railgun', 'railgun', 1, 3, 20),
+  take('coilgun', 'railgun', 0.45, 2, 20),
+  take('arc: projector', 'arc', 1, 2.5, 20),
+  take('arc: tesla', 'arc', 0.35, 1.5, 20, [3, 0.25]),
+  take('thunder', 'thunder', 1, 6, 300),
+  take('detonation', 'detonation', 2, 10),
+];
+
+const HOLD_TAKES: HoldId[] = ['beam', 'scrape', 'burn', 'flame'];
+const HOLD_SECONDS = 2;
+/** The drive: idling, pulling away, cruising, flat out, on wrecked treads, then fording. Three seconds each. */
+const DRIVES: [name: string, state: EngineState, wet: boolean][] = [
+  ['engine: crawling', { speed: 0.15, load: 0.2, treadWear: 0, running: true }, false],
+  ['engine: pulling away', { speed: 0.35, load: 1, treadWear: 0, running: true }, false],
+  ['engine: cruise', { speed: 0.6, load: 0.5, treadWear: 0.1, running: true }, false],
+  ['engine: flat out', { speed: 1, load: 0.9, treadWear: 0.1, running: true }, false],
+  ['engine: wrecked treads', { speed: 0.4, load: 0.7, treadWear: 0.9, running: true }, false],
+  ['engine: fording', { speed: 0.5, load: 0.7, treadWear: 0.1, running: true }, true],
+];
+const DRIVE_SECONDS = 3;
+const MELTDOWN_SECONDS = 5;
+
+/**
+ * Every sound effect in turn, alone, through the game's `Synth`: the one-shots (`TAKES`), the held
+ * sounds, the drive at each of its states, and the reactor running up to a meltdown. For judging
+ * (and comparing) the sounds themselves; start times in the `.txt`.
+ */
+async function renderSounds(): Promise<Render> {
+  const total = TAKES.reduce((a, t) => a + t.seconds, 0) + HOLD_TAKES.length * (HOLD_SECONDS + 1) + DRIVES.length * DRIVE_SECONDS + MELTDOWN_SECONDS + 2;
+  const ctx = new OfflineAudioContext(2, Math.ceil(total * SAMPLE_RATE), SAMPLE_RATE);
+  const synth = new Synth(ctx as unknown as AudioContext, ctx.destination);
+  Object.defineProperty(synth, 'running', { get: () => true });
+  const voices = synth as unknown as { voices: number };
+  // What happens when: one-shots as (time, play), and what to keep doing over a span.
+  const shots: { t: number; go: () => void }[] = [];
+  const spans: { from: number; to: number; each: () => void }[] = [];
+  const log: string[] = [];
+  let at = 0.1;
+  const mark = (name: string) => log.push(`${at.toFixed(1).padStart(6)} s  ${name}`);
+  for (const k of TAKES) {
+    mark(`${k.name} (${k.sound} ${k.size}${k.far === undefined ? ', on board' : `, ${k.far} off`})`);
+    const [count, every] = k.burst ?? [1, 0];
+    const placed = place({ x: 0, y: 0 }, k.far === undefined ? {} : { x: k.far, y: k.far * 0.3 });
+    for (let i = 0; i < count; i++) shots.push({ t: at + i * every, go: () => synth.play(k.sound, k.size, placed) });
+    at += k.seconds;
+  }
+  for (const id of HOLD_TAKES) {
+    mark(`${id} (held)`);
+    const placed = place({ x: 0, y: 0 }, { x: 30, y: 10 });
+    spans.push({ from: at, to: at + HOLD_SECONDS, each: () => synth.hold(id, placed) });
+    at += HOLD_SECONDS + 1;
+  }
+  const quiet: ReactorState = { charge: 0.8, damage: 0, meltdown: 0 };
+  shots.push({ t: at, go: () => synth.startMachine() });
+  for (const [name, state, wet] of DRIVES) {
+    mark(name);
+    spans.push({ from: at, to: at + DRIVE_SECONDS, each: () => synth.update(state, wet, CRUISE_FRAC, quiet) });
+    at += DRIVE_SECONDS;
+  }
+  mark('reactor: meltdown');
+  const from = at;
+  spans.push({
+    from,
+    to: at + MELTDOWN_SECONDS,
+    each: () => synth.update(DRIVES[0]![1], false, CRUISE_FRAC, { charge: 0.8, damage: 0.6, meltdown: Math.min(1, (ctx.currentTime - from) / (MELTDOWN_SECONDS - 1)) }),
+  });
+  at += MELTDOWN_SECONDS;
+  shots.push({ t: at, go: () => synth.stopMachine() });
+  shots.sort((a, b) => a.t - b.t);
+
+  const QUANTUM = 128 * 4;
+  let next = 0;
+  for (let frame = QUANTUM; frame < ctx.length - QUANTUM; frame += QUANTUM) {
+    const t = frame / SAMPLE_RATE;
+    void ctx.suspend(t).then(() => {
+      voices.voices = 0;
+      // The held sounds fade when nothing triggers them (the game calls this every frame).
+      synth.update({ speed: 0, load: 0, treadWear: 0, running: false }, false, CRUISE_FRAC, quiet);
+      for (; next < shots.length && shots[next]!.t < t + QUANTUM / SAMPLE_RATE; next++) shots[next]!.go();
+      for (const s of spans) if (t >= s.from && t < s.to) s.each();
+      void ctx.resume();
+    });
+  }
+  const audio = await ctx.startRendering();
+  return { name: 'sounds', wav: base64(wav([audio.getChannelData(0), audio.getChannelData(1)], audio.sampleRate)), log };
 }
 
 /** RMS level in dB over a window, both channels together. */

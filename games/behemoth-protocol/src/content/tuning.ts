@@ -904,3 +904,22 @@ export const PAD = {
   /** Left stick past this moves the menu selection. */
   menuThreshold: 0.5,
 };
+
+/**
+ * Stereo (SPEC §11.4): where the battle's sounds sit between the two speakers. Read live, so the
+ * dev console's Tweaks change it as you listen (the echoes' sides are set when a battle starts).
+ */
+export const STEREO = {
+  /** How far to one side a sound at full offset goes: 0 is everything in the middle (mono), 1 is hard left or right. */
+  pan: 0.9,
+  /** The sideways offset (units) that pans that far: about half the battlefield's width. */
+  span: 150,
+  /**
+   * What "the middle" is: 1 pans by where a sound is on the screen (the middle of the battlefield
+   * is the middle of the speakers, and the Behemoth's own guns move with it), 0 pans by where it
+   * is from the Behemoth (its own guns always in the middle). Between blends the two.
+   */
+  screen: 1,
+  /** How far a close blast's big layers spread across both ears: 0 keeps every sound a single point. */
+  width: 1,
+};

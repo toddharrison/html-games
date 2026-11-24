@@ -3,7 +3,7 @@ import { stormy } from '../content/conditions';
 import type { PlayerCommand } from '../sim/behemoth';
 import type { SimEvent } from '../sim/events';
 import type { World } from '../sim/world';
-import { AlarmWatch, CueLimiter, cuesFor, engineState, HOLDS, place, reactorState, type Cue, type CueContext, type HoldId, type Placement, type SoundId } from './cues';
+import { AlarmWatch, CueLimiter, cuesFor, engineState, HOLDS, place, reactorState, type Cue, type CueContext, type HoldId, type Listener, type Placement, type SoundId } from './cues';
 import { duckFor } from './music/duck';
 import { HeatGauge } from './music/heat';
 import { MusicPlayer } from './music/player';
@@ -22,7 +22,7 @@ const MUSIC_OUTRO = 3;
 export class BattleAudio {
   private readonly alarms = new AlarmWatch();
   private readonly limiter = new CueLimiter();
-  private listener = { x: 0, y: 0 };
+  private listener: Listener = { x: 0, y: 0 };
   private fuseStart: number | null = null;
   private dead = false;
   private paused = false;
@@ -60,7 +60,8 @@ export class BattleAudio {
     if (!this.music) this.startMusic(w);
     this.heat!.observe(events, w.time);
     const b = w.behemoth;
-    if (!b.destroyed) this.listener = { x: b.x, y: b.y };
+    // The battlefield's middle is the screen's: the camera doesn't move sideways.
+    if (!b.destroyed) this.listener = { x: b.x, y: b.y, center: w.terrain.height / 2 };
     const ctx: CueContext = { tileSize: w.terrain.tileSize, wet };
     const items: { cue: Cue; at: Placement }[] = [];
     const add = (cue: Cue | null) => cue && items.push({ cue, at: place(this.listener, cue) });

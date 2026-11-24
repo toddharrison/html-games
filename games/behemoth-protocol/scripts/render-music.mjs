@@ -2,10 +2,11 @@
 // the game: starts a Vite dev server, loads src/audio/music/render.ts in Playwright's headless
 // Chromium shell over the DevTools protocol, and writes what renderAll() returns.
 //
-//   npm run render:music [-- [--demos | --voices] <out dir>]
+//   npm run render:music [-- [--demos | --voices | --sounds] <out dir>]
 //
 // Writes to renders/music (git-ignored) unless told otherwise. --demos skips the slow battle
-// renders; --voices renders only the instruments on their own (voices.wav).
+// renders; --voices renders only the instruments on their own (voices.wav); --sounds only the
+// sound effects on their own (sounds.wav).
 //
 // Needs the headless shell (`npx playwright install chromium-headless-shell`), or set
 // CHROME_HEADLESS to any Chromium binary.
@@ -18,7 +19,7 @@ import { createServer } from 'vite';
 
 const root = resolve(import.meta.dirname, '..');
 const args = process.argv.slice(2);
-const only = args.includes('--voices') ? 'voices' : args.includes('--demos') ? 'demos' : undefined;
+const only = ['sounds', 'voices', 'demos'].find((o) => args.includes(`--${o}`));
 const outDir = resolve(root, args.find((a) => !a.startsWith('--')) ?? 'renders/music');
 
 function findShell() {

@@ -11,7 +11,8 @@ import { frameRight } from '../../src/sim/frame';
 import { Rng, hashSeed } from '../../src/sim/rng';
 import { newRun } from '../../src/sim/run';
 import type { Strength } from '../../src/sim/sectorMap';
-import { buildTrain, type TrainState } from '../../src/sim/train';
+import type { TrainState } from '../../src/sim/train';
+import { buildTrain } from '../../src/sim/trainCars';
 import { spawnProjectile } from '../../src/sim/weapons';
 import { createWorld, stepWorld, type World, type WorldOptions } from '../../src/sim/world';
 
@@ -526,8 +527,9 @@ describe('the hull meets the train (§T10)', () => {
     expect(unit(w, 0)!.hp).toBe(ENEMIES.trainEngine.hp);
   });
 
-  it('runs into a hull on the track ahead of it: the hull is struck and shoved to the wide side, the train slowed, not stopped', () => {
-    const w = world([E, B], {}, false);
+  // (An engine at the head blows up against the hull instead: tests/sim/trainCloseQuarters.test.ts.)
+  it('runs into a hull on the track ahead of it, a car at its head: the hull is struck and shoved to the wide side, the train slowed, not stopped', () => {
+    const w = world(['shieldCar', E], {}, false);
     run(w, 14);
     const tr = train(w);
     const pace = tr.speed;
@@ -539,10 +541,11 @@ describe('the hull meets the train (§T10)', () => {
     const treads = b.treads.hp;
     const events = step(w, { throttle: -1 });
     expect(events.filter((e) => e.type === 'trainStrike')).toHaveLength(1);
+    expect(events.find((e) => e.type === 'trainStrike')).toMatchObject({ blast: null });
     const s = TRAIN.collide.strike;
     expect(rear - b.armor.rear.hp).toBe(Math.min(rear, s.arc));
     expect(treads - b.treads.hp).toBeGreaterThanOrEqual(s.treads - 1e-6);
-    expect(unit(w, 0)!.hp).toBe(ENEMIES.trainEngine.hp - s.front);
+    expect(unit(w, 0)!.hp).toBe(ENEMIES.trainShieldCar.hp - s.front);
     expect(tr.speed).toBeCloseTo(pace * (1 - s.slow), 0);
     const later = run(w, 1.5, { throttle: -1 }, () => {});
     expect(later.filter((e) => e.type === 'trainStrike')).toHaveLength(0);

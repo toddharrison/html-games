@@ -1,11 +1,15 @@
 import Phaser from 'phaser';
 import { gunPivot } from '../sim/enemies';
 import type { Enemy, EnemyGun, Projectile } from '../sim/entities';
+import { masked } from '../sim/mask';
 import { pose, type Interp } from './interp';
 import { ENEMY_ART, INFANTRY } from './placeholder';
 import { viewAngle, viewX, viewY } from './viewTransform';
 
 /** Sprites for enemies and projectiles, kept in sync with sim entities by id. */
+
+/** Units are drawn at depth 3, their turrets just over that; troops riding a train car go over both. */
+const RIDER_DEPTH = 3.2;
 
 class EnemyView {
   readonly body: Phaser.GameObjects.Image;
@@ -13,6 +17,8 @@ class EnemyView {
   readonly turret: Phaser.GameObjects.Image | null;
   /** Aim telegraph: glows at the muzzle while the unit lines up a shot. */
   private readonly glint: Phaser.GameObjects.Image;
+  /** Troops riding a train car: the sandbagged nest they're in, made the first time they're seen riding. */
+  private nest: Phaser.GameObjects.Image | null = null;
   /** Extra turrets (SPEC §7 siege tank), each with its own glint, in `def.turrets` order. */
   private readonly extra: { img: Phaser.GameObjects.Image; glint: Phaser.GameObjects.Image }[];
   /** Last sim heading, so the wreck can be oriented after the entity is gone. */
@@ -56,6 +62,20 @@ class EnemyView {
       this.body.setTexture(gait.frames[Math.floor(this.walked / gait.stride) % gait.frames.length]!);
     }
     const lid = ENEMY_ART[e.def.id].lid;
+    // A masked unit is drawn as what it pretends to be, its guns out of sight, until its cover comes off.
+    const mask = ENEMY_ART[e.def.id].masked;
+    const covered = !!mask && masked(e);
+    if (mask) this.body.setTexture(covered ? mask : ENEMY_ART[e.def.id].body);
+    // Troops on a train car's roof are drawn over it and its turrets, in a sandbagged nest that
+    // turns with the car. Down off it, the nest stays behind (gone).
+    this.body.setDepth(e.ai.riding ? RIDER_DEPTH : 3);
+    if (e.ai.riding) {
+      this.nest ??= this.body.scene.add.image(0, 0, 'rider_nest').setDepth(RIDER_DEPTH - 0.05);
+      this.nest.setPosition(x, y).setRotation(viewAngle(at.heading)).setVisible(!e.ai.under && !e.hidden);
+    } else if (this.nest) {
+      this.nest.destroy();
+      this.nest = null;
+    }
     if (lid) {
       // A trapdoor: the lid while it's down, the open pit (turned to its target) while it's up.
       const shut = (e.ai.lid ?? 'shut') === 'shut';
@@ -100,7 +120,7 @@ class EnemyView {
       if (this.flash > 0 || strobe) img.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
       else img.clearTint().setTintMode(Phaser.TintModes.MULTIPLY);
       // A train's vehicle in a tunnel is under the ground.
-      img.setAlpha(this.visibility).setVisible(this.visibility > 0 && !e.ai.under);
+      img.setAlpha(this.visibility).setVisible(this.visibility > 0 && !e.ai.under && !(covered && img !== this.body));
     }
     if (e.ai.under) {
       this.glint.setVisible(false);
@@ -110,6 +130,7 @@ class EnemyView {
 
   destroy(): void {
     this.body.destroy();
+    this.nest?.destroy();
     this.turret?.destroy();
     this.glint.destroy();
     for (const v of this.extra) {

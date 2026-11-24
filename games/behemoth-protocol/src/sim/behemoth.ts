@@ -929,7 +929,17 @@ export function applyHit(
     const id = strike.target === 'treads' ? pickTreadSet(b, arc, rng) : pickHardpoint(b, arc, rng);
     damageComponent(b, id ?? pickInternal(b, arc, rng), direct, events);
   }
-  const through = damageArmor(b, arc, damage - direct);
+  soak(b, arc, damage - direct, rng, events);
+}
+
+/**
+ * Damage on an armor arc with no blow behind it (an enemy flamethrower's lick, `shootFlame`): the
+ * armor takes what it can and the rest goes to a component inside, as for a hit, but nothing rings
+ * the hull (no `behemothHit`).
+ */
+export function soak(b: BehemothState, arc: ArmorArc, damage: number, rng: Rng, events: SimEvent[]): void {
+  if (b.destroyed) return;
+  const through = damageArmor(b, arc, damage);
   if (through > 0) damageComponent(b, pickInternal(b, arc, rng), through, events);
 }
 

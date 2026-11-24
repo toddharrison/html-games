@@ -252,6 +252,7 @@ export type WeaponId =
   | 'siegeAutocannon'
   | 'trainMissiles'
   | 'trainAutocannon'
+  | 'trainFlamer'
   | 'trainHowitzer'
   | 'trainRockets'
   | 'troopRockets'
@@ -1330,6 +1331,29 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       minRange: 0,
       maxRange: 230,
       spread: 0.06,
+    },
+  },
+  trainFlamer: {
+    id: 'trainFlamer',
+    name: 'Engine flamethrower',
+    short: 'Flamer',
+    role: 'auto',
+    category: 'munitions',
+    // A train engine's flame projector (SPEC-armored-train.md §T21): a two-second gout at whatever
+    // comes close, then a pause while the pressure builds. Its licks scorch the hull's armor where
+    // they land (`shootFlame`); the fuel it leaves burning on the ground is no worse than any other fire.
+    reload: 3,
+    muzzle: 5,
+    traverseDegPerSec: 120,
+    salvo: { count: 20, interval: 0.1 },
+    projectile: {
+      kind: 'flame',
+      damage: 0.8,
+      tileDamage: 1,
+      range: 112.5,
+      cone: 0.2,
+      spread: 0,
+      burn: { dps: 4, duration: 2 },
     },
   },
   trainHowitzer: {

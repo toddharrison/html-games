@@ -512,7 +512,7 @@ A weapon's odds are its kind's (`FIRE.ignites`) unless it sets its own (`ignites
 
 **Rain.** In a rainstorm's squall (temperate and industrial storms and thunderstorms, §4.6) fire spreads at a fifth of its odds and each burning tile has a 25% chance a second of going out, both scaled by how hard the squall is blowing. Snow, sand, and ash don't.
 
-**The Behemoth.** Fire never hurts the Behemoth or its trailer, and their treads put out the burning fuel they roll over (trees they crush flat, as before). Enemies don't steer round fire or flee it. Both are open (§16 Q34).
+**The Behemoth.** Fire on the ground never hurts the Behemoth or its trailer, and their treads put out the burning fuel they roll over (trees they crush flat, as before). The one fire that does hurt it is an enemy flamethrower's own stream where it lands on the hull (a train engine's flame projectors, [SPEC-armored-train.md](SPEC-armored-train.md) §T21): it scorches the armor it lands on. Enemies don't steer round fire or flee it. Both are open (§16 Q34).
 
 **On screen** (§11.3): flames and smoke are simulated, not sprites: see "Fire and smoke" there.
 

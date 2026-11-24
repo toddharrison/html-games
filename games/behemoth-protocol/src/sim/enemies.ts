@@ -9,12 +9,13 @@ import { hiddenNow } from './concealment';
 import { enemyCanSee, hoverScale } from './conditions';
 import { allocId, type Enemy, type EnemyGun } from './entities';
 import type { KillCause } from './events';
-import { burnWreck, smoky } from './fire';
-import { frameRight } from './frame';
+import { burnWreck, shootFlame, smoky } from './fire';
+import { frameRight, inFrame } from './frame';
 import { footprint, hitched, hullBox, revealRadius } from './behemoth';
 import { angleDiff, circleIntersectsRect, clamp, distanceToBox, rotateToward, type Rect } from './math';
 import { objectiveTaken } from './objective';
-import { roundSpec } from './projectiles';
+import { stepMask } from './mask';
+import { roundSpec, shotSpec } from './projectiles';
 import { spawnProjectile } from './weapons';
 import type { World } from './world';
 import { paySalvage } from './salvage';
@@ -63,6 +64,7 @@ export function spawnEnemy(w: World, id: EnemyId, x: number, y: number): Enemy {
       anchor: null,
     },
   };
+  if (def.masked) e.ai.masked = true;
   if (w.lastStand) joinSiege(e, w);
   e.hidden = hiddenNow(w, e);
   w.enemies.push(e);
@@ -115,8 +117,9 @@ export function stepEnemies(w: World, dt: number): void {
       destroyEnemy(w, e, 'crushed');
       continue;
     }
-    // A trapdoor team only shoots with its lid up.
-    if (!e.def.trapdoor || stepLid(w, e, dt)) aimAndFire(w, e, dt);
+    // A trapdoor team only shoots with its lid up, a masked unit with its cover off.
+    const ready = e.def.trapdoor ? stepLid(w, e, dt) : e.def.masked ? stepMask(w, e, dt) : true;
+    if (ready) aimAndFire(w, e, dt);
     if (e.ai.ramIn) e.ai.ramIn = Math.max(0, e.ai.ramIn - dt);
     if (!e.ai.sighted && !e.hidden && e.x <= frameRight(w.frame) && e.x >= w.frame.left) sight(w, e);
   }
@@ -138,10 +141,8 @@ function stepLid(w: World, e: Enemy, dt: number): boolean {
   switch (ai.lid ?? 'shut') {
     case 'shut': {
       if (ai.lidT > 0 || w.extractedAt !== null) return false;
-      const margin = e.def.radius + 4;
-      const onScreen = e.x >= w.frame.left + margin && e.x <= frameRight(w.frame) - margin;
       const level = b.x >= e.x - TRAPDOOR.lead;
-      if (!onScreen || !level || d > e.def.fireRange || !enemyCanSee(w, e) || w.terrain.lineBlocked(e.x, e.y, b.x, b.y)) return false;
+      if (!inFrame(w.frame, e) || !level || d > e.def.fireRange || !enemyCanSee(w, e) || w.terrain.lineBlocked(e.x, e.y, b.x, b.y)) return false;
       ai.lid = 'lifting';
       ai.lidT = td.lift;
       ai.marked = true;
@@ -217,8 +218,8 @@ function sight(w: World, e: Enemy): void {
 }
 
 function moveEnemy(w: World, e: Enemy, dt: number): void {
-  // Fixed positions never move; only their turrets turn.
-  if (e.def.maxSpeed <= 0) return;
+  // Fixed positions never move; only their turrets turn. Troops riding a train are carried (`sim/trainCars.ts`).
+  if (e.def.maxSpeed <= 0 || e.ai.riding) return;
   const t = w.terrain;
   // In the last stand everyone with a siege ring drops their usual behavior and closes in (`behave`).
   // Units keep clear of each other on top of that.
@@ -364,13 +365,13 @@ export function gunTarget(w: World, at: { x: number; y: number }, target: GunTar
 function aimGun(w: World, e: Enemy, g: EnemyGun, m: GunMount, dt: number): void {
   if (!g.weapon) return;
   const weapon = g.weapon;
-  const spec = roundSpec(weapon);
+  const spec = shotSpec(weapon);
   const at = gunPivot(e, m.pivot);
   const tgt = gunTarget(w, at, m.target);
   const d = Math.hypot(tgt.x - at.x, tgt.y - at.y);
   // Lead the target by the round's flight time (missiles home, so they just point at it; a
-  // battery lays its guns on the zone it will mark).
-  const lead = weapon.barrage ? barrageLead(weapon) : spec.kind === 'missile' ? 0 : d / spec.speed;
+  // battery lays its guns on the zone it will mark; a flame is there at once).
+  const lead = weapon.barrage ? barrageLead(weapon) : spec.kind === 'shell' || spec.kind === 'bullet' ? d / spec.speed : 0;
   const want = Math.atan2(tgt.y + tgt.vy * lead - at.y, tgt.x + tgt.vx * lead - at.x);
   // A gun laid for crossfire turns only so far either side of its hull (SPEC §7.4 hedge gun): it
   // holds at the edge of its arc, and can't fire until the target comes into it.
@@ -388,9 +389,7 @@ function aimGun(w: World, e: Enemy, g: EnemyGun, m: GunMount, dt: number): void 
   // Fairness: never fire from off-screen. Leaving the frame mid-aim cancels the shot (and the
   // rest of a volley). The one exception is a railway gun's area fire (`EnemyDef.offscreen`): its
   // marked zone is the warning.
-  const margin = e.def.radius + 4;
-  const onScreen =
-    e.x >= w.frame.left + margin && e.x <= frameRight(w.frame) - margin && e.y >= 0 && e.y <= w.terrain.height;
+  const onScreen = inFrame(w.frame, e) && e.y >= 0 && e.y <= w.terrain.height;
   if (!onScreen && !(e.def.offscreen && weapon.barrage)) {
     g.windup = 0;
     g.salvoLeft = 0;
@@ -495,7 +494,10 @@ function fireRound(w: World, e: Enemy, g: EnemyGun, at: { x: number; y: number }
   const mx = at.x + Math.cos(g.turret) * g.weapon.muzzle;
   const my = at.y + Math.sin(g.turret) * g.weapon.muzzle;
   const zone = g.weapon.barrage ? g.zone : undefined;
-  if (zone) {
+  if (g.weapon.projectile.kind === 'flame') {
+    // A lick of a flamethrower's gout, drawn as a stream of its own from this gun.
+    shootFlame(w, g.weapon, mx, my, g.turret, `enemy${e.id}.${g === e ? 'main' : e.guns.indexOf(g as (typeof e.guns)[number])}`, 'enemy');
+  } else if (zone) {
     // Somewhere in the zone, landing `flight` seconds from now.
     const a = w.rng.range(0, Math.PI * 2);
     const r = (g.weapon.barrage!.spread ?? zone.radius) * Math.sqrt(w.rng.next());

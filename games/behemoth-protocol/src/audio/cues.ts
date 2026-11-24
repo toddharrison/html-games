@@ -1,6 +1,7 @@
 import { ENEMIES } from '../content/enemies';
 import type { ObstacleClass } from '../content/obstacles';
 import { MATERIALS } from '../content/terrain';
+import { TRAIN_CARS } from '../content/trainCars';
 import { STEREO, TRAIN } from '../content/tuning';
 import type { WeaponId } from '../content/weapons';
 import { component, fraction, speedLimits, type BehemothState, type PlayerCommand } from '../sim/behemoth';
@@ -57,12 +58,38 @@ export type SoundId =
   | 'arc'
   | 'thunder'
   | 'trainWhistle'
+  | 'raidWhistle'
   | 'derail'
   | 'trainBrakes'
+  | 'couplings'
+  | 'steam'
   | 'detonation';
 
 /** Sustained sounds that keep going while their events keep coming, and fade once they stop. */
 export type HoldId = 'beam' | 'scrape' | 'burn' | 'flame';
+
+/**
+ * What a train's whistle can say: the lengths of its blasts (s). The armored train's whistle
+ * (`trainWhistle`) and an attack train's (`raidWhistle`) sound the same signals in their own voices.
+ */
+export const WHISTLE_SIGNALS = {
+  /** Pulling out of the station: two long. */
+  depart: [1.3, 2],
+  /** On the run: a short and a long. */
+  run: [0.45, 1.5],
+  /** The old crossing call: two long, a short, a long. */
+  crossing: [1.2, 1.2, 0.35, 1.8],
+  /** One long blast: into a tunnel. */
+  long: [2.4],
+  /** Two short. */
+  toot: [0.3, 0.3],
+  /** An attack train coming up: two short and a long. */
+  raid: [0.3, 0.3, 1.2],
+  /** Something's on the line: a run of short blasts, the last held. */
+  danger: [0.25, 0.25, 0.25, 0.25, 0.25, 0.9],
+} satisfies Record<string, readonly number[]>;
+
+export type WhistleSignal = keyof typeof WHISTLE_SIGNALS;
 
 export interface Cue {
   sound: SoundId | HoldId;
@@ -73,6 +100,8 @@ export interface Cue {
   y?: number;
   /** Heard at least this loud however far off it is (a whistle carries). */
   carry?: number;
+  /** A whistle's signal (`run` when it has none). */
+  signal?: WhistleSignal;
 }
 
 export const HOLDS: ReadonlySet<string> = new Set<HoldId>(['beam', 'scrape', 'burn', 'flame']);
@@ -129,6 +158,7 @@ export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: nu
   // on the field, usually from off screen (the shell's long whistle is the `barrage` cue).
   trainMissiles: { sound: 'missile', size: 0.5 },
   trainAutocannon: { sound: 'autocannon', size: 0.45 },
+  trainFlamer: { sound: 'flame', size: 1 },
   trainHowitzer: { sound: 'howitzer', size: 0.8 },
   trainRockets: { sound: 'rocket', size: 0.55 },
   troopRockets: { sound: 'rocket', size: 0.4 },
@@ -171,6 +201,15 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
     }
     case 'plasmaBurn':
       return [{ sound: 'burn', size: 1, x: ev.x, y: ev.y }];
+    // An enemy flamethrower's stream on the hull: the armor searing.
+    case 'hullBurn':
+      return [{ sound: 'burn', size: 1, x: ev.x, y: ev.y }];
+    // A masked car's side panels blown off: the charges' crack, the panels clanging down.
+    case 'unmask':
+      return [
+        { sound: 'explosion', size: 0.3, x: ev.x, y: ev.y },
+        { sound: 'clank', size: 1, x: ev.x, y: ev.y },
+      ];
     // A bullet on armor: off the front it's a dark clank (now and then a round sings off); a flank
     // or rear hit is the `facingHit`'s pierce, so it adds nothing of its own.
     case 'impact':
@@ -200,6 +239,8 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
       const out: Cue[] = [];
       if (ev.cause === 'crushed') out.push({ sound: 'crush', size: def.hp > 40 ? 1 : 0.7, x: ev.x, y: ev.y });
       out.push({ sound: 'vehicleKill', size: ev.cause === 'crushed' ? 0.45 : def.hp > 40 ? 0.85 : 0.65, x: ev.x, y: ev.y });
+      // A train's engine: its boiler lets go.
+      if (ev.enemy === TRAIN_CARS.engine.enemy) out.push({ sound: 'steam', size: 1, x: ev.x, y: ev.y });
       if (ctx.wet(ev.x, ev.y)) out.push({ sound: 'splash', size: 0.6, x: ev.x, y: ev.y });
       return out;
     }
@@ -274,7 +315,7 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
     case 'trainStart':
       return [
         { sound: 'radio', size: 1 },
-        { sound: 'trainWhistle', size: 1, x: ev.x, y: ev.y, carry: 0.5 },
+        { sound: 'trainWhistle', size: 1, x: ev.x, y: ev.y, carry: 0.5, signal: 'depart' },
       ];
     case 'trainStopped':
       return ev.derailed ? [{ sound: 'radio', size: 1 }] : [{ sound: 'radio', size: 1 }, { sound: 'trainBrakes', size: 1, x: ev.x, y: ev.y, carry: 0.35 }];
@@ -283,12 +324,16 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
       return [{ sound: 'derail', size: ev.behind > 0 ? 1 : 0.7, x: ev.x, y: ev.y }];
     case 'trainDerail':
       return ev.sunk ? [{ sound: 'derail', size: 0.6, x: ev.x, y: ev.y }, { sound: 'splash', size: 1.1, x: ev.x, y: ev.y }] : [{ sound: 'derail', size: 0.85, x: ev.x, y: ev.y }];
-    // An attack train coming up from behind whistles; the radio calls it, and the end of a Gauntlet.
+    // An attack train coming up from behind whistles, in its own shriller voice; the radio calls it,
+    // and the end of a Gauntlet.
     case 'trainRaid':
       return [
         { sound: 'radio', size: 1 },
-        { sound: 'trainWhistle', size: 0.6, x: ev.x, y: ev.y, carry: 0.45 },
+        { sound: 'raidWhistle', size: 0.8, x: ev.x, y: ev.y, carry: 0.45, signal: 'raid' },
       ];
+    // Going into a crossover's tunnel: one long blast.
+    case 'trainTunnel':
+      return [{ sound: ev.raid ? 'raidWhistle' : 'trainWhistle', size: 0.8, x: ev.x, y: ev.y, carry: 0.4, signal: 'long' }];
     case 'raidsOver':
       return [{ sound: 'radio', size: 1 }];
     // An oil slick catching: a whoomp of fire.
@@ -297,12 +342,23 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
     // A shot stopped on a shield car's plate: it rings and sings off.
     case 'shieldBlock':
       return [{ sound: 'ricochet', size: 0.9, x: ev.x, y: ev.y }];
-    // Cars abandoned behind a wreck sound the alarm.
+    // Cars abandoned behind a wreck: their buffers run in as they stand, and they sound the alarm.
     case 'trainAbandoned':
-      return [{ sound: 'alarm', size: 0.8, x: ev.x, y: ev.y }];
-    // The train running into the hull: the heaviest ram there is. A flinger's throw: a dull thunk.
+      return [
+        { sound: 'alarm', size: 0.8, x: ev.x, y: ev.y },
+        { sound: 'couplings', size: clamp(ev.cars / 8, 0.3, 1), x: ev.x, y: ev.y },
+      ];
+    // The train running into the hull: the heaviest ram there is, and the slack running in down its
+    // length. (An engine going up against it is the blast's own sound, and the kill's; its whistle
+    // shrieked the danger signal as it bore down, `TrainSound.danger`.) An engine through a wreck on
+    // its track: steel shrieking, and the crash. A flinger's throw: a dull thunk.
     case 'trainStrike':
-      return [{ sound: 'ram', size: 1.5, x: ev.x, y: ev.y }];
+      return [
+        { sound: 'ram', size: 1.5, x: ev.x, y: ev.y },
+        { sound: 'couplings', size: 0.7, x: ev.x, y: ev.y },
+      ];
+    case 'trainPlow':
+      return [{ sound: 'derail', size: 0.7, x: ev.x, y: ev.y }];
     case 'mineFlung':
       return [{ sound: 'mortar', size: 0.3, x: ev.x0, y: ev.y0 }];
     // A heavy weapons team painting the hull: the cab's lock warning, from the team's side.
@@ -417,10 +473,14 @@ export const MIN_GAP: Record<SoundId, number> = {
   railgun: 0.1,
   arc: 0.08,
   thunder: 0.5,
-  trainWhistle: 3,
+  // A whistle's signal runs for seconds: the next one waits for it.
+  trainWhistle: 4,
+  raidWhistle: 3,
   // A pileup is a run of crashes, not one.
   derail: 0.16,
   trainBrakes: 3,
+  couplings: 1.5,
+  steam: 0.5,
   detonation: 1,
 };
 
@@ -472,8 +532,11 @@ export const PITCH_SPREAD: Record<SoundId, number> = {
   arc: 2,
   thunder: 1.5,
   trainWhistle: 0.3,
+  raidWhistle: 0.6,
   derail: 1.5,
   trainBrakes: 0.8,
+  couplings: 1.5,
+  steam: 1,
   detonation: 0.6,
 };
 
@@ -564,8 +627,8 @@ export function reactorState(b: BehemothState, fuseStart: number | null): Reacto
 }
 
 /**
- * What an armored train sounds like this frame (SPEC §7.3): its wheels on the rails, heard from the
- * nearest vehicle still rolling, and its engines at work, heard from the nearest one still pulling.
+ * What the battle's trains sound like this frame (SPEC §7.3): wheels on the rails, heard from the
+ * nearest vehicle still rolling, and an engine at work, heard from the nearest one still pulling.
  */
 export interface TrainSound {
   /** How fast the nearest rolling vehicle is going, as a share of the train's full pace (0: nothing's rolling). */
@@ -574,40 +637,103 @@ export interface TrainSound {
   /** How hard the nearest pulling engine is working, 0–1 (0: none is). */
   work: number;
   engine: Placement;
-  /** The front engine still pulling: where the whistle sounds from. */
+  /** The armored train's front engine still pulling, above ground: where its whistle sounds from. */
   lead: { x: number; y: number } | null;
+  /** The nearest attack train's engine still pulling, above ground: where theirs does. */
+  raider: { x: number; y: number } | null;
+  /** An engine bearing down on the Behemoth on its own track (`DANGER`): it shrieks the danger signal. `raid`: an attack train's. */
+  danger: { x: number; y: number; raid: boolean } | null;
 }
 
 const SILENT: Placement = { gain: 0, pan: 0, distance: 0 };
+
+/** An engine sounds the danger signal once its nose is within `ahead` units behind a hull that's standing in its track and that it's gaining on. */
+export const DANGER = { ahead: 220 };
+
+/** In a crossover's tunnel a train is a dull rumble: this share of its level, and as dull as if this much further off. */
+export const TUNNEL_SOUND = { gain: 0.45, muffle: 500 };
 
 export function trainSound(w: World, listener: Listener): TrainSound | null {
   const tr = w.train;
   if (!tr) return null;
   const full = TRAIN.pace * tr.top;
-  const out: TrainSound = { roll: 0, rolling: SILENT, work: 0, engine: SILENT, lead: null };
+  const out: TrainSound = { roll: 0, rolling: SILENT, work: 0, engine: SILENT, lead: null, raider: null, danger: null };
+  const b = w.behemoth;
   let nearest = Infinity;
   let nearestEngine = Infinity;
+  let nearestRaider = Infinity;
   for (const p of tr.pieces) {
     if (p.speed <= 0 || full <= 0) continue;
     const pace = clamp(p.speed / full, 0, 1.2);
     for (let i = p.first; i <= p.last; i++) {
       const v = tr.vehicles[i]!;
       if (v.state !== 'coupled') continue;
-      const d = Math.hypot(v.x - listener.x, v.y - listener.y);
+      const under = w.terrain.underground(v.x);
+      const at = place(listener, v);
+      if (under) {
+        at.gain *= TUNNEL_SOUND.gain;
+        at.distance += TUNNEL_SOUND.muffle;
+      }
+      // Under ground counts as further off: the cars still in the open are what's heard.
+      const d = at.distance;
       if (d < nearest) {
         nearest = d;
         out.roll = pace;
-        out.rolling = place(listener, v);
+        out.rolling = at;
       }
       if (p.state !== 'running' || !v.alive || !v.car.engine) continue;
-      out.lead ??= { x: v.x, y: v.y };
       if (d < nearestEngine) {
         nearestEngine = d;
         // It never idles while it's pulling a train.
         out.work = Math.max(0.3, Math.min(1, pace));
-        out.engine = place(listener, v);
+        out.engine = at;
+      }
+      if (under) continue;
+      // At the head of its train, with the hull on the rails ahead of it.
+      const gap = b.x - b.chassis.length / 2 - (v.x + v.car.length / 2);
+      const onTrack = Math.abs(b.y - w.terrain.trackY(b.x, p.track)) < (b.chassis.width + v.car.width) / 2;
+      if (i === p.first && !b.destroyed && gap > 0 && gap < DANGER.ahead && onTrack && p.speed > b.vx) out.danger ??= { x: v.x, y: v.y, raid: p.raid };
+      if (!p.raid) out.lead ??= { x: v.x, y: v.y };
+      else if (d < nearestRaider) {
+        nearestRaider = d;
+        out.raider = { x: v.x, y: v.y };
       }
     }
   }
   return out;
+}
+
+/**
+ * How often an engine whistles on the run (s, at random between the two), which signals it picks
+ * from (one named twice comes up twice as often), and how loud it's heard at least. `main`: the
+ * armored train's lead engine, often far ahead. `raid`: the nearest attack train's, as it passes.
+ */
+export const WHISTLE_RUN = {
+  main: { sound: 'trainWhistle', every: [16, 30], signals: ['run', 'run', 'crossing', 'toot', 'long'], carry: 0.35 },
+  raid: { sound: 'raidWhistle', every: [8, 14], signals: ['toot', 'toot', 'run', 'raid'], carry: 0.3 },
+} as const satisfies Record<string, { sound: SoundId; every: readonly [number, number]; signals: readonly WhistleSignal[]; carry: number }>;
+
+/** Times one train's whistles on the run. It starts counting when an engine is there to sound it, and stops when none is. */
+export class WhistleClock {
+  private at: number | null = null;
+
+  constructor(private readonly run: (typeof WHISTLE_RUN)[keyof typeof WHISTLE_RUN]) {}
+
+  /**
+   * The whistle to sound now, if one's due. `time`: the battle's clock. `from`: the engine (null:
+   * none is pulling). `random`: uniform in [0, 1), drawn for the wait and for the signal.
+   */
+  tick(time: number, from: { x: number; y: number } | null, random: () => number): Cue | null {
+    if (!from) {
+      this.at = null;
+      return null;
+    }
+    const due = this.at !== null && time >= this.at;
+    const [lo, hi] = this.run.every;
+    if (this.at === null || due) this.at = time + lo + random() * (hi - lo);
+    if (!due) return null;
+    const signals = this.run.signals;
+    const signal = signals[Math.min(signals.length - 1, Math.floor(random() * signals.length))]!;
+    return { sound: this.run.sound, size: 0.6, x: from.x, y: from.y, carry: this.run.carry, signal };
+  }
 }

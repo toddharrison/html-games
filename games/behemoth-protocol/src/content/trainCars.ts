@@ -21,6 +21,7 @@ export type TrainCarId =
   | 'rocketCar'
   | 'missileCar'
   | 'troopCar'
+  | 'ambushCar'
   | 'mineCar'
   | 'shieldCar'
   | 'caboose'
@@ -70,6 +71,15 @@ export interface TrainCarDef {
   cost?: number;
   /** Destroyed or abandoned, this many squads of `unit` jump out beside it (a troop car). */
   troops?: { unit: EnemyId; squads: number };
+  /**
+   * Troops may ride on its roof (any car with nothing up there in their way: no turret, arm, or
+   * hopper). With odds `odds`, drawn as the train is made up, it carries `squads` of `unit`, spaced
+   * `spacing` apart along it, each in a sandbagged nest that keeps `cover` of what's shot at them
+   * off them (as a wood or a building does for troops on the ground, `MaterialDef.protection`).
+   * They fight from up there and can be shot off it; they go with the car when it's wrecked, and
+   * climb down to fight on foot when it's abandoned (`sim/trainCars.ts`).
+   */
+  riders?: { unit: EnemyId; squads: number; spacing: number; cover: number; odds: number };
   /** Lobs mines onto the Behemoth's line (a mine flinger). */
   fling?: MineFlingDef;
   /** Seconds into the battle its gun first fires (the railway gun's opening shell); missing: as any unit. */
@@ -77,6 +87,9 @@ export interface TrainCarDef {
   /** Its letter on the HUD's train strip. */
   glyph: string;
 }
+
+/** Troops on a car's roof (`TrainCarDef.riders`): two infantry squads in sandbagged nests, unless the car says otherwise. Each car has its own odds of carrying them. */
+const ROOF = { unit: 'infantry', squads: 2, spacing: 16, cover: 0.5 } as const;
 
 export const TRAIN_CARS: Record<TrainCarId, TrainCarDef> = {
   engine: { id: 'engine', name: 'Engine', short: 'engine', enemy: 'trainEngine', length: 52, width: 22, engine: true, massive: true, glyph: 'E' },
@@ -113,8 +126,11 @@ export const TRAIN_CARS: Record<TrainCarId, TrainCarDef> = {
     width: 18,
     cost: 1.5,
     troops: { unit: 'infantry', squads: 2 },
+    riders: { ...ROOF, odds: 0.5 },
     glyph: 'T',
   },
+  // A boxcar until the hull is alongside: then its sides come off a gun deck (`EnemyDef.masked`).
+  ambushCar: { id: 'ambushCar', name: 'Ambush car', short: 'ambush', enemy: 'trainAmbushCar', length: 38, width: 18, cost: 4, glyph: 'Q' },
   mineCar: {
     id: 'mineCar',
     name: 'Mine flinger',
@@ -132,17 +148,24 @@ export const TRAIN_CARS: Record<TrainCarId, TrainCarDef> = {
   // An attack train's armored tail: three weapons and thick plate. Never drawn for an armored train.
   caboose: { id: 'caboose', name: 'Armored caboose', short: 'caboose', enemy: 'trainCaboose', length: 40, width: 20, glyph: 'Z' },
   // Unarmed, and the counter to its neighbors: it goes up on them.
-  ammoCar: { id: 'ammoCar', name: 'Ammo car', short: 'ammo', enemy: 'trainAmmoCar', length: 38, width: 18, volatile: { radius: 60, damage: 90 }, glyph: 'A' },
-  boxcar: { id: 'boxcar', name: 'Boxcar', short: 'box', enemy: 'trainBoxcar', length: 38, width: 18, glyph: 'B' },
+  ammoCar: { id: 'ammoCar', name: 'Ammo car', short: 'ammo', enemy: 'trainAmmoCar', length: 38, width: 18, volatile: { radius: 60, damage: 90 }, riders: { ...ROOF, squads: 1, odds: 0.25 }, glyph: 'A' },
+  boxcar: { id: 'boxcar', name: 'Boxcar', short: 'box', enemy: 'trainBoxcar', length: 38, width: 18, riders: { ...ROOF, odds: 0.3 }, glyph: 'B' },
 };
 
 export const TRAIN_CAR_IDS = Object.keys(TRAIN_CARS) as TrainCarId[];
 
+/** One of everything (`?train=all`, to look the cars over): an engine, the railway gun, then every other car in the table's order. */
+export function sampleTrain(): TrainCarId[] {
+  return ['engine', TRAIN_LAYOUT.gun, ...TRAIN_CAR_IDS.filter((id) => !TRAIN_CARS[id].engine && id !== TRAIN_LAYOUT.gun)];
+}
+
 /**
  * A train's vehicles from a layout string (`?train=engine,gun,ammo,box,...`), front to back: each
- * name a car's id or its `short` name; unknown names are skipped.
+ * name a car's id or its `short` name; unknown names are skipped. `all` is one of everything
+ * (`sampleTrain`).
  */
 export function parseTrain(text: string): TrainCarId[] {
+  if (text.trim() === 'all') return sampleTrain();
   return text
     .split(',')
     .map((s) => s.trim())
@@ -184,11 +207,11 @@ export const TRAIN_LAYOUT: {
  * the train beyond the mode's escorts.
  */
 export const TRAIN_DOCTRINE: Record<DoctrineId, { weights: Partial<Record<TrainCarId, number>>; escorts?: number }> = {
-  combined: { weights: { gunCar: 1, twinGunCar: 0.6, autocannonCar: 1, howitzerCar: 1, rocketCar: 1, missileCar: 1, troopCar: 1, mineCar: 1, shieldCar: 0.7 } },
-  armoredFist: { weights: { gunCar: 2, twinGunCar: 1.5, autocannonCar: 1, howitzerCar: 0.5, rocketCar: 0.5, missileCar: 1, troopCar: 1, mineCar: 0.5, shieldCar: 1 } },
-  longGuns: { weights: { gunCar: 1, twinGunCar: 0.5, autocannonCar: 0.5, howitzerCar: 2, rocketCar: 1.5, missileCar: 2, troopCar: 0.5, mineCar: 1, shieldCar: 0.5 } },
-  entrenched: { weights: { gunCar: 1, twinGunCar: 0.5, autocannonCar: 1.5, howitzerCar: 1, rocketCar: 0.5, missileCar: 0.5, troopCar: 2, mineCar: 2, shieldCar: 1 } },
-  raiders: { weights: { gunCar: 1, twinGunCar: 0.5, autocannonCar: 1.5, howitzerCar: 1, rocketCar: 1.5, missileCar: 1, troopCar: 1, mineCar: 1.5, shieldCar: 0.5 }, escorts: 1 },
+  combined: { weights: { ambushCar: 0.6, gunCar: 1, twinGunCar: 0.6, autocannonCar: 1, howitzerCar: 1, rocketCar: 1, missileCar: 1, troopCar: 1, mineCar: 1, shieldCar: 0.7 } },
+  armoredFist: { weights: { ambushCar: 0.8, gunCar: 2, twinGunCar: 1.5, autocannonCar: 1, howitzerCar: 0.5, rocketCar: 0.5, missileCar: 1, troopCar: 1, mineCar: 0.5, shieldCar: 1 } },
+  longGuns: { weights: { ambushCar: 0.4, gunCar: 1, twinGunCar: 0.5, autocannonCar: 0.5, howitzerCar: 2, rocketCar: 1.5, missileCar: 2, troopCar: 0.5, mineCar: 1, shieldCar: 0.5 } },
+  entrenched: { weights: { ambushCar: 0.6, gunCar: 1, twinGunCar: 0.5, autocannonCar: 1.5, howitzerCar: 1, rocketCar: 0.5, missileCar: 0.5, troopCar: 2, mineCar: 2, shieldCar: 1 } },
+  raiders: { weights: { ambushCar: 1.2, gunCar: 1, twinGunCar: 0.5, autocannonCar: 1.5, howitzerCar: 1, rocketCar: 1.5, missileCar: 1, troopCar: 1, mineCar: 1.5, shieldCar: 0.5 }, escorts: 1 },
 };
 
 /** A train of engines and boxcars only, front to back (practice, and tests of how a train runs). */

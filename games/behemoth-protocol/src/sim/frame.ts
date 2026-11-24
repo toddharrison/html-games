@@ -74,3 +74,15 @@ export function centerFrame(f: FrameState, behemothX: number, dt: number): void 
 export function frameRight(f: FrameState): number {
   return f.left + f.config.width;
 }
+
+/** How far inside the frame's ends (beyond its own radius) a unit has to be before it may act. */
+const ACT_MARGIN = 4;
+
+/**
+ * Whether a unit is far enough inside the frame, along the direction of travel, to act (SPEC §7
+ * fairness: nothing opens fire, lifts a lid, drops a mask, or throws a mine from off screen).
+ */
+export function inFrame(f: FrameState, e: { x: number; def: { radius: number } }): boolean {
+  const margin = e.def.radius + ACT_MARGIN;
+  return e.x >= f.left + margin && e.x <= frameRight(f) - margin;
+}

@@ -12,7 +12,8 @@ import { objectiveComplete } from '../../src/sim/objective';
 import { fireBeam } from '../../src/sim/projectiles';
 import { Rng } from '../../src/sim/rng';
 import { shieldPlate, shieldStop } from '../../src/sim/shield';
-import { buildRaider, trainBodies, type TrainPiece, type TrainState } from '../../src/sim/train';
+import { trainBodies, type TrainPiece, type TrainState } from '../../src/sim/train';
+import { buildRaider } from '../../src/sim/trainCars';
 import { spawnProjectile } from '../../src/sim/weapons';
 import { createWorld, stepWorld, type World, type WorldOptions } from '../../src/sim/world';
 
@@ -135,7 +136,7 @@ describe('attack trains on the second track (SPEC §7.3)', () => {
     expect(raids(w)).toHaveLength(0);
   });
 
-  it('wreck and pile up like any train, and the next one runs into a wreck lying on its track in view', () => {
+  it('wreck and pile up like any train, and the next one\'s engine plows through a wreck lying on its track in view', () => {
     const w = battle('gauntlet');
     const tr = train(w);
     const events: SimEvent[] = [];
@@ -160,20 +161,23 @@ describe('attack trains on the second track (SPEC §7.3)', () => {
       v.heading = Math.PI / 2;
     }
     expect(other).not.toBe(track);
-    const before = events.filter((e) => e.type === 'trainDerail').length;
-    const piled = new Set<number>();
-    for (let t = 0; t < 80 && piled.size < 2; t += 0.1) {
-      for (const e of run(w, 0.1, { throttle: -1 })) if (e.type === 'trainDerail') piled.add(Math.round(e.x / 40));
+    const plowed: SimEvent[] = [];
+    const piled: SimEvent[] = [];
+    for (let t = 0; t < 80 && plowed.length < 1; t += 0.1) {
+      for (const e of run(w, 0.1, { throttle: -1 })) (e.type === 'trainPlow' ? plowed : e.type === 'trainDerail' ? piled : []).push(e);
       // Hold the hull by the wrecks (the frame, and so what counts as in view, follows it).
       w.behemoth.vx = 0;
       w.behemoth.x = across.x - 60;
     }
-    void before;
-    expect(piled.size).toBeGreaterThanOrEqual(1);
-    // What ran into them was a later train: its front vehicle is a wreck there too.
-    const crashed = tr.vehicles.slice(last + 1).filter((v) => v.state === 'wrecked');
-    expect(crashed.length).toBeGreaterThanOrEqual(1);
-    for (const v of crashed) expect(Math.abs(v.x - across.x)).toBeLessThan(160);
+    // A later train's engine went through one of them (they're no part of its own train): the wreck
+    // is swept off the rails, and nothing of that train left them.
+    expect(plowed).toHaveLength(1);
+    expect(piled).toHaveLength(0);
+    expect([across, wrecks[0]!].filter((v) => v.state === 'gone')).toHaveLength(1);
+    const later = tr.vehicles.slice(last + 1);
+    expect(later.length).toBeGreaterThan(0);
+    expect(later.filter((v) => v.state === 'wrecked')).toHaveLength(0);
+    expect(new Set(later.map((v) => v.train)).has(tr.vehicles[first]!.train)).toBe(false);
   });
 
   it('goes up in earnest: each vehicle that piles in is blown up as it lands, burns, and may cook off', () => {

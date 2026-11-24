@@ -23,9 +23,9 @@ export function cheapest(mix: Partial<Record<EnemyId, number>>): number {
   return costs.length > 0 ? Math.min(...costs) : Infinity;
 }
 
-/** Live enemies' total threat. */
+/** Live enemies' total threat. A train and the troops riding it are the battle's set piece: they cost the alert clock nothing. */
 export function liveThreat(w: World): number {
-  return w.enemies.reduce((sum, e) => sum + (e.alive ? e.def.threat : 0), 0);
+  return w.enemies.reduce((sum, e) => sum + (e.alive && !e.train ? e.def.threat : 0), 0);
 }
 
 /**

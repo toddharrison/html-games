@@ -1,4 +1,4 @@
-import { place, type EngineState, type HoldId, type ReactorState, type SoundId } from '../cues';
+import { place, TUNNEL_SOUND, WHISTLE_SIGNALS, type EngineState, type HoldId, type ReactorState, type SoundId, type WhistleSignal } from '../cues';
 import { Synth } from '../synth';
 import { barEvents, timeline, type BarPlan, type MusicInput } from './director';
 import { duckFor } from './duck';
@@ -329,9 +329,19 @@ interface Take {
   /** Shots in the burst and seconds between them. */
   burst?: [count: number, every: number];
   seconds: number;
+  /** What a whistle says. */
+  signal?: WhistleSignal;
 }
 
 const take = (name: string, sound: SoundId, size: number, seconds: number, far?: number, burst?: [number, number]): Take => ({ name, sound, size, seconds, far, burst });
+const whistle = (sound: 'trainWhistle' | 'raidWhistle', signal: WhistleSignal, far: number): Take => ({
+  name: `${sound}: ${signal}`,
+  sound,
+  size: 1,
+  seconds: WHISTLE_SIGNALS[signal].reduce((a, blast) => a + blast + 0.45, 2),
+  far,
+  signal,
+});
 
 /** Every one-shot at the sizes and distances the game plays it, each alone. */
 const TAKES: Take[] = [
@@ -389,6 +399,21 @@ const TAKES: Take[] = [
   take('arc: projector', 'arc', 1, 2.5, 20),
   take('arc: tesla', 'arc', 0.35, 1.5, 20, [3, 0.25]),
   take('thunder', 'thunder', 1, 6, 300),
+  whistle('trainWhistle', 'depart', 600),
+  whistle('trainWhistle', 'run', 400),
+  whistle('trainWhistle', 'crossing', 400),
+  whistle('trainWhistle', 'long', 250),
+  whistle('trainWhistle', 'toot', 400),
+  whistle('trainWhistle', 'danger', 60),
+  whistle('raidWhistle', 'raid', 300),
+  whistle('raidWhistle', 'toot', 150),
+  whistle('raidWhistle', 'run', 150),
+  whistle('raidWhistle', 'danger', 60),
+  take('derail', 'derail', 1, 3, 150),
+  take('trainBrakes', 'trainBrakes', 1, 5, 200),
+  take('couplings: struck', 'couplings', 0.7, 2.5, 60),
+  take('couplings: a long train left standing', 'couplings', 1, 3, 200),
+  take('steam: an engine destroyed', 'steam', 1, 5, 150),
   take('detonation', 'detonation', 2, 10),
 ];
 
@@ -405,6 +430,15 @@ const DRIVES: [name: string, state: EngineState, wet: boolean][] = [
 ];
 const DRIVE_SECONDS = 3;
 const MELTDOWN_SECONDS = 5;
+/** A train (its wheels and its nearest engine): how fast it rolls, how hard the engine works, how far off, and whether it's in a tunnel. Four seconds each. */
+const TRAINS: [name: string, roll: number, work: number, far: number, under: boolean][] = [
+  ['train: alongside, full pace', 1, 1, 110, false],
+  ['train: alongside, slowed', 0.5, 0.5, 110, false],
+  ['train: across the field', 1, 1, 260, false],
+  ['train: in a tunnel', 1, 1, 110, true],
+  ['train: coasting cars, no engine', 0.6, 0, 110, false],
+];
+const TRAIN_SECONDS = 4;
 
 /**
  * Every sound effect in turn, alone, through the game's `Synth`: the one-shots (`TAKES`), the held
@@ -412,7 +446,7 @@ const MELTDOWN_SECONDS = 5;
  * (and comparing) the sounds themselves; start times in the `.txt`.
  */
 async function renderSounds(): Promise<Render> {
-  const total = TAKES.reduce((a, t) => a + t.seconds, 0) + HOLD_TAKES.length * (HOLD_SECONDS + 1) + DRIVES.length * DRIVE_SECONDS + MELTDOWN_SECONDS + 2;
+  const total = TAKES.reduce((a, t) => a + t.seconds, 0) + HOLD_TAKES.length * (HOLD_SECONDS + 1) + DRIVES.length * DRIVE_SECONDS + MELTDOWN_SECONDS + TRAINS.length * TRAIN_SECONDS + 3;
   const ctx = new OfflineAudioContext(2, Math.ceil(total * SAMPLE_RATE), SAMPLE_RATE);
   const synth = new Synth(ctx as unknown as AudioContext, ctx.destination);
   Object.defineProperty(synth, 'running', { get: () => true });
@@ -427,7 +461,7 @@ async function renderSounds(): Promise<Render> {
     mark(`${k.name} (${k.sound} ${k.size}${k.far === undefined ? ', on board' : `, ${k.far} off`})`);
     const [count, every] = k.burst ?? [1, 0];
     const placed = place({ x: 0, y: 0 }, k.far === undefined ? {} : { x: k.far, y: k.far * 0.3 });
-    for (let i = 0; i < count; i++) shots.push({ t: at + i * every, go: () => synth.play(k.sound, k.size, placed) });
+    for (let i = 0; i < count; i++) shots.push({ t: at + i * every, go: () => synth.play(k.sound, k.size, placed, k.signal) });
     at += k.seconds;
   }
   for (const id of HOLD_TAKES) {
@@ -452,6 +486,19 @@ async function renderSounds(): Promise<Render> {
   });
   at += MELTDOWN_SECONDS;
   shots.push({ t: at, go: () => synth.stopMachine() });
+  at += 1;
+  for (const [name, roll, work, far, under] of TRAINS) {
+    mark(name);
+    const heard = place({ x: 0, y: 0 }, { x: far * 0.3, y: far });
+    if (under) {
+      heard.gain *= TUNNEL_SOUND.gain;
+      heard.distance += TUNNEL_SOUND.muffle;
+    }
+    spans.push({ from: at, to: at + TRAIN_SECONDS, each: () => synth.setTrain({ roll, rolling: heard, work, engine: heard, lead: null, raider: null, danger: null }) });
+    at += TRAIN_SECONDS;
+  }
+  const stood = { gain: 0, pan: 0, distance: 0 };
+  shots.push({ t: at, go: () => synth.setTrain({ roll: 0, rolling: stood, work: 0, engine: stood, lead: null, raider: null, danger: null }) });
   shots.sort((a, b) => a.t - b.t);
 
   const QUANTUM = 128 * 4;

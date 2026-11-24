@@ -52,8 +52,9 @@ export interface Enemy extends EnemyGun {
   /** One of the battle mode's targets (SPEC §4.4: a fortress gun, a convoy hauler, a train's engine). */
   objective: boolean;
   /**
-   * A vehicle of the battle's armored train (SPEC §7.3): the train puts it on the line each step
-   * (`sim/train.ts`), and drops it itself, so it isn't despawned for falling behind the frame.
+   * A vehicle of one of the battle's trains (SPEC §7.3), or troops riding one (`AiMemory.riding`):
+   * the train puts it in its place each step (`sim/train.ts`), and drops it itself, so it isn't
+   * despawned for falling behind the frame.
    */
   train?: true;
   /**
@@ -128,6 +129,13 @@ export interface AiMemory {
   under?: boolean;
   /** Bomb truck: within `BOMB.close` of the hull, the last stretch (its strobe quickens). */
   close?: boolean;
+  /** Troops on a train car's roof (`TrainCarDef.riders`): the train carries them, so they don't walk (`sim/trainCars.ts`). */
+  riding?: boolean;
+  /** Riding: the share of what's shot at it that its car's parapet keeps off (`TrainCarDef.riders.cover`). */
+  parapet?: number;
+  /** A masked unit (`EnemyDef.masked`, `sim/mask.ts`): its cover is still on; and, once it's off, seconds until its guns can lay. */
+  masked?: boolean;
+  maskT?: number;
   /** It's been on screen (and its kind counted in `World.sighted`, its callout made if it has one). */
   sighted?: boolean;
 }

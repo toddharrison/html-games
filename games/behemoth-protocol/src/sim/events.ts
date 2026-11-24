@@ -93,8 +93,17 @@ export type SimEvent =
   | { type: 'oilIgnite'; x: number; y: number; radius: number }
   /** A shield car's plate stopped one of the Behemoth's shots (`EnemyDef.shield`). */
   | { type: 'shieldBlock'; x: number; y: number }
-  /** A train's piece under way ran into the Behemoth on the track ahead of it (SPEC-armored-train.md §T10). */
-  | { type: 'trainStrike'; x: number; y: number }
+  /**
+   * A train's piece under way ran into the Behemoth on the track ahead of it (SPEC-armored-train.md §T10).
+   * `raid`: an attack train's. `blast`: it was led by an engine, which went up against the hull (this radius).
+   */
+  | { type: 'trainStrike'; x: number; y: number; raid: boolean; blast: number | null }
+  /** A train's engine plowed through a wreck across its track that was no part of its own train (`TRAIN.plow`): the wreck is swept away. */
+  | { type: 'trainPlow'; x: number; y: number; heading: number; raid: boolean }
+  /** A masked unit's cover came off (`EnemyDef.masked`, a train's ambush car), toward `side` (the sign of sim y) of it. */
+  | { type: 'unmask'; id: number; x: number; y: number; heading: number; side: number }
+  /** An enemy flamethrower's stream is on the hull at (x, y). */
+  | { type: 'hullBurn'; x: number; y: number }
   /** A train's mine flinger lobbed a mine from (x0, y0) onto (x, y); it lands in `flight` s. */
   | { type: 'mineFlung'; x0: number; y0: number; x: number; y: number; flight: number }
   /** The train is stopped for good (no engine left running, or derailed): the Intercept is taken. */

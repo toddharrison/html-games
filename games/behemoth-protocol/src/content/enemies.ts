@@ -41,6 +41,7 @@ export type EnemyId =
   | 'trainMineCar'
   | 'trainAmmoCar'
   | 'trainBoxcar'
+  | 'trainAmbushCar'
   | 'trainShieldCar'
   | 'trainCaboose';
 
@@ -194,6 +195,13 @@ export interface EnemyDef {
    * rule that nothing fires from off screen. Only for area fire, whose marked zone is the warning.
    */
   offscreen?: boolean;
+  /**
+   * Masked (a train's ambush car, `sim/mask.ts`): it looks like something harmless (its art's
+   * `masked` body) and its guns stay hidden and silent until the Behemoth comes within `range` of
+   * it on screen, or a hit on it gives the game away. Then the mask comes off: `drop` s later its
+   * guns start to lay.
+   */
+  masked?: { range: number; drop: number };
   /**
    * A shield on an arm (a train's shield car, `sim/shield.ts`): an armor plate `width` long held
    * `reach` from the unit's center, square to the arm, which swings toward the Behemoth at
@@ -748,7 +756,9 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
   trainEngine: {
     // An armored train's engine (SPEC §4.4 Intercept, §7.3): it pulls its section, and it's the
     // mode's target. It never drives itself: the train puts it on the line each step
-    // (`sim/train.ts`). Unarmed, thick all round, and too big to crush.
+    // (`sim/train.ts`). Thick all round, and too big to crush. Its only weapons are two flame
+    // projectors, one behind the plow and one on the cab roof, for whatever comes alongside: they
+    // reach a hull in the lane where the lane runs close to the line.
     id: 'trainEngine',
     name: 'Engine',
     hp: 260,
@@ -771,6 +781,10 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     threat: 0,
     salvage: 30,
     ramDamage: 60,
+    turrets: [
+      { weapon: 'trainFlamer', pivot: { x: 15, y: 0 }, turretDegPerSec: 120, fireRange: 105, aimTime: 0.6, target: 'behemoth' },
+      { weapon: 'trainFlamer', pivot: { x: -19, y: 0 }, turretDegPerSec: 120, fireRange: 105, aimTime: 0.6, target: 'behemoth' },
+    ],
   },
   trainRailwayGun: {
     // The lead section's railway gun (SPEC-armored-train.md §T7): a huge gun on a long car behind
@@ -1090,6 +1104,35 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     threat: 0,
     // A hold full of supplies.
     salvage: 12,
+  },
+  trainAmbushCar: {
+    // A boxcar to look at (`masked`): when the hull comes alongside its side panels are blown off
+    // and it's a gun deck, a turret amidships and an autocannon mount at each end (§T21).
+    id: 'trainAmbushCar',
+    name: 'Ambush car',
+    hp: 150,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 40,
+    weapon: 'emplacementGun',
+    fireRange: 270,
+    aimTime: 0.9,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 26,
+    masked: { range: 170, drop: 0.7 },
+    turrets: [
+      { weapon: 'trainAutocannon', pivot: { x: 12, y: 0 }, turretDegPerSec: 150, fireRange: 220, aimTime: 0.5, target: 'behemoth' },
+      { weapon: 'trainAutocannon', pivot: { x: -12, y: 0 }, turretDegPerSec: 150, fireRange: 220, aimTime: 0.5, target: 'behemoth' },
+    ],
   },
 };
 

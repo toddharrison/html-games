@@ -376,10 +376,24 @@ export const TRAIN = {
    * wrecked), the treads `treads`; the train's front vehicle takes `front`, and the train loses
    * `slow` of its speed (it eases back up at `ease`). The hull is shoved toward the line's wide side
    * at `shove` units/s until it's `clear` units clear of the train's path, and can't be struck again
-   * for `again` s. `grind`: held this long (s) against a wreck's face, the hull grinds
-   * through it (nothing stops it for good).
+   * for `again` s. An engine that strikes the hull goes up against it (`blast`, with fire; the hull's
+   * share of it lands on the same armor the ram has just stripped, and `blast.treads` more goes to
+   * the treads), a wreck where it stood, and what it pulled piles into that. `grind`: held this long (s) against
+   * a wreck's face, the hull grinds through it (nothing stops it for good).
    */
-  collide: { strike: { arc: 60, treads: 15, front: 90, slow: 0.3, shove: 80, clear: 8, again: 2 }, grind: 2 },
+  collide: { strike: { arc: 60, treads: 15, front: 90, slow: 0.3, shove: 80, clear: 8, again: 2, blast: { radius: 90, damage: 200, treads: 20 } }, grind: 2 },
+  /**
+   * An engine at the head of a piece under way plows through a wreck across its track that was no
+   * part of its own train (another train's, thrown there): the wreck is swept off the rails, the
+   * train loses `slow` of its speed (it eases back up), and the engine takes `damage` (never its last).
+   * Its own train's wreck, and anything still standing on the rails, it piles into as before.
+   */
+  plow: { slow: 0.25, damage: 15 },
+  /** A wreck comes to rest this far along the line from where it left the rails (a range, back to forward), slewed round by this share of `derail.turn` (a range). */
+  wreckSlide: [-4, 6] as const,
+  wreckSlew: [0.3, 1] as const,
+  /** An attack train that finds something standing on its track behind the frame waits this long (s) and looks again. */
+  raidRetry: 2,
 };
 
 /**

@@ -366,8 +366,12 @@ function detonate(w: World, p: Projectile, target?: Enemy): void {
   if (!fire) igniteBlast(w, p.x, p.y, r, ignitesOf(spec));
 }
 
-/** Share of the damage a unit avoids where it stands: troops on foot use cover (SPEC §4.5). */
+/**
+ * Share of the damage a unit avoids where it stands: troops on foot use cover (SPEC §4.5). Troops
+ * riding a train car have its parapet, whatever ground the train is passing over.
+ */
 export function coverProtection(w: World, e: Enemy): number {
+  if (e.ai.riding) return e.ai.parapet ?? 0;
   return e.def.mobility === 'foot' ? w.terrain.protectionAt(e.x, e.y) : 0;
 }
 

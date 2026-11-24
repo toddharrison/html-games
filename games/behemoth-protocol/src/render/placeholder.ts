@@ -1254,6 +1254,10 @@ export const TRAIN_ART = {
   caboose: { w: 40, h: 20 },
   /** A shield car's arm and plate (`ENEMIES.trainShieldCar.shield`: reach 22, width 46), drawn as its turret. */
   shieldArm: { w: 29, h: 48, pivotX: 4 },
+  /** An engine's flame projectors (`ENEMIES.trainEngine.turrets`). */
+  flamer: { w: 10, h: 7, pivotX: 3 },
+  /** A sandbagged nest for a squad on a car's roof: square, this many pixels a side. */
+  nest: 14,
 };
 export const LAYER = { body: { w: 16, h: 11 } };
 export const HOVER = { body: { w: 15, h: 11 }, turret: { w: 10, h: 5 }, pivotX: 3 };
@@ -1555,6 +1559,21 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
       p.disc(w / 2, h / 2, 4.5, dead ? PAL.hole : PAL.warn, dead ? PAL.ash : PAL.amber);
       p.disc(w / 2, h / 2, 2, PAL.outline);
     });
+  // Ambush car, its mask off: the roof and sides gone from a gun deck, their torn edges left at the
+  // corners, a turret ring amidships and a mount ring at each end. (Masked, it's drawn as a boxcar.)
+  const ambushCar = (p: Painter, dead: boolean) =>
+    car(p, dead, (w, h) => {
+      p.rect(3, 5, w - 6, h - 10, dead ? PAL.ash : PAL.steelDark);
+      p.rect(3, 5, w - 6, 1, dead ? PAL.ash : PAL.steelMid);
+      for (const [x, y] of [[3, 4], [w - 7, 4], [3, h - 5], [w - 7, h - 5]] as const) p.rect(x, y, 4, 1, dead ? PAL.hole : PAL.concreteDark);
+      for (let x = 9; x < w - 8; x += 5) for (const y of [4, h - 5]) p.px(x, y, dead ? PAL.hole : PAL.warn);
+      p.disc(w / 2, h / 2, 5.5, PAL.outline);
+      p.disc(w / 2, h / 2, 4.5, dead ? PAL.hole : PAL.concreteDark, dead ? PAL.ash : PAL.concrete);
+      for (const x of [w / 2 - 12, w / 2 + 12]) {
+        p.disc(x, h / 2, 4, PAL.outline);
+        p.disc(x, h / 2, 3, dead ? PAL.hole : PAL.enemyDark);
+      }
+    });
   // An attack train's armored caboose: steel plate where the cars are red, banded, three mounts
   // down its spine, tail lamps at the back.
   const caboose = (p: Painter, dead: boolean) => {
@@ -1603,6 +1622,7 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
     ['train_mines', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, mineCar],
     ['train_ammo', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, ammoCar],
     ['train_shield', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, shieldCar],
+    ['train_ambush', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, ambushCar],
     ['train_caboose', TRAIN_ART.caboose.w, TRAIN_ART.caboose.h, caboose],
     ['train_railgun', TRAIN_ART.railwayGun.w, TRAIN_ART.railwayGun.h, railwayGun],
   ];
@@ -1694,6 +1714,34 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
     for (let y = 3; y < th - 2; y += 5) p.px(tw - 3, y, PAL.steelDark);
     p.disc(pivotX, c, 3.5, PAL.outline);
     p.disc(pivotX, c, 2.5, PAL.enemy, PAL.enemyHi);
+  });
+  // A sandbagged nest on a car's roof, for a squad riding there (`TrainCarDef.riders`): a ring of
+  // bags, open in the middle where the squad is drawn.
+  canvasTexture(scene, 'rider_nest', TRAIN_ART.nest, TRAIN_ART.nest, (p) => {
+    const n = TRAIN_ART.nest;
+    p.rect(0, 0, n, n, PAL.outline);
+    p.rect(1, 1, n - 2, n - 2, PAL.sandDark);
+    for (let i = 1; i < n - 2; i += 3) {
+      for (const j of [1, n - 3]) {
+        p.rect(i, j, 2, 2, PAL.sand);
+        p.px(i, j, PAL.sandHi);
+        p.rect(j, i, 2, 2, PAL.sand);
+        p.px(j, i, PAL.sandHi);
+      }
+    }
+    p.rect(3, 3, n - 6, n - 6, PAL.concreteDark);
+  });
+  canvasTexture(scene, 'train_flamer', TRAIN_ART.flamer.w, TRAIN_ART.flamer.h, (p) => {
+    const { w: tw, h: th, pivotX } = TRAIN_ART.flamer;
+    const c = Math.floor(th / 2);
+    // A squat cupola with a fuel tank behind it and a stubby nozzle, its pilot light burning.
+    p.rect(pivotX, c - 1, tw - pivotX, 3, PAL.outline);
+    p.rect(pivotX, c, tw - pivotX - 1, 1, PAL.steelMid);
+    p.px(tw - 1, c, PAL.amberHot);
+    p.rect(0, 0, 6, th, PAL.outline);
+    p.rect(1, 1, 4, th - 2, PAL.warn);
+    p.rect(1, 1, 4, 1, PAL.amber);
+    p.px(2, c, PAL.outline);
   });
   // A mine in a flinger's throw (SPEC-armored-train.md §T6), before it's live.
   canvasTexture(scene, 'flung_mine', 5, 5, (p) => {
@@ -1974,6 +2022,8 @@ export interface EnemyArt {
   squad?: { prefix: string; soldiers: number; faceCourse?: boolean };
   /** A trapdoor team (SPEC §7.4): its texture with the lid shut, and open (turned to its target). */
   lid?: { shut: string; open: string };
+  /** A masked unit (`EnemyDef.masked`): the body it's drawn with while its cover is on, its turrets hidden. */
+  masked?: string;
   /** Legs (SPEC §7.4 spider walker): body frames stepped through as it moves, one per `stride` world units walked. */
   gait?: { frames: readonly string[]; stride: number };
 }
@@ -2002,7 +2052,27 @@ export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
   spiderWalker: { body: 'walker_body', turret: { key: 'walker_turret', pivotX: WALKER.pivotX, w: WALKER.turret.w }, wreck: 'walker_wreck', gait: WALKER.gait },
   trapdoorTeam: { body: 'trap_shut', turret: null, wreck: 'trap_wreck', lid: { shut: 'trap_shut', open: 'trap_open' } },
   skiTroops: { body: `ski_${SKI_TROOPS.soldiers}`, turret: null, wreck: null, squad: { prefix: 'ski_', soldiers: SKI_TROOPS.soldiers, faceCourse: true } },
-  trainEngine: { body: 'train_engine', turret: null, wreck: null, hulk: 'train_engine_hulk' },
+  trainEngine: {
+    body: 'train_engine',
+    turret: null,
+    wreck: null,
+    hulk: 'train_engine_hulk',
+    extra: [
+      { key: 'train_flamer', pivotX: TRAIN_ART.flamer.pivotX, w: TRAIN_ART.flamer.w },
+      { key: 'train_flamer', pivotX: TRAIN_ART.flamer.pivotX, w: TRAIN_ART.flamer.w },
+    ],
+  },
+  trainAmbushCar: {
+    body: 'train_ambush',
+    turret: { key: 'train_gun_turret', pivotX: TRAIN_ART.gunTurret.pivotX, w: TRAIN_ART.gunTurret.w },
+    wreck: null,
+    hulk: 'train_ambush_hulk',
+    masked: 'train_boxcar',
+    extra: [
+      { key: 'train_auto_mount', pivotX: TRAIN_ART.autoMount.pivotX, w: TRAIN_ART.autoMount.w },
+      { key: 'train_auto_mount', pivotX: TRAIN_ART.autoMount.pivotX, w: TRAIN_ART.autoMount.w },
+    ],
+  },
   trainBoxcar: { body: 'train_boxcar', turret: null, wreck: null, hulk: 'train_boxcar_hulk' },
   trainRailwayGun: {
     body: 'train_railgun',

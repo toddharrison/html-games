@@ -2,9 +2,10 @@ import { rainy } from '../content/conditions';
 import { isWet, MATERIALS } from '../content/terrain';
 import { FIRE } from '../content/tuning';
 import type { BurnSpec, FlameSpec, RoundSpec, WeaponDef } from '../content/weapons';
-import { hitched, hullBox } from './behemoth';
+import { hitArc, hitched, hullBox, soak } from './behemoth';
 import { markFlash } from './conditions';
 import { sealed, type Enemy } from './entities';
+import type { Owner } from './events';
 import { TIMER_SLACK } from './loop';
 import { angleDiff, orientedBox, pointInBox, type Box } from './math';
 import { damageEnemy } from './projectiles';
@@ -26,8 +27,9 @@ import type { World } from './world';
  *
  * What starts fires: the flamethrower (a cone resolved at once, like a beam), incendiary bursts,
  * fuel going up, vehicles brewing up, plasma, lightning, and by chance most other weapons where
- * they strike something that burns (`ignites`). Rain damps it. Fire never hurts the Behemoth, and
- * its treads put out what they roll over (a call to revisit, SPEC §16).
+ * they strike something that burns (`ignites`). Rain damps it. Fire on the ground never hurts the
+ * Behemoth, and its treads put out what they roll over (a call to revisit, SPEC §16). The one fire
+ * that does is an enemy flamethrower's own stream, where it lands on the hull (`shootFlame`).
  *
  * Everything random here draws from `World.fireRng`, so a fire never shifts the battle's combat draws.
  */
@@ -145,13 +147,20 @@ export function burnWreck(w: World, x: number, y: number): void {
  * Fire a flame from a nozzle (SPEC §6): traces its path for what stops it and what it lights
  * (burning fuel lands on the ground past `FIRE.fuel.from`), then strikes every unit in the cone
  * short of that. Pushes a `fire` event (sound, heat) and a `flame` event to draw it.
+ *
+ * An enemy's flame (`owner`) is stopped by the Behemoth's hull instead, and scorches the armor
+ * where it lands (`soak`, a `hullBurn` event). It does nothing to its own side, and leaves no fuel
+ * burning on the ground (what burns in its path still catches).
  */
-export function shootFlame(w: World, weapon: WeaponDef, x: number, y: number, angle: number, slot: string): void {
+export function shootFlame(w: World, weapon: WeaponDef, x: number, y: number, angle: number, slot: string, owner: Owner = 'player'): void {
   const spec = weapon.projectile as FlameSpec;
-  markFlash(w);
+  const b = w.behemoth;
+  if (owner === 'player') markFlash(w);
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
   const ts = w.terrain.tileSize;
+  const hull = owner === 'enemy' && !b.destroyed ? hullBox(b) : null;
+  let onHull: { x: number; y: number } | null = null;
 
   // Along its path: it lights what burns, sets off a mine, and stops at cover.
   let reach = spec.range;
@@ -162,9 +171,22 @@ export function shootFlame(w: World, weapon: WeaponDef, x: number, y: number, an
       reach = d;
       break;
     }
+    // The hull in the stream, across its width here: that's as far as it goes.
+    if (hull) {
+      for (const a of [angle, angle - spec.cone, angle + spec.cone]) {
+        const hx = x + Math.cos(a) * d;
+        const hy = y + Math.sin(a) * d;
+        if (pointInBox(hull, hx, hy)) onHull ??= { x: hx, y: hy };
+      }
+      if (onHull) {
+        reach = d;
+        break;
+      }
+    }
     const col = Math.floor(px / ts);
     const row = Math.floor(py / ts);
-    if (d >= FIRE.fuel.from) splashFuel(w, col, row, FIRE.fuel.flame);
+    // An enemy's stream lights what burns but leaves no fuel burning on the ground: a train would roll its own cars through it.
+    if (owner === 'player' && d >= FIRE.fuel.from) splashFuel(w, col, row, FIRE.fuel.flame);
     else igniteTile(w, col, row);
     const mine = mineAt(w, px, py);
     if (mine) triggerMine(mine);
@@ -175,8 +197,12 @@ export function shootFlame(w: World, weapon: WeaponDef, x: number, y: number, an
     }
   }
 
+  if (onHull) {
+    soak(b, hitArc(b, x - b.x, y - b.y, onHull.x, onHull.y), spec.damage, w.rng, w.events);
+    w.events.push({ type: 'hullBurn', x: onHull.x, y: onHull.y });
+  }
   // Every unit in the cone short of that, with a clear line from the nozzle (troops hiding in the trees too).
-  for (const e of w.enemies) {
+  for (const e of owner === 'player' ? w.enemies : []) {
     if (!e.alive || sealed(e)) continue;
     const d = Math.hypot(e.x - x, e.y - y);
     if (d - e.def.radius > reach) continue;
@@ -187,7 +213,7 @@ export function shootFlame(w: World, weapon: WeaponDef, x: number, y: number, an
     igniteEnemy(e, spec, spec.burn);
   }
 
-  w.events.push({ type: 'fire', owner: 'player', weapon: weapon.id, x, y, angle, slot });
+  w.events.push({ type: 'fire', owner, weapon: weapon.id, x, y, angle, slot });
   w.events.push({ type: 'flame', x, y, angle, reach, cone: spec.cone, slot });
 }
 

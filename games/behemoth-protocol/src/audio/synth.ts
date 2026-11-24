@@ -1,5 +1,5 @@
 import { STEREO } from '../content/tuning';
-import { HEARING, levelFactor, pitchFactor, type EngineState, type HoldId, type Placement, type ReactorState, type SoundId, type TrainSound } from './cues';
+import { HEARING, levelFactor, pitchFactor, WHISTLE_SIGNALS, type EngineState, type HoldId, type Placement, type ReactorState, type SoundId, type TrainSound, type WhistleSignal } from './cues';
 
 /**
  * Procedural battle sound (SPEC §11.4) on Web Audio. No sample files: every sound is built from
@@ -63,9 +63,12 @@ const LEVEL: Record<SoundId, number> = {
   railgun: 0.8,
   arc: 0.6,
   thunder: 0.9,
-  trainWhistle: 0.2,
+  trainWhistle: 0.26,
+  raidWhistle: 0.2,
   derail: 0.75,
   trainBrakes: 0.4,
+  couplings: 0.5,
+  steam: 0.3,
   detonation: 1,
 };
 
@@ -76,7 +79,7 @@ const ENGINE = { level: 0.065, rumble: 0.35, treads: 0.4, wade: 0.35 };
  * over the rail joints, the `rumble` of its weight, the `sing` of the rails), `engine` the nearest
  * engine pulling (its exhaust `chuff` and the `throb` under it).
  */
-const RAILS = { wheels: 0.2, clatter: 0.9, rumble: 0.5, sing: 0.06, engine: 0.16, chuff: 0.8, throb: 0.5 };
+const RAILS = { wheels: 0.28, clatter: 0.9, rumble: 0.5, sing: 0.06, engine: 0.16, chuff: 0.8, throb: 0.5 };
 /**
  * The weather bed (SPEC §4.6): a storm's wind and rain or sand hiss, swelling with each squall; a
  * faint wind under the night. `base` is the level between squalls, `squall` what a full one adds.
@@ -502,7 +505,63 @@ class Voice {
 const PLATE = [1, 2.08, 3.47, 5.11, 7.36, 9.9] as const;
 const BAR = [1, 2.76, 5.4, 8.93] as const;
 
-type Recipe = (v: Voice, size: number) => void;
+/** `signal`: what a whistle is to say (the whistles' recipes only). */
+type Recipe = (v: Voice, size: number, signal?: WhistleSignal) => void;
+
+/** A steam whistle: its pipes' notes (Hz) and levels, how bright it is (a low-pass, Hz), and how much steam is heard behind it. */
+interface Whistle {
+  pipes: readonly (readonly [number, number])[];
+  cutoff: number;
+  steam: number;
+}
+
+const WHISTLES = {
+  /** The armored train's: three notes of a minor chord, deep. */
+  train: { pipes: [[233, 0.3], [277, 0.24], [349, 0.2]], cutoff: 1500, steam: 0.1 },
+  /** An attack train's: two pipes a minor third apart, an octave up. Shriller, with more steam in it. */
+  raid: { pipes: [[494, 0.3], [587, 0.25]], cutoff: 2600, steam: 0.15 },
+} as const satisfies Record<string, Whistle>;
+
+/**
+ * A whistle sounding a signal (`WHISTLE_SIGNALS`: its blasts' lengths): each blast swoops up into
+ * tune and sags as the valve shuts, on a hiss of steam. Short blasts speak and stop quicker, and
+ * come closer together.
+ */
+function whistle(v: Voice, w: Whistle, signal: WhistleSignal = 'run'): void {
+  const lp = v.filter({ f: w.cutoff, q: 0.8 }, v.t, v.out);
+  let at = 0;
+  for (const dur of WHISTLE_SIGNALS[signal]) {
+    const short = dur < 0.4;
+    const swoop = Math.min(0.14, dur * 0.4);
+    const shut = short ? 0.15 : 0.3;
+    const t0 = v.t + at;
+    for (const [f, level] of w.pipes) {
+      for (const detune of [1, 1.005]) {
+        const fr = f * detune * v.pitch;
+        const osc = v.ctx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(fr * 0.955, t0);
+        osc.frequency.exponentialRampToValueAtTime(fr, t0 + swoop);
+        osc.frequency.setValueAtTime(fr, t0 + Math.max(swoop, dur - 0.1));
+        osc.frequency.exponentialRampToValueAtTime(fr * 0.97, t0 + dur + shut - 0.05);
+        const g = v.ctx.createGain();
+        g.gain.setValueAtTime(0, t0);
+        g.gain.linearRampToValueAtTime(level, t0 + Math.min(0.07, swoop));
+        g.gain.setValueAtTime(level, t0 + dur);
+        g.gain.linearRampToValueAtTime(0, t0 + dur + shut);
+        osc.connect(g).connect(lp);
+        osc.start(t0);
+        osc.stop(t0 + dur + shut + 0.05);
+      }
+    }
+    // The steam behind it.
+    v.noise({ type: 'bandpass', f: 2600, q: 0.7, peak: w.steam, attack: 0.05, decay: dur + shut, delay: at });
+    at += dur + (short ? 0.2 : 0.45);
+  }
+  v.end = Math.max(v.end, v.t + at + 0.4);
+  v.send.gain.value = 0.9;
+  v.echo(0.6);
+}
 
 /** A blast: shock-front crack, fireball roar, concussion drop, rolling rumble, falling debris, and its echo off the land. */
 function blast(v: Voice, size: number): void {
@@ -845,40 +904,9 @@ const RECIPES: Record<SoundId, Recipe> = {
     v.tone({ type: 'sine', f: vary(2050, 0.05), f1: vary(780, 0.05), glide: fall, peak: 0.3, attack: fall - 0.05, decay: 0.05, delay: start });
     v.noise({ type: 'bandpass', f: 2600, f1: 900, glide: fall, q: 4, peak: 0.25, attack: fall - 0.05, decay: 0.05, delay: start });
   },
-  // An armored train's whistle: three notes of a minor chord on steam, each blast swooping up into
-  // tune and sagging as the valve shuts. Two long blasts pulling out (`size` 1), a short and a long on the run.
-  trainWhistle: (v, s) => {
-    const lp = v.filter({ f: 1500, q: 0.8 }, v.t, v.out);
-    let at = 0;
-    for (const dur of s >= 1 ? [1.3, 2] : [0.45, 1.5]) {
-      const t0 = v.t + at;
-      for (const [f, level] of [[233, 0.3], [277, 0.24], [349, 0.2]] as const) {
-        for (const detune of [1, 1.005]) {
-          const fr = f * detune * v.pitch;
-          const osc = v.ctx.createOscillator();
-          osc.type = 'sawtooth';
-          osc.frequency.setValueAtTime(fr * 0.955, t0);
-          osc.frequency.exponentialRampToValueAtTime(fr, t0 + 0.14);
-          osc.frequency.setValueAtTime(fr, t0 + dur - 0.1);
-          osc.frequency.exponentialRampToValueAtTime(fr * 0.97, t0 + dur + 0.25);
-          const g = v.ctx.createGain();
-          g.gain.setValueAtTime(0, t0);
-          g.gain.linearRampToValueAtTime(level, t0 + 0.07);
-          g.gain.setValueAtTime(level, t0 + dur);
-          g.gain.linearRampToValueAtTime(0, t0 + dur + 0.3);
-          osc.connect(g).connect(lp);
-          osc.start(t0);
-          osc.stop(t0 + dur + 0.35);
-        }
-      }
-      // The steam behind it.
-      v.noise({ type: 'bandpass', f: 2600, q: 0.7, peak: 0.1, attack: 0.05, decay: dur + 0.3, delay: at });
-      at += dur + 0.45;
-    }
-    v.end = Math.max(v.end, v.t + at + 0.4);
-    v.send.gain.value = 0.9;
-    v.echo(0.6);
-  },
+  // An armored train's whistle, and an attack train's (`WHISTLES`), sounding a signal.
+  trainWhistle: (v, _s, signal) => whistle(v, WHISTLES.train, signal),
+  raidWhistle: (v, _s, signal) => whistle(v, WHISTLES.raid, signal),
   // A vehicle leaving the rails: steel shrieking on steel, the crash of it going over, ballast flying.
   derail: (v, s) => {
     const k = Math.min(s, 1.2);
@@ -904,6 +932,31 @@ const RECIPES: Record<SoundId, Recipe> = {
     }
     v.noise({ type: 'highpass', f: 3000, peak: 0.3, attack: 0.15, decay: 1.8, delay: 1.6 });
     v.send.gain.value *= 1.5;
+  },
+  // The slack running through a train's couplings, car after car: buffers clanging in as it's
+  // checked, each a little further down the train (`size`: how much of the train).
+  couplings: (v, s) => {
+    const cars = Math.round(3 + 8 * Math.min(s, 1));
+    let at = 0;
+    for (let i = 0; i < cars; i++) {
+      const k = 1 - (0.6 * i) / cars;
+      v.modes(vary(190, 0.25), BAR, 0.2 * k, 0.35, at);
+      v.noise({ color: 'pink', type: 'bandpass', f: vary(950, 0.2), q: 1, peak: 0.4 * k, attack: 0.001, decay: 0.05, delay: at, dest: v.driven });
+      v.tone({ f: vary(80, 0.2), f1: 45, glide: 0.08, peak: 0.3 * k, attack: 0.002, decay: 0.15, delay: at });
+      at += rand(0.09, 0.2);
+    }
+  },
+  // An engine's boiler letting go: steam roaring out of the wreck and dying away as the pressure
+  // falls, and its whistle, the valve torn open, sagging to nothing with it.
+  steam: (v, s) => {
+    const k = Math.min(s, 1);
+    const dur = 1.2 + 2.4 * k;
+    v.noise({ type: 'highpass', f: 2200, peak: 0.8 * k, attack: 0.03, decay: dur, rough: 0.3, wide: 0.6 });
+    v.noise({ color: 'pink', type: 'bandpass', f: 1500, f1: 600, glide: dur, q: 0.8, peak: 0.9 * k, attack: 0.04, decay: dur * 1.2, rough: 0.5 });
+    if (s < 1) return;
+    for (const f of [233, 277]) {
+      v.tone({ type: 'sawtooth', f, f1: f * 0.55, glide: 2.4, peak: 0.12, attack: 0.06, decay: 2.6, delay: 0.15, rough: 0.3, filter: { f: 1300, f1: 500, glide: 2.4 } });
+    }
   },
   // The enemy's attack siren, far across the field: a slow wail up and back down.
   horn: (v) => {
@@ -1601,13 +1654,14 @@ export class Synth {
     return this.ctx.state === 'running';
   }
 
-  play(sound: SoundId, size: number, at: Placement): void {
+  /** `signal`: what a whistle says (`WHISTLE_SIGNALS`). */
+  play(sound: SoundId, size: number, at: Placement, signal?: WhistleSignal): void {
     if (!this.running || this.voices >= MAX_VOICES) return;
     const ctx = this.ctx;
     const ch = channel(this, LEVEL[sound] * levelFactor(sound, Math.random()) * at.gain, at);
     const near = clamp(1 - (at.distance - HEARING.near) / (NEAR - HEARING.near), 0, 1);
     const v = new Voice(ctx, this.bank, ctx.currentTime + 0.005, ch, pitchFactor(sound, Math.random()), near);
-    RECIPES[sound](v, size);
+    RECIPES[sound](v, size, signal);
     this.voices++;
     // Disconnect once it (and its reverb send) has died away.
     const life = v.end - ctx.currentTime + 0.1;

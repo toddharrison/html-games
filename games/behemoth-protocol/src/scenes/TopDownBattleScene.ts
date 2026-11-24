@@ -1,5 +1,6 @@
 import { DETONATION, TRAILER_MINE } from '../content/tuning';
 import Phaser from 'phaser';
+import { TRAIN_CARS } from '../content/trainCars';
 import { BattleAudio } from '../audio/battleAudio';
 import { toggleMute } from '../audio/mute';
 import { battleLayout, battleLengthFromUrl, conditionFromUrl, doctrineFromUrl, lookFromUrl, mixFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, trainFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
@@ -606,7 +607,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     if (!tr || this.stackTimer > 0) return;
     this.stackTimer = 0.06;
     for (const e of w.enemies) {
-      if (!e.alive || e.def.id !== 'trainEngine' || e.ai.charging || e.ai.under || Math.abs(e.x - w.behemoth.x) > this.layout.height) continue;
+      if (!e.alive || e.def.id !== TRAIN_CARS.engine.enemy || e.ai.charging || e.ai.under || Math.abs(e.x - w.behemoth.x) > this.layout.height) continue;
       const at = pose(this.interp, e);
       const x = at.x + Math.cos(at.heading) * TRAIN_ART.engine.stack;
       const y = at.y + Math.sin(at.heading) * TRAIN_ART.engine.stack;
@@ -1088,8 +1089,39 @@ export class TopDownBattleScene extends Phaser.Scene {
           break;
         case 'trainStrike':
           this.fx.buildingCollapse(ev.x, ev.y);
-          this.shake(300, 5);
-          this.objectiveShown = { at: w.time, text: 'Rammed by the train\nGet off the track' };
+          if (ev.blast !== null) {
+            // The engine going up against the hull: the biggest fireball a train makes.
+            this.fx.bigExplosion(ev.x, ev.y);
+            this.fx.fireball(ev.x, ev.y, ev.blast);
+            for (let i = 0; i < 8; i++) this.fx.sparks(ev.x + (Math.random() - 0.5) * 50, ev.y + (Math.random() - 0.5) * 50);
+            this.units.addDecal('scorch', ev.x, ev.y, Math.random() * Math.PI * 2, 3);
+          }
+          this.shake(ev.blast !== null ? 520 : 300, ev.blast !== null ? 8 : 5);
+          this.objectiveShown = { at: w.time, text: ev.blast !== null ? 'An engine blows up against the hull\nGet clear of the pileup' : 'Rammed by the train\nGet off the track' };
+          break;
+        case 'trainPlow':
+          // An engine through a wreck on its track: plate and sparks thrown aside.
+          this.fx.plow(ev.x, ev.y, true);
+          this.fx.buildingCollapse(ev.x, ev.y);
+          for (let i = 0; i < 5; i++) this.fx.sparks(ev.x + (Math.random() - 0.5) * 30, ev.y + (Math.random() - 0.5) * 30);
+          this.shake(160, 2.5);
+          break;
+        case 'unmask': {
+          // The side panels blown off toward the hull, along the car's length.
+          for (const along of [-12, 0, 12]) {
+            const x = ev.x + Math.cos(ev.heading) * along;
+            const y = ev.y + Math.sin(ev.heading) * along + ev.side * 10;
+            this.fx.smokePuff(x, y);
+            this.fx.sparks(x, y + ev.side * 6);
+          }
+          this.fx.plow(ev.x, ev.y + ev.side * 14, false);
+          this.shake(120, 2);
+          this.objectiveShown = { at: w.time, text: 'Ambush\nA boxcar drops its sides: guns' };
+          break;
+        }
+        case 'hullBurn':
+          this.fx.flame(ev.x, ev.y);
+          if (Math.random() < 0.3) this.fx.ember(ev.x, ev.y);
           break;
         case 'mineFlung':
           this.fx.smokePuff(ev.x0, ev.y0);

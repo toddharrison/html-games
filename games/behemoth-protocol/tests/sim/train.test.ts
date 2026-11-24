@@ -67,6 +67,15 @@ const B: TrainCarId = 'boxcar';
 
 /** How a pile runs is tested without its fireworks (blasts, cook-offs, and burning wrecks finish off cars at random); they have a test of their own. */
 const FIREWORKS = { blast: TRAIN.derail.blast.damage, odds: TRAIN.derail.cookOff.odds, burn: TRAIN.derail.burn, wreck: FIRE.fuel.wreck };
+/** Who rides on which roof is drawn by odds (tests/sim/trainCloseQuarters.test.ts): nobody here, so a train is its vehicles. */
+const ROOFS = (Object.keys(TRAIN_CARS) as TrainCarId[]).filter((id) => TRAIN_CARS[id].riders);
+const ROOF_ODDS = Object.fromEntries(ROOFS.map((id) => [id, TRAIN_CARS[id].riders!.odds]));
+beforeEach(() => {
+  for (const id of ROOFS) TRAIN_CARS[id].riders!.odds = 0;
+});
+afterEach(() => {
+  for (const id of ROOFS) TRAIN_CARS[id].riders!.odds = ROOF_ODDS[id]!;
+});
 beforeEach(() => {
   TRAIN.derail.blast.damage = 0;
   TRAIN.derail.cookOff.odds = 0;

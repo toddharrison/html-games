@@ -5,6 +5,7 @@ import {
   AlarmWatch,
   CueLimiter,
   cuesFor,
+  DANGER,
   engineState,
   HEARING,
   levelFactor,
@@ -15,11 +16,15 @@ import {
   place,
   reactorState,
   trainSound,
+  TUNNEL_SOUND,
   WEAPON_SOUNDS,
+  WHISTLE_RUN,
+  WHISTLE_SIGNALS,
+  WhistleClock,
   type Cue,
   type CueContext,
 } from '../../src/audio/cues';
-import { plainTrain } from '../../src/content/trainCars';
+import { plainTrain, type TrainCarId } from '../../src/content/trainCars';
 import { STEREO } from '../../src/content/tuning';
 import { createBehemoth, damageComponent, IDLE_COMMAND } from '../../src/sim/behemoth';
 import { destroyEnemy } from '../../src/sim/enemies';
@@ -244,8 +249,8 @@ describe('engineState and reactorState', () => {
 });
 
 describe('an armored train (SPEC §7.3)', () => {
-  const battle = () => {
-    const w = createWorld({ seed: 1, frameWidth: 324, fieldRows: 21, objective: { mode: 'intercept', strength: 'normal', train: plainTrain('normal') } });
+  const battle = (train: TrainCarId[] = plainTrain('normal')) => {
+    const w = createWorld({ seed: 1, frameWidth: 324, fieldRows: 21, objective: { mode: 'intercept', strength: 'normal', train } });
     w.encounter.posts = [];
     w.encounter.alert.next = 1e9;
     w.enemies = w.enemies.filter((e) => e.train);
@@ -295,6 +300,119 @@ describe('an armored train (SPEC §7.3)', () => {
     expect(sounds({ type: 'trainDerail', x: 500, y: 40, heading: 0, first: false, sunk: true })).toEqual(['derail', 'splash']);
     expect(sounds({ type: 'trainStopped', x: 500, y: 40, derailed: false })).toContain('trainBrakes');
     expect(sounds({ type: 'trainStopped', x: 500, y: 40, derailed: true })).not.toContain('trainBrakes');
+  });
+
+  it('says different things with its whistle: pulling out, and into a tunnel', () => {
+    const whistle = (ev: SimEvent) => cuesFor(ev, context()).find((cue) => cue.sound === 'trainWhistle' || cue.sound === 'raidWhistle')!;
+    expect(whistle({ type: 'trainStart', x: 500, y: 40, engines: 4, gun: true }).signal).toBe('depart');
+    expect(whistle({ type: 'trainTunnel', x: 500, y: 40, raid: false })).toMatchObject({ sound: 'trainWhistle', signal: 'long' });
+    // Every signal is a run of blasts.
+    for (const blasts of Object.values(WHISTLE_SIGNALS)) {
+      expect(blasts.length).toBeGreaterThan(0);
+      for (const seconds of blasts) expect(seconds).toBeGreaterThan(0);
+    }
+  });
+
+  it('gives an attack train a whistle of its own', () => {
+    const sounds = (ev: SimEvent) => cuesFor(ev, context()).map((cue) => cue.sound);
+    expect(sounds({ type: 'trainRaid', x: 500, y: 40, track: 1, cars: 4 })).toEqual(['radio', 'raidWhistle']);
+    expect(sounds({ type: 'trainTunnel', x: 500, y: 40, raid: true })).toEqual(['raidWhistle']);
+    expect(sounds({ type: 'trainStrike', x: 500, y: 40, raid: true, blast: null })).toEqual(['ram', 'couplings']);
+  });
+
+  it('shrieks the danger signal as an engine bears down on a hull standing in its track', () => {
+    const w = battle(['engine', 'boxcar', 'boxcar']);
+    run(w, 10);
+    const front = w.train!.vehicles[0]!;
+    const b = w.behemoth;
+    // In the lane, clear of the line: no danger.
+    expect(trainSound(w, ears(w))!.danger).toBeNull();
+    // Standing on the rails a little ahead of its nose, slower than it.
+    b.x = front.x + front.car.length / 2 + b.chassis.length / 2 + 60;
+    b.y = w.terrain.trackY(b.x, 0);
+    b.vx = 0;
+    expect(trainSound(w, ears(w))!.danger).toMatchObject({ raid: false });
+    expect(trainSound(w, ears(w))!.danger!.x).toBeCloseTo(front.x);
+    // Far up the line it hasn't seen the hull yet; behind it there's nothing to warn of.
+    b.x = front.x + DANGER.ahead + 200;
+    b.y = w.terrain.trackY(b.x, 0);
+    expect(trainSound(w, ears(w))!.danger).toBeNull();
+    b.x = front.x - 100;
+    b.y = w.terrain.trackY(b.x, 0);
+    expect(trainSound(w, ears(w))!.danger).toBeNull();
+  });
+
+  it('roars with an engine\'s flamethrowers, sears the hull, and bangs an ambush car\'s sides off', () => {
+    const sounds = (ev: SimEvent) => cuesFor(ev, context()).map((cue) => cue.sound);
+    expect(sounds({ type: 'fire', owner: 'enemy', weapon: 'trainFlamer', x: 500, y: 40, angle: 0, slot: 'enemy1.0' })).toEqual(['flame']);
+    expect(sounds({ type: 'hullBurn', x: 10, y: 10 })).toEqual(['burn']);
+    expect(sounds({ type: 'unmask', id: 1, x: 500, y: 40, heading: 0, side: 1 })).toEqual(['explosion', 'clank']);
+    expect(sounds({ type: 'trainPlow', x: 500, y: 40, heading: 0, raid: true })).toEqual(['derail']);
+  });
+
+  it('runs its slack in when it is struck or left standing, and an engine destroyed blows off its steam', () => {
+    const sounds = (ev: SimEvent) => cuesFor(ev, context()).map((cue) => cue.sound);
+    expect(sounds({ type: 'trainStrike', x: 500, y: 40, raid: false, blast: 90 })).toContain('couplings');
+    const few = cuesFor({ type: 'trainAbandoned', x: 500, y: 40, cars: 2 }, context()).find((cue) => cue.sound === 'couplings')!;
+    const many = cuesFor({ type: 'trainAbandoned', x: 500, y: 40, cars: 12 }, context()).find((cue) => cue.sound === 'couplings')!;
+    expect(many.size).toBeGreaterThan(few.size);
+    expect(sounds({ type: 'enemyDestroyed', id: 1, enemy: 'trainEngine', x: 500, y: 40, cause: 'shot' })).toContain('steam');
+    expect(sounds({ type: 'enemyDestroyed', id: 1, enemy: 'lightTank', x: 500, y: 40, cause: 'shot' })).not.toContain('steam');
+  });
+
+  it('is a dull rumble in a tunnel, where its whistle is not heard', () => {
+    const w = battle(['engine', 'boxcar', 'boxcar', 'boxcar', 'boxcar']);
+    const [front, , , , last] = w.train!.vehicles;
+    for (let t = 0; t < 120 && !w.terrain.underground(front!.x); t += 0.1) run(w, 0.1);
+    expect(w.terrain.underground(front!.x)).toBe(true);
+    expect(w.terrain.underground(last!.x)).toBe(false);
+    // Standing right over the engine under ground: it's heard as if far off, and has no whistle.
+    const heard = trainSound(w, { x: front!.x, y: front!.y })!;
+    expect(heard.work).toBeGreaterThan(0);
+    expect(heard.engine.gain).toBeLessThanOrEqual(TUNNEL_SOUND.gain);
+    expect(heard.engine.distance).toBeGreaterThanOrEqual(TUNNEL_SOUND.muffle);
+    expect(heard.lead).toBeNull();
+    // The wheels heard are the cars' still in the open.
+    expect(heard.rolling.distance).toBeLessThan(TUNNEL_SOUND.muffle);
+    expect(heard.rolling.gain).toBeGreaterThan(heard.engine.gain);
+  });
+
+  it('whistles on the run from its lead engine, and an attack train from its own', () => {
+    const w = createWorld({ seed: 1, frameWidth: 324, fieldRows: 21, objective: { mode: 'gauntlet', strength: 'normal' } });
+    w.encounter.posts = [];
+    w.encounter.alert.next = 1e9;
+    w.enemies = w.enemies.filter((e) => e.train);
+    w.behemoth.invulnerable = true;
+    w.behemoth.autoEnabled.fill(false);
+    // No attack train yet: nothing to whistle.
+    expect(trainSound(w, ears(w))!.raider).toBeNull();
+    for (let t = 0; t < 120 && !w.train!.pieces.some((p) => p.raid); t += 0.1) run(w, 0.1);
+    run(w, 1);
+    const heard = trainSound(w, ears(w))!;
+    const piece = w.train!.pieces.find((p) => p.raid)!;
+    expect(heard.raider!.x).toBeCloseTo(w.train!.vehicles[piece.first]!.x);
+    // A Gauntlet has no armored train.
+    expect(heard.lead).toBeNull();
+  });
+
+  it('times its whistles: none until an engine pulls, then one every so often, a signal drawn each time', () => {
+    const clock = new WhistleClock(WHISTLE_RUN.main);
+    const [lo, hi] = WHISTLE_RUN.main.every;
+    const engine = { x: 900, y: 40 };
+    expect(clock.tick(0, null, () => 0)).toBeNull();
+    // The count starts when an engine is there.
+    expect(clock.tick(100, engine, () => 0)).toBeNull();
+    expect(clock.tick(100 + lo - 0.1, engine, () => 0)).toBeNull();
+    const first = clock.tick(100 + lo, engine, () => 0.999)!;
+    expect(first).toMatchObject({ sound: 'trainWhistle', x: 900, y: 40, carry: WHISTLE_RUN.main.carry, signal: WHISTLE_RUN.main.signals.at(-1) });
+    // The next wait was drawn long.
+    expect(clock.tick(100 + lo + hi - 1, engine, () => 0)).toBeNull();
+    expect(clock.tick(100 + lo + hi, engine, () => 0)!.signal).toBe(WHISTLE_RUN.main.signals[0]);
+    // No engine: the count stops, and starts over when one is back.
+    expect(clock.tick(500, null, () => 0)).toBeNull();
+    expect(clock.tick(900, engine, () => 0)).toBeNull();
+    expect(clock.tick(900 + lo, engine, () => 0)).not.toBeNull();
+    expect(new WhistleClock(WHISTLE_RUN.raid).tick(0, engine, () => 0)).toBeNull();
   });
 
   it('is heard from far off: a whistle carries', () => {

@@ -3,7 +3,7 @@ import { stormy } from '../content/conditions';
 import type { PlayerCommand } from '../sim/behemoth';
 import type { SimEvent } from '../sim/events';
 import type { World } from '../sim/world';
-import { AlarmWatch, CueLimiter, cuesFor, engineState, HOLDS, place, reactorState, type Cue, type CueContext, type HoldId, type Listener, type Placement, type SoundId } from './cues';
+import { AlarmWatch, CueLimiter, cuesFor, engineState, HOLDS, place, reactorState, trainSound, type Cue, type CueContext, type HoldId, type Listener, type Placement, type SoundId } from './cues';
 import { duckFor } from './music/duck';
 import { HeatGauge } from './music/heat';
 import { MusicPlayer } from './music/player';
@@ -13,17 +13,21 @@ import { Synth } from './synth';
 /**
  * The battle's sound (SPEC §11.4): turns each frame's sim events into placed one-shots and keeps
  * the engine, treads, and reactor loops following the Behemoth's state. Heard from the Behemoth.
+ * An armored train has its own loops (wheels on the rails, its engines), and whistles now and then.
  * Also runs the music: the biome's piece, fed by a heat gauge, ducking under the big sounds.
  * Render-side, like the effects; null when the browser has no Web Audio.
  */
 /** Seconds the music takes to fade out after extraction. */
 const MUSIC_OUTRO = 3;
+/** An armored train's lead engine sounds its whistle this often (s, at random between the two), this loud at least. */
+const WHISTLE = { every: [24, 44] as const, size: 0.6, carry: 0.35 };
 
 export class BattleAudio {
   private readonly alarms = new AlarmWatch();
   private readonly limiter = new CueLimiter();
   private listener: Listener = { x: 0, y: 0 };
   private fuseStart: number | null = null;
+  private whistleAt = Infinity;
   private dead = false;
   private paused = false;
   private music: MusicPlayer | null = null;
@@ -70,6 +74,7 @@ export class BattleAudio {
       if (ev.type === 'componentDamaged') add(this.alarms.check(b, ev.component));
       else if (ev.type === 'reactorCritical') this.fuseStart = ev.fuse;
       else if (ev.type === 'extracted') this.music?.fadeOut(MUSIC_OUTRO);
+      else if (ev.type === 'trainStart') this.whistleAt = this.nextWhistle();
       else if (ev.type === 'detonation') {
         this.dead = true;
         this.synth.stopMachine();
@@ -91,9 +96,20 @@ export class BattleAudio {
     const b = w.behemoth;
     const c = w.condition;
     this.synth.setWeather(c ? (stormy(c.id) ? 'storm' : 'night') : null, c?.squall ?? 0);
+    // The train rolls on whatever has become of the Behemoth.
+    const train = trainSound(w, this.listener);
+    this.synth.setTrain(train);
+    if (train?.lead && this.synth.ctx.currentTime >= this.whistleAt) {
+      this.whistleAt = this.nextWhistle();
+      this.synth.play('trainWhistle', WHISTLE.size, place(this.listener, { ...train.lead, carry: WHISTLE.carry }));
+    }
     if (this.dead) return;
     const cruiseFrac = b.chassis.speed.cruise / b.chassis.speed.top;
     this.synth.update(engineState(b, cmd), wet(b.x, b.y), cruiseFrac, reactorState(b, this.fuseStart));
+  }
+
+  private nextWhistle(): number {
+    return this.synth.ctx.currentTime + WHISTLE.every[0] + Math.random() * (WHISTLE.every[1] - WHISTLE.every[0]);
   }
 
   /** Salvage reaching the hull (render-side: the motes land after the sim banks it). */

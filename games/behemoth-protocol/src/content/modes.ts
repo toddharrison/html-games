@@ -6,12 +6,13 @@ import type { EnemyId } from './enemies';
  * Every mode ends at the extraction line; Breach and Chase add an objective, a set of target units
  * (`sim/objective.ts`). Destroying them pays the mode's bonus, a share per target; missing some never
  * stops the run, it just pays less. M3: Assault, Breach, Chase. Intercept (M4) sets an armored train
- * running the length of the field: its engines are the targets. Pursuit and Duel wait for enemy
- * Behemoths (M4).
+ * running the length of the field: its engines are the targets. Gauntlet (M4) has the same double
+ * line and no armored train: short attack trains come up it from behind, one after another, and
+ * their engines are the targets. Pursuit and Duel wait for enemy Behemoths (M4).
  */
 
-export type BattleModeId = 'assault' | 'breach' | 'chase' | 'intercept';
-export const MODE_IDS: readonly BattleModeId[] = ['assault', 'breach', 'chase', 'intercept'];
+export type BattleModeId = 'assault' | 'breach' | 'chase' | 'intercept' | 'gauntlet';
+export const MODE_IDS: readonly BattleModeId[] = ['assault', 'breach', 'chase', 'intercept', 'gauntlet'];
 
 /** Targets per node strength (normal, strong, objective). */
 export type ByStrength = { normal: number; strong: number; objective: number };
@@ -52,15 +53,24 @@ export interface ModeDef {
     batteryDepth: number;
   };
   /**
-   * Intercept: an armored train on a rail line the whole length of the field (SPEC §4.4). What the
-   * train is made of is content/trainCars.ts; how it runs is `TRAIN` in tuning.ts.
+   * Intercept and Gauntlet: a double rail line the whole length of the field (SPEC §4.4), and what
+   * runs on it. What a train is made of is content/trainCars.ts; how it runs is `TRAIN` in tuning.ts.
    */
   train?: {
-    /** Hovercraft riding with the train from the start (escorts, not targets). */
+    /** An armored train runs the line from its station, its engines the targets (Intercept). */
+    armored: boolean;
+    /** Hovercraft riding with the armored train from the start (escorts, not targets). */
     escorts: ByStrength;
     escort: EnemyId;
     /** What the alert clock's waves bring: only units that can keep up with a running fight. */
     waves: Partial<Record<EnemyId, number>>;
+    /**
+     * Attack trains (`TRAIN.raid`): the first comes `first` s in, then one every `every` s (a
+     * range), on one of `tracks` (0 the armored train's, 1 the second). With `count`, that many
+     * come and their engines are the mode's targets (Gauntlet); without it they keep coming while
+     * the armored train runs, and aren't targets. `caboose`: the odds one has an armored caboose.
+     */
+    raids?: { first: number; every: readonly [number, number]; tracks: readonly (0 | 1)[]; count?: ByStrength; caboose: number };
   };
   /** Chase: a convoy fleeing up the field toward the far end (SPEC §4.4). */
   convoy?: {
@@ -176,9 +186,30 @@ export const MODES: Record<BattleModeId, ModeDef> = {
     perSector: 1,
     target: ['engine', 'engines'],
     train: {
+      armored: true,
       escorts: { normal: 2, strong: 3, objective: 3 },
       escort: 'hovercraft',
       waves: { hovercraft: 1 },
+      // "Every minute or so" (user), on the second track.
+      raids: { first: 45, every: [50, 70], tracks: [1], caboose: 0.35 },
+    },
+  },
+  gauntlet: {
+    id: 'gauntlet',
+    name: 'Gauntlet',
+    goal: 'Destroy the attack trains as they come up the line',
+    weight: 0.6,
+    bonus: 80,
+    posts: 0.5,
+    length: 1.6,
+    perSector: 1,
+    target: ['raider', 'raiders'],
+    train: {
+      armored: false,
+      escorts: { normal: 0, strong: 0, objective: 0 },
+      escort: 'hovercraft',
+      waves: { hovercraft: 1 },
+      raids: { first: 6, every: [13, 19], tracks: [0, 1], count: { normal: 7, strong: 9, objective: 11 }, caboose: 0.4 },
     },
   },
 };

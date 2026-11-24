@@ -36,6 +36,12 @@ export interface Tile {
 
 /** `Tile.links` bits: the neighbor ahead (col + 1), to the right (row + 1), behind, to the left. */
 export const LINK = { fwd: 1, right: 2, back: 4, left: 8 } as const;
+/**
+ * `Tile.links` bits for a tile of an armored train's track (`lineLinks`): the track steps a row to
+ * the right or left in the column ahead of this one, or stepped in from one in the column behind.
+ * The gravel between the two tracks has them too: it bends with them.
+ */
+export const BEND = { aheadRight: 16, aheadLeft: 32, behindRight: 64, behindLeft: 128 } as const;
 
 /** What a battle's terrain is built from. A null approach is the biome's own balanced mix. */
 export interface TerrainRecipe {
@@ -43,7 +49,7 @@ export interface TerrainRecipe {
   approach: ApproachId | null;
   /** A Breach battle's fortress (SPEC §4.4): a fortified line forced at this column. */
   fortress?: FortressSpec;
-  /** An Intercept battle's rail line (SPEC §4.4): one hardened track the whole length of the field. */
+  /** An Intercept battle's rail line (SPEC §4.4): a hardened double track the whole length of the field. */
   line?: RailLineSpec;
 }
 
@@ -51,6 +57,11 @@ export interface TerrainRecipe {
 export interface RailLineSpec {
   /** Chunks that get a river, and so a rail bridge, whatever the biome rolls. */
   rivers: readonly number[];
+  /**
+   * Columns where the line crosses to the other side of the field (`railLine.crossover`), diving
+   * under the lane on the way. No river comes near one.
+   */
+  crossovers?: readonly number[];
 }
 
 /** Where a Breach fortress stands and how many armed positions its wall holds. */
@@ -99,6 +110,12 @@ interface Resolved {
   fortress: FortressSpec | null;
   /** The rail line, with its course remembered by column for the seed and field it was last asked for. */
   line: { spec: RailLineSpec; seed: number; rows: number; memo: Map<number, number> } | null;
+}
+
+/** A crossover's tunnel: the columns the line is underground for. */
+interface Tunnel {
+  c0: number;
+  c1: number;
 }
 
 function resolve(r: TerrainRecipe): Resolved {
@@ -739,36 +756,77 @@ function laneAt(seed: number, col: number, rows: number, rc: Resolved): number {
   const g = TERRAIN_GEN;
   const line = lineAt(seed, Math.floor(col), rows, rc);
   const half = g.laneWidth / 2;
-  return lineSide(seed) < 0 ? Math.min(rows - half, Math.max(base, line + g.railLine.laneGap)) : Math.max(half, Math.min(base, line - g.railLine.laneGap));
+  // Above the line while it's on the low rows, below it on the high ones; through a crossover it
+  // slides from one to the other, and crosses the line where the line is underground.
+  const above = Math.min(rows - half, Math.max(base, line + g.railLine.laneGap));
+  const below = Math.max(half, Math.min(base, line - g.railLine.laneGap));
+  return above + ((below - above) * (lineLean(seed, col, rc) + 1)) / 2;
 }
 
-/** Which side of the field an armored train's line runs down: -1 the low rows, 1 the high. */
+/** Which side of the field an armored train's line starts down: -1 the low rows, 1 the high. */
 function lineSide(seed: number): 1 | -1 {
   return hashSeed(seed, 0x11e5) & 1 ? 1 : -1;
+}
+
+/**
+ * Where the line is across the field at a column: -1 on its low-row course, 1 on its high-row one,
+ * and in between through a crossover (`RailLineSpec.crossovers`), where it runs straight from one
+ * to the other over `railLine.crossover.cols` columns.
+ */
+function lineLean(seed: number, col: number, rc: Resolved): number {
+  let lean: number = lineSide(seed);
+  const half = TERRAIN_GEN.railLine.crossover.cols / 2;
+  for (const x of rc.line?.spec.crossovers ?? []) {
+    if (col >= x + half) lean = -lean;
+    else if (col > x - half) return lean * (1 - (col - (x - half)) / half);
+  }
+  return lean;
+}
+
+/** Which side of the field the line is on at a column (-1 the low rows, 1 the high): its narrow side there. */
+function lineSideAt(seed: number, col: number, rc: Resolved): 1 | -1 {
+  return lineLean(seed, col + 0.5, rc) < 0 ? -1 : 1;
+}
+
+/**
+ * The tunnel a column is in, or null: the middle of a crossover (`railLine.crossover.under` of
+ * the way either side of its center), where the line passes under the lane. `c0`..`c1` are its
+ * columns; a portal stands over the line for `crossover.portal` columns at each end, and between
+ * them the ground over it is whatever the battlefield has there.
+ */
+function tunnelAt(col: number, rc: Resolved): Tunnel | null {
+  const g = TERRAIN_GEN.railLine.crossover;
+  const reach = (g.cols / 2) * g.under;
+  for (const x of rc.line?.spec.crossovers ?? []) {
+    // The columns whose centers are within `reach` of it.
+    if (Math.abs(col + 0.5 - x) < reach) return { c0: Math.floor(x - reach - 0.5) + 1, c1: Math.ceil(x + reach - 0.5) - 1 };
+  }
+  return null;
 }
 
 /**
  * The line's own course (a fractional row) at a column, before rivers level it: its mean row plus a
  * wander between knots, level through the station at the start.
  */
-function lineBase(seed: number, col: number, rows: number): number {
+function lineBase(seed: number, col: number, rows: number, rc: Resolved): number {
   const g = TERRAIN_GEN.railLine;
-  // Knots sit on tile centers, so between two of them the course crosses each row boundary once
-  // (a course hovering on a boundary would jog the track back and forth).
-  const mean = Math.floor(lineSide(seed) < 0 ? rows * g.meanRow : rows * (1 - g.meanRow)) + 0.5;
+  // Its two courses and its knots sit on tile centers, so between two knots the course crosses each
+  // row boundary once (a course hovering on a boundary would jog the track back and forth).
+  const low = Math.floor(rows * g.meanRow) + 0.5;
+  const high = Math.floor(rows * (1 - g.meanRow)) + 0.5;
+  const mean = (low + high) / 2 + (lineLean(seed, col, rc) * (high - low)) / 2;
   const k = Math.floor(col / g.knotCols);
   const t = col / g.knotCols - k;
-  const knot = (i: number) => {
-    const off = i * g.knotCols <= g.levelCols ? 0 : Math.round((cellNoise(seed, i, 1, 0x11e5) * 2 - 1) * g.wander);
-    return Math.max(g.edge + 0.5, Math.min(rows - g.edge - 0.5, mean + off));
-  };
-  return knot(k) + (knot(k + 1) - knot(k)) * t;
+  // No wander through the station, or into and out of a crossover (it runs straight across).
+  const level = (c: number) => c <= g.levelCols || (rc.line?.spec.crossovers ?? []).some((x) => Math.abs(c - x) <= g.crossover.cols / 2 + g.knotCols);
+  const knot = (i: number) => (level(i * g.knotCols) ? 0 : Math.round((cellNoise(seed, i, 1, 0x11e5) * 2 - 1) * g.wander));
+  return Math.max(g.edge + 0.5, Math.min(rows - g.edge - 0.5, mean + knot(k) + (knot(k + 1) - knot(k)) * t));
 }
 
 /** Where the line meets a river: the column of the river's center there, and the line's row (a tile's center). */
-function lineCrossing(seed: number, rv: River, rows: number): { col: number; row: number } {
-  const col = riverCenter(rv, lineBase(seed, rv.col, rows), rows);
-  return { col, row: Math.floor(lineBase(seed, col, rows)) + 0.5 };
+function lineCrossing(seed: number, rv: River, rows: number, rc: Resolved): { col: number; row: number } {
+  const col = riverCenter(rv, lineBase(seed, rv.col, rows, rc), rows);
+  return { col, row: Math.floor(lineBase(seed, col, rows, rc)) + 0.5 };
 }
 
 /**
@@ -786,13 +844,13 @@ function lineAt(seed: number, col: number, rows: number, rc: Resolved): number {
   const known = L.memo.get(col);
   if (known !== undefined) return known;
   const g = TERRAIN_GEN.railLine;
-  let v = lineBase(seed, col + 0.5, rows);
+  let v = lineBase(seed, col + 0.5, rows, rc);
   const ci = Math.floor(col / CHUNK);
   const near: { d: number; row: number }[] = [];
   for (let c = ci - 2; c <= ci + 2; c++) {
     const rv = riverShape(seed, c, rows, rc);
     if (!rv) continue;
-    const x = lineCrossing(seed, rv, rows);
+    const x = lineCrossing(seed, rv, rows, rc);
     near.push({ d: Math.abs(col + 0.5 - x.col), row: x.row });
   }
   near.sort((a, b) => b.d - a.d);
@@ -804,15 +862,24 @@ function lineAt(seed: number, col: number, rows: number, rc: Resolved): number {
   return v;
 }
 
-/** The row of the line's track tile at a column. */
+/** The row of the train's track tile at a column (the line's second track is `lineSpan` away). */
 function lineRowOf(seed: number, col: number, rows: number, rc: Resolved): number {
   return Math.floor(lineAt(seed, col, rows, rc));
 }
 
 /**
- * What the line paints in a column: the rows of its track (one, or the run that joins it to the
- * column behind where two rivers' level stretches meet), and whether the station's platform and
- * building stand beside it here.
+ * The rows the whole line takes up at a column, beside a track row `row` (inclusive): the train's
+ * track, the gravel, and the second track `railLine.twin` rows off on the narrow side there.
+ */
+function lineSpan(seed: number, col: number, row: number, rc: Resolved): [number, number] {
+  const other = row + lineSideAt(seed, col, rc) * TERRAIN_GEN.railLine.twin;
+  return [Math.min(row, other), Math.max(row, other)];
+}
+
+/**
+ * What the line paints in a column: the rows of the train's track (one, or the run that joins it
+ * to the column behind where two rivers' level stretches meet), and whether the station's platforms
+ * and building stand beside the line here.
  */
 function lineColumn(seed: number, col: number, rows: number, rc: Resolved): { row: number; lo: number; hi: number; side: 1 | -1; platform: boolean; hall: boolean } {
   const st = TERRAIN_GEN.railLine.station;
@@ -821,25 +888,26 @@ function lineColumn(seed: number, col: number, rows: number, rc: Resolved): { ro
   const lo = row - prev >= 2 ? prev + 1 : row;
   const hi = prev - row >= 2 ? prev - 1 : row;
   const at = col - st.col;
-  return { row, lo, hi, side: lineSide(seed), platform: at >= 0 && at < st.cols, hall: at >= 2 && at < st.cols - 2 && at % st.gap !== 0 };
+  return { row, lo, hi, side: lineSideAt(seed, col, rc), platform: at >= 0 && at < st.cols, hall: at >= 2 && at < st.cols - 2 && at % st.gap !== 0 };
 }
 
-/** How a line tile is drawn (`Tile.links`): a bridge tile that carries the rails, or which way the track bends to the next row. */
+/**
+ * How a line tile is drawn (`Tile.links`), on either track: a bridge tile that carries rails, or
+ * which way the track bends into the next row ahead and out of the one behind (`BEND`).
+ */
 function lineLinks(seed: number, col: number, row: number, rows: number, rc: Resolved, mat: MaterialId): number {
   const r = lineRowOf(seed, col, rows, rc);
-  if (row !== r) return 0;
-  if (mat === 'railBridge') return LINK.fwd;
+  const [a, b] = lineSpan(seed, col, r, rc);
+  if (row < a || row > b) return 0;
+  // A span's deck carries rails down its two edges; the gravel between the tracks bends with them.
+  if (mat === 'railBridge') return row === a || row === b ? LINK.fwd : 0;
   const next = lineRowOf(seed, col + 1, rows, rc);
   const prev = lineRowOf(seed, col - 1, rows, rc);
-  if (next === r + 1) return LINK.fwd | LINK.right;
-  if (next === r - 1) return LINK.fwd | LINK.left;
-  if (prev === r + 1) return LINK.back | LINK.right;
-  if (prev === r - 1) return LINK.back | LINK.left;
-  return 0;
+  return (next === r + 1 ? BEND.aheadRight : next === r - 1 ? BEND.aheadLeft : 0) | (prev === r + 1 ? BEND.behindRight : prev === r - 1 ? BEND.behindLeft : 0);
 }
 
-/** What the railbed (the tile either side of the track) leaves as it is; anything else is cleared to open ground. */
-const RAILBED_KEEPS: ReadonlySet<MaterialId> = new Set(['ground', 'road', 'farmland', 'crater', 'shallows', 'water', 'ice', 'thinIce', 'wadi', 'glass', 'railBridge', 'footbridge', 'track']);
+/** What the railbed (the tile either side of the line) leaves as it is; anything else is cleared to open ground. */
+const RAILBED_KEEPS: ReadonlySet<MaterialId> = new Set(['ground', 'road', 'farmland', 'crater', 'shallows', 'water', 'ice', 'thinIce', 'wadi', 'glass', 'railBridge', 'footbridge', 'track', 'tunnel']);
 
 /**
  * A first row for a block `height` rows tall over columns [c0, c1] that keeps clear of the lane
@@ -1100,8 +1168,11 @@ function hasRiver(seed: number, ci: number, rc: Resolved): boolean {
   const chance = Math.min(TERRAIN_GEN.riverMaxChance, mixOf(rc, 'rivers'));
   // An armored train's line forces a river in some chunks (it always crosses a bridge, SPEC §4.4).
   const forced = rc.line?.spec.rivers;
+  // And none near a crossover: the line can't run level over a bridge while it's crossing the field.
+  const clear = TERRAIN_GEN.railLine.crossover.cols / 2 + TERRAIN_GEN.railLine.riverFlat + CHUNK;
+  const barred = (c: number) => (rc.line?.spec.crossovers ?? []).some((x) => (c + 1) * CHUNK > x - clear && c * CHUNK < x + clear);
   let prev = false;
-  for (let c = TERRAIN_GEN.riverFirstChunk; c <= ci; c++) prev = !prev && (riverRoll(seed, c, chance) || (forced?.includes(c) ?? false));
+  for (let c = TERRAIN_GEN.riverFirstChunk; c <= ci; c++) prev = !prev && !barred(c) && (riverRoll(seed, c, chance) || (forced?.includes(c) ?? false));
   return prev;
 }
 
@@ -1138,19 +1209,19 @@ function riverShape(seed: number, ci: number, rows: number, rc: Resolved): River
 }
 
 /**
- * An armored train's line crosses the river on a rail bridge: three rows of span with the track down
- * the middle. Fords keep a row clear of it, and the wide side (the Behemoth's) always has one.
+ * An armored train's line crosses the river on a rail bridge: a span as wide as the line, a track
+ * down each edge. Fords keep a row clear of it, and the wide side (the Behemoth's) always has one.
  */
 function lineBridge(seed: number, rv: River, rows: number, rc: Resolved): void {
   const width = TERRAIN_GEN.railLine.fordWidth;
-  const x = lineCrossing(seed, rv, rows);
-  const r = Math.floor(x.row);
-  rv.bridge = { rows: [r - 1, r + 2], mat: 'railBridge' };
-  rv.fords = rv.fords.filter(([a, b]) => b <= r - 2 || a >= r + 3);
-  const side = lineSide(seed);
-  if (rv.fords.some(([a, b]) => (side < 0 ? a > r + 2 : b < r - 1))) return;
+  const x = lineCrossing(seed, rv, rows, rc);
+  const [lo, hi] = lineSpan(seed, Math.floor(x.col), Math.floor(x.row), rc);
+  rv.bridge = { rows: [lo, hi + 1], mat: 'railBridge' };
+  rv.fords = rv.fords.filter(([a, b]) => b <= lo - 1 || a >= hi + 2);
+  const side = lineSideAt(seed, Math.floor(x.col), rc);
+  if (rv.fords.some(([a, b]) => (side < 0 ? a > hi + 1 : b < lo))) return;
   const want = Math.round(laneAt(seed, x.col, rows, rc) - width / 2);
-  const a = side < 0 ? Math.max(r + 4, Math.min(rows - width, want)) : Math.min(r - 2 - width, Math.max(0, want));
+  const a = side < 0 ? Math.max(hi + 3, Math.min(rows - width, want)) : Math.min(lo - 1 - width, Math.max(0, want));
   rv.fords.push([a, a + width]);
 }
 
@@ -1369,6 +1440,10 @@ function paintColumn(seed: number, col: number, rows: number, neighbors: Neighbo
   const reach = reaching(neighbors, col);
   const rivers = neighbors.filter((n) => n.river);
   const line = rc.line ? lineColumn(seed, col, rows, rc) : null;
+  const span = line ? lineSpan(seed, col, line.row, rc) : null;
+  const tunnel = line ? tunnelAt(col, rc) : null;
+  // A portal's columns: the tunnel's first and last few.
+  const portal = tunnel !== null && Math.min(col - tunnel.c0, tunnel.c1 - col) < TERRAIN_GEN.railLine.crossover.portal;
   for (let row = 0; row < rows; row++) {
     let mat: MaterialId = 'ground';
     let under: MaterialId | undefined;
@@ -1396,7 +1471,8 @@ function paintColumn(seed: number, col: number, rows: number, neighbors: Neighbo
       if (avenue && mat === 'building' && Math.abs(row + 0.5 - laneAt(seed, col + 0.5, rows, rc)) < avenue / 2) mat = 'road';
       // Rivers paint over everything; rock only claims open ground, and never the guaranteed lane
       // or a river and its banks.
-      let rockOk = !inLane(seed, col, row, rows, rc) && !(line && Math.abs(row - line.row) <= TERRAIN_GEN.railLine.rockClear);
+      // (Over a tunnel the land is the land's: rock and all, up to its portals.)
+      let rockOk = !inLane(seed, col, row, rows, rc) && !(line && (!tunnel || portal) && row >= span![0] - TERRAIN_GEN.railLine.rockClear && row <= span![1] + TERRAIN_GEN.railLine.rockClear);
       for (const n of rivers) {
         const rv = n.river;
         const paint = rv && riverPaint(seed, rv, col, row, rows);
@@ -1436,21 +1512,30 @@ function paintColumn(seed: number, col: number, rows: number, neighbors: Neighbo
       if (mat !== featured) art = undefined;
     }
     if (line) {
-      // The line runs through everything, from the first column: its track, the railbed either side
-      // cleared to open ground, and at the start a station (a platform, a building on the narrow side).
-      const d = row < line.lo ? row - line.lo : row > line.hi ? row - line.hi : 0;
+      // The line runs through everything, from the first column: its two tracks with gravel between
+      // them, the railbed either side cleared to open ground, and at the start a station (a platform
+      // either side, a building on the narrow side).
+      const twin = line.side * TERRAIN_GEN.railLine.twin;
+      const lo = Math.min(line.lo, line.lo + twin);
+      const hi = Math.max(line.hi, line.hi + twin);
+      const d = row < lo ? row - lo : row > hi ? row - hi : 0;
       const depth = d * line.side;
       const was = mat;
-      if (d === 0) {
-        if (mat !== 'railBridge') mat = 'track';
-      } else if (Math.abs(d) === 1) {
+      if (portal && Math.abs(d) <= 1) {
+        // Underground through a crossover: a portal over the line at each end of the tunnel.
+        mat = 'tunnel';
+      } else if (!tunnel && d === 0) {
+        const railed = (row >= line.lo && row <= line.hi) || (row >= line.lo + twin && row <= line.hi + twin);
+        if (mat !== 'railBridge') mat = railed ? 'track' : 'ballast';
+      } else if (!tunnel && Math.abs(d) === 1) {
         if (line.platform) mat = 'road';
         else if (!RAILBED_KEEPS.has(mat)) mat = 'ground';
-      } else if (line.hall && depth >= 2 && depth <= 1 + TERRAIN_GEN.railLine.station.depth) {
+      } else if (!tunnel && line.hall && depth >= 2 && depth <= 1 + TERRAIN_GEN.railLine.station.depth) {
         mat = 'building';
       } else {
         // The line's service road, down the lane on the wide side: a track with a cleared verge,
         // fording every river it meets, so a hull at full speed isn't torn up by scenery the whole way.
+        // It runs over a tunnel as over any ground; whatever else the land has there stands over the line.
         const off = Math.abs(row + 0.5 - laneAt(seed, col + 0.5, rows, rc));
         if (off < TERRAIN_GEN.railLine.serviceRoad / 2) {
           if (mat === 'water') mat = 'shallows';
@@ -1491,8 +1576,8 @@ export function generateChunk(seed: number, ci: number, rows: number, recipe: Te
   for (let col = first - MAX_FOOTPRINT; col < first; col++) painted.set(col, paintColumn(seed, col, rows, neighbors, rc));
   for (let col = first + 2 * CHUNK - 1; col >= first; col--) {
     const p = paintColumn(seed, col, rows, neighbors, rc);
-    const lineRow = rc.line ? lineRowOf(seed, col, rows, rc) : null;
-    const railbed = (row: number) => lineRow !== null && Math.abs(row - lineRow) <= TERRAIN_GEN.railLine.rockClear;
+    const span = rc.line ? lineSpan(seed, col, lineRowOf(seed, col, rows, rc), rc) : null;
+    const railbed = (row: number) => span !== null && row >= span[0] - TERRAIN_GEN.railLine.rockClear && row <= span[1] + TERRAIN_GEN.railLine.rockClear;
     fillDeadEnds(p.mats, ahead, (row) => inLane(seed, col, row, rows, rc) || nearRiver(seed, neighbors, col, row, rows) || railbed(row));
     if (col < first + CHUNK) cols[col - first] = p;
     painted.set(col, p);
@@ -1620,6 +1705,8 @@ export class Terrain {
   private swept = '';
   /** Columns where an armored train's line has been broken (kept after their chunk is dropped). */
   private readonly cuts = new Set<number>();
+  /** The same for the line's second track. */
+  private readonly cuts2 = new Set<number>();
   /**
    * Set by an armored train (`sim/train.ts`): columns it stands over. Line tiles there take no
    * damage, so fire aimed at the train never breaks the track under it (SPEC §4.4).
@@ -1743,7 +1830,7 @@ export class Terrain {
     return this.rc.line !== null;
   }
 
-  /** The row of the line's track tile at a column; null without a line. */
+  /** The row of the train's track tile at a column (the nearer of the line's two to mid-field); null without a line. */
   lineRow(col: number): number | null {
     return this.rc.line ? lineRowOf(this.seed, col, this.rows, this.rc) : null;
   }
@@ -1764,14 +1851,37 @@ export class Terrain {
     return sum / w;
   }
 
-  /** Which side of the field the line runs down (-1 the low rows, 1 the high): the other is the wide side. */
+  /** Which side of the field the line starts down (-1 the low rows, 1 the high): the other is the wide side. */
   get lineSide(): 1 | -1 {
     return lineSide(this.seed);
   }
 
-  /** Whether the line is broken at a column: its track cratered, or its bridge down. */
-  lineCut(col: number): boolean {
-    return this.cuts.has(col);
+  /** Which side of the field the line is on at world x (it changes sides at a crossover): the other is the wide side there. */
+  lineSideAt(x: number): 1 | -1 {
+    return lineSideAt(this.seed, Math.floor(x / TS), this.rc);
+  }
+
+  /**
+   * World y of one of the line's two tracks at world x: 0 the armored train's (`lineY`), 1 the
+   * second, `railLine.twin` rows off on the line's narrow side. Under a crossover's tunnel the
+   * second track passes from one side of the first to the other.
+   */
+  trackY(x: number, track: 0 | 1): number {
+    const y = this.lineY(x);
+    if (track === 0) return y;
+    const g = TERRAIN_GEN.railLine;
+    const lean = lineLean(this.seed, x / TS, this.rc) / g.crossover.under;
+    return y + Math.max(-1, Math.min(1, lean)) * g.twin * TS;
+  }
+
+  /** Whether the line is underground at world x (a crossover's tunnel): what's on it there can't be seen or reached. */
+  underground(x: number): boolean {
+    return tunnelAt(Math.floor(x / TS), this.rc) !== null;
+  }
+
+  /** Whether one of the line's tracks is broken at a column: cratered, or its bridge down. */
+  lineCut(col: number, track: 0 | 1 = 0): boolean {
+    return (track === 0 ? this.cuts : this.cuts2).has(col);
   }
 
   /** World y of the guaranteed lane's center at world x (SPEC §4.2): rock-free, the way forward. */
@@ -2058,7 +2168,13 @@ export class Terrain {
   /** Replaces a tile with another material, fresh; the event names the one that was there. */
   private turnInto(col: number, row: number, t: Tile, mat: MaterialId, state: TileState, events: SimEvent[]): void {
     const was = t.mat;
-    if (isLine(was)) this.cuts.add(col);
+    // Each track is cut on its own (the gravel between them can go, and nothing minds).
+    if (isLine(was) && this.rc.line) {
+      const line = lineColumn(this.seed, col, this.rows, this.rc);
+      const twin = line.side * TERRAIN_GEN.railLine.twin;
+      if (row >= line.lo && row <= line.hi) this.cuts.add(col);
+      if (row >= line.lo + twin && row <= line.hi + twin) this.cuts2.add(col);
+    }
     t.mat = mat;
     t.state = 'intact';
     t.hp = MATERIALS[mat].maxHp;

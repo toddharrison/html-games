@@ -2,7 +2,7 @@ import type { BiomeId } from '../content/biomes';
 import { HALL_STYLES, ROAD_STYLES, SPARSE_TREES, STRUCTURES, structuresOf, TREE_IDS, type RoadStyle, type StructureId, type TileArt, type TreeId } from '../content/structures';
 import { TERRAIN_GEN } from '../content/tuning';
 import { hashSeed } from '../sim/rng';
-import { LINK, type Tile } from '../sim/terrain';
+import { BEND, type Tile } from '../sim/terrain';
 
 /**
  * Terrain frame names (Phaser-free, so tests can check them): which frame of a biome's tile and
@@ -57,10 +57,10 @@ export const TILE_FRAMES = [
   'rail',
   'rail_torn',
   'track',
-  'track_fr',
-  'track_fl',
-  'track_br',
-  'track_bl',
+  'ballast',
+  'tunnel_in',
+  'tunnel_out',
+  'tunnel_cap',
   'wadi0',
   'wadi1',
   'derrick_pad',
@@ -158,11 +158,31 @@ function bridgeEdges(t: Tile, a: Around | undefined): number {
   return (open(a.tile(a.col, a.row - 1)?.mat) ? 1 : 0) | (open(a.tile(a.col, a.row + 1)?.mat) ? 2 : 0);
 }
 
-/** An armored train's track (SPEC §4.4): straight, or bending toward the next row ahead of it or behind (`lineLinks`). */
-function trackFrame(links: number): TileFrame {
-  const side = links & LINK.right ? 'r' : links & LINK.left ? 'l' : null;
-  if (!side) return 'track';
-  return `track_${links & LINK.fwd ? 'f' : 'b'}${side}` as TileFrame;
+/**
+ * A tile where a track or a one-tile road steps sideways (SPEC §4.4): which way it comes in from the
+ * column behind and goes out to the one ahead (-1 left, 0 straight, 1 right), or null if it runs
+ * straight. Such a tile is drawn by an overlay wider than itself (`frameName.bend`), so the curve
+ * runs on unbroken from tile to tile; its own frame is left clear.
+ * - An armored train's track and the gravel beside it: from `Tile.links` (`BEND`).
+ * - A plain road one tile wide (the line's service road): from the road tiles round it.
+ */
+function bendOf(t: Tile, a: Around | undefined): [number, number] | null {
+  if (t.mat === 'track' || t.mat === 'ballast') {
+    const links = t.links ?? 0;
+    const into = links & BEND.behindRight ? 1 : links & BEND.behindLeft ? -1 : 0;
+    const out = links & BEND.aheadRight ? 1 : links & BEND.aheadLeft ? -1 : 0;
+    return into || out ? [into, out] : null;
+  }
+  if (t.mat !== 'road' || t.art || !a) return null;
+  const road = (c: number, r: number) => a.tile(c, r)?.mat === 'road';
+  const side = (dc: number): number => {
+    if (road(a.col + dc, a.row)) return 0;
+    for (const dr of [1, -1]) if (road(a.col + dc, a.row + dr) && !road(a.col, a.row + dr)) return dr;
+    return 0;
+  };
+  const into = side(-1);
+  const out = side(1);
+  return into || out ? [into, out] : null;
 }
 
 /**
@@ -180,6 +200,8 @@ export function tileFrame(t: Tile, shimmer: number, around?: Around): string {
     case 'ground':
       return 'clear';
     case 'road':
+      if (bendOf(t, around)) return 'clear';
+      return roadFrame(t);
     case 'car':
       return roadFrame(t);
     case 'footbridge':
@@ -239,7 +261,17 @@ export function tileFrame(t: Tile, shimmer: number, around?: Around): string {
     case 'rail':
       return t.state === 'flattened' ? 'rail_torn' : 'rail';
     case 'track':
-      return trackFrame(t.links ?? 0);
+      return bendOf(t, around) ? 'clear' : 'track';
+    case 'ballast':
+      return bendOf(t, around) ? 'clear' : 'ballast';
+    case 'tunnel': {
+      // A mouth where the line runs into the roof (behind this tile) or out of it (ahead).
+      const railed = (m: Tile['mat'] | undefined) => m === 'track' || m === 'ballast';
+      if (around && railed(around.tile(around.col - 1, around.row)?.mat)) return 'tunnel_in';
+      if (around && railed(around.tile(around.col + 1, around.row)?.mat)) return 'tunnel_out';
+      // The rest of the portal: its headwall's top and wings.
+      return 'tunnel_cap';
+    }
     case 'railBridge':
       return frameName.railBridge(bridgeEdges(t, around), !!t.links, damaged);
     case 'wadi':
@@ -275,10 +307,22 @@ function carFrame(t: Tile): string {
   return frameName.car(vertical, t.variant & 3, CAR_STATE[t.state]);
 }
 
-/** Raised overlays: tree clumps (by species), hedges, boulders, fuel tanks, derricks, parked cars. */
-export function tileOverlay(t: Tile): string | null {
+/** What bends: an armored train's track, the gravel between its two tracks, a one-tile road. */
+export type BendKind = 'track' | 'ballast' | 'road';
+
+/** How wide a bend's overlay is: the tile and half a tile either side of it. */
+export const BEND_W = TILE * 2;
+
+/** Raised overlays: tree clumps (by species), hedges, boulders, fuel tanks, derricks, parked cars; and the curve of a track or road where it steps sideways (`bendOf`). */
+export function tileOverlay(t: Tile, around?: Around): string | null {
   const standing = t.state === 'intact' || t.state === 'damaged';
   switch (t.mat) {
+    case 'track':
+    case 'ballast':
+    case 'road': {
+      const bend = bendOf(t, around);
+      return bend ? frameName.bend(t.mat, bend[0], bend[1]) : null;
+    }
     case 'rock':
       return standing ? (t.variant & 1 ? 'boulder1' : 'boulder0') : null;
     case 'car':
@@ -316,9 +360,16 @@ export const frameName = {
   /** A rail bridge's deck (SPEC §4.4), by its span edges, and whether this tile carries the rails. */
   railBridge: (edges: number, rails: boolean, damaged: boolean) => `rb.${edges}${rails ? '.r' : ''}${damaged ? '.d' : ''}`,
   tree: (species: TreeId, v: number) => `t.${species}.${v}`,
+  /** The curve of a track or road through a tile where it steps sideways (`bendOf`): in from behind, out ahead (-1 left, 1 right). On the overlay sheet, `BEND_W` wide. */
+  bend: (kind: BendKind, into: number, out: number) => `bend.${kind}.${into}.${out}`,
   /** Parked cars: nose up or across, a variant, and the state (0 intact, 1 damaged, 2 burnt out, 3 crushed). */
   car: (vertical: boolean, v: number, state: number) => `c.${vertical ? 'v' : 'h'}.${v}.${state}`,
 };
+
+/** Every bend there is a frame for: each way in and out but straight through. */
+export const BENDS: readonly [BendKind, number, number][] = (['track', 'ballast', 'road'] as const).flatMap((kind) =>
+  [-1, 0, 1].flatMap((into) => [-1, 0, 1].filter((out) => into || out).map((out) => [kind, into, out] as [BendKind, number, number])),
+);
 
 /** Every frame name on a biome's tile sheet and its overlay sheet. */
 export function sheetFrameNames(biome: BiomeId): { tiles: Set<string>; clumps: Set<string> } {
@@ -340,6 +391,7 @@ export function sheetFrameNames(biome: BiomeId): { tiles: Set<string>; clumps: S
   for (let style = 0; style < HALL_STYLES; style++) for (let x = 0; x < 3; x++) for (let y = 0; y < 3; y++) for (const d of [false, true]) tiles.add(frameName.hall(style, x, y, d));
   const clumps = new Set<string>(CLUMP_FRAMES);
   for (const species of TREE_IDS) for (let v = 0; v < 2; v++) clumps.add(frameName.tree(species, v));
+  for (const [kind, into, out] of BENDS) clumps.add(frameName.bend(kind, into, out));
   for (const vertical of [true, false]) for (let v = 0; v < 4; v++) for (let state = 0; state < 4; state++) clumps.add(frameName.car(vertical, v, state));
   return { tiles, clumps };
 }

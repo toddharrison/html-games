@@ -66,7 +66,7 @@ export const DEMO = {
 };
 
 /** Modes in the order the clips walk through them (offset per pass, so a biome doesn't always get the same one). */
-const MODE_ORDER: readonly BattleModeId[] = ['assault', 'chase', 'breach', 'intercept'];
+const MODE_ORDER: readonly BattleModeId[] = ['assault', 'chase', 'breach', 'intercept', 'gauntlet'];
 
 /** Clip `i` of the show: biomes in turn, modes rotating, the approach drawn from the seed. */
 export function demoClip(i: number, seed: number): DemoClip {
@@ -87,6 +87,8 @@ export function demoClip(i: number, seed: number): DemoClip {
   if (mode === 'chase') return { ...base, preroll: 5 };
   // The train has pulled out of its station and the hull is closing on its tail.
   if (mode === 'intercept') return { ...base, preroll: 6 };
+  // The first attack train is coming into view.
+  if (mode === 'gauntlet') return { ...base, preroll: 8 };
   if (mode === 'breach') return { ...base, preroll: 7, battleLength: 1100 };
   return { ...base, preroll: 16 };
 }

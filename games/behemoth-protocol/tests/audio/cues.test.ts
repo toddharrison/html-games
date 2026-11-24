@@ -14,13 +14,17 @@ import {
   pitchFactor,
   place,
   reactorState,
+  trainSound,
   WEAPON_SOUNDS,
   type Cue,
   type CueContext,
 } from '../../src/audio/cues';
+import { plainTrain } from '../../src/content/trainCars';
 import { STEREO } from '../../src/content/tuning';
-import { createBehemoth, damageComponent } from '../../src/sim/behemoth';
+import { createBehemoth, damageComponent, IDLE_COMMAND } from '../../src/sim/behemoth';
+import { destroyEnemy } from '../../src/sim/enemies';
 import type { SimEvent } from '../../src/sim/events';
+import { createWorld, stepWorld } from '../../src/sim/world';
 
 const c = CHASSIS.class2;
 const make = () =>
@@ -236,5 +240,68 @@ describe('engineState and reactorState', () => {
     expect(reactorState(b, 5).meltdown).toBeGreaterThan(early);
     b.power.stored = 0;
     expect(reactorState(b, 5).charge).toBe(0);
+  });
+});
+
+describe('an armored train (SPEC §7.3)', () => {
+  const battle = () => {
+    const w = createWorld({ seed: 1, frameWidth: 324, fieldRows: 21, objective: { mode: 'intercept', strength: 'normal', train: plainTrain('normal') } });
+    w.encounter.posts = [];
+    w.encounter.alert.next = 1e9;
+    w.enemies = w.enemies.filter((e) => e.train);
+    w.behemoth.invulnerable = true;
+    w.train!.raid = null;
+    return w;
+  };
+  const run = (w: ReturnType<typeof battle>, seconds: number) => {
+    for (let i = 0; i < seconds * 60; i++) {
+      w.behemoth.y = w.terrain.laneY(w.behemoth.x);
+      stepWorld(w, { ...IDLE_COMMAND, aimX: w.behemoth.x + 200, aimY: w.behemoth.y });
+      w.events.length = 0;
+    }
+  };
+  const ears = (w: ReturnType<typeof battle>) => ({ x: w.behemoth.x, y: w.behemoth.y });
+
+  it('is silent at a stand, and rolls and works once it is under way', () => {
+    expect(trainSound(createWorld({ seed: 1, frameWidth: 324, fieldRows: 21 }), { x: 0, y: 0 })).toBeNull();
+    const w = battle();
+    const still = trainSound(w, ears(w))!;
+    expect(still.roll).toBe(0);
+    expect(still.work).toBe(0);
+    run(w, 10);
+    const moving = trainSound(w, ears(w))!;
+    expect(moving.roll).toBeGreaterThan(0.5);
+    expect(moving.rolling.gain).toBeGreaterThan(0);
+    expect(moving.work).toBeGreaterThan(0.5);
+    // The whistle's engine is the one at the front.
+    expect(moving.lead!.x).toBeCloseTo(w.train!.vehicles[0]!.x);
+  });
+
+  it('loses its engines\' beat once none is pulling, and its wheels once it stands', () => {
+    const w = battle();
+    run(w, 10);
+    // The lead engine destroyed: everything behind it piles in or is abandoned.
+    destroyEnemy(w, w.enemies.find((e) => e.id === w.train!.vehicles[0]!.enemyId)!, 'shot');
+    expect(trainSound(w, ears(w))!.work).toBe(0);
+    expect(trainSound(w, ears(w))!.lead).toBeNull();
+    run(w, 6);
+    expect(trainSound(w, ears(w))!.roll).toBe(0);
+  });
+
+  it('whistles as it pulls out, shrieks off the rails, and squeals to a stand', () => {
+    const sounds = (ev: SimEvent) => cuesFor(ev, context()).map((cue) => cue.sound);
+    expect(sounds({ type: 'trainStart', x: 500, y: 40, engines: 4, gun: true })).toEqual(['radio', 'trainWhistle']);
+    expect(sounds({ type: 'trainBroken', x: 500, y: 40, heading: 0, behind: 5 })).toEqual(['derail']);
+    expect(sounds({ type: 'trainDerail', x: 500, y: 40, heading: 0, first: false, sunk: true })).toEqual(['derail', 'splash']);
+    expect(sounds({ type: 'trainStopped', x: 500, y: 40, derailed: false })).toContain('trainBrakes');
+    expect(sounds({ type: 'trainStopped', x: 500, y: 40, derailed: true })).not.toContain('trainBrakes');
+  });
+
+  it('is heard from far off: a whistle carries', () => {
+    const far = place({ x: 0, y: 0 }, { x: 3000, y: 0 });
+    const whistle = place({ x: 0, y: 0 }, { x: 3000, y: 0, carry: 0.5 });
+    expect(far.gain).toBeLessThan(0.1);
+    expect(whistle.gain).toBe(0.5);
+    expect(place({ x: 0, y: 0 }, { x: 10, y: 0, carry: 0.5 }).gain).toBe(1);
   });
 });

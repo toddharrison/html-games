@@ -30,7 +30,7 @@ import { hex, PAL } from './palette';
 import { damageLevel } from './statusFx';
 import { usingPad } from '../input/gamepad';
 import { objectivePercent } from '../sim/objective';
-import { TrainStrip } from './trainStrip';
+import { TRAIN_STRIP_SHOWN, TrainStrip } from './trainStrip';
 
 /**
  * Battle HUD in the side panels (SPEC §10). Left: speed, treads, reactor, power, the weapon strip
@@ -385,7 +385,7 @@ export class Hud {
 
     this.updateDirective(w);
 
-    if (w.train && !this.strip) this.strip = new TrainStrip(this.scene, this.layout, w.train, w.terrain.lineSide);
+    if (TRAIN_STRIP_SHOWN && w.train && !this.strip) this.strip = new TrainStrip(this.scene, this.layout, w.train, w.terrain.lineSide);
     this.strip?.update(w, w.time);
 
     // The alert clock (SPEC §10): the next reinforcement wave, a bar filling toward it.

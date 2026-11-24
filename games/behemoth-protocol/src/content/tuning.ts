@@ -213,6 +213,12 @@ export const EMP = {
   renew: 0.5,
 };
 
+/**
+ * Oil spills (`sim/spills.ts`): a slick soaks away after `life` s if nothing lights it; alight,
+ * every tile of it burns for `burn` s.
+ */
+export const OIL = { life: 45, burn: 9 };
+
 export const POOL = {
   /** Seconds between damage ticks. */
   tick: 0.25,
@@ -290,8 +296,8 @@ export const TRAIN = {
    * engines lost it drops toward `paceFloor` of that, which is still above the hull's cruise:
    * `pace × (paceFloor + (1 − paceFloor) × running ÷ total)`. No engines: it brakes to a stop.
    */
-  pace: 0.78,
-  paceFloor: 0.64,
+  pace: 0.75,
+  paceFloor: 0.78,
   /** How fast it changes pace (units/s²), and brakes once nothing pulls it. */
   ease: 8,
   brake: 10,
@@ -311,8 +317,49 @@ export const TRAIN = {
    * units off the line, turned up to `turn` degrees. Each vehicle that piles in takes `brake`
    * units/s off what's behind it, and under `stop` units/s the rest pulls up short of the pile.
    * A vehicle lost to a pileup pays `salvage` of its worth (nothing if it went into a river).
+   *
+   * The pile is a wreck in earnest: each vehicle rides `crumple` of its own length up into the
+   * one before it and is thrown to the other side from it (an accordion); it goes up as it lands
+   * (`blast`, after a moment within `fuse`), its wreck burns for `burn` s, and with odds `cookOff.odds`
+   * what it carried cooks off a few seconds later (a second blast that throws fire about).
    */
-  derail: { brake: 12, stop: 10, scatter: [8, 24] as const, turn: 50, salvage: 0.5 },
+  derail: {
+    brake: 6,
+    stop: 10,
+    scatter: [10, 34] as const,
+    turn: 75,
+    salvage: 0.5,
+    crumple: 0.4,
+    blast: { radius: 34, damage: 28, fuse: [0, 0.5] as const },
+    cookOff: { odds: 0.6, radius: 30, damage: 22, fuse: [1, 5] as const },
+    burn: 16,
+  },
+  /**
+   * What a wreck leaks (SPEC §7.3). A vehicle that leaves the rails may leak plasma from its
+   * power cells (`plasma`, its odds; an engine's reactor leaks oftener, `engine`) or else oil
+   * (`oil`, the odds of that for what doesn't leak plasma). It leaks `spots` of it (a range), one
+   * every `every` s (a range), each landing `reach` units from the wreck. A plasma spot is a pool
+   * like the plasma thrower's (`pool`: it burns units, tiles, and treads). An oil spot is a
+   * slick `slick` units in radius (a range) that does nothing until fire reaches it (`OIL`).
+   */
+  leak: {
+    plasma: 0.25,
+    engine: 0.6,
+    oil: 0.45,
+    spots: [2, 4] as const,
+    every: [0.4, 1.4] as const,
+    reach: [14, 44] as const,
+    pool: { radius: 11, duration: 9, dps: 6, tileDps: 8 },
+    slick: [9, 15] as const,
+  },
+  /**
+   * Attack trains (SPEC §7.3): short trains with a pace of their own, `pace` of the Behemoth's
+   * present top speed, so they come up from behind, pass, and run on ahead. One starts with its
+   * nose `behind` units behind the frame, on a track that's clear for `clear` units back from the
+   * frame's edge, and is gone once its tail is `leave` units ahead of the frame. When each comes
+   * is the mode's (`ModeDef.train.raids`).
+   */
+  raid: { pace: 1.12, behind: 40, clear: 60, leave: 260 },
   /** Line tiles within this many columns of a vehicle take no damage: fire at the train never cuts the track. */
   shield: 1,
   /** Once the train is stopped, or has got away off the far end, the extraction line is pulled in to this far ahead of the Behemoth. */
@@ -321,6 +368,8 @@ export const TRAIN = {
   dropBehind: 200,
   /** Where along the battle its line always crosses a river (shares of the way to the extraction line). */
   rivers: [0.35, 0.7] as const,
+  /** Where along the battle its line crosses to the other side of the field, through a tunnel under the lane (the same shares). */
+  crossovers: [0.2, 0.53] as const,
   /**
    * Collisions (SPEC-armored-train.md §T10). `strike`: a piece under way runs into the hull on the
    * track ahead of it. The struck armor takes `arc` (a trailer in tow takes the blow instead, and is
@@ -736,32 +785,42 @@ export const TERRAIN_GEN = {
   railStretch: 4,
   railTracks: [1, 2] as const,
   /**
-   * An armored train's line (SPEC §4.4 Intercept): one hardened track the whole length of the battle,
-   * off to one side of the field (which side is the seed's).
+   * An armored train's line (SPEC §4.4 Intercept): a hardened double track the whole length of the
+   * battle, off to one side of the field (which side is the seed's). The train runs on the track
+   * nearer the middle of the field; rows and gaps here are measured from that one.
+   * - `twin`: rows from the train's track to the second track, on the narrow side, with gravel
+   *   between them (so 2 is a three-row line, the width of its bridges).
    * - `meanRow`: its mean row, as a share of the field's width in from its side's edge.
    * - It wanders `wander` rows either side of that between knots `knotCols` apart, level for its
    *   first `levelCols` columns (the station), never within `edge` rows of a field edge.
    * - `riverFlat`: it runs level this many columns either side of a river's center (its bridge), and
    *   bends back to its own course no steeper than `riverSlope` rows a column.
-   * - `rockClear`: rows either side of it rock never covers (its own tile and the one each side are
+   * - `crossover`: where the line changes sides of the field (`RailLineSpec.crossovers`), it runs
+   *   straight across over `cols` columns, and the lane crosses it the other way. For the middle
+   *   `under` of that (as a share of the way either side of the center) the line is underground:
+   *   a tunnel with a portal `portal` columns deep over the line at each end, and whatever the
+   *   battlefield has there on the ground between them, with the lane's road running over it.
+   * - `rockClear`: rows either side of the line rock never covers (the tile each side of it is
    *   cleared of everything: the railbed). `laneGap`: the guaranteed lane's center stays at least
-   *   this many rows from it, on the wide side.
+   *   this many rows from the train's track, on the wide side.
    * - `serviceRoad`: rows down the lane cleared of obstacles (deep water there is a ford), a road
    *   along their center: the train outruns a cruise, so the chase is at full speed the whole way,
    *   and scenery plowed at that speed would wear the treads out before the end.
    * - `smooth`: columns the train's path takes to cross from one row to the next.
    * - `fordWidth`: rows of the ford added on the wide side where a river has none there.
-   * - `station`: a platform beside the track from column `col`, `cols` long, with a station building
+   * - `station`: a platform either side of the line from column `col`, `cols` long, with a station building
    *   `depth` rows deep behind it on the narrow side, a gap every `gap` columns.
    */
   railLine: {
     meanRow: 0.27,
+    twin: 2,
     wander: 1.5,
     knotCols: 24,
     levelCols: 30,
     edge: 3,
     riverFlat: 8,
     riverSlope: 1 / 3,
+    crossover: { cols: 18, under: 0.5, portal: 2 },
     rockClear: 2,
     laneGap: 7,
     serviceRoad: 5,

@@ -108,7 +108,7 @@ function meetTrain(w: World, dt: number, steer: -1 | 0 | 1): void {
   const tr = w.train;
   if (!tr) return;
   const b = w.behemoth;
-  const wide = -w.terrain.lineSide || 1;
+  const wide = -w.terrain.lineSideAt(b.x);
   let contact = false;
   let shoved = false;
   for (const body of trainBodies(w)) {

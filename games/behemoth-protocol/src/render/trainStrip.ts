@@ -11,6 +11,11 @@ import { damageLevel } from './statusFx';
 const PIP = { w: 9, gap: 2, max: 12, min: 7 };
 /** Space kept clear above and below the strip (the top banner, the field's bottom edge). */
 const MARGIN = 24;
+/**
+ * Whether the HUD shows the strip at all. Off for now (user, Nov 24, 2026: "we also don't need the
+ * train indicator on the left, hide it for now, i may change my mind, don't remove it").
+ */
+export const TRAIN_STRIP_SHOWN = false;
 /** Abandoned cars flash this many times a second until they blow. */
 const FLASH_HZ = 6;
 

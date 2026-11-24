@@ -1,8 +1,10 @@
 # Armored Train Encounter (Intercept) — Draft Spec
 
-> **Status:** draft, built (Nov 24, 2026) and **reworked the same day at the user's direction** (the rework is `d8edcca`), awaiting the user's playtest. Not yet part of [SPEC.md](SPEC.md). When the user signs it off it merges into SPEC.md (§T17) and this file is deleted.
-> **Built** (see FEATURES.md §3 "Rail line", §4 "Meeting the armored train", §9 "Armored train" and the entries after it, §12 "Train strip"): every step of §T15 (`2bb609d`, `ee45bf9`), then the rework (§9 "Armored train rework"). **Still to do:** train sounds and a theme, more balance passes, and the merge (§T15 after step 7).
+> **Status:** draft, built (Nov 24, 2026) and **reworked the same day at the user's direction** (the rework is `d8edcca`; its second and third passes are uncommitted), awaiting the user's playtest. Not yet part of [SPEC.md](SPEC.md). When the user signs it off it merges into SPEC.md (§T17) and this file is deleted.
+> **Built** (see FEATURES.md §3 "Rail line", §4 "Meeting the armored train", §9 "Armored train" and the entries after it, §12 "Train strip"): every step of §T15 (`2bb609d`, `ee45bf9`), then the rework (§9 "Armored train rework"). **Still to do:** a train theme, more balance passes, and the merge (§T15 after step 7).
 > **The rework** *(user, Nov 24, after seeing the first build: "the train should be longer, have more guns on it and other offensive cars, when cars are destroyed they should split the train and cause a wreck. and it should not be so slow, the player should have to push their throttle to the max to make progress against the train")*. It changed §T3 (a longer line, a service road), §T4 (a longer train), §T5 (the pace), §T6 (four new cars, a bigger budget), §T8 (wrecks and pileups replace hulks and cutting loose), and parts of §T9, §T10, and §T12. How each was done is my call unless marked *(user)*; §T18 Q15–Q21 are what I'd like the user to judge.
+> **The rework's second pass** *(user, Nov 24: "make the train cars slightly narrower and longer. make the engines more distinctive", "also add train sounds for atmosphere", "also, make the train tracks 2, so that the 3 wide bridges make sense", "2 wide with a gap between", "of gravel")*. It changed §T3 (a double track with gravel between), §T4 (sizes, the engine's look), §T5 (the pace, eased to make up for the longer train: my call), and §T13 (train sounds). §T18 Q22–Q24 are the calls I made in it.
+> **The third pass** *(user, Nov 24, in one message and four follow-ups)*: crossovers through a tunnel, attack trains on the second track, bigger wrecks, a faster end pace, the train strip hidden, a second mode of attack trains only, armored cabooses, a shield car, smoother bends, and leaking wrecks. It's all in **§T20** (with the user's words), and it changed §T5 (the floor), §T6 (two cars), §T8 (the pile), and §T13 (the strip). §T18 Q25–Q31 are the calls I made in it.
 > **Who decided what:** lines marked *(user)* are the user's brief or calls. Everything else is a proposal, and every number is provisional. The user answered Q1–Q4 on Nov 24 (§T18); the rework answers Q7, Q9, Q11, and Q14 and replaces Q6; Q5, Q8, Q10, Q12, and Q13 are open.
 > **For the implementer:** read [CLAUDE.md](../CLAUDE.md) first (the architecture rules apply: pure sim, seeded RNG, content tables, tuning in `tuning.ts`). §T14 maps this spec onto the existing code, §T15 is the build order, §T16 is every number in one place.
 > **Units:** 1 tile = 16 world units; 10 units = 1 m. The stock Class II hull is 64 × 40 units; it brakes to 18, cruises at 36, and surges to 64 units/s. Sim +x is forward ("ahead"), y is across the field.
@@ -33,7 +35,7 @@ From the user's brief: a map node; a rail line the whole length of the map; seve
 
 *(user: the line runs the entire length of the map, and it crosses bridges.)*
 
-**Shape.** One continuous track from the first column of the battle to the last, generated from the battle seed on its own RNG stream.
+**Shape.** One continuous line from the first column of the battle to the last, generated from the battle seed on its own RNG stream. It's a **double track** *(user, Nov 24: "make the train tracks 2, so that the 3 wide bridges make sense", "2 wide with a gap between", "of gravel")*: two tracks with a row of gravel between them, three rows in all, the width of its bridges. **The train runs on the track nearer the middle of the field** *(my call: it keeps the train where it was, and a kill throws its wreck across the gravel and the second track rather than into the scenery)*; the second track lies on the narrow side and nothing runs on it. Rows and gaps below are measured from the train's track.
 
 - It runs off-center: its mean row is 27% of the way across the field from one side (which side is seeded). That leaves a **wide side** (the Behemoth's side at the start) and a **narrow side**.
 - It wanders between knots 24 columns apart, at most 2 rows either side of its mean row (knots sit on tile centers, so the track never jogs back and forth), and never closer than 3 rows to a field edge. It steps one row at a time, and a train crosses a step over 3 columns.
@@ -41,19 +43,23 @@ From the user's brief: a map node; a rail line the whole length of the map; seve
 - The battle's guaranteed way forward (the lane, SPEC §4.2) runs on the wide side, its center at least **7 rows** from the track (112 units: just outside a troop car's rockets). The Behemoth starts in the lane.
 - **The service road** *(rework, my call)*: the whole lane (5 rows) is cleared of obstacles the way the railbed is, deep water in it is a ford, and a road runs down its center. The chase is at full speed the whole way, and at that speed scenery tears the treads up: measured before the road, the autopilot lost every tread to buildings, tank traps, and deep water in about 6000 units of surging. Off the road the ground is as rough as any battle's. Fords still hold the hull to a cruise, so every river costs ground against the train.
 - An Intercept battle is **2.5× the usual length** (12500 units, about four minutes at the train's full pace; it was 1.4× before the train got faster).
-- **The station** *(user: the train starts by pulling out of a station, ahead of the Behemoth)*: the line's first 24 columns are level, with a paved platform either side of the track and a station building two rows deep behind it on the narrow side.
+- **The station** *(user: the train starts by pulling out of a station, ahead of the Behemoth)*: the line's first 24 columns are level, with a paved platform either side of the line and a station building two rows deep behind it on the narrow side.
 
-**Tiles.** Two new terrain materials (the cosmetic `rail` material stays as it is for other battles):
+**Crossovers** *(third pass)*: the line changes sides of the field twice, through a tunnel under the lane (§T20).
+
+**Tiles.** Four new terrain materials (the cosmetic `rail` material stays as it is for other battles):
 
 | Material | What it is | Rules |
 |---|---|---|
-| `track` | The line's rails: **hardened track** on concrete sleepers *(user)*. One tile wide. | Open ground to everything (no slowdown, no cover, no obstacle). The treads don't tear it. Destroyed only as described in §T9; breaks to `crater`. |
-| `railBridge` | The line over a river: a girder span 3 tiles wide with the rails down its middle. | Like the girder `bridge`, but **no weight limit** and 300 HP. The whole span falls when it's shot out. The Behemoth may drive over it. |
+| `track` | The line's rails, both tracks: **hardened track** on concrete sleepers *(user)*. Each one tile wide. | Open ground to everything (no slowdown, no cover, no obstacle). The treads don't tear it. Destroyed only as described in §T9 (only a break in the train's own track stops it); breaks to `crater`. |
+| `ballast` | The gravel between the two tracks *(user)*. One tile wide. | Open ground, like the track; part of the line (enemy fire never breaks it). A blast can crater it, which stops nothing. |
+| `railBridge` | The line over a river: a girder span 3 tiles wide, a track down each edge. | Like the girder `bridge`, but **no weight limit** and 300 HP. The whole span falls when it's shot out, whichever tile is hit. The Behemoth may drive over it. |
+| `tunnel` | A tunnel portal's concrete (§T20). | Open ground; nothing breaks it. |
 
 **What the generator guarantees along the line:**
 
-- A **railbed**: the track tile and one tile either side are open ground (ballast); and the **service road** down the lane (above). No forest, building, wall, tank trap, fuel tank, minefield, drift, or dune is left there (roads, craters, crops, and ice stay). Structures cut by the railbed stand as smaller buildings either side (the existing rule for cut footprints).
-- Rock and cliffs never come within two rows of the track; a fortified line that crosses the track has a gap there.
+- A **railbed**: the line's three rows and one tile either side of them are open ground; and the **service road** down the lane (above). No forest, building, wall, tank trap, fuel tank, minefield, drift, or dune is left there (roads, craters, crops, and ice stay). Structures cut by the railbed stand as smaller buildings either side (the existing rule for cut footprints).
+- Rock and cliffs never come within two rows of the line; a fortified line that crosses the track has a gap there.
 - **Bridges:** every river is crossed on a `railBridge`. Every Intercept battle has **at least one river** (rivers are forced at about 35% and 70% of the line if the biome's own mix produced none there; use the biome's river materials). On the wide side every river has a ford or road bridge in the lane, as rivers always do (SPEC §4.5).
 - The node's biome and approach shape everything else as usual.
 
@@ -71,7 +77,9 @@ From the user's brief: a map node; a rail line the whole length of the map; seve
 
 (It was 3 sections of 4 cars, 16 vehicles and 590 units, before the rework.) The **lead section** is `engine, railway gun, cars…` (§T7); the others are `engine, cars…`.
 
-**Sizes.** Engine 40 × 24 units (hit radius 15); car 34 × 22 (hit radius 13); a 4-unit coupling gap between vehicles. *Changed while building:* every unit in the sim is hit as a circle, so a 48-unit car would have had ends no shot could touch. The railway gun is 60 × 24 with one hit circle of radius 18 (its ends are a little harder to hit than its middle). Every car but the engine and the railway gun is 34 × 22, radius 13.
+**Sizes.** Engine 52 × 22 units (hit radius 15); car 38 × 18 (hit radius 13); a 4-unit coupling gap between vehicles. The railway gun is 68 × 20 with one hit circle of radius 18. *(user, Nov 24: "slightly narrower and longer"; they were 40 × 24, 34 × 22, and 60 × 24.)* Every unit in the sim is hit as a circle, so a vehicle's ends are a little harder to hit than its middle, and the longer they are the more so. A normal train is now about 1300 units long (it was 1150).
+
+**The engine's look** *(user, Nov 24: "make the engines more distinctive")*: black iron where the cars are red plate, wider than they are, a long frame of drive wheels down each side, a boiler with brass bands, a red cab, a hazard-striped wedge of a plow with a headlamp, and smoke pouring from its stack while it pulls (none once it's abandoned).
 
 **Movement.** The train's position is a single distance along the field (the line's slope is shallow, so distance along x stands in for distance along the track). Each vehicle sits at its own offset behind the front, on the line, facing along it. There is no physics between cars: position and heading come from the line's shape alone, so the train bends through curves by construction.
 
@@ -89,18 +97,18 @@ From the user's brief: a map node; a rail line the whole length of the map; seve
 
 | Engines running (of 4) | Train's target speed | Stock Class II (cruise 36, top 64) |
 |---|---|---|
-| 4 | 0.78 × the Behemoth's present top speed | 50 |
+| 4 | 0.75 × the Behemoth's present top speed | 48 |
 | 3 | 0.71 × | 45 |
-| 2 | 0.64 × | 41 |
-| 1 | 0.57 × | 36.5 |
+| 2 | 0.67 × | 43 |
+| 1 | 0.63 × | 40 |
 | None | 0: it brakes at 10 units/s² and is **stopped** | 0 |
 
-General rule: `0.78 × (0.64 + 0.36 × running ÷ total)`. The floor keeps even the last engine's pace above the hull's cruise (cruise is 0.5625 of top on the Class II), so **a cruising Behemoth never gains**, whatever the train has lost.
+General rule: `0.75 × (0.78 + 0.22 × running ÷ total)` *(the floor was 0.67, the last engine at 36; user, Nov 24: "keep the end speed of the train a little faster, as engines are lost, i found the end to be too easy")*. The floor keeps even the last engine's pace above the hull's cruise (cruise is 0.5625 of top on the Class II), so **a cruising Behemoth never gains**, whatever the train has lost.
 
-- **Why 0.78 and not higher:** a hull at a full surge doesn't average its top speed. Measured with the autopilot on the service road, fords and steering bring a 64-unit surge down to about 56. Against a train at 50 that's a gain of about 6 units/s with every engine running (a car every 6 s), then 10, 14, and 19 as engines are lost. At a cruise the hull loses 4 to 17 units/s.
+- **Why 0.75 and not higher:** a hull at a full surge doesn't average its top speed. Measured with the autopilot on the service road, fords and steering bring a 64-unit surge down to about 56. Against a train at 48 that's a gain of about 8 units/s with every engine running (a car every 5 s), then 12, 16, and 20 as engines are lost. At a cruise the hull loses up to 12 units/s. It was 0.78 (floor 0.64) until the cars got longer: the train grew 13%, and over 16 seeds at each of two threats the autopilot's wins fell from 24 of 32 to 16. At 0.75 it wins 22 of 32.
 - **Why it paces the Behemoth:** every Behemoth speed (minimum, cruise, top) scales together with tread damage and overload, so the train stays the same *relative* speed whatever the build. A slow Behemoth sees the same fight in slow motion, and pays for it the way a slow Behemoth always does: more alert waves and more railway-gun shells before the end (SPEC §4.2 "the whole battlefield slows with you").
 - **Tread damage mid-battle costs ground:** the hull slows at once, the train takes a moment to ease down.
-- **An untouched train is barely overhauled:** at 6 units/s the hull needs about 220 s to climb 1350 units of gap and train, and the train is off the far end in about 245 s. The fight is won by kills on the way up, each of which slows the train or breaks it.
+- **An untouched train is barely overhauled:** at 8 units/s the hull needs about 190 s to climb 1500 units of gap and train, and the train is off the far end in about 250 s. The fight is won by kills on the way up, each of which slows the train or breaks it.
 - **Last stand:** if the Behemoth is Immobilized the train keeps the pace it had and runs for the end of the line (as a convoy does), and the railway gun keeps firing.
 
 ## T6. Cars
@@ -160,6 +168,8 @@ It reuses the field battery's area fire (`WeaponDef.barrage`, SPEC §15 "Field a
 *As built:* the gun is `EnemyDef.offscreen` (area fire only may skip the frame rule) firing `railwayGunShell` (one lobbed shell, `barrage` radius 40, flight 3.5, aimed at the zone's center, tile damage 200 so every open tile in the burst craters, `unstoppable` for point defense, range 300–1200). Its zone, the half damage to its own side (`BARRAGE.friendlyFire`), and the untouched track (`credit = false`) all come from the field battery's area fire. Two limits: at night or in a squall it can't lay its gun on a hull beyond the enemy's sight unless the hull's muzzle flash marks it (the rule every enemy gun follows); and its whistle is the battery's, longer rather than deeper (sounds are a later step). Its 200 tile damage also knocks down buildings and road bridges in the zone.
 
 ## T8. Wrecks, pileups, and scuttling
+
+> **The pile is bigger since the third pass (§T20):** seven vehicles, not four; they ride up into each other, explode, burn, cook off, and leak. The numbers in step 3 below are the second pass's.
 
 *(user, Nov 24: "when cars are destroyed they should split the train and cause a wreck." Earlier: a segment can be detached and detonated, and the crew does it.)* **Built.** This replaces the first build's rules (a destroyed vehicle stayed in the chain as a hulk; a dead section was cut loose, coasted, and was scuttled).
 
@@ -247,12 +257,12 @@ So the track can only be cut **ahead of the train** (or behind it, which does no
 ## T13. HUD, feedback, and audio
 
 - **Objective row** (left panel, where Breach and Chase show theirs): `Engines 1/3 33%`.
-- **Train strip** (new): a narrow column down one side of the battlefield, one pip per vehicle, front at the top. Each pip is colored by integrity (green, amber, red; an empty frame for a wreck), with a letter or glyph for its type and a heavier mark for engines. A bracket shows which vehicles are in the frame, a notch shows where the Behemoth is along the train, and abandoned cars flash until they blow. The train is longer than the screen, so this is how the player finds the engines. *As built* (`render/trainStrip.ts`): down the field's edge on the line's narrow side; letters `E R G D C H K M T F A B` (engine, railway gun, gun, twin gun, autocannon, howitzer, rocket, missile, troop, flinger, ammo, boxcar); engines framed in white, the railway gun in amber; a wreck is an empty frame, a vehicle gone a blank slot; abandoned cars flash until they blow. The longest train (41 vehicles) fits at 7 pixels a pip.
+- **Train strip** (new; **hidden for now**, user, Nov 24: "we also don't need the train indicator on the left, hide it for now, i may change my mind, don't remove it"; `TRAIN_STRIP_SHOWN` in render/trainStrip.ts turns it back on): a narrow column down one side of the battlefield, one pip per vehicle, front at the top. Each pip is colored by integrity (green, amber, red; an empty frame for a wreck), with a letter or glyph for its type and a heavier mark for engines. A bracket shows which vehicles are in the frame, a notch shows where the Behemoth is along the train, and abandoned cars flash until they blow. The train is longer than the screen, so this is how the player finds the engines. *As built* (`render/trainStrip.ts`): down the field's edge on the line's narrow side; letters `E R G D C H K M T F A B` (engine, railway gun, gun, twin gun, autocannon, howitzer, rocket, missile, troop, flinger, ammo, boxcar); engines framed in white, the railway gun in amber; a wreck is an empty frame, a vehicle gone a blank slot; abandoned cars flash until they blow. The longest train (41 vehicles) fits at 7 pixels a pip.
 - **Edge arrows:** amber arrows point to engines that are off screen (the existing objective arrows).
 - **Banners:** *Armored train ahead* (at the start, with the first shell), *Engine destroyed 25%*, *The train is cut in two / 9 cars pile into the wreck*, *2 engines stranded 75%*, *5 cars abandoned behind the wreck / Scuttling charges set: get clear*, *Track cut*, *Train derailed*, *Train stopped*, *The train got through*.
 - **Railway gun:** the target zone drawn on the ground (ring and closing disc), an incoming whistle, a heavy burst, a crater.
-- **Audio (placeholder synth):** wheel clatter whose tempo follows the train's speed, an engine chuff, an alarm when cars are abandoned, a coupling parting, a pileup's crash, the railway gun's distant boom then whistle. A train theme is in the music backlog (TODO "Themes for the other big enemies").
-- **Art (placeholder, generated in code):** engine, ten car types, the railway gun, their burnt-out wrecks, the `track` and `railBridge` tiles. Cars turn with the line.
+- **Audio (placeholder synth)** *(user, Nov 24: "add train sounds for atmosphere")*, *as built*: the wheels' clatter over the rail joints, whose tempo follows the train's speed, with the rumble of its weight under it, heard from the nearest vehicle still rolling; the beat of the nearest pulling engine's exhaust, quicker the faster it goes; a three-note steam whistle as it pulls out of the station and every 24–44 s after, from the lead engine, heard however far ahead it is; steel shrieking and a crash for every vehicle that leaves the rails; brakes squealing when the train is stopped with its wheels still on the track; an alarm when cars are abandoned; the railway gun's distant boom then whistle. A train theme is in the music backlog (TODO "Themes for the other big enemies").
+- **Art (placeholder, generated in code):** engine, ten car types, the railway gun, their burnt-out wrecks, the `track`, `ballast`, and `railBridge` tiles. Cars turn with the line.
 
 ## T14. Implementation notes
 
@@ -326,19 +336,22 @@ All provisional.
 
 | Group | Values |
 |---|---|
-| Line (`TERRAIN_GEN.railLine`) | 2.5× battle length (12500); mean row 27% across; knots every 24 columns; wander ±2 rows; ≥ 3 rows from an edge; level 8 columns either side of a river; a step crossed over 3 columns; rock ≥ 2 rows off; lane ≥ 7 rows away; service road 5 rows wide (the lane), cleared, forded; rivers forced near 35% and 70%; station 24 columns from column 4 |
-| Tiles | `railBridge` 300 HP, no weight limit, 3 tiles wide; track breaks at the cratering threshold; shield radius 1 tile round any vehicle |
-| Train (`TRAIN`, `TRAIN_CARS`, `TRAIN_LAYOUT`) | Starts at rest, start gap 200; engine 40 × 24 (radius 15), car 34 × 22 (radius 13), coupling 4; sections 4 / 5 / 5, cars per section 6 / 6 / 7 |
-| Pace | 0.78 × present **top speed** × (0.64 + 0.36 × running ÷ total); eases at 8 units/s²; brakes to a stop at 10 units/s² |
+| Line (`TERRAIN_GEN.railLine`) | 2.5× battle length (12500); mean row 27% across; knots every 24 columns; wander ±2 rows; ≥ 3 rows from an edge; level 8 columns either side of a river; a step crossed over 3 columns; rock ≥ 2 rows off; second track 2 rows off on the narrow side, gravel between; lane ≥ 7 rows away; service road 5 rows wide (the lane), cleared, forded; rivers forced near 35% and 70%; station 24 columns from column 4 |
+| Tiles | `railBridge` 300 HP, no weight limit, 3 tiles wide; track and ballast break at the cratering threshold (only the train's own track cuts the line); shield radius 1 tile round any vehicle |
+| Train (`TRAIN`, `TRAIN_CARS`, `TRAIN_LAYOUT`) | Starts at rest, start gap 200; engine 52 × 22 (radius 15), car 38 × 18 (radius 13), coupling 4; sections 4 / 5 / 5, cars per section 6 / 6 / 7 |
+| Pace | 0.75 × present **top speed** × (0.78 + 0.22 × running ÷ total); eases at 8 units/s²; brakes to a stop at 10 units/s² |
 | Cars | HP, cost, salvage per §T6; troop rockets range 110; mine every 6 s, 3 s lead, armed after 0.5 s, 5 live; ammo car blast 60 / 90 |
 | New cars (as built) | Twin gun: 2 × fortress gun, 190 HP, cost 3.5. Autocannon: 4 × 2.5 every 2.6 s, range 220 (max 230), cost 1.5. Howitzer: zone 26, flight 2.6 s, 2 × 14 (blast 14), every 8 s, range 90–330, cost 2.5. Rocket: 6 × 4 (blast 5) every 6 s, spread 0.1, range 250, cost 2 |
 | Budget | 8 / 12 / 16 by strength + 1.15 × the node's threat; split by weights 1.5 (lead) to 0.75 (tail); ammo cars 2 / 3 / 3, not charged |
 | Railway gun | Every 11 s; zone radius 40; 3.5 s flight; 45 damage, half at the edge, a quarter to deck mounts; half to its own side; minimum range 300; first shell at 4 s; magazine blast 70 / 100 |
-| Wrecks and pileups (`TRAIN.derail`) | −12 units/s per vehicle that piles in; the rest stops under 10 units/s; wrecks 8–24 units off the line, up to 50° turned; half salvage; none in a river |
+| Wrecks and pileups (`TRAIN.derail`) | −6 units/s per vehicle that piles in; the rest stops under 10 units/s (seven vehicles from full pace); each rides 40% of its length up into the last; wrecks 10–34 units off the line, alternate sides, up to 75° turned; a blast 34 / 28 as each lands; 60% cook off 1–5 s later (30 / 22, with fire); wrecks burn 16 s; half salvage; none in a river |
+| Leaks (`TRAIN.leak`, `OIL`) | Plasma 25% of wrecks (an engine 60%), else oil 45%; 2–4 spots, one every 0.4–1.4 s, 14–44 units from the wreck; plasma pool radius 11, 9 s, 6 a second; oil slick radius 9–15, soaks away in 45 s, burns 9 s once lit |
+| Attack trains (`TRAIN.raid`, `MODES.*.train.raids`) | Engine + 2–3 armed cars; pace 1.12 × present top speed; start 40 behind the frame, gone 260 ahead of it. Intercept: second track, first at 45 s, then every 50–70 s, 35% with a caboose. Gauntlet: either track, first at 6 s, then every 13–19 s, 7 / 9 / 11 of them, 40% with a caboose |
+| Crossovers (`TRAIN.crossovers`, `railLine.crossover`) | At 20% and 53% of the line; 18 columns across; the middle half underground (8 columns); portals 2 columns deep; no river within 33 columns |
 | Scuttling (`TRAIN.scuttle`) | Fuse 3 s; ripple 0.25 s a car, tail forward; blast 40 / 50; no salvage |
 | Collisions | Train into hull (ahead of its nose): 60 to the arc (or the trailer wrecked instead), 15 treads; 90 to the train's front vehicle; train speed −30%, easing back; hull shoved at 80/s until 8 clear; 2 s between strikes. Hull held at a wreck's face 2 s: it grinds through |
 | Armed cars (as built) | Gun car: fortress gun, range 270. Missile car: launcher missiles in pairs, range 300. Troop car: tread rockets ×2, opens at 110, 2 squads. Mine flinger: every 6 s (retry 0.5), 3 s lead, 1.2 s flight, 0.5 s lying, 5 live, range 260 |
-| Railway gun (as built) | 60 × 24, radius 18, 320 HP, ×0.8 all round, ram 60; range 300–1200; tile damage 200 |
+| Railway gun (as built) | 68 × 20, radius 18, 320 HP, ×0.8 all round, ram 60; range 300–1200; tile damage 200 |
 | Forces | Escorts 2 / 3 / 3; waves hovercraft only; posts 0.3× |
 | Objective | +90 bonus, an equal share per engine destroyed or stranded; extraction pulled in to 600 ahead once the train is stopped or through |
 | Map | Mode weights Assault 2, Breach 1, Chase 1, Intercept 0.6; one per sector; never the opening battle |
@@ -372,13 +385,28 @@ All provisional.
 
 Raised by the rework (Nov 24), for the user to judge in play:
 
-15. **The pace (§T5).** 0.78 of top speed with every engine, down to 0.57 on the last. At a surge the autopilot gains about a car every 6 s at first. Is that "pushing the throttle to the max to make progress", or should it be tighter still (0.82: a car every 10 s) or looser? And should the last engine still outrun a cruise (it does now, barely)?
+15. **The pace (§T5).** 0.75 of top speed with every engine (0.78 before the cars got longer, Q22), down to 0.56 on the last. At a surge the autopilot gains about a car every 5 s at first. Is that "pushing the throttle to the max to make progress", or should it be tighter still (0.82: a car every 10 s) or looser? And should the last engine still outrun a cruise (it does now, barely)?
 16. **How much a kill takes (§T8).** I read "split the train and cause a wreck" as: the destroyed car wrecks, and everything behind it piles in or is stranded and scuttled, engines included. So one boxcar destroyed behind the lead engine strands three engines, and the lead engine destroyed stops the train. The gentler reading: a rear half with a running engine brakes and stops short (no pile), or carries on as a second train. Which did you mean?
 17. **How many guns (§T6).** About 7 armed cars of 24 at a run's start, 11–12 at its end, plus the four new kinds. With half to nearly all of the cars armed, a stock Behemoth under the autopilot was shot immobile in about 100 s in 11 runs of 12. As built, at threat 7 it stops the train in 5 runs of 8 (about 2 minutes, 16–52% of its treads left) and is immobilized in the other 3 with 2–3 engines out of the fight; at threat 10, 5 of 8. Upgraded hulls and a player who picks targets will do better. More guns and weaker ones, or fewer and harder?
 18. **The line's length (§T3).** 12500 units is about four minutes if the train isn't touched; the autopilot's wins take about two. Once the train is stopped or gone the extraction line comes in.
 19. **The service road (§T3).** The lane is cleared the whole way and fords every river, 112 units from the track. Without it, plowing scenery at a surge wore out the treads before the end. It makes the Intercept's ground plainer than other battles'. Keep, or should the cleared ground be right beside the train (fast but under the troop cars' rockets), with the lane left rough?
 20. **Scuttling (§T8).** Kept from your first brief, moved to what's stranded behind a wreck (there's no dead section to cut loose any more). A hull at speed never sees most of it. Keep, shorten the fuse so it's seen, or drop it?
 21. **New cars (§T6).** Twin gun, autocannon, howitzer, and rocket cars, all from existing weapon parts. A flame car and a tesla car would need enemy versions of those weapons; the held-back cars are in §T19. Which next?
+
+Raised by the rework's second pass (Nov 24):
+
+22. **Longer cars cost balance (§T4, §T5).** Longer cars make a longer train and a longer chase under fire. At 40 × 18 the autopilot's wins fell from 24 of 32 to 16, so the cars are 38 × 18 (you said "slightly") and the pace is eased from 0.78 to 0.75 of top speed; that measures 22 of 32. Would you rather keep the pace and have fewer cars, or longer cars still and a slower train?
+23. **Which track the train runs on (§T3).** The one nearer the lane, so the fight is at the same distance as before and wrecks are thrown across the second track. The other choice puts an empty track between the Behemoth and the train. Nothing runs on the second track; a second train, or the train switching tracks, would be new work.
+24. **Train sounds (§T13).** Wheels, an engine's exhaust beat, a whistle, derailing, and brakes, all synthesized. I can't hear them: the levels and the whistle's chord are set by reasoning, not by ear, and want your ears most of all.
+Raised by the third pass (Nov 24), all in §T20:
+
+25. **Which way attack trains come.** From behind, overtaking: they run the same way as everything else, faster than the hull can go, so each is a drive-by of 15–30 s. Oncoming trains on the other track (a closing speed of 100+, a few seconds each) would be a different, sharper thing. Which did you picture, or both?
+26. **The tunnel.** A portal at each end, ordinary land between, the road over it, the train out of reach for about 4 s. You also offered a bridge over the road, or a span straight across: a bridge would hide the *hull* from the train instead, and the crossing can't be squarer than this while a train's vehicles are spaced by how far along the field they are (at 45° they'd visibly stretch apart). Enough, or do you want the bridge too?
+27. **The second mode's name and shape.** "Gauntlet": 7 / 9 / 11 attack trains, one every 13–19 s on either track, each engine a target, the extraction line pulled in after the last. They can't be chased (they're faster than a surge), so it's a shooting gallery with wrecks: is that the mode you meant, or should some be slow enough to run down?
+28. **The shield car.** It stops everything that flies flat (bullets, shells, missiles, beams, railgun slugs), not lobbed shells, blasts, flame, or arcs, and its arm turns at 40°/s, so it can be flanked. I read "non-ballistic" as "not lobbed". Should missiles fly over it? Should the plate have hit points?
+29. **Wrecks landing on the other track** stop the trains that come after (only where you can see it). So a raider can derail the armored train, and the armored train's wrecks can kill raiders. Fun, or too easy a win?
+30. **Leaks.** A quarter of wrecks leak plasma (engines more), most of the rest oil. Unlit oil does nothing to the hull: should it be slick?
+31. **Balance after all this** (the autopilot, a stock hull, 16 seeds each): Intercept stops the train and gets out in 13 of 16 at threat 7 and 9 of 16 at threat 10, the same total as before the pass (the faster end is offset by piles that take seven cars and burn). Gauntlet: out alive in 15 of 16 and 8 of 16, with about 5 of 7 raiders destroyed.
 
 ## T19. Ideas held back
 
@@ -397,3 +425,28 @@ Not in this build. They move to SPEC §17 at the merge.
 - **Boarders** from troop cars when the hull is alongside (ties to SPEC §17 idea 1).
 - **A rail Directive:** the enemy is moving a superweapon by rail; every sector's objective is a train, and the last one is the longest.
 - **A second track:** a second, shorter train on a parallel line, or one coming the other way.
+
+## T20. The third pass: crossovers, attack trains, the Gauntlet, and bigger wrecks
+
+*(user, Nov 24: "provide a couple of crossovers, where the train go briefly underground or under a bridge and switches to the other side of the map. on the secondary rail, have small two or three car attack trains that move faster come by every minute or so. the train wrecks are not massive enough, the cars need to pile up, explode, smoke, fire, the whole works. keep the end speed of the train a little faster, as engines are lost, i fond the end to be too easy. we also don't need the train indicator on the left, hide it for now, i may change my mind, don't remove it. let's also add another mode, where instead of one big train, it is many of the small ones we have on the secondary rail line. they would need to collide and explode with any derailed trains on the track visible to the player. some of the small trains should have heavily armed and armored cabooses. also add a car with a cargo loader arm that deploys a shield it can use to block non balistic shots from the behemoth. enhance the tiles for roads and train tracks where it swerves one space to the side to make them look more continuous instead of broken." Then: "the crossover needs to prevent collisions with the tank, that's why i said underground or a bridge over the road that the tank passes under. maybe even a horizontal span for a bit"; "make the tunnel more obvious and the land over not just big concrete, it can be normal terrain"; "some cars should leak plasma spots onto the ground when they are wrecked"; "like oil spills, maybe that too, and flamable".)* **Built.** Everything below is as built; how each was done is my call unless it's in the user's words above.
+
+**Crossovers.** Twice in a battle (at 20% and 53% of the line) the line crosses to the other side of the field, straight across over 18 columns, and the lane crosses it the other way: after a crossover the train is on the Behemoth's other flank, so the other side's armor takes the fire. For the middle half of the way the line is **underground**: a concrete portal over the tracks at each end (two columns deep, a dark mouth and a hazard-striped lintel over each track), and between them the land is whatever the battlefield has there, with the lane's road running over it. Vehicles in the tunnel can't be seen, hit, locked on to, burnt, or collided with, and don't fire. A banner says the train is in a tunnel and will come out on the other side. No track lies in the open within three rows of the road anywhere on the crossing, and no river comes within 33 columns of one. The second track passes under the first in the tunnel, so it's on the line's far side from the lane both before and after.
+
+**Attack trains.** Short trains with a pace of their own: **an engine and two or three armed cars**, drawn by the doctrine's odds, 35–40% of them with an armored caboose in the last car's place. They run at **1.12 × the Behemoth's present top speed**, so they come up from behind the frame (a whistle and a banner announce each), pass the hull over 15–30 s, and run on ahead. In an Intercept one comes up the **second track** 45 s in and then every 50–70 s while the armored train runs; they aren't targets. Each is its own piece of the train model: it wrecks, piles up, is abandoned and scuttled like any other.
+
+**Wrecks on the track.** A train runs into **any wreck lying across its track where the Behemoth can see it** (inside the frame), whoever left it there, and piles up on it. The armored train's kills are thrown across the second track, so they wreck the attack trains that come after; an attack train's pile can land on the armored train's track and derail it. Each track is cut on its own (a crater on one doesn't stop the other).
+
+**The Gauntlet** (a fifth battle mode, `gauntlet`; map weight 0.6, one a sector, bonus 80, 1.6× the usual length, posts ×0.5): the same double line with its crossovers and service road, and **no armored train**. Attack trains come up either track, the first 6 s in and then one every 13–19 s, **7 / 9 / 11** of them by strength. **Each one's engine is a target** ("raiders" on the HUD): destroyed, it pays its share; one that gets 260 units ahead of the frame has got away. Once the last has been destroyed or has got away, the extraction line comes in to 600 ahead.
+
+**Two new cars.**
+
+| Car | What it does | Numbers |
+|---|---|---|
+| **Shield car** (`S`) | A loader's arm holding an armor plate, 46 long, 22 out from the car. It swings toward the Behemoth at 40°/s once that's within 340, so the plate stands between the hull and the car, and stows along the car otherwise. **The plate stops the Behemoth's direct fire**: bullets, shells, and missiles that aren't lobbed, beams, and railgun slugs (a shell bursts on it). Lobbed shells go over; blasts, flame, and arcs reach round it; a shot from behind the plate goes home. Unarmed. | 140 HP, cost 2, salvage 18 |
+| **Armored caboose** (`Z`) | An attack train's tail: plate that takes ×0.6 from every side, a rocket rack amidships, a gun turret forward, an autocannon aft. Never drawn for an armored train. | 240 HP, salvage 40, 40 × 20 |
+
+**Bigger wrecks** (§T8's pile, replaced): each vehicle that piles in takes **6** units/s off the rest (it was 12), so **seven** leave the rails from full pace, over about five seconds. Each **rides 40% of its length up into the last** and is thrown to the other side from it, 10–34 units off the line and turned up to 75°: an accordion, not a row. Each **goes up as it lands** (a blast 34 across, 28 damage), **burns** where it lies for 16 s with the ground round it (black smoke, flame, embers), and with odds of 60% **cooks off** 1–5 s later (a second blast that throws fire about). The fire and the blasts finish off what's still on the rails nearby; a car that dies that way pays half, as one in the pile does.
+
+**Leaks.** A wreck may leak for a few seconds: **plasma** from its power cells (25% of wrecks, 60% of engines), or else **oil** (45% of the rest), 2–4 spots of it, each landing 14–44 units from the wreck. A plasma spot is a pool like the plasma thrower's (it burns units, tiles, and the Behemoth's treads for 9 s). An oil spot is a slick that does nothing until fire or plasma touches it; then the whole slick burns for 9 s. Unlit, it soaks away in 45 s.
+
+**Bends.** Where a track, the gravel between the tracks, or the lane's one-tile road steps a row sideways, it's drawn as one curve running from tile to tile (an overlay half a tile wider than the tile each side), not two kinked tiles.

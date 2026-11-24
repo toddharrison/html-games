@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { ENEMIES } from '../../src/content/enemies';
 import { MODES } from '../../src/content/modes';
 import { parseTrain, plainTrain, TRAIN_CARS, type TrainCarDef, type TrainCarId } from '../../src/content/trainCars';
-import { OBJECTIVE, RUN, TERRAIN_GEN, TRAIN } from '../../src/content/tuning';
+import { FIRE, OBJECTIVE, RUN, TERRAIN_GEN, TRAIN } from '../../src/content/tuning';
 import { IDLE_COMMAND, speedLimits, type PlayerCommand } from '../../src/sim/behemoth';
 import { destroyEnemy } from '../../src/sim/enemies';
 import type { Enemy } from '../../src/sim/entities';
@@ -25,6 +26,8 @@ function world(layout: TrainCarId[] = plainTrain('normal'), opts: Partial<WorldO
   const b = w.behemoth;
   b.invulnerable = true;
   b.autoEnabled.fill(false);
+  // The armored train alone: no attack trains come up behind it (they have tests of their own).
+  w.train!.raid = null;
   return w;
 }
 
@@ -62,9 +65,28 @@ const kill = (w: World, i: number, cause: 'shot' | 'crushed' = 'shot') => {
 const E: TrainCarId = 'engine';
 const B: TrainCarId = 'boxcar';
 
+/** How a pile runs is tested without its fireworks (blasts, cook-offs, and burning wrecks finish off cars at random); they have a test of their own. */
+const FIREWORKS = { blast: TRAIN.derail.blast.damage, odds: TRAIN.derail.cookOff.odds, burn: TRAIN.derail.burn, wreck: FIRE.fuel.wreck };
+beforeEach(() => {
+  TRAIN.derail.blast.damage = 0;
+  TRAIN.derail.cookOff.odds = 0;
+  TRAIN.derail.burn = 0;
+  FIRE.fuel.wreck = 0;
+});
 afterEach(() => {
   delete (TRAIN_CARS.boxcar as TrainCarDef).volatile;
+  TRAIN.derail.blast.damage = FIREWORKS.blast;
+  TRAIN.derail.cookOff.odds = FIREWORKS.odds;
+  TRAIN.derail.burn = FIREWORKS.burn;
+  FIRE.fuel.wreck = FIREWORKS.wreck;
 });
+
+/** What `n` vehicles from `first` pay as a pile's wrecks (`TRAIN.derail.salvage` of each one's worth). */
+function pilePays(w: World, first: number, n: number): number {
+  let sum = 0;
+  for (let i = first; i < first + n; i++) sum += Math.round(ENEMIES[train(w).vehicles[i]!.car.enemy].salvage * TRAIN.derail.salvage);
+  return sum;
+}
 
 /** Engines of the plain train (four sections of an engine and six boxcars), and its vehicles in all. */
 const ENGINES = [0, 7, 14, 21];
@@ -108,7 +130,7 @@ describe('an armored train (SPEC §4.4 Intercept, §7.3)', () => {
   });
 
   it('reads a practice layout, skipping what it doesn\'t know', () => {
-    expect(parseTrain('engine, boxcar,caboose,engine')).toEqual([E, B, E]);
+    expect(parseTrain('engine, boxcar,tender,engine')).toEqual([E, B, E]);
   });
 
   it('keeps its vehicles coupled and on the line through the bends', () => {
@@ -231,14 +253,14 @@ describe('wrecks and pileups (SPEC §7.3)', () => {
     // The pile: each vehicle off the rails brakes the rest, until what's left pulls up short of it.
     const n = pileup(pace);
     expect(n).toBeGreaterThanOrEqual(3);
-    run(w, 8, {}, events);
+    run(w, 12, {}, events);
     const off = events.filter((e) => e.type === 'trainDerail') as Extract<SimEvent, { type: 'trainDerail' }>[];
     expect(off).toHaveLength(n);
     expect(off.every((e) => !e.first && !e.sunk)).toBe(true);
     expect(tr.vehicles.slice(10, 10 + n).every((x) => x.state === 'wrecked' && !x.alive)).toBe(true);
     // Each wreck lies behind the last, and pays half.
     for (let i = 11; i < 10 + n; i++) expect(tr.vehicles[i]!.x).toBeLessThan(tr.vehicles[i - 1]!.x);
-    expect(earned(w) - salvage).toBe(12 + MODES.intercept.bonus / 2 + n * 6);
+    expect(earned(w) - salvage).toBe(12 + MODES.intercept.bonus / 2 + pilePays(w, 10, n));
     // The front runs on, slower for the engines it has lost.
     expect(runningEngines(tr)).toBe(2);
     expect(tr.speed).toBeCloseTo(trainPace(2, 4) * speedLimits(w.behemoth).top, 0);
@@ -253,7 +275,7 @@ describe('wrecks and pileups (SPEC §7.3)', () => {
     kill(w, 9);
     const salvage = earned(w);
     const events: SimEvent[] = [];
-    for (let t = 0; t < 12 && !events.some((e) => e.type === 'trainAbandoned'); t += 0.1) run(w, 0.1, {}, events);
+    for (let t = 0; t < 20 && !events.some((e) => e.type === 'trainAbandoned'); t += 0.1) run(w, 0.1, {}, events);
     const left = COUNT - 10 - n;
     expect(events.find((e) => e.type === 'trainAbandoned')).toMatchObject({ cars: left });
     expect(states(w)).toEqual(['0-8:running', `${10 + n}-27:abandoned`]);
@@ -269,7 +291,7 @@ describe('wrecks and pileups (SPEC §7.3)', () => {
     expect(states(w)).toEqual(['0-8:running']);
     expect(w.enemies.filter((e) => e.train)).toHaveLength(9);
     // Blown by their own crews: the pile's wrecks paid half, the scuttled cars nothing.
-    expect(earned(w) - salvage).toBe(n * 6);
+    expect(earned(w) - salvage).toBe(pilePays(w, 10, n));
   });
 
   it('pays for an abandoned car the Behemoth destroys before its charge fires, which blows at once', () => {
@@ -279,7 +301,7 @@ describe('wrecks and pileups (SPEC §7.3)', () => {
     const n = pileup(tr.speed);
     kill(w, 9);
     const events: SimEvent[] = [];
-    for (let t = 0; t < 12 && !events.some((e) => e.type === 'trainAbandoned'); t += 0.1) run(w, 0.1, {}, events);
+    for (let t = 0; t < 20 && !events.some((e) => e.type === 'trainAbandoned'); t += 0.1) run(w, 0.1, {}, events);
     const salvage = earned(w);
     kill(w, 20);
     const after = run(w, 1 / 60);
@@ -413,13 +435,15 @@ describe('derailment (SPEC §7.3)', () => {
   it('piles up at a break in the track: each vehicle off the rails brakes the rest', () => {
     const w = world();
     const tr = train(w);
-    run(w, 14);
+    // Up to speed, and short of the first river (a bridge takes more than this to cut).
+    run(w, 10);
     const salvage = earned(w);
     const n = pileup(tr.speed);
     const col = cut(w, 60);
     expect(w.terrain.lineCut(col)).toBe(true);
     // Long enough to reach the break and pile up; the charges haven't fired yet.
-    const events = run(w, 3.5);
+    const events: SimEvent[] = [];
+    for (let t = 0; t < 20 && !events.some((e) => e.type === 'trainAbandoned'); t += 0.1) run(w, 0.1, {}, events);
     const off = events.filter((e) => e.type === 'trainDerail') as Extract<SimEvent, { type: 'trainDerail' }>[];
     expect(off).toHaveLength(n);
     expect(off.map((e) => e.first)).toEqual([true, ...Array<boolean>(n - 1).fill(false)]);
@@ -434,14 +458,15 @@ describe('derailment (SPEC §7.3)', () => {
     expect(tr.outcome).toBe('stopped');
     expect(events.find((e) => e.type === 'trainStopped')).toMatchObject({ derailed: true });
     expect(objectiveComplete(w.objective)).toBe(true);
-    expect(earned(w) - salvage).toBe(15 + (n - 1) * 6 + MODES.intercept.bonus);
+    expect(earned(w) - salvage).toBe(pilePays(w, 0, n) + MODES.intercept.bonus);
     expect(w.enemies.filter((e) => e.train)).toHaveLength(COUNT - n);
     expect(w.enemies.some((e) => e.objective)).toBe(false);
   });
 
   it('leaves wrecks the Behemoth has to plow through or steer round', () => {
     const w = world();
-    run(w, 14);
+    // Short of the first river: a wreck that lands in water leaves nothing standing.
+    run(w, 10);
     cut(w, 60);
     run(w, 8);
     const v = train(w).vehicles[0]!;
@@ -451,15 +476,16 @@ describe('derailment (SPEC §7.3)', () => {
   it('loses fewer vehicles the slower it\'s going', () => {
     const w = world();
     const tr = train(w);
-    run(w, 14);
+    // (Short runs: the pile has to be over before the line's first crossover.)
+    run(w, 9);
     const full = pileup(tr.speed);
     kill(w, 14);
-    run(w, 14);
+    run(w, 6);
     expect(runningEngines(tr)).toBe(2);
     const slowed = pileup(tr.speed);
     expect(slowed).toBeLessThan(full);
     cut(w, 60);
-    const events = run(w, 10);
+    const events = run(w, 16);
     expect(events.filter((e) => e.type === 'trainDerail' && e.x > tr.vehicles[9]!.x)).toHaveLength(slowed);
   });
 

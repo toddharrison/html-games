@@ -1,5 +1,5 @@
 import { STEREO } from '../content/tuning';
-import { HEARING, levelFactor, pitchFactor, type EngineState, type HoldId, type Placement, type ReactorState, type SoundId } from './cues';
+import { HEARING, levelFactor, pitchFactor, type EngineState, type HoldId, type Placement, type ReactorState, type SoundId, type TrainSound } from './cues';
 
 /**
  * Procedural battle sound (SPEC §11.4) on Web Audio. No sample files: every sound is built from
@@ -63,11 +63,20 @@ const LEVEL: Record<SoundId, number> = {
   railgun: 0.8,
   arc: 0.6,
   thunder: 0.9,
+  trainWhistle: 0.2,
+  derail: 0.75,
+  trainBrakes: 0.4,
   detonation: 1,
 };
 
 /** Engine and tread loop levels. */
 const ENGINE = { level: 0.065, rumble: 0.35, treads: 0.4, wade: 0.35 };
+/**
+ * An armored train's loops (SPEC §7.3), before distance: `wheels` the rolling stock (its `clatter`
+ * over the rail joints, the `rumble` of its weight, the `sing` of the rails), `engine` the nearest
+ * engine pulling (its exhaust `chuff` and the `throb` under it).
+ */
+const RAILS = { wheels: 0.2, clatter: 0.9, rumble: 0.5, sing: 0.06, engine: 0.16, chuff: 0.8, throb: 0.5 };
 /**
  * The weather bed (SPEC §4.6): a storm's wind and rain or sand hiss, swelling with each squall; a
  * faint wind under the night. `base` is the level between squalls, `squall` what a full one adds.
@@ -95,6 +104,7 @@ type Color = 'white' | 'pink' | 'brown' | 'crackle';
 interface Bank {
   noise: Record<Color, AudioBuffer>;
   treads: AudioBuffer;
+  rails: AudioBuffer;
   impulse: AudioBuffer;
   cab: AudioBuffer;
   drive: Float32Array<ArrayBuffer>;
@@ -151,7 +161,7 @@ function bank(ctx: BaseAudioContext): Bank {
       for (let j = 0; j < len && i + j < d.length; j++) d[i + j]! += amp * Math.exp((-5 * j) / len) * (Math.random() * 2 - 1);
     }
   });
-  const made: Bank = { noise: { white, pink, brown, crackle }, treads: treadBuffer(ctx), impulse: outdoorImpulse(ctx), cab: cabImpulse(ctx), drive: driveCurve(2.4) };
+  const made: Bank = { noise: { white, pink, brown, crackle }, treads: treadBuffer(ctx), rails: railBuffer(ctx), impulse: outdoorImpulse(ctx), cab: cabImpulse(ctx), drive: driveCurve(2.4) };
   banks.set(ctx, made);
   return made;
 }
@@ -185,6 +195,44 @@ function treadBuffer(ctx: BaseAudioContext): AudioBuffer {
         const v = lp * Math.exp(-t * 160) * 1.4 + Math.sin(2 * Math.PI * ring * t) * Math.exp(-t * 70) * 0.25 + Math.sin(2 * Math.PI * thunk * t) * Math.exp(-t * 40) * 0.6;
         const idx = (at + j + size) % size;
         d[idx]! += v * amp;
+      }
+    }
+  }
+  return buf;
+}
+
+/** Seconds of wheels on rail joints before it repeats, and the cars passing a joint each second at the train's full pace. */
+const RAIL_SECONDS = 4;
+const CARS_A_SECOND = 2.5;
+
+/**
+ * A train's wheels over the rail joints at its full pace: for every car, the trailing bogie of one
+ * and the leading bogie of the next cross close together, two axles each (the clickety-clack), then
+ * a gap. Each axle is a clack, the rail ringing, and a thud of the weight on it. Written with
+ * wrap-around so it loops seamlessly; its playback rate follows the train's speed.
+ */
+function railBuffer(ctx: BaseAudioContext): AudioBuffer {
+  const sr = ctx.sampleRate;
+  const size = sr * RAIL_SECONDS;
+  const buf = ctx.createBuffer(2, size, sr);
+  const cars = CARS_A_SECOND * RAIL_SECONDS;
+  for (let ch = 0; ch < 2; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let k = 0; k < cars; k++) {
+      // Two bogies across the coupling, two axles each.
+      for (const [bogie, axle] of [[0, 0], [0, 1], [1, 0], [1, 1]] as const) {
+        const at = Math.floor(((k + rand(-0.02, 0.02)) / cars) * size + sr * (bogie * 0.13 + axle * 0.05 + ch * 0.004));
+        const amp = rand(0.6, 1) * (axle ? 0.8 : 1);
+        const ring = rand(380, 640);
+        const thud = rand(62, 90);
+        const len = Math.floor(sr * 0.12);
+        let lp = 0;
+        for (let j = 0; j < len; j++) {
+          const t = j / sr;
+          lp += 0.22 * (Math.random() * 2 - 1 - lp);
+          const v = lp * Math.exp(-t * 130) * 1.5 + Math.sin(2 * Math.PI * ring * t) * Math.exp(-t * 55) * 0.2 + Math.sin(2 * Math.PI * thud * t) * Math.exp(-t * 32) * 0.7;
+          d[(at + j + size) % size]! += v * amp;
+        }
       }
     }
   }
@@ -797,6 +845,66 @@ const RECIPES: Record<SoundId, Recipe> = {
     v.tone({ type: 'sine', f: vary(2050, 0.05), f1: vary(780, 0.05), glide: fall, peak: 0.3, attack: fall - 0.05, decay: 0.05, delay: start });
     v.noise({ type: 'bandpass', f: 2600, f1: 900, glide: fall, q: 4, peak: 0.25, attack: fall - 0.05, decay: 0.05, delay: start });
   },
+  // An armored train's whistle: three notes of a minor chord on steam, each blast swooping up into
+  // tune and sagging as the valve shuts. Two long blasts pulling out (`size` 1), a short and a long on the run.
+  trainWhistle: (v, s) => {
+    const lp = v.filter({ f: 1500, q: 0.8 }, v.t, v.out);
+    let at = 0;
+    for (const dur of s >= 1 ? [1.3, 2] : [0.45, 1.5]) {
+      const t0 = v.t + at;
+      for (const [f, level] of [[233, 0.3], [277, 0.24], [349, 0.2]] as const) {
+        for (const detune of [1, 1.005]) {
+          const fr = f * detune * v.pitch;
+          const osc = v.ctx.createOscillator();
+          osc.type = 'sawtooth';
+          osc.frequency.setValueAtTime(fr * 0.955, t0);
+          osc.frequency.exponentialRampToValueAtTime(fr, t0 + 0.14);
+          osc.frequency.setValueAtTime(fr, t0 + dur - 0.1);
+          osc.frequency.exponentialRampToValueAtTime(fr * 0.97, t0 + dur + 0.25);
+          const g = v.ctx.createGain();
+          g.gain.setValueAtTime(0, t0);
+          g.gain.linearRampToValueAtTime(level, t0 + 0.07);
+          g.gain.setValueAtTime(level, t0 + dur);
+          g.gain.linearRampToValueAtTime(0, t0 + dur + 0.3);
+          osc.connect(g).connect(lp);
+          osc.start(t0);
+          osc.stop(t0 + dur + 0.35);
+        }
+      }
+      // The steam behind it.
+      v.noise({ type: 'bandpass', f: 2600, q: 0.7, peak: 0.1, attack: 0.05, decay: dur + 0.3, delay: at });
+      at += dur + 0.45;
+    }
+    v.end = Math.max(v.end, v.t + at + 0.4);
+    v.send.gain.value = 0.9;
+    v.echo(0.6);
+  },
+  // A vehicle leaving the rails: steel shrieking on steel, the crash of it going over, ballast flying.
+  derail: (v, s) => {
+    const k = Math.min(s, 1.2);
+    v.tone({ type: 'sawtooth', f: vary(1900, 0.15), f1: vary(900, 0.15), glide: 0.5, peak: 0.16 * k, attack: 0.02, decay: 0.6, rough: 0.5, filter: { type: 'bandpass', f: 2200, f1: 1100, glide: 0.5, q: 9 } });
+    v.noise({ type: 'bandpass', f: vary(3200, 0.1), f1: 1500, glide: 0.5, q: 7, peak: 0.5 * k, attack: 0.01, decay: 0.55, rough: 0.6 });
+    v.noise({ color: 'pink', f: 600, peak: 1.1 * k, attack: 0.002, decay: 0.35, delay: 0.08, dest: v.driven, wide: 0.6 });
+    v.tone({ f: vary(68), f1: 30, glide: 0.3, peak: 0.8 * k, attack: 0.002, decay: 0.5, delay: 0.08, dest: v.driven });
+    v.modes(vary(150, 0.2), PLATE, 0.25 * k, 0.9, 0.08);
+    v.modes(vary(230, 0.2), BAR, 0.12 * k, 0.6, rand(0.2, 0.4));
+    v.noise({ color: 'crackle', type: 'bandpass', f: 1300, q: 0.6, peak: 0.9 * k, attack: 0.03, decay: 0.9, delay: 0.1 });
+    v.echo(0.25 * k);
+  },
+  // A train braked to a stand: the long squeal of its shoes, the couplings running in down its
+  // length, and the steam let go at the end.
+  trainBrakes: (v) => {
+    v.noise({ type: 'bandpass', f: vary(2700, 0.08), f1: 1900, glide: 2.2, q: 14, peak: 0.6, attack: 0.3, decay: 2.2, rough: 0.35 });
+    v.tone({ type: 'sawtooth', f: vary(1350, 0.08), f1: 950, glide: 2.2, peak: 0.07, attack: 0.3, decay: 2.2, filter: { type: 'bandpass', f: 1400, q: 6 } });
+    let at = 0.5;
+    for (let i = 0; i < 6; i++) {
+      v.modes(vary(190, 0.25), BAR, 0.16, 0.35, at);
+      v.tone({ f: vary(80, 0.2), f1: 45, glide: 0.08, peak: 0.25, attack: 0.002, decay: 0.15, delay: at });
+      at += rand(0.14, 0.3);
+    }
+    v.noise({ type: 'highpass', f: 3000, peak: 0.3, attack: 0.15, decay: 1.8, delay: 1.6 });
+    v.send.gain.value *= 1.5;
+  },
   // The enemy's attack siren, far across the field: a slow wail up and back down.
   horn: (v) => {
     for (const d of [1, 1.006]) {
@@ -1187,6 +1295,99 @@ class EngineLoop {
 }
 
 /**
+ * An armored train (SPEC §7.3), in two placed channels. Its wheels: the clatter over the rail
+ * joints at the train's speed, the rumble of its weight, the rails singing. Its engine: the beat
+ * of its exhaust, quicker and harder the faster it pulls, over a low throb.
+ */
+class TrainLoop {
+  private readonly wheels: Channel;
+  private readonly engine: Channel;
+  private readonly clatter: AudioBufferSourceNode;
+  private readonly clatterGain: GainNode;
+  private readonly rumble: GainNode;
+  private readonly sing: GainNode;
+  private readonly beat: OscillatorNode;
+  private readonly sources: AudioScheduledSourceNode[] = [];
+
+  constructor(private readonly s: Synth) {
+    const ctx = s.ctx;
+    // Out on the field, never in the cab.
+    const far: Placement = { gain: 1, pan: 0, distance: 200 };
+    this.wheels = channel(s, 0, far);
+    this.engine = channel(s, 0, far);
+    const add = <T extends AudioScheduledSourceNode>(n: T) => (this.sources.push(n), n);
+    const filt = (type: BiquadFilterType, f: number, q: number) => {
+      const n = ctx.createBiquadFilter();
+      n.type = type;
+      n.frequency.value = f;
+      n.Q.value = q;
+      return n;
+    };
+    const gain = (v: number) => {
+      const g = ctx.createGain();
+      g.gain.value = v;
+      return g;
+    };
+
+    this.clatter = add(loopSource(ctx, s.bank.rails));
+    this.clatterGain = gain(0);
+    this.clatter.connect(filt('lowpass', 2600, 0.5)).connect(this.clatterGain).connect(this.wheels.input);
+    this.rumble = gain(0);
+    add(loopSource(ctx, s.bank.noise.brown)).connect(filt('lowpass', 150, 0.6)).connect(this.rumble).connect(this.wheels.input);
+    this.sing = gain(0);
+    add(loopSource(ctx, s.bank.noise.pink)).connect(filt('bandpass', 2100, 5)).connect(this.sing).connect(this.wheels.input);
+
+    // Each beat of the exhaust starts hard and dies away: a falling ramp on the level.
+    this.beat = add(ctx.createOscillator());
+    this.beat.type = 'sawtooth';
+    this.beat.frequency.value = 3;
+    this.beat.start();
+    const chuff = gain(RAILS.chuff / 2);
+    this.beat.connect(gain(-RAILS.chuff / 2)).connect(chuff.gain);
+    add(loopSource(ctx, s.bank.noise.pink)).connect(filt('bandpass', 620, 0.8)).connect(chuff).connect(this.engine.input);
+    const throb = gain(RAILS.throb * 0.6);
+    this.beat.connect(gain(-RAILS.throb * 0.4)).connect(throb.gain);
+    const low = filt('lowpass', 170, 0.7);
+    low.connect(throb).connect(this.engine.input);
+    for (const f of [46, 46.6, 23]) {
+      const o = add(ctx.createOscillator());
+      o.type = 'sawtooth';
+      o.frequency.value = f;
+      o.connect(low);
+      o.start();
+    }
+  }
+
+  update(t: TrainSound): void {
+    const now = this.s.ctx.currentTime;
+    const sit = (ch: Channel, level: number, at: Placement) => {
+      ch.input.gain.setTargetAtTime(level * at.gain, now, 0.15);
+      ch.pan.pan.setTargetAtTime(at.pan, now, 0.1);
+      ch.lp.frequency.setTargetAtTime(distanceCutoff(at.distance), now, 0.1);
+    };
+    const roll = Math.min(1.2, t.roll);
+    sit(this.wheels, t.roll > 0 ? RAILS.wheels : 0, t.rolling);
+    // The clatter buffer is cut for the train's full pace.
+    this.clatter.playbackRate.setTargetAtTime(Math.max(0.05, roll), now, 0.2);
+    this.clatterGain.gain.setTargetAtTime(RAILS.clatter * Math.min(1, roll * 3), now, 0.2);
+    this.rumble.gain.setTargetAtTime(RAILS.rumble * roll, now, 0.3);
+    this.sing.gain.setTargetAtTime(RAILS.sing * roll * roll, now, 0.3);
+    sit(this.engine, t.work > 0 ? RAILS.engine * (0.5 + 0.5 * t.work) : 0, t.engine);
+    this.beat.frequency.setTargetAtTime(1.5 + 6.5 * t.work, now, 0.3);
+  }
+
+  stop(): void {
+    const t = this.s.ctx.currentTime;
+    for (const ch of [this.wheels, this.engine]) ch.input.gain.setTargetAtTime(0, t, 0.05);
+    for (const n of this.sources) n.stop(t + 0.4);
+    setTimeout(() => {
+      release(this.wheels);
+      release(this.engine);
+    }, 500);
+  }
+}
+
+/**
  * Weather: wind (low pink noise through a wandering band-pass) and a brighter hiss of rain, sand,
  * or snow on the hull. A squall swells both and lifts the wind's pitch; gusts wobble it.
  */
@@ -1346,6 +1547,7 @@ export class Synth {
   private engine: EngineLoop | null = null;
   private reactor: ReactorLoop | null = null;
   private weather: WeatherLoop | null = null;
+  private train: TrainLoop | null = null;
   private voices = 0;
 
   constructor(
@@ -1452,6 +1654,13 @@ export class Synth {
     this.weather?.update(kind, squall);
   }
 
+  /** An armored train's wheels and engines (null: this battle has no train). */
+  setTrain(t: TrainSound | null): void {
+    if (!t || !this.running) return;
+    this.train ??= new TrainLoop(this);
+    this.train.update(t);
+  }
+
   setPaused(paused: boolean): void {
     this.bus.gain.setTargetAtTime(paused ? 0 : 1, this.ctx.currentTime, 0.05);
   }
@@ -1463,6 +1672,8 @@ export class Synth {
     this.stopMachine();
     this.weather?.stop();
     this.weather = null;
+    this.train?.stop();
+    this.train = null;
     for (const h of this.holds.values()) h.stop();
     this.holds.clear();
     setTimeout(() => this.bus.disconnect(), 400);

@@ -35,7 +35,9 @@ export type MaterialId =
   | 'rail'
   // An Intercept battle's line (SPEC §4.4)
   | 'track'
+  | 'ballast'
   | 'railBridge'
+  | 'tunnel'
   // Desert
   | 'dune'
   | 'wadi'
@@ -158,9 +160,9 @@ const NO_PROTECTION = every(0);
 /** Standing structures: `standing` while intact or damaged, `down` once destroyed or flattened. */
 const standing = <T>(up: T, down: T) => ({ intact: up, damaged: up, destroyed: down, flattened: down });
 
-/** An armored train's line: its track and its bridges (SPEC §4.4 Intercept). */
+/** An armored train's line: its two tracks, the gravel between them, and its bridges (SPEC §4.4 Intercept). */
 export function isLine(mat: MaterialId): boolean {
-  return mat === 'track' || mat === 'railBridge';
+  return mat === 'track' || mat === 'ballast' || mat === 'railBridge';
 }
 
 /** River water (splashes, no scorch marks, no plasma pools). */
@@ -560,10 +562,23 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     burns: { dps: 8, spread: 0 },
   },
   track: {
-    // An armored train's line (SPEC §4.4 Intercept): hardened track on concrete sleepers. Open ground
+    // An armored train's line (SPEC §4.4 Intercept), both its tracks: hardened track on concrete sleepers. Open ground
     // to everything, and the treads don't tear it. Only a blast hard enough to crater open ground
     // breaks it, and never under the train or from enemy fire (`Terrain.damage`).
     id: 'track',
+    maxHp: 0,
+    damagedAt: 0,
+    obstacle: NO_OBSTACLE,
+    blocksShots: NO_COVER,
+    speed: { tracked: ALL_CLEAR, foot: ALL_CLEAR },
+    cover: NO_COVER,
+    conceals: NO_COVER,
+    protection: NO_PROTECTION,
+    scars: SCARS,
+  },
+  ballast: {
+    // The gravel bed between the line's two tracks: open ground, nothing to it.
+    id: 'ballast',
     maxHp: 0,
     damagedAt: 0,
     obstacle: NO_OBSTACLE,
@@ -589,6 +604,19 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     bearing: { limit: Infinity, give: 'span' },
     breaksTo: 'under',
     debris: 'metal',
+  },
+  tunnel: {
+    // A tunnel portal, where the line goes underground through a crossover: a concrete headwall
+    // over the tracks, level with the ground behind it. Open ground to everything, and nothing breaks it.
+    id: 'tunnel',
+    maxHp: 0,
+    damagedAt: 0,
+    obstacle: NO_OBSTACLE,
+    blocksShots: NO_COVER,
+    speed: { tracked: ALL_CLEAR, foot: ALL_CLEAR },
+    cover: NO_COVER,
+    conceals: NO_COVER,
+    protection: NO_PROTECTION,
   },
   rail: {
     // Rail lines along the direction of travel (cosmetic; an armored train runs on `track`). The treads twist them.

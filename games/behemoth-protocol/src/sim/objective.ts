@@ -188,14 +188,15 @@ export function startObjective(w: World, strength: Strength, layout?: readonly T
   }
 }
 
-/** An Intercept's train (its engines are the targets) and the hovercraft that ride with it, on the wide side of the line. */
+/** The battle's trains (`sim/train.ts`): an Intercept's armored train (its engines are the targets) and the hovercraft that ride with it on the wide side of the line, or a Gauntlet's attack trains to come. */
 function startTrain(w: World, strength: Strength, layout?: readonly TrainCarId[], doctrine: DoctrineId = 'combined'): void {
   const m = MODES[w.objective.mode].train!;
   const tr = (w.train = createTrain(w, strength, layout, doctrine));
-  w.objective.total = tr.engines;
+  // An armored train's engines, or (a Gauntlet) the attack trains to come.
+  w.objective.total = tr.main ? tr.engines : tr.raid?.targets ? tr.raid.left : 0;
   const tail = tr.vehicles[tr.vehicles.length - 1];
   if (!tail) return;
-  const wide = -w.terrain.lineSide;
+  const wide = -w.terrain.lineSideAt(tail.x);
   // Raiders send one more (SPEC-armored-train.md §T6).
   const escorts = m.escorts[strength] + (TRAIN_DOCTRINE[doctrine].escorts ?? 0);
   for (let i = 0; i < escorts; i++) {

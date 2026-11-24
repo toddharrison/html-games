@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import type { TrainState, TrainVehicle } from '../sim/train';
 import type { Terrain } from '../sim/terrain';
+import type { Effects } from './effects';
 import { ENEMY_ART } from './placeholder';
 import { viewAngle, viewX, viewY } from './viewTransform';
 
@@ -9,17 +10,35 @@ import { viewAngle, viewX, viewY } from './viewTransform';
  * destroyed, piled up, or scuttled, where they lie. Its live vehicles are ordinary units (`UnitViews`). Also its mine flingers' mines on their
  * way (SPEC-armored-train.md §T6): arcing over in the air, then lying blinking until they're live.
  */
+/** Seconds between a burning wreck's puffs of smoke. */
+const WRECK_SMOKE = 0.09;
+
 export class TrainView {
   private readonly hulks = new Map<number, Phaser.GameObjects.Image>();
   private readonly mines: Phaser.GameObjects.Image[] = [];
 
+  private smokeIn = 0;
+
   constructor(private readonly scene: Phaser.Scene) {}
 
-  update(train: TrainState | null, terrain: Terrain): void {
+  /** @param time the battle's clock; @param dt this frame's seconds; @param fx where a burning wreck's smoke and fire go. */
+  update(train: TrainState | null, terrain: Terrain, time: number, dt: number, fx: Pick<Effects, 'heavySmoke' | 'flame' | 'ember'>): void {
     if (!train) return;
     this.drawMines(train);
+    // A burning wreck pours black smoke and licks of flame until its fire's out (`TRAIN.derail.burn`).
+    this.smokeIn -= dt;
+    const puff = this.smokeIn <= 0;
+    if (puff) this.smokeIn = WRECK_SMOKE;
     train.vehicles.forEach((v, i) => {
       const show = !v.alive && v.state !== 'gone' && !this.plowed(v, terrain);
+      if (show && puff && (v.burnsUntil ?? 0) > time) {
+        const along = (Math.random() - 0.5) * v.car.length * 0.7;
+        const x = v.x + Math.cos(v.heading) * along;
+        const y = v.y + Math.sin(v.heading) * along;
+        fx.heavySmoke(x, y);
+        if (Math.random() < 0.5) fx.flame(x, y);
+        if (Math.random() < 0.25) fx.ember(x, y);
+      }
       let img = this.hulks.get(i);
       if (!show) {
         img?.destroy();

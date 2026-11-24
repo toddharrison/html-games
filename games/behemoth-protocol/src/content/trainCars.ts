@@ -22,6 +22,8 @@ export type TrainCarId =
   | 'missileCar'
   | 'troopCar'
   | 'mineCar'
+  | 'shieldCar'
+  | 'caboose'
   | 'ammoCar'
   | 'boxcar';
 
@@ -77,7 +79,7 @@ export interface TrainCarDef {
 }
 
 export const TRAIN_CARS: Record<TrainCarId, TrainCarDef> = {
-  engine: { id: 'engine', name: 'Engine', short: 'engine', enemy: 'trainEngine', length: 40, width: 24, engine: true, massive: true, glyph: 'E' },
+  engine: { id: 'engine', name: 'Engine', short: 'engine', enemy: 'trainEngine', length: 52, width: 22, engine: true, massive: true, glyph: 'E' },
   // The lead section's big gun (§T7): it shells the Behemoth from anywhere on the train, and goes
   // quiet once the hull is close. Its magazine goes up when it's destroyed.
   railwayGun: {
@@ -85,30 +87,30 @@ export const TRAIN_CARS: Record<TrainCarId, TrainCarDef> = {
     name: 'Railway gun',
     short: 'railgun',
     enemy: 'trainRailwayGun',
-    length: 60,
-    width: 24,
+    length: 68,
+    width: 20,
     massive: true,
     volatile: { radius: 70, damage: 100 },
     firstShot: 4,
     glyph: 'R',
   },
-  gunCar: { id: 'gunCar', name: 'Gun car', short: 'gun', enemy: 'trainGunCar', length: 34, width: 22, cost: 2, glyph: 'G' },
+  gunCar: { id: 'gunCar', name: 'Gun car', short: 'gun', enemy: 'trainGunCar', length: 38, width: 18, cost: 2, glyph: 'G' },
   // Two of the gun car's turrets, fore and aft: the train's heaviest broadside.
-  twinGunCar: { id: 'twinGunCar', name: 'Twin gun car', short: 'twin', enemy: 'trainTwinGunCar', length: 34, width: 22, cost: 3.5, glyph: 'D' },
+  twinGunCar: { id: 'twinGunCar', name: 'Twin gun car', short: 'twin', enemy: 'trainTwinGunCar', length: 38, width: 18, cost: 3.5, glyph: 'D' },
   // A quick-firing mount: bursts of light shells at anything inside 220.
-  autocannonCar: { id: 'autocannonCar', name: 'Autocannon car', short: 'auto', enemy: 'trainAutocannonCar', length: 34, width: 22, cost: 1.5, glyph: 'C' },
+  autocannonCar: { id: 'autocannonCar', name: 'Autocannon car', short: 'auto', enemy: 'trainAutocannonCar', length: 38, width: 18, cost: 1.5, glyph: 'C' },
   // A howitzer that shells a marked zone where the hull will be (the field battery's fire, a pair of rounds).
-  howitzerCar: { id: 'howitzerCar', name: 'Howitzer car', short: 'howitzer', enemy: 'trainHowitzerCar', length: 34, width: 22, cost: 2.5, glyph: 'H' },
+  howitzerCar: { id: 'howitzerCar', name: 'Howitzer car', short: 'howitzer', enemy: 'trainHowitzerCar', length: 38, width: 18, cost: 2.5, glyph: 'H' },
   // A rack of unguided rockets, fired in a ripple.
-  rocketCar: { id: 'rocketCar', name: 'Rocket car', short: 'rockets', enemy: 'trainRocketCar', length: 34, width: 22, cost: 2, glyph: 'K' },
-  missileCar: { id: 'missileCar', name: 'Missile car', short: 'missile', enemy: 'trainMissileCar', length: 34, width: 22, cost: 2, glyph: 'M' },
+  rocketCar: { id: 'rocketCar', name: 'Rocket car', short: 'rockets', enemy: 'trainRocketCar', length: 38, width: 18, cost: 2, glyph: 'K' },
+  missileCar: { id: 'missileCar', name: 'Missile car', short: 'missile', enemy: 'trainMissileCar', length: 38, width: 18, cost: 2, glyph: 'M' },
   troopCar: {
     id: 'troopCar',
     name: 'Troop car',
     short: 'troop',
     enemy: 'trainTroopCar',
-    length: 34,
-    width: 22,
+    length: 38,
+    width: 18,
     cost: 1.5,
     troops: { unit: 'infantry', squads: 2 },
     glyph: 'T',
@@ -118,15 +120,20 @@ export const TRAIN_CARS: Record<TrainCarId, TrainCarDef> = {
     name: 'Mine flinger',
     short: 'mines',
     enemy: 'trainMineCar',
-    length: 34,
-    width: 22,
+    length: 38,
+    width: 18,
     cost: 1.5,
     fling: { every: 6, retry: 0.5, lead: 3, flight: 1.2, arm: 0.5, live: 5, range: 260 },
     glyph: 'F',
   },
+  // A loader's arm with an armor plate on it, swung between the Behemoth and the train: it stops
+  // direct fire (`EnemyDef.shield`). Lobbed shells go over it.
+  shieldCar: { id: 'shieldCar', name: 'Shield car', short: 'shield', enemy: 'trainShieldCar', length: 38, width: 18, cost: 2, glyph: 'S' },
+  // An attack train's armored tail: three weapons and thick plate. Never drawn for an armored train.
+  caboose: { id: 'caboose', name: 'Armored caboose', short: 'caboose', enemy: 'trainCaboose', length: 40, width: 20, glyph: 'Z' },
   // Unarmed, and the counter to its neighbors: it goes up on them.
-  ammoCar: { id: 'ammoCar', name: 'Ammo car', short: 'ammo', enemy: 'trainAmmoCar', length: 34, width: 22, volatile: { radius: 60, damage: 90 }, glyph: 'A' },
-  boxcar: { id: 'boxcar', name: 'Boxcar', short: 'box', enemy: 'trainBoxcar', length: 34, width: 22, glyph: 'B' },
+  ammoCar: { id: 'ammoCar', name: 'Ammo car', short: 'ammo', enemy: 'trainAmmoCar', length: 38, width: 18, volatile: { radius: 60, damage: 90 }, glyph: 'A' },
+  boxcar: { id: 'boxcar', name: 'Boxcar', short: 'box', enemy: 'trainBoxcar', length: 38, width: 18, glyph: 'B' },
 };
 
 export const TRAIN_CAR_IDS = Object.keys(TRAIN_CARS) as TrainCarId[];
@@ -160,6 +167,8 @@ export const TRAIN_LAYOUT: {
   budget: { base: ByStrength; perThreat: number };
   gun: TrainCarId;
   split: { lead: number; tail: number };
+  /** An attack train (`TRAIN.raid`): an engine and this many cars (a range), drawn by the doctrine's odds; a caboose takes the last one's place. */
+  raid: { cars: readonly [number, number] };
 } = {
   sections: { normal: 4, strong: 5, objective: 5 },
   cars: { normal: 6, strong: 6, objective: 7 },
@@ -167,6 +176,7 @@ export const TRAIN_LAYOUT: {
   budget: { base: { normal: 8, strong: 12, objective: 16 }, perThreat: 1.15 },
   gun: 'railwayGun',
   split: { lead: 1.5, tail: 0.75 },
+  raid: { cars: [2, 3] },
 };
 
 /**
@@ -174,11 +184,11 @@ export const TRAIN_LAYOUT: {
  * the train beyond the mode's escorts.
  */
 export const TRAIN_DOCTRINE: Record<DoctrineId, { weights: Partial<Record<TrainCarId, number>>; escorts?: number }> = {
-  combined: { weights: { gunCar: 1, twinGunCar: 0.6, autocannonCar: 1, howitzerCar: 1, rocketCar: 1, missileCar: 1, troopCar: 1, mineCar: 1 } },
-  armoredFist: { weights: { gunCar: 2, twinGunCar: 1.5, autocannonCar: 1, howitzerCar: 0.5, rocketCar: 0.5, missileCar: 1, troopCar: 1, mineCar: 0.5 } },
-  longGuns: { weights: { gunCar: 1, twinGunCar: 0.5, autocannonCar: 0.5, howitzerCar: 2, rocketCar: 1.5, missileCar: 2, troopCar: 0.5, mineCar: 1 } },
-  entrenched: { weights: { gunCar: 1, twinGunCar: 0.5, autocannonCar: 1.5, howitzerCar: 1, rocketCar: 0.5, missileCar: 0.5, troopCar: 2, mineCar: 2 } },
-  raiders: { weights: { gunCar: 1, twinGunCar: 0.5, autocannonCar: 1.5, howitzerCar: 1, rocketCar: 1.5, missileCar: 1, troopCar: 1, mineCar: 1.5 }, escorts: 1 },
+  combined: { weights: { gunCar: 1, twinGunCar: 0.6, autocannonCar: 1, howitzerCar: 1, rocketCar: 1, missileCar: 1, troopCar: 1, mineCar: 1, shieldCar: 0.7 } },
+  armoredFist: { weights: { gunCar: 2, twinGunCar: 1.5, autocannonCar: 1, howitzerCar: 0.5, rocketCar: 0.5, missileCar: 1, troopCar: 1, mineCar: 0.5, shieldCar: 1 } },
+  longGuns: { weights: { gunCar: 1, twinGunCar: 0.5, autocannonCar: 0.5, howitzerCar: 2, rocketCar: 1.5, missileCar: 2, troopCar: 0.5, mineCar: 1, shieldCar: 0.5 } },
+  entrenched: { weights: { gunCar: 1, twinGunCar: 0.5, autocannonCar: 1.5, howitzerCar: 1, rocketCar: 0.5, missileCar: 0.5, troopCar: 2, mineCar: 2, shieldCar: 1 } },
+  raiders: { weights: { gunCar: 1, twinGunCar: 0.5, autocannonCar: 1.5, howitzerCar: 1, rocketCar: 1.5, missileCar: 1, troopCar: 1, mineCar: 1.5, shieldCar: 0.5 }, escorts: 1 },
 };
 
 /** A train of engines and boxcars only, front to back (practice, and tests of how a train runs). */

@@ -1,10 +1,11 @@
 import { ENEMIES } from '../content/enemies';
 import type { ObstacleClass } from '../content/obstacles';
 import { MATERIALS } from '../content/terrain';
-import { STEREO } from '../content/tuning';
+import { STEREO, TRAIN } from '../content/tuning';
 import type { WeaponId } from '../content/weapons';
 import { component, fraction, speedLimits, type BehemothState, type PlayerCommand } from '../sim/behemoth';
 import type { SimEvent } from '../sim/events';
+import type { World } from '../sim/world';
 import { damageLevel, type DamageLevel } from '../render/statusFx';
 import { viewX } from '../render/viewTransform';
 
@@ -55,6 +56,9 @@ export type SoundId =
   | 'railgun'
   | 'arc'
   | 'thunder'
+  | 'trainWhistle'
+  | 'derail'
+  | 'trainBrakes'
   | 'detonation';
 
 /** Sustained sounds that keep going while their events keep coming, and fade once they stop. */
@@ -67,6 +71,8 @@ export interface Cue {
   /** Where it happened (sim coordinates). Missing = on board the Behemoth (alarms, internal clanks). */
   x?: number;
   y?: number;
+  /** Heard at least this loud however far off it is (a whistle carries). */
+  carry?: number;
 }
 
 export const HOLDS: ReadonlySet<string> = new Set<HoldId>(['beam', 'scrape', 'burn', 'flame']);
@@ -263,10 +269,35 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
       return [{ sound: 'alarm', size: 0.5, x: ev.x, y: ev.y }];
     case 'sighted':
       return [{ sound: 'radio', size: 1 }];
-    // An armored train (SPEC §7.3): the radio calls it out; cars abandoned behind a wreck sound the alarm.
+    // An armored train (SPEC §7.3): the radio calls it out, and it whistles as it pulls out of its
+    // station. Stopped for good, its brakes squeal it to a stand (not off the rails: that's the pile).
     case 'trainStart':
+      return [
+        { sound: 'radio', size: 1 },
+        { sound: 'trainWhistle', size: 1, x: ev.x, y: ev.y, carry: 0.5 },
+      ];
     case 'trainStopped':
+      return ev.derailed ? [{ sound: 'radio', size: 1 }] : [{ sound: 'radio', size: 1 }, { sound: 'trainBrakes', size: 1, x: ev.x, y: ev.y, carry: 0.35 }];
+    // A vehicle blown off the rails, and each one that piles into it: steel shrieking, the crash.
+    case 'trainBroken':
+      return [{ sound: 'derail', size: ev.behind > 0 ? 1 : 0.7, x: ev.x, y: ev.y }];
+    case 'trainDerail':
+      return ev.sunk ? [{ sound: 'derail', size: 0.6, x: ev.x, y: ev.y }, { sound: 'splash', size: 1.1, x: ev.x, y: ev.y }] : [{ sound: 'derail', size: 0.85, x: ev.x, y: ev.y }];
+    // An attack train coming up from behind whistles; the radio calls it, and the end of a Gauntlet.
+    case 'trainRaid':
+      return [
+        { sound: 'radio', size: 1 },
+        { sound: 'trainWhistle', size: 0.6, x: ev.x, y: ev.y, carry: 0.45 },
+      ];
+    case 'raidsOver':
       return [{ sound: 'radio', size: 1 }];
+    // An oil slick catching: a whoomp of fire.
+    case 'oilIgnite':
+      return [{ sound: 'explosion', size: 0.35, x: ev.x, y: ev.y }];
+    // A shot stopped on a shield car's plate: it rings and sings off.
+    case 'shieldBlock':
+      return [{ sound: 'ricochet', size: 0.9, x: ev.x, y: ev.y }];
+    // Cars abandoned behind a wreck sound the alarm.
     case 'trainAbandoned':
       return [{ sound: 'alarm', size: 0.8, x: ev.x, y: ev.y }];
     // The train running into the hull: the heaviest ram there is. A flinger's throw: a dull thunk.
@@ -331,10 +362,10 @@ export interface Placement {
  * Where a cue sits for the listener: how loud by its distance from the Behemoth, and how far left
  * or right by its side of the screen's middle, of the Behemoth, or of a point between (`STEREO`).
  */
-export function place(listener: Listener, cue: Pick<Cue, 'x' | 'y'>): Placement {
+export function place(listener: Listener, cue: Pick<Cue, 'x' | 'y' | 'carry'>): Placement {
   if (cue.x === undefined || cue.y === undefined) return { gain: 1, pan: 0, distance: 0 };
   const distance = Math.hypot(cue.x - listener.x, cue.y - listener.y);
-  const gain = distance <= HEARING.near ? 1 : HEARING.ref / (HEARING.ref + distance - HEARING.near);
+  const gain = Math.max(cue.carry ?? 0, distance <= HEARING.near ? 1 : HEARING.ref / (HEARING.ref + distance - HEARING.near));
   const own = viewX(listener.x, listener.y);
   const middle = listener.center === undefined ? own : own + (viewX(listener.x, listener.center) - own) * STEREO.screen;
   const side = viewX(cue.x, cue.y) - middle;
@@ -386,6 +417,10 @@ export const MIN_GAP: Record<SoundId, number> = {
   railgun: 0.1,
   arc: 0.08,
   thunder: 0.5,
+  trainWhistle: 3,
+  // A pileup is a run of crashes, not one.
+  derail: 0.16,
+  trainBrakes: 3,
   detonation: 1,
 };
 
@@ -436,6 +471,9 @@ export const PITCH_SPREAD: Record<SoundId, number> = {
   railgun: 1,
   arc: 2,
   thunder: 1.5,
+  trainWhistle: 0.3,
+  derail: 1.5,
+  trainBrakes: 0.8,
   detonation: 0.6,
 };
 
@@ -523,4 +561,53 @@ export function reactorState(b: BehemothState, fuseStart: number | null): Reacto
     damage: 1 - fraction(b.reactor),
     meltdown: b.reactorFuse !== null ? Math.max(meltdown, 0.05) : 0,
   };
+}
+
+/**
+ * What an armored train sounds like this frame (SPEC §7.3): its wheels on the rails, heard from the
+ * nearest vehicle still rolling, and its engines at work, heard from the nearest one still pulling.
+ */
+export interface TrainSound {
+  /** How fast the nearest rolling vehicle is going, as a share of the train's full pace (0: nothing's rolling). */
+  roll: number;
+  rolling: Placement;
+  /** How hard the nearest pulling engine is working, 0–1 (0: none is). */
+  work: number;
+  engine: Placement;
+  /** The front engine still pulling: where the whistle sounds from. */
+  lead: { x: number; y: number } | null;
+}
+
+const SILENT: Placement = { gain: 0, pan: 0, distance: 0 };
+
+export function trainSound(w: World, listener: Listener): TrainSound | null {
+  const tr = w.train;
+  if (!tr) return null;
+  const full = TRAIN.pace * tr.top;
+  const out: TrainSound = { roll: 0, rolling: SILENT, work: 0, engine: SILENT, lead: null };
+  let nearest = Infinity;
+  let nearestEngine = Infinity;
+  for (const p of tr.pieces) {
+    if (p.speed <= 0 || full <= 0) continue;
+    const pace = clamp(p.speed / full, 0, 1.2);
+    for (let i = p.first; i <= p.last; i++) {
+      const v = tr.vehicles[i]!;
+      if (v.state !== 'coupled') continue;
+      const d = Math.hypot(v.x - listener.x, v.y - listener.y);
+      if (d < nearest) {
+        nearest = d;
+        out.roll = pace;
+        out.rolling = place(listener, v);
+      }
+      if (p.state !== 'running' || !v.alive || !v.car.engine) continue;
+      out.lead ??= { x: v.x, y: v.y };
+      if (d < nearestEngine) {
+        nearestEngine = d;
+        // It never idles while it's pulling a train.
+        out.work = Math.max(0.3, Math.min(1, pace));
+        out.engine = place(listener, v);
+      }
+    }
+  }
+  return out;
 }

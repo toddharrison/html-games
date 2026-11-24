@@ -40,7 +40,9 @@ export type EnemyId =
   | 'trainTroopCar'
   | 'trainMineCar'
   | 'trainAmmoCar'
-  | 'trainBoxcar';
+  | 'trainBoxcar'
+  | 'trainShieldCar'
+  | 'trainCaboose';
 
 /** Which side of a vehicle a hit lands on, relative to its hull heading (SPEC §7 "Facing armor"). */
 export type Facing = 'front' | 'flank' | 'rear';
@@ -65,6 +67,9 @@ const ENGINE_FACING: FacingArmor = { front: 0.8, flank: 0.8, rear: 0.8 };
 
 /** Rolling stock: the same plate on every side. */
 const CAR_FACING: FacingArmor = { front: 1, flank: 1, rear: 1 };
+
+/** An attack train's armored caboose: heavy plate all round. */
+const CABOOSE_FACING: FacingArmor = { front: 0.6, flank: 0.6, rear: 0.6 };
 
 /** A concrete bunker: thick all round, a little thinner at the back door. */
 const BUNKER_FACING: FacingArmor = { front: 0.6, flank: 0.8, rear: 1 };
@@ -189,6 +194,13 @@ export interface EnemyDef {
    * rule that nothing fires from off screen. Only for area fire, whose marked zone is the warning.
    */
   offscreen?: boolean;
+  /**
+   * A shield on an arm (a train's shield car, `sim/shield.ts`): an armor plate `width` long held
+   * `reach` from the unit's center, square to the arm, which swings toward the Behemoth at
+   * `degPerSec` once it's within `range` (and back along the hull when it isn't). The plate stops
+   * the Behemoth's direct fire: bullets, shells and missiles that aren't lobbed, beams, and slugs.
+   */
+  shield?: { reach: number; width: number; degPerSec: number; range: number };
 }
 
 export const ENEMIES: Record<EnemyId, EnemyDef> = {
@@ -770,7 +782,7 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     targetClass: 'heavy',
     facing: ENGINE_FACING,
     reverseSpeed: 0,
-    // One hit circle for a 60-long car: its ends are a little harder to hit than its middle.
+    // One hit circle for a 68-long car: its ends are a little harder to hit than its middle.
     radius: 18,
     obstacle: 'heavy',
     mobility: 'tracked',
@@ -907,6 +919,59 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     spawn: 'objective',
     threat: 0,
     salvage: 18,
+  },
+  trainShieldCar: {
+    // A loader's arm holding an armor plate out between the Behemoth and the train (`shield`):
+    // direct fire stops on it, lobbed shells go over. Unarmed; its `turret` is the arm.
+    id: 'trainShieldCar',
+    name: 'Shield car',
+    hp: 140,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 0,
+    weapon: null,
+    fireRange: 0,
+    aimTime: 0,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 18,
+    shield: { reach: 22, width: 46, degPerSec: 40, range: 340 },
+  },
+  trainCaboose: {
+    // An attack train's tail: thick plate, a rocket rack amidships, a gun turret forward and an
+    // autocannon aft.
+    id: 'trainCaboose',
+    name: 'Armored caboose',
+    hp: 240,
+    targetClass: 'heavy',
+    facing: CABOOSE_FACING,
+    reverseSpeed: 0,
+    radius: 14,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 70,
+    weapon: 'trainRockets',
+    fireRange: 250,
+    aimTime: 1,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 40,
+    turrets: [
+      { weapon: 'emplacementGun', pivot: { x: 12, y: 0 }, turretDegPerSec: 40, fireRange: 270, aimTime: 0.9, target: 'behemoth' },
+      { weapon: 'trainAutocannon', pivot: { x: -12, y: 0 }, turretDegPerSec: 150, fireRange: 220, aimTime: 0.5, target: 'behemoth' },
+    ],
   },
   trainMissileCar: {
     // A rack of the missile launcher's homing missiles, fired in pairs (§T6).

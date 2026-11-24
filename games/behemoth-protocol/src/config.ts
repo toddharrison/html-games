@@ -142,7 +142,7 @@ export function trainFromUrl(): TrainCarId[] | undefined {
   return cars.length > 0 ? cars : undefined;
 }
 
-/** Playtest shortcut: every battle in this mode (`?mode=breach`, `chase`, `intercept`, `assault`). */
+/** Playtest shortcut: every battle in this mode (`?mode=breach`, `chase`, `intercept`, `gauntlet`, `assault`). */
 export function modeFromUrl(): BattleModeId | undefined {
   const m = params.get('mode');
   return m && m in MODES ? (m as BattleModeId) : undefined;

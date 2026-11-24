@@ -40,7 +40,7 @@ export class TerrainPreviewScene extends Phaser.Scene {
     const approach = a && (APPROACH_IDS as string[]).includes(a) ? (a as ApproachId) : null;
     const layout = battleLayout(RESOLUTION, TILE);
     // `mode=intercept`: with an armored train's rail line (SPEC §4.4).
-    const line = params.get('mode') === 'intercept' ? { line: railLine() } : {};
+    const line = params.get('mode') === 'intercept' || params.get('mode') === 'gauntlet' ? { line: railLine() } : {};
     this.terrain = new Terrain(hashSeed(seed, 0x7e44), layout.fieldTiles, { biome, approach, ...line });
     this.view = new TerrainView(this, this.terrain, lookFromUrl());
     this.left = Number(params.get('col') ?? 0) * TILE;

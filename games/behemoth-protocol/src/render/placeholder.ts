@@ -1240,9 +1240,10 @@ export const BUNKER = { body: 22, turret: { w: 11, h: 9 }, pivotX: 4 };
 export const HAUL = { body: { w: 24, h: 14 } };
 /** Armored train vehicles (SPEC §7.3), drawn nose to +x: sized to `TRAIN_CARS` lengths. */
 export const TRAIN_ART = {
-  engine: { w: 40, h: 24 },
-  boxcar: { w: 34, h: 22 },
-  railwayGun: { w: 60, h: 24 },
+  /** `stack`: its smokestack, this far ahead of its middle. */
+  engine: { w: 52, h: 22, stack: 10 },
+  boxcar: { w: 38, h: 18 },
+  railwayGun: { w: 68, h: 20 },
   /** Turrets on the cars, drawn barrel to +x from `pivotX`. */
   gunTurret: { w: 22, h: 10, pivotX: 6 },
   rack: { w: 14, h: 9, pivotX: 5 },
@@ -1250,6 +1251,9 @@ export const TRAIN_ART = {
   autoMount: { w: 15, h: 8, pivotX: 5 },
   howitzer: { w: 19, h: 10, pivotX: 7 },
   rocketRack: { w: 15, h: 11, pivotX: 6 },
+  caboose: { w: 40, h: 20 },
+  /** A shield car's arm and plate (`ENEMIES.trainShieldCar.shield`: reach 22, width 46), drawn as its turret. */
+  shieldArm: { w: 29, h: 48, pivotX: 4 },
 };
 export const LAYER = { body: { w: 16, h: 11 } };
 export const HOVER = { body: { w: 15, h: 11 }, turret: { w: 10, h: 5 }, pivotX: 3 };
@@ -1381,23 +1385,60 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
       p.px(w - 1, y, PAL.steelDark);
     }
   };
+  // The engine: nothing like the cars behind it. Black iron where they're red plate, bigger and
+  // wider, a long frame of coupled drive wheels down each side, a boiler with brass bands and a
+  // glowing stack, a red cab at the back, and a hazard-striped wedge of a plow with a headlamp.
   const engine = (p: Painter, dead: boolean) => {
     const { w, h } = TRAIN_ART.engine;
-    railBody(p, w, h, dead);
+    const c = h / 2;
+    const stack = w / 2 + TRAIN_ART.engine.stack;
+    const iron = dead ? PAL.ash : PAL.enemyTread;
+    const plate = dead ? PAL.ashLight : PAL.enemyDark;
+    const red = dead ? PAL.ash : PAL.enemy;
     const hi = dead ? PAL.ashLight : PAL.enemyHi;
-    const mid = dead ? PAL.ash : PAL.enemy;
-    // A long boiler casing with a wedge prow, a cab at the back, and a stack of exhausts.
-    p.rect(8, 6, w - 14, h - 12, mid);
-    p.rect(8, 6, w - 14, 1, hi);
-    p.rect(w - 6, 7, 3, h - 14, mid);
-    p.rect(w - 3, 9, 1, h - 18, hi);
-    p.rect(3, 5, 6, h - 10, dead ? PAL.hole : PAL.steelDark);
-    p.rect(4, 6, 4, 1, dead ? PAL.ash : PAL.steelMid);
-    for (let x = 14; x < w - 10; x += 6) {
-      p.rect(x, Math.floor(h / 2) - 2, 3, 4, PAL.outline);
-      p.rect(x + 1, Math.floor(h / 2) - 1, 1, 2, dead ? PAL.hole : PAL.amber);
+    const brass = dead ? PAL.hole : PAL.amber;
+    // Running gear.
+    p.rect(5, 0, w - 18, h, PAL.outline);
+    p.rect(6, 1, w - 20, h - 2, dead ? PAL.hole : PAL.enemyTread);
+    for (let x = 8; x < w - 16; x += 5) {
+      for (const y of [1, h - 3]) p.rect(x, y, 3, 2, dead ? PAL.ash : PAL.steelMid);
     }
-    for (let x = 10; x < w - 8; x += 4) p.px(x, h - 7, dead ? PAL.hole : PAL.enemyDark);
+    // The hull, and the plow tapering to a point ahead of it.
+    p.rect(1, 3, w - 11, h - 6, PAL.outline);
+    p.rect(2, 4, w - 13, h - 8, plate);
+    const wedge = 10;
+    for (let i = 0; i < wedge; i++) {
+      const x = w - wedge + i;
+      const half = Math.max(1, c - 3 - Math.floor((i * (c - 3)) / wedge));
+      p.rect(x, c - half, 1, half * 2, PAL.outline);
+      if (half > 1) p.rect(x, c - half + 1, 1, half * 2 - 2, i % 4 < 2 ? (dead ? PAL.ash : PAL.warn) : dead ? PAL.hole : PAL.enemyTread);
+    }
+    if (!dead) p.rect(w - 2, c - 1, 2, 2, PAL.amberHot);
+    // Boiler: a dark cylinder down the middle, lit along its top, brass bands round it.
+    p.rect(13, 5, w - 24, h - 10, PAL.outline);
+    p.rect(13, 6, w - 24, h - 12, iron);
+    p.rect(13, c - 2, w - 24, 2, dead ? PAL.ashLight : PAL.concreteDark);
+    for (let x = 17; x < w - 13; x += 7) p.rect(x, 6, 1, h - 12, brass);
+    // Stack at the front (the fire showing down it), a brass dome, a red sand dome.
+    p.disc(stack, c, 4, PAL.outline);
+    p.disc(stack, c, 3, iron, dead ? PAL.ash : PAL.concreteDark);
+    p.rect(stack - 1, c - 1, 2, 2, dead ? PAL.hole : PAL.ember);
+    if (!dead) p.px(stack - 1, c - 1, PAL.amberHot);
+    p.disc(stack - 10, c, 2.6, PAL.outline);
+    p.disc(stack - 10, c, 1.7, brass, dead ? PAL.hole : PAL.amberHot);
+    p.disc(stack - 17, c, 2.6, PAL.outline);
+    p.disc(stack - 17, c, 1.7, red, hi);
+    // Cab: a red roof with a hatch, lookout slits at its front corners.
+    p.rect(2, 4, 11, h - 8, red);
+    p.rect(2, 4, 11, 1, hi);
+    p.rect(2, h - 5, 11, 1, plate);
+    p.rect(5, c - 2, 5, 4, PAL.outline);
+    p.rect(6, c - 1, 3, 2, plate);
+    for (const y of [6, h - 9]) p.rect(12, y, 1, 3, dead ? PAL.hole : PAL.steelGlint);
+    // Buffers and coupling at the back.
+    p.rect(0, c - 1, 1, 2, PAL.steelDark);
+    for (const y of [5, h - 6]) p.px(0, y, PAL.steelDark);
+    if (dead) for (const [x, y] of [[8, 7], [22, 12], [31, 7]] as const) p.rect(x, y, 3, 2, PAL.hole);
   };
   const boxcar = (p: Painter, dead: boolean) => {
     const { w, h } = TRAIN_ART.boxcar;
@@ -1408,21 +1449,21 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
     for (let x = 7; x < w - 4; x += 6) p.rect(x, 5, 1, h - 10, dead ? PAL.hole : PAL.steelDark);
     p.rect(Math.floor(w / 2) - 3, 4, 6, 1, dead ? PAL.hole : PAL.enemy);
     p.rect(Math.floor(w / 2) - 3, h - 5, 6, 1, dead ? PAL.hole : PAL.enemy);
-    if (dead) for (const [x, y] of [[9, 8], [20, 12], [26, 7]] as const) p.rect(x, y, 3, 2, PAL.hole);
+    if (dead) for (const [x, y] of [[9, 7], [21, 10], [29, 6]] as const) p.rect(x, y, 3, 2, PAL.hole);
   };
   // The armed cars (SPEC-armored-train.md §T6) share the boxcar's size and running gear.
   const car = (p: Painter, dead: boolean, deck: (w: number, h: number) => void) => {
     const { w, h } = TRAIN_ART.boxcar;
     railBody(p, w, h, dead);
     deck(w, h);
-    if (dead) for (const [x, y] of [[8, 9], [21, 12], [27, 7]] as const) p.rect(x, y, 3, 2, PAL.hole);
+    if (dead) for (const [x, y] of [[8, 8], [22, 10], [30, 6]] as const) p.rect(x, y, 3, 2, PAL.hole);
   };
   // Gun car: a flatcar with a sandbagged ring for its turret.
   const gunCar = (p: Painter, dead: boolean) =>
     car(p, dead, (w, h) => {
       p.rect(3, 5, w - 6, h - 10, dead ? PAL.ash : PAL.enemy);
-      p.disc(w / 2, h / 2, 6, PAL.outline);
-      p.disc(w / 2, h / 2, 5, dead ? PAL.hole : PAL.concreteDark, dead ? PAL.ash : PAL.concrete);
+      p.disc(w / 2, h / 2, 5.5, PAL.outline);
+      p.disc(w / 2, h / 2, 4.5, dead ? PAL.hole : PAL.concreteDark, dead ? PAL.ash : PAL.concrete);
     });
   // Twin gun car: two turret rings, fore and aft.
   const twinGunCar = (p: Painter, dead: boolean) =>
@@ -1430,8 +1471,8 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
       p.rect(3, 5, w - 6, h - 10, dead ? PAL.ash : PAL.enemy);
       p.rect(3, 5, w - 6, 1, dead ? PAL.ash : PAL.enemyHi);
       for (const x of [w / 2 - 9, w / 2 + 9]) {
-        p.disc(x, h / 2, 6, PAL.outline);
-        p.disc(x, h / 2, 5, dead ? PAL.hole : PAL.concreteDark, dead ? PAL.ash : PAL.concrete);
+        p.disc(x, h / 2, 5.5, PAL.outline);
+        p.disc(x, h / 2, 4.5, dead ? PAL.hole : PAL.concreteDark, dead ? PAL.ash : PAL.concrete);
       }
     });
   // Autocannon car: a low armored tub with an ammunition locker at each end.
@@ -1449,8 +1490,8 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
   const howitzerCar = (p: Painter, dead: boolean) =>
     car(p, dead, (w, h) => {
       p.rect(3, 5, w - 6, h - 10, dead ? PAL.ash : PAL.enemy);
-      p.disc(w / 2, h / 2, 7, PAL.outline);
-      p.disc(w / 2, h / 2, 6, dead ? PAL.hole : PAL.enemyDark, dead ? PAL.ash : PAL.enemyTread);
+      p.disc(w / 2, h / 2, 6, PAL.outline);
+      p.disc(w / 2, h / 2, 5, dead ? PAL.hole : PAL.enemyDark, dead ? PAL.ash : PAL.enemyTread);
       for (let x = 5; x < w - 5; x += 3) p.px(x, 6, dead ? PAL.hole : PAL.amber);
     });
   // Rocket car: a blast-scorched deck under a rack on a pivot.
@@ -1487,13 +1528,13 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
   // Mine flinger: an open hopper of mines and a throwing arm on a pivot.
   const mineCar = (p: Painter, dead: boolean) =>
     car(p, dead, (w, h) => {
-      p.rect(3, 5, 14, h - 10, PAL.outline);
-      p.rect(4, 6, 12, h - 12, dead ? PAL.hole : PAL.enemyDark);
-      for (const [x, y] of [[6, 8], [10, 9], [13, 7], [7, 12], [12, 12]] as const) p.rect(x, y, 2, 2, dead ? PAL.ash : PAL.mineBody);
-      p.rect(19, Math.floor(h / 2) - 1, w - 23, 2, PAL.outline);
-      p.rect(20, Math.floor(h / 2) - 1, w - 25, 1, dead ? PAL.ash : PAL.steelMid);
-      p.disc(20, h / 2, 3, PAL.outline);
-      p.disc(20, h / 2, 2, dead ? PAL.ash : PAL.enemy, dead ? PAL.ash : PAL.enemyHi);
+      p.rect(3, 5, 18, h - 10, PAL.outline);
+      p.rect(4, 6, 16, h - 12, dead ? PAL.hole : PAL.enemyDark);
+      for (const [x, y] of [[5, 7], [9, 6], [13, 7], [17, 6], [7, 10], [11, 9], [15, 10]] as const) p.rect(x, y, 2, 2, dead ? PAL.ash : PAL.mineBody);
+      p.rect(23, Math.floor(h / 2) - 1, w - 27, 2, PAL.outline);
+      p.rect(24, Math.floor(h / 2) - 1, w - 29, 1, dead ? PAL.ash : PAL.steelMid);
+      p.disc(24, h / 2, 3, PAL.outline);
+      p.disc(24, h / 2, 2, dead ? PAL.ash : PAL.enemy, dead ? PAL.ash : PAL.enemyHi);
       p.rect(w - 6, Math.floor(h / 2) - 2, 3, 4, dead ? PAL.hole : PAL.mineBody);
     });
   // Ammo car: a thin-skinned box striped in warning colors.
@@ -1504,6 +1545,33 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
       p.rect(Math.floor(w / 2) - 3, Math.floor(h / 2) - 2, 6, 4, PAL.outline);
       p.rect(Math.floor(w / 2) - 2, Math.floor(h / 2) - 1, 4, 2, dead ? PAL.hole : PAL.bad);
     });
+  // Shield car: a flatcar with a loader's slewing ring amidships and a counterweight at one end.
+  const shieldCar = (p: Painter, dead: boolean) =>
+    car(p, dead, (w, h) => {
+      p.rect(3, 5, w - 6, h - 10, dead ? PAL.ash : PAL.concreteDark);
+      p.rect(4, 6, 8, h - 12, PAL.outline);
+      p.rect(5, 7, 6, h - 14, dead ? PAL.hole : PAL.enemyDark);
+      p.disc(w / 2, h / 2, 5.5, PAL.outline);
+      p.disc(w / 2, h / 2, 4.5, dead ? PAL.hole : PAL.warn, dead ? PAL.ash : PAL.amber);
+      p.disc(w / 2, h / 2, 2, PAL.outline);
+    });
+  // An attack train's armored caboose: steel plate where the cars are red, banded, three mounts
+  // down its spine, tail lamps at the back.
+  const caboose = (p: Painter, dead: boolean) => {
+    const { w, h } = TRAIN_ART.caboose;
+    railBody(p, w, h, dead);
+    p.rect(2, 4, w - 4, h - 8, dead ? PAL.ash : PAL.steelDark);
+    p.rect(2, 4, w - 4, 1, dead ? PAL.ashLight : PAL.steelMid);
+    for (const [x, y] of [[2, 4], [w - 3, 4], [2, h - 5], [w - 3, h - 5]] as const) p.px(x, y, PAL.outline);
+    for (let x = 7; x < w - 4; x += 6) p.rect(x, 4, 1, h - 8, dead ? PAL.hole : PAL.outline);
+    p.rect(3, h / 2 - 1, w - 6, 2, dead ? PAL.hole : PAL.enemy);
+    for (const x of [w / 2 - 12, w / 2, w / 2 + 12]) {
+      p.disc(x, h / 2, 4.5, PAL.outline);
+      p.disc(x, h / 2, 3.5, dead ? PAL.hole : PAL.enemyDark);
+    }
+    if (!dead) for (const y of [5, h - 6]) p.px(1, y, PAL.bad);
+    if (dead) for (const [x, y] of [[8, 7], [23, 11], [31, 6]] as const) p.rect(x, y, 3, 2, PAL.hole);
+  };
   // Railway gun: a long double-bogie car, a casemate amidships where the barrel turns.
   const railwayGun = (p: Painter, dead: boolean) => {
     const { w, h } = TRAIN_ART.railwayGun;
@@ -1517,10 +1585,10 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
     p.rect(w - 1, Math.floor(h / 2) - 1, 1, 2, PAL.steelDark);
     p.rect(6, 6, w - 12, h - 12, dead ? PAL.ashLight : PAL.enemy);
     p.rect(6, 6, w - 12, 1, dead ? PAL.ash : PAL.enemyHi);
-    p.disc(w / 2, h / 2, 8, PAL.outline);
-    p.disc(w / 2, h / 2, 7, dead ? PAL.hole : PAL.concreteDark, dead ? PAL.ash : PAL.concrete);
+    p.disc(w / 2, h / 2, 7, PAL.outline);
+    p.disc(w / 2, h / 2, 6, dead ? PAL.hole : PAL.concreteDark, dead ? PAL.ash : PAL.concrete);
     for (const x of [8, w - 11]) p.rect(x, 8, 3, h - 16, dead ? PAL.hole : PAL.amber);
-    if (dead) for (const [x, y] of [[14, 9], [40, 13], [47, 8]] as const) p.rect(x, y, 3, 2, PAL.hole);
+    if (dead) for (const [x, y] of [[14, 8], [44, 11], [53, 7]] as const) p.rect(x, y, 3, 2, PAL.hole);
   };
   const cars: [string, number, number, (p: Painter, dead: boolean) => void][] = [
     ['train_engine', TRAIN_ART.engine.w, TRAIN_ART.engine.h, engine],
@@ -1534,6 +1602,8 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
     ['train_troop', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, troopCar],
     ['train_mines', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, mineCar],
     ['train_ammo', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, ammoCar],
+    ['train_shield', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, shieldCar],
+    ['train_caboose', TRAIN_ART.caboose.w, TRAIN_ART.caboose.h, caboose],
     ['train_railgun', TRAIN_ART.railwayGun.w, TRAIN_ART.railwayGun.h, railwayGun],
   ];
   for (const dead of [false, true]) {
@@ -1610,6 +1680,20 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
       p.rect(tw - 3, y, 2, 2, PAL.hole);
       p.px(tw - 3, y, PAL.amberHot);
     }
+  });
+  canvasTexture(scene, 'train_shield_arm', TRAIN_ART.shieldArm.w, TRAIN_ART.shieldArm.h, (p) => {
+    const { w: tw, h: th, pivotX } = TRAIN_ART.shieldArm;
+    const c = Math.floor(th / 2);
+    // A striped boom out to an armor plate held square to it.
+    p.rect(pivotX, c - 2, tw - pivotX - 3, 4, PAL.outline);
+    p.rect(pivotX, c - 1, tw - pivotX - 4, 2, PAL.warn);
+    for (let x = pivotX + 3; x < tw - 5; x += 4) p.rect(x, c - 1, 2, 2, PAL.outline);
+    p.rect(tw - 4, 0, 4, th, PAL.outline);
+    p.rect(tw - 3, 1, 2, th - 2, PAL.steelMid);
+    p.rect(tw - 2, 1, 1, th - 2, PAL.steelHi);
+    for (let y = 3; y < th - 2; y += 5) p.px(tw - 3, y, PAL.steelDark);
+    p.disc(pivotX, c, 3.5, PAL.outline);
+    p.disc(pivotX, c, 2.5, PAL.enemy, PAL.enemyHi);
   });
   // A mine in a flinger's throw (SPEC-armored-train.md §T6), before it's live.
   canvasTexture(scene, 'flung_mine', 5, 5, (p) => {
@@ -1940,6 +2024,17 @@ export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
   trainAutocannonCar: { body: 'train_auto', turret: { key: 'train_auto_mount', pivotX: TRAIN_ART.autoMount.pivotX, w: TRAIN_ART.autoMount.w }, wreck: null, hulk: 'train_auto_hulk' },
   trainHowitzerCar: { body: 'train_howitzer', turret: { key: 'train_howitzer_gun', pivotX: TRAIN_ART.howitzer.pivotX, w: TRAIN_ART.howitzer.w }, wreck: null, hulk: 'train_howitzer_hulk' },
   trainRocketCar: { body: 'train_rockets', turret: { key: 'train_rocket_rack', pivotX: TRAIN_ART.rocketRack.pivotX, w: TRAIN_ART.rocketRack.w }, wreck: null, hulk: 'train_rockets_hulk' },
+  trainShieldCar: { body: 'train_shield', turret: { key: 'train_shield_arm', pivotX: TRAIN_ART.shieldArm.pivotX, w: TRAIN_ART.shieldArm.w }, wreck: null, hulk: 'train_shield_hulk' },
+  trainCaboose: {
+    body: 'train_caboose',
+    turret: { key: 'train_rocket_rack', pivotX: TRAIN_ART.rocketRack.pivotX, w: TRAIN_ART.rocketRack.w },
+    wreck: null,
+    hulk: 'train_caboose_hulk',
+    extra: [
+      { key: 'train_gun_turret', pivotX: TRAIN_ART.gunTurret.pivotX, w: TRAIN_ART.gunTurret.w },
+      { key: 'train_auto_mount', pivotX: TRAIN_ART.autoMount.pivotX, w: TRAIN_ART.autoMount.w },
+    ],
+  },
   trainMissileCar: { body: 'train_missile', turret: { key: 'train_rack', pivotX: TRAIN_ART.rack.pivotX, w: TRAIN_ART.rack.w }, wreck: null, hulk: 'train_missile_hulk' },
   trainTroopCar: { body: 'train_troop', turret: null, wreck: null, hulk: 'train_troop_hulk' },
   trainMineCar: { body: 'train_mines', turret: null, wreck: null, hulk: 'train_mines_hulk' },
@@ -1986,6 +2081,24 @@ function makeFx(scene: Phaser.Scene): void {
           if (r > 1) continue;
           const speck = rng.chance(0.12);
           p.px(x, y, r < 0.4 ? (speck ? PAL.plasma : PAL.plasmaHot) : r < 0.75 ? (speck ? PAL.plasmaHot : PAL.plasma) : PAL.plasmaDim);
+        }
+      }
+    });
+  }
+  // Oil slicks (`sim/spills.ts`): ragged black puddles with a sheen on them (drawn 24 px across).
+  for (let f = 0; f < 2; f++) {
+    const rng = new Rng(90 + f);
+    const edge = Array.from({ length: 12 }, () => rng.range(0.7, 1));
+    canvasTexture(scene, `oil_spill${f}`, 24, 24, (p) => {
+      for (let y = 0; y < 24; y++) {
+        for (let x = 0; x < 24; x++) {
+          const dx = x + 0.5 - 12;
+          const dy = y + 0.5 - 12;
+          const a = (Math.atan2(dy, dx) / (Math.PI * 2) + 1) % 1;
+          const r = Math.hypot(dx, dy) / (12 * edge[Math.floor(a * 12)]!);
+          if (r > 1) continue;
+          const sheen = r > 0.35 && r < 0.8 && rng.chance(0.14);
+          p.px(x, y, sheen ? rng.pick([PAL.plasmaDim, PAL.glowDim, PAL.steel]) : r < 0.85 ? PAL.outline : PAL.hole);
         }
       }
     });

@@ -12,12 +12,12 @@ import { capturePose, Interp, pose } from '../render/interp';
 import { LaserView } from '../render/laserView';
 import { FireView } from '../render/fireView';
 import { FlameLayer } from '../render/flameLayer';
-import { ENEMY_ART, TILE } from '../render/placeholder';
+import { ENEMY_ART, TILE, TRAIN_ART } from '../render/placeholder';
 import { TerrainView } from '../render/terrainView';
 import { ThreatIndicators } from '../render/threatIndicators';
 import { TrailerView } from '../render/trailerView';
 import { DroneViews } from '../render/droneView';
-import { PoolViews } from '../render/poolView';
+import { OilViews, PoolViews } from '../render/poolView';
 import { SalvageMotes } from '../render/salvageView';
 import { LockViews } from '../render/lockView';
 import { BarrageViews } from '../render/barrageView';
@@ -108,6 +108,7 @@ export class TopDownBattleScene extends Phaser.Scene {
   private trainView!: TrainView;
   private drones!: DroneViews;
   private pools!: PoolViews;
+  private oil!: OilViews;
   /** Salvage flying to the hull: the HUD counts it as it lands. */
   private salvage!: SalvageMotes;
   /** Heavy weapons teams' lock-ons: the designator, the team's ring, the brackets on the hull. */
@@ -150,6 +151,7 @@ export class TopDownBattleScene extends Phaser.Scene {
   /** When the drones' revive worked or failed (sim time), for the message over the field. */
   private reviveShown: { at: number; ok: boolean } | null = null;
   private dustTimer = 0;
+  private stackTimer = 0;
   private ctx!: RunContext;
   /** Set once the Behemoth extracts: the run with this battle won, and seconds until the depot. */
   private won: RunContext | null = null;
@@ -223,6 +225,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.trainView = new TrainView(this);
     this.drones = new DroneViews(this);
     this.pools = new PoolViews(this);
+    this.oil = new OilViews(this);
     this.salvage = new SalvageMotes(this);
     this.locks = new LockViews(this);
     this.barrages = new BarrageViews(this);
@@ -596,6 +599,22 @@ export class TopDownBattleScene extends Phaser.Scene {
     return o.text;
   }
 
+  /** An armored train's engines under way pour smoke from their stacks; one left behind a wreck has let its fire go. */
+  private trainSmoke(w: World, dt: number): void {
+    const tr = w.train;
+    this.stackTimer -= dt;
+    if (!tr || this.stackTimer > 0) return;
+    this.stackTimer = 0.06;
+    for (const e of w.enemies) {
+      if (!e.alive || e.def.id !== 'trainEngine' || e.ai.charging || e.ai.under || Math.abs(e.x - w.behemoth.x) > this.layout.height) continue;
+      const at = pose(this.interp, e);
+      const x = at.x + Math.cos(at.heading) * TRAIN_ART.engine.stack;
+      const y = at.y + Math.sin(at.heading) * TRAIN_ART.engine.stack;
+      if (Math.random() < 0.35) this.fx.heavySmoke(x, y);
+      else this.fx.smokePuff(x, y);
+    }
+  }
+
   /** The banner for an objective event (SPEC §4.4). */
   private objectiveCall(what: 'destroyed' | 'lost', done: boolean, enemy: EnemyId, stranded = 0): string {
     const o = this.world.objective;
@@ -619,14 +638,17 @@ export class TopDownBattleScene extends Phaser.Scene {
       return `${fate} - ${pct}%\n+${paid} salvage - the train slows`;
     }
     if (done) {
-      if (objectiveComplete(o)) return o.mode === 'breach' ? `Fortress breached - 100%\nEvery gun silenced: +${paid}` : `Convoy destroyed - 100%\nNothing got away: +${paid}`;
-      const whole = o.mode === 'breach' ? 'Fortress' : 'Convoy';
+      if (objectiveComplete(o)) {
+        if (o.mode === 'gauntlet') return `Line cleared - 100%\nEvery raider destroyed: +${paid}`;
+        return o.mode === 'breach' ? `Fortress breached - 100%\nEvery gun silenced: +${paid}` : `Convoy destroyed - 100%\nNothing got away: +${paid}`;
+      }
+      const whole = o.mode === 'breach' ? 'Fortress' : o.mode === 'gauntlet' ? 'Raiders' : 'Convoy';
       return o.destroyed === 0 ? `Objective failed\nNo ${names[1]} destroyed` : `${whole} ${pct}% destroyed\n+${paid} salvage`;
     }
     const left = o.total - o.destroyed - o.lost;
     const tail = `${left} ${left === 1 ? names[0] : names[1]} left`;
     if (what === 'destroyed') return `${names[0][0]!.toUpperCase()}${names[0].slice(1)} destroyed - ${pct}%\n+${paid} salvage - ${tail}`;
-    return o.mode === 'chase' ? `A ${names[0]} got away\n${tail}` : `A ${names[0]} left behind\n${tail}`;
+    return o.mode === 'chase' || o.mode === 'gauntlet' ? `A ${names[0]} got away\n${tail}` : `A ${names[0]} left behind\n${tail}`;
   }
 
   /** For a few seconds after the alert clock sends a wave (SPEC §4.2): it's on its way. */
@@ -690,17 +712,19 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.trailerView?.update(b, w.mines, this.interp, dt, w.time);
     this.tracks.update(this.behemothView, b, (x, y) => this.wet(x, y));
     this.units.update(w.enemies, w.projectiles, this.interp, dt, w.frame.left - 64);
-    this.trainView.update(w.train, w.terrain);
+    this.trainView.update(w.train, w.terrain, w.time, dt, this.fx);
+    this.trainSmoke(w, dt);
     // Damaged vehicles spark, smoke, and burn. Hidden units give nothing away.
     const damaged: UnitStatus[] = [];
     for (const e of w.enemies) {
-      if (!e.alive || e.hidden || e.def.mobility === 'foot') continue;
+      if (!e.alive || e.hidden || e.ai.under || e.def.mobility === 'foot') continue;
       const at = pose(this.interp, e, e.turret);
       damaged.push({ id: e.id, x: at.x, y: at.y, frac: e.hp / e.def.hp, radius: e.def.radius });
     }
     this.unitFx.update(damaged, dt, this.fx);
     this.drones.update(w.drones, this.interp, dt, w.time, this.fx);
     this.pools.update(w.pools, dt, w.time, this.fx);
+    this.oil.update(w.spills);
     this.fires.update(
       w,
       this.interp,
@@ -1077,23 +1101,47 @@ export class TopDownBattleScene extends Phaser.Scene {
           this.shake(120, 2.5);
           break;
         case 'trainBroken':
-          // Blown off the rails: the wreck's scar, and what was coupled behind it coming on.
+          // Blown off the rails: a fireball, the wreck's scar, and what was coupled behind it coming on.
+          this.fx.bigExplosion(ev.x, ev.y);
+          this.fx.fireball(ev.x, ev.y, 26);
           this.fx.buildingCollapse(ev.x, ev.y);
-          this.units.addDecal('scorch', ev.x, ev.y, ev.heading, 1.5);
+          this.units.addDecal('scorch', ev.x, ev.y, ev.heading, 2);
           if (ev.behind > 0) {
-            this.shake(220, 3.5);
+            this.shake(260, 4);
             this.objectiveShown = { at: w.time, text: `The train is cut in two\n${ev.behind} ${ev.behind === 1 ? 'car piles' : 'cars pile'} into the wreck` };
           }
           break;
         case 'trainDerail':
           if (ev.sunk) this.fx.splash(ev.x, ev.y, 30);
           else {
+            // Each one that piles in goes up: fire, flying plate, a scar under it.
             this.fx.bigExplosion(ev.x, ev.y);
+            this.fx.fireball(ev.x, ev.y, 30);
             this.fx.buildingCollapse(ev.x, ev.y);
-            this.units.addDecal('scorch', ev.x, ev.y, ev.heading, 1.5);
+            for (let i = 0; i < 4; i++) this.fx.sparks(ev.x + (Math.random() - 0.5) * 30, ev.y + (Math.random() - 0.5) * 30);
+            this.units.addDecal('scorch', ev.x, ev.y, ev.heading, 2.2);
           }
-          this.shake(260, 4);
+          this.shake(320, 5);
           if (ev.first) this.objectiveShown = { at: w.time, text: ev.sunk ? 'The bridge is down\nThe train goes into the river' : 'Track cut\nThe train is coming off the rails' };
+          break;
+        case 'trainRaid': {
+          // Which side of the armored train's track it's on: beyond it from the lane, or this side.
+          const where = w.train?.main ? (ev.track === 1 ? 'On the far track' : 'On the near track') : 'Coming up the line';
+          this.objectiveShown = { at: w.time, text: `Attack train behind\n${where}` };
+          break;
+        }
+        case 'trainTunnel':
+          if (!ev.raid) this.objectiveShown = { at: w.time, text: 'The train is in a tunnel\nIt comes out on your other side' };
+          break;
+        case 'raidsOver':
+          this.objectiveShown = { at: w.time, text: 'The line is quiet\nMake for the extraction line' };
+          break;
+        case 'oilIgnite':
+          this.fx.fireball(ev.x, ev.y, ev.radius + 6);
+          break;
+        case 'shieldBlock':
+          this.fx.sparks(ev.x, ev.y);
+          this.fx.impact(ev.x, ev.y);
           break;
         case 'trainStopped':
           this.objectiveShown = { at: w.time, text: `${ev.derailed ? 'Train derailed' : 'Train stopped'} - objective taken\n+${objectiveBonus(w.objective)} salvage - make for the extraction line` };

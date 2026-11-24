@@ -7,6 +7,9 @@ import { lookFor, lookPalette, type Look, type Pal } from './looks';
 import { lookSheets } from './tileArt';
 import { CLUMP, TILE, tileFrame, tileOverlay } from './tileFrames';
 
+/** A bend's overlay lies on the ground: over the tiles, under everything that stands on them. */
+const BEND_DEPTH = 0.2;
+
 const CHUNK = TERRAIN_GEN.chunkCols;
 /** Ground columns painted per frame for the chunk coming up next (all of a chunk in view at once). */
 const PAINT_BUDGET = 4;
@@ -100,14 +103,16 @@ export class TerrainView {
         // Each tile ripples on its own beat, so the river shimmers rather than blinking in unison.
         const shimmer = Math.floor(time * RIPPLE_RATE + (hashSeed(col, row, 0x3a7e) & 7) / 8) & 1;
         // Craters and bridges are drawn by what's round them (a piece of a big crater, a span's edges).
-        const placed = t && (t.mat === 'crater' || t.mat === 'bridge' || t.mat === 'lightBridge' || t.mat === 'railBridge');
-        const frame = t ? tileFrame(t, shimmer, placed ? { seed: this.terrain.seed, col, row, tile: this.tileAt } : undefined) : 'clear';
+        // Craters, bridges, and roads are drawn by what's round them (a piece of a big crater, a span's edges, a road's bend).
+        const placed = t && (t.mat === 'crater' || t.mat === 'bridge' || t.mat === 'lightBridge' || t.mat === 'railBridge' || t.mat === 'tunnel' || (t.mat === 'road' && !t.art));
+        const around = placed ? { seed: this.terrain.seed, col, row, tile: this.tileAt } : undefined;
+        const frame = t ? tileFrame(t, shimmer, around) : 'clear';
         if (column.frames[row] !== frame) {
           column.frames[row] = frame;
           // Open ground is the painted layer underneath: skip drawing its see-through tile.
           column.imgs[row]!.setFrame(frame).setVisible(frame !== 'clear');
         }
-        const overlay = t ? tileOverlay(t) : null;
+        const overlay = t ? tileOverlay(t, around) : null;
         if (column.overlayFrames[row] !== overlay) {
           column.overlayFrames[row] = overlay;
           column.overlays[row]?.destroy();
@@ -159,6 +164,13 @@ export class TerrainView {
   }
 
   private makeOverlay(col: number, row: number, frame: string): Phaser.GameObjects.Image {
+    // A bend's curve: the tile and half a tile either side of it.
+    if (frame.startsWith('bend.')) {
+      return this.scene.add
+        .image(row * TILE - TILE / 2, -(col + 1) * TILE, this.clumps, frame)
+        .setOrigin(0, 0)
+        .setDepth(BEND_DEPTH);
+    }
     // Jitter each clump a little so the forest edge is ragged rather than a grid. Offsets are whole
     // pixels and the top-left corner is placed directly: a half-pixel position makes the sprite
     // flicker between two pixels as the view scrolls.

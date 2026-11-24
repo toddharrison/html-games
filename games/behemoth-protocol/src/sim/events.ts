@@ -83,6 +83,16 @@ export type SimEvent =
    * ran onto a break in the line (this one starts the pile); `sunk`: into a river.
    */
   | { type: 'trainDerail'; x: number; y: number; heading: number; first: boolean; sunk: boolean }
+  /** An attack train has started up the line from behind the frame (`TRAIN.raid`), on `track` (0 the armored train's, 1 the second). */
+  | { type: 'trainRaid'; x: number; y: number; track: 0 | 1; cars: number }
+  /** A Gauntlet's last attack train has been destroyed or has got away. */
+  | { type: 'raidsOver'; x: number; y: number }
+  /** A train's front has gone into a crossover's tunnel (`Terrain.underground`): it comes out on the other side of the field. `raid`: an attack train's. */
+  | { type: 'trainTunnel'; x: number; y: number; raid: boolean }
+  /** Fire reached an oil spill (`sim/spills.ts`): the whole slick is alight. */
+  | { type: 'oilIgnite'; x: number; y: number; radius: number }
+  /** A shield car's plate stopped one of the Behemoth's shots (`EnemyDef.shield`). */
+  | { type: 'shieldBlock'; x: number; y: number }
   /** A train's piece under way ran into the Behemoth on the track ahead of it (SPEC-armored-train.md §T10). */
   | { type: 'trainStrike'; x: number; y: number }
   /** A train's mine flinger lobbed a mine from (x0, y0) onto (x, y); it lands in `flight` s. */

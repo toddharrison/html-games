@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { Pool } from '../sim/entities';
+import type { OilSpill, Pool } from '../sim/entities';
 import type { Effects } from './effects';
 import { viewX, viewY } from './viewTransform';
 
@@ -43,6 +43,39 @@ export class PoolViews {
         const r = Math.random() * p.pool.radius * 0.8;
         fx.plasmaSpark(p.x + Math.cos(a) * r, p.y + Math.sin(a) * r);
       }
+    }
+    for (const [id, img] of this.views) {
+      if (live.has(id)) continue;
+      img.destroy();
+      this.views.delete(id);
+    }
+  }
+}
+
+/** Seconds an oil slick takes to spread to its full size. */
+const OIL_SPREAD = 0.8;
+
+/** Oil slicks (`sim/spills.ts`): a dark puddle with a sheen per slick, spreading as it leaks out. Gone when it catches (the fire takes over) or soaks away. */
+export class OilViews {
+  private readonly views = new Map<number, Phaser.GameObjects.Image>();
+
+  constructor(private readonly scene: Phaser.Scene) {}
+
+  update(spills: readonly OilSpill[]): void {
+    const live = new Set<number>();
+    for (const s of spills) {
+      live.add(s.id);
+      let img = this.views.get(s.id);
+      if (!img) {
+        // On the ground with the scorch marks, under the plasma pools.
+        img = this.scene.add
+          .image(viewX(s.x, s.y), viewY(s.x), `oil_spill${s.id % 2}`)
+          .setDepth(1.7)
+          .setRotation(s.id * 2.399)
+          .setAlpha(0.85);
+        this.views.set(s.id, img);
+      }
+      img.setScale((2 * s.radius * Math.min(1, s.age / OIL_SPREAD + 0.25)) / TEX_SIZE);
     }
     for (const [id, img] of this.views) {
       if (live.has(id)) continue;

@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { ENEMIES } from '../../src/content/enemies';
 import { TRAIN_CARS, TRAIN_DOCTRINE, TRAIN_LAYOUT, parseTrain, type MineFlingDef, type TrainCarId } from '../../src/content/trainCars';
-import { TERRAIN_GEN, TRAIN } from '../../src/content/tuning';
+import { FIRE, TERRAIN_GEN, TRAIN } from '../../src/content/tuning';
 import { WEAPONS, type WeaponId } from '../../src/content/weapons';
 import { IDLE_COMMAND, groundFootprint, speedLimits, type PlayerCommand } from '../../src/sim/behemoth';
 import { destroyEnemy } from '../../src/sim/enemies';
@@ -37,6 +37,8 @@ function world(layout: TrainCarId[], opts: Partial<WorldOptions> = {}, invulnera
   w.enemies = w.enemies.filter((e) => e.train);
   w.behemoth.invulnerable = invulnerable;
   w.behemoth.autoEnabled.fill(false);
+  // The armored train alone: attack trains have tests of their own.
+  w.train!.raid = null;
   return w;
 }
 
@@ -63,7 +65,21 @@ const fired = (events: SimEvent[], ...weapons: WeaponId[]) =>
 
 const fling = TRAIN_CARS.mineCar.fling!;
 const flingWas: MineFlingDef = { ...fling };
-afterEach(() => Object.assign(fling, flingWas));
+/** How a pile runs is tested without its fireworks (they finish off cars at random); tests/sim/train.test.ts has those. */
+const FIREWORKS = { blast: TRAIN.derail.blast.damage, odds: TRAIN.derail.cookOff.odds, burn: TRAIN.derail.burn, wreck: FIRE.fuel.wreck };
+beforeEach(() => {
+  TRAIN.derail.blast.damage = 0;
+  TRAIN.derail.cookOff.odds = 0;
+  TRAIN.derail.burn = 0;
+  FIRE.fuel.wreck = 0;
+});
+afterEach(() => {
+  Object.assign(fling, flingWas);
+  TRAIN.derail.blast.damage = FIREWORKS.blast;
+  TRAIN.derail.cookOff.odds = FIREWORKS.odds;
+  TRAIN.derail.burn = FIREWORKS.burn;
+  FIRE.fuel.wreck = FIREWORKS.wreck;
+});
 
 describe('building a train (§T6)', () => {
   const cost = (id: TrainCarId) => TRAIN_CARS[id].cost ?? 0;
@@ -174,9 +190,11 @@ describe('building a train (§T6)', () => {
 describe('the armed cars (§T6)', () => {
   it('fire only from inside the frame, and fall silent once abandoned', () => {
     // The armed cars at the tail, where a hull at a surge stays with them.
-    const w = world([E, B, E, B, B, B, B, T, M, G]);
+    // (A long tail: a pile takes seven of what's behind the engine.)
+    const w = world([E, B, E, B, B, B, B, B, B, B, B, T, M, G]);
     const events: SimEvent[] = [];
-    for (let i = 0; i < 40 * 60; i++) {
+    // (Twenty seconds: over before the train reaches the line's first crossover.)
+    for (let i = 0; i < 20 * 60; i++) {
       const b = w.behemoth;
       b.y = w.terrain.laneY(b.x);
       stepWorld(w, { ...IDLE_COMMAND, aimX: b.x + 200, aimY: b.y, throttle: 1 });
@@ -192,13 +210,14 @@ describe('the armed cars (§T6)', () => {
     // The second engine goes: what's behind it piles up, and the cars at the tail are left stranded.
     kill(w, 2);
     const after: SimEvent[] = [];
-    for (let t = 0; t < 6 && !after.some((e) => e.type === 'trainAbandoned'); t += 0.1) after.push(...run(w, 0.1, { throttle: 1 }));
+    // (The hull brakes, to stay by the tail while the pile forms.)
+    for (let t = 0; t < 20 && !after.some((e) => e.type === 'trainAbandoned'); t += 0.1) after.push(...run(w, 0.1, { throttle: -1 }));
     expect(states(w)[0]).toBe('0-1:running');
-    expect(train(w).pieces[1]).toMatchObject({ last: 9, state: 'abandoned' });
-    const tail = train(w).vehicles[9]!;
-    expect(unit(w, 9)!.ai.charging).toBe(true);
-    for (const e of fired(run(w, TRAIN.scuttle.fuse - 0.2, { throttle: 1 }), 'emplacementGun')) expect(Math.abs(e.x - tail.x)).toBeGreaterThan(20);
-    expect(unit(w, 9)!.windup).toBe(0);
+    expect(train(w).pieces[1]).toMatchObject({ last: 13, state: 'abandoned' });
+    const tail = train(w).vehicles[13]!;
+    expect(unit(w, 13)!.ai.charging).toBe(true);
+    for (const e of fired(run(w, TRAIN.scuttle.fuse - 0.2, { throttle: -1 }), 'emplacementGun')) expect(Math.abs(e.x - tail.x)).toBeGreaterThan(20);
+    expect(unit(w, 13)!.windup).toBe(0);
   });
 
   it('the new cars shoot: twin guns, an autocannon, a howitzer on a marked zone, a ripple of rockets', () => {

@@ -99,7 +99,12 @@ class EnemyView {
     for (const img of [this.body, ...(this.turret ? [this.turret] : []), ...this.extra.map((v) => v.img)]) {
       if (this.flash > 0 || strobe) img.setTint(0xffffff).setTintMode(Phaser.TintModes.FILL);
       else img.clearTint().setTintMode(Phaser.TintModes.MULTIPLY);
-      img.setAlpha(this.visibility).setVisible(this.visibility > 0);
+      // A train's vehicle in a tunnel is under the ground.
+      img.setAlpha(this.visibility).setVisible(this.visibility > 0 && !e.ai.under);
+    }
+    if (e.ai.under) {
+      this.glint.setVisible(false);
+      for (const v of this.extra) v.glint.setVisible(false);
     }
   }
 

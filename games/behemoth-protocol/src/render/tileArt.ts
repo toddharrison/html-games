@@ -6,7 +6,7 @@ import { lookPalette, type Look, type Pal } from './looks';
 import { canvasTexture, type Painter } from './painter';
 import { PAL } from './palette';
 import { damageTile, drawCar, drawFootbridge, drawHall, drawRoad, drawStructure, drawTree, drawWall } from './structureArt';
-import { CLUMP, CLUMP_FRAMES, CRATER_SIZES, CRATER_VARIANTS, frameName, TILE, TILE_FRAMES, type ClumpFrame, type TileFrame } from './tileFrames';
+import { BEND_W, BENDS, type BendKind, CLUMP, CLUMP_FRAMES, CRATER_SIZES, CRATER_VARIANTS, frameName, TILE, TILE_FRAMES, type ClumpFrame, type TileFrame } from './tileFrames';
 
 /**
  * Procedural placeholder terrain (SPEC §11.1): a tile sheet and a raised-overlay sheet per biome and
@@ -103,7 +103,7 @@ function tilePieces(biome: BiomeId, pal: Pal): Piece[] {
         out.push(
           single(frameName.railBridge(edges, rails, d), TILE, (p) => {
             deck(p, new Rng(6950), pal, false, d, edges);
-            if (rails) hardRails(p, 0, 0);
+            if (rails) hardRails(p);
           }),
         );
       }
@@ -166,7 +166,47 @@ function clumpPieces(biome: BiomeId, pal: Pal): Piece[] {
       for (let state = 0; state < 4; state++) out.push(single(frameName.car(o === 'v', v, state), CLUMP, (p) => drawCar(p, o === 'v', v, state, new Rng(3900 + v * 5 + state), pal)));
     }
   }
+  BENDS.forEach(([kind, into, out_], i) => {
+    out.push({ w: BEND_W, h: TILE, frames: [[frameName.bend(kind, into, out_), 0, 0, BEND_W, TILE]], draw: (p) => drawBend(p, kind, into, out_, new Rng(4200 + i * 7), pal) });
+  });
   return out;
+}
+
+/**
+ * A track or a one-tile road through a tile where it steps sideways (`frameName.bend`): its center
+ * comes in at the bottom edge and goes out at the top, each at the tile's middle or at the corner
+ * it shares with the next tile along, so the curve runs on unbroken into that tile's own overlay.
+ * Coming in straight it leaves the middle slowly; passing corner to corner it's a straight diagonal.
+ */
+function drawBend(p: Painter, kind: BendKind, into: number, out: number, rng: Rng, pal: Pal): void {
+  for (let y = 0; y < TILE; y++) {
+    // 0 at the bottom edge (behind), 1 at the top (ahead).
+    const t = (TILE - 0.5 - y) / TILE;
+    const x0 = Math.round(BEND_W / 2 + (TILE / 2) * (into * (1 - t) ** 2 + out * t * t)) - TILE / 2;
+    if (kind === 'ballast') {
+      // The gravel between the two tracks, bending with them.
+      p.rect(x0, y, TILE, 1, pal.gravel);
+      for (let k = 0; k < 2; k++) p.px(x0 + rng.int(0, 15), y, rng.chance(0.3) ? pal.stone : pal.stoneDark);
+    } else if (kind === 'track') {
+      // The main line's bed: ballast, pale sleepers close together, two rails.
+      p.rect(x0, y, TILE, 1, pal.gravel);
+      if (y % 3 < 2) p.rect(x0 + 1, y, 14, 1, pal.stone);
+      else if (rng.chance(0.6)) p.px(x0 + rng.int(0, 15), y, pal.stoneDark);
+      for (const x of [3, 11]) {
+        p.rect(x0 + x, y, 2, 1, PAL.railSteel);
+        p.px(x0 + x + 1, y, PAL.outline);
+      }
+    } else {
+      // A street: pavement and a curb down each side, a dashed line down the middle.
+      p.rect(x0, y, TILE, 1, pal.asphalt);
+      if (rng.chance(0.5)) p.px(x0 + rng.int(4, 11), y, rng.chance(0.7) ? pal.asphaltHi : pal.hole);
+      p.rect(x0, y, 3, 1, pal.rubble);
+      p.px(x0 + 3, y, pal.concreteHi);
+      p.rect(x0 + TILE - 3, y, 3, 1, pal.rubble);
+      p.px(x0 + TILE - 4, y, pal.concreteHi);
+      if (y % 8 >= 2 && y % 8 < 5) p.px(x0 + 7, y, pal.paintDim);
+    }
+  }
 }
 
 function drawClump(p: Painter, name: ClumpFrame, rng: Rng, pal: Pal, biome: BiomeId): void {
@@ -445,16 +485,12 @@ function deck(p: Painter, rng: Rng, pal: Pal, light: boolean, damaged: boolean, 
 }
 
 /**
- * An armored train's rails (SPEC §4.4): heavier than a branch line's, screen-vertical, shifting
- * `top` px across at the tile's forward edge and `bottom` at its back (a bend to the next row).
+ * An armored train's rails on a straight tile (SPEC §4.4): heavier than a branch line's, screen-vertical.
  */
-function hardRails(p: Painter, top: number, bottom: number): void {
-  for (let y = 0; y < TILE; y++) {
-    const dx = Math.round(bottom + ((top - bottom) * (TILE - 1 - y)) / (TILE - 1));
-    for (const x of [3, 11]) {
-      p.rect(x + dx, y, 2, 1, PAL.railSteel);
-      p.px(x + dx + 1, y, PAL.outline);
-    }
+function hardRails(p: Painter): void {
+  for (const x of [3, 11]) {
+    p.rect(x, 0, 2, TILE, PAL.railSteel);
+    p.rect(x + 1, 0, 1, TILE, PAL.outline);
   }
 }
 
@@ -757,16 +793,41 @@ function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
       break;
 
     case 'track':
-    case 'track_fr':
-    case 'track_fl':
-    case 'track_br':
-    case 'track_bl': {
-      // Hardened main line: pale concrete sleepers close together on a deep ballast bed.
+      // Hardened main line: pale concrete sleepers close together on a deep ballast bed. Where it
+      // steps sideways it's drawn by `drawBend` instead.
       p.rect(0, 0, TILE, TILE, pal.gravel);
       p.speckle(rng, 0, 0, TILE, TILE, 18, pal.stoneDark);
       for (let y = 0; y < TILE; y += 3) p.rect(1, y, 14, 2, pal.stone);
-      const bend = name === 'track' ? 0 : name.endsWith('r') ? 6 : -6;
-      hardRails(p, name.startsWith('track_f') ? bend : 0, name.startsWith('track_b') ? bend : 0);
+      hardRails(p);
+      break;
+    case 'ballast':
+      // The gravel between the main line's two tracks: the same bed, raked level.
+      p.rect(0, 0, TILE, TILE, pal.gravel);
+      p.speckle(rng, 0, 0, TILE, TILE, 22, pal.stoneDark);
+      p.speckle(rng, 0, 0, TILE, TILE, 9, pal.stone);
+      p.speckle(rng, 0, 0, TILE, TILE, 2, pal.stoneHi);
+      break;
+    case 'tunnel_in':
+    case 'tunnel_out':
+    case 'tunnel_cap': {
+      // A tunnel portal: a concrete headwall over the line. Its top and wings are slab; over each
+      // track, the dark of the tunnel fills most of the tile under a hazard-striped lintel, the
+      // rails running into it. Ahead is up the screen: the way in opens at the tile's bottom edge,
+      // the way out at its top.
+      p.rect(0, 0, TILE, TILE, PAL.concreteDark);
+      p.speckle(rng, 0, 0, TILE, TILE, 14, PAL.concrete);
+      p.rect(0, 0, TILE, 1, PAL.concreteHi);
+      p.rect(0, TILE - 1, TILE, 1, PAL.outline);
+      if (name === 'tunnel_cap') {
+        p.rect(0, 7, TILE, 1, PAL.outline);
+        p.rect(7, 0, 1, TILE, PAL.outline);
+        break;
+      }
+      const into = name === 'tunnel_in';
+      p.rect(1, into ? 4 : 0, 14, 12, pal.hole);
+      for (const x of [3, 11]) p.rect(x, into ? TILE - 4 : 0, 2, 4, PAL.railSteel);
+      for (let x = 0; x < TILE; x += 2) p.rect(x, into ? 2 : 12, 2, 2, x % 4 === 0 ? PAL.warn : PAL.outline);
+      for (const x of [0, TILE - 1]) p.px(x, into ? 1 : 14, PAL.amberHot);
       break;
     }
     case 'rail':

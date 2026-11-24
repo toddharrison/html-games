@@ -1,11 +1,16 @@
 import type { DoctrineId } from '../content/doctrines';
 import { ENEMIES } from '../content/enemies';
+import { WEAPONS, type ShellSpec } from '../content/weapons';
+import { MODES } from '../content/modes';
 import { TRAIN_CAR_IDS, TRAIN_CARS, TRAIN_DOCTRINE, TRAIN_LAYOUT, type TrainCarDef, type TrainCarId } from '../content/trainCars';
 import { OBJECTIVE, TRAIN } from '../content/tuning';
 import { damageArmor, damageTreads, hitArc, hitched, mobile, speedLimits } from './behemoth';
 import { destroyEnemy, spawnEnemy } from './enemies';
 import type { Enemy } from './entities';
 import type { KillCause } from './events';
+import { splashFuel } from './fire';
+import { spawnPool } from './pools';
+import { spillOil } from './spills';
 import { frameRight } from './frame';
 import { approach, type Rect } from './math';
 import { objectiveLost, objectiveStopped, objectiveStranded } from './objective';
@@ -31,6 +36,14 @@ import type { World } from './world';
  *   up the same way.
  * - **Scuttling:** what's left on the rails behind a pile is abandoned by its crews: its guns fall
  *   silent, and its charges fire from the tail forward.
+ * - **Two tracks** (`Terrain.trackY`): the armored train runs on track 0. **Attack trains**
+ *   (`TRAIN.raid`, `stepRaids`) are short trains with a pace of their own, each a piece of its own
+ *   (`TrainPiece.raid`) on whichever track its mode gives it: they come up from behind the frame,
+ *   pass, and run on ahead. In a Gauntlet there's no armored train and their engines are the targets.
+ * - **Wrecks on the track:** a piece runs into any wreck lying across its track where the Behemoth
+ *   can see it, whoever left it there, and piles up on it.
+ * - **Underground** (`Terrain.underground`, a crossover's tunnel): vehicles there can't be seen,
+ *   hit, or met, and don't fire (`AiMemory.under`).
  *
  * - **Armed cars** (docs/SPEC-armored-train.md §T6) are ordinary units with ordinary guns, quiet
  *   while out of the frame like every unit, and silent once abandoned. A troop car's squads jump out
@@ -74,6 +87,10 @@ export interface TrainVehicle {
   /** Against the hull this step (a ram happens on first contact), and seconds held at its face. */
   touching?: boolean;
   held?: number;
+  /** A wreck: the battle time its fire burns until (the view pours smoke from it till then). */
+  burnsUntil?: number;
+  /** A wreck leaking (`TRAIN.leak`): what, how many more spots of it, and seconds until the next. */
+  leak?: { kind: 'plasma' | 'oil'; left: number; in: number };
 }
 
 /** A mine a flinger has thrown (§T6): in the air, then lying in plain sight until it's live. */
@@ -110,13 +127,36 @@ export interface TrainPiece {
   fuse: number;
   /** World x of the wreckage it's running into (its next vehicle leaves the rails there). */
   block: number | null;
+  /** Which of the line's tracks it's on: 0 the armored train's, 1 the second (`Terrain.trackY`). */
+  track: 0 | 1;
+  /** An attack train, or what's left of one: it has a pace of its own (`TRAIN.raid`), and is no part of the armored train. */
+  raid: boolean;
+  /** Piling up: which side its last vehicle was thrown to (the next goes to the other). */
+  zig?: number;
+}
+
+/** The battle's attack trains (`ModeDef.train.raids`): when the next comes, and how many are left to come. */
+export interface RaidState {
+  /** Battle time the next one comes at. */
+  next: number;
+  /** How many more will come (no limit while an armored train runs). */
+  left: number;
+  /** Their engines are the battle's targets (a Gauntlet). */
+  targets: boolean;
+  /** The last of them has come and gone, and the battle's been told. */
+  over: boolean;
+  doctrine: DoctrineId;
+  /** What each one carries and when it comes: its own stream. */
+  rng: Rng;
 }
 
 export interface TrainState {
-  /** Front to back; fixed for the battle. */
+  /** The armored train's, front to back, then each attack train's as it comes. */
   vehicles: TrainVehicle[];
-  /** Front to back. */
   pieces: TrainPiece[];
+  /** There's an armored train to stop (an Intercept); false where only attack trains run. */
+  main: boolean;
+  raid: RaidState | null;
   /** The running pieces' pace (world units/s). */
   speed: number;
   /** The Behemoth's top speed the pace is worked out from (its last while it could drive). */
@@ -196,14 +236,18 @@ export function buildTrain(strength: Strength, threat: number, doctrine: Doctrin
   return sections.flatMap((cars, s) => ['engine', ...(s === 0 ? [L.gun] : []), ...cars] as TrainCarId[]);
 }
 
-/**
- * Sets the battle's train on the line, at rest, its tail `TRAIN.startGap` ahead of the Behemoth's
- * nose (it pulls out of its station as the battle opens), and its escorts beside it.
- */
-export function createTrain(w: World, strength: Strength, layout?: readonly TrainCarId[], doctrine: DoctrineId = 'combined'): TrainState {
-  const b = w.behemoth;
-  // Its makeup has a stream of its own, so the battle's combat draws are the same whatever it carries.
-  layout ??= buildTrain(strength, w.threat, doctrine, new Rng(hashSeed(w.seed, 0x7a12)));
+/** An attack train's vehicles (`TRAIN_LAYOUT.raid`), front to back: an engine, cars drawn by the doctrine's odds, and maybe an armored caboose in the last one's place. */
+export function buildRaider(doctrine: DoctrineId, caboose: boolean, rng: Rng): TrainCarId[] {
+  const weights = TRAIN_DOCTRINE[doctrine].weights;
+  const choices = TRAIN_CAR_IDS.filter((id) => TRAIN_CARS[id].cost !== undefined && (weights[id] ?? 0) > 0);
+  const n = rng.int(TRAIN_LAYOUT.raid.cars[0], TRAIN_LAYOUT.raid.cars[1]);
+  const cars: TrainCarId[] = ['engine'];
+  for (let i = 0; i < n; i++) cars.push(caboose && i === n - 1 ? 'caboose' : (rng.weighted(choices, (c) => weights[c] ?? 0) ?? 'boxcar'));
+  return cars;
+}
+
+/** A run of vehicles for a layout, each at its place behind the run's front. */
+function consist(layout: readonly TrainCarId[]): TrainVehicle[] {
   const vehicles: TrainVehicle[] = [];
   let at = 0;
   let section = -1;
@@ -213,11 +257,44 @@ export function createTrain(w: World, strength: Strength, layout?: readonly Trai
     vehicles.push({ car, enemyId: 0, section, offset: at + car.length / 2, x: 0, y: 0, heading: 0, alive: true, state: 'coupled', pays: 1 });
     at += car.length + TRAIN.coupling;
   }
-  const length = at - TRAIN.coupling;
+  return vehicles;
+}
+
+/** Puts a run of vehicles on the field as units, at their places behind `front` on `track`. */
+function muster(w: World, vehicles: readonly TrainVehicle[], front: number, track: 0 | 1, targets: boolean): void {
+  for (const v of vehicles) {
+    const x = front - v.offset;
+    const e = spawnEnemy(w, v.car.enemy, x, w.terrain.trackY(x, track));
+    e.train = true;
+    e.objective = targets && !!v.car.engine;
+    v.enemyId = e.id;
+    // The railway gun's first shell is the train's introduction (§T7).
+    if (v.car.firstShot !== undefined) e.cooldown = Math.max(0, v.car.firstShot - e.def.aimTime);
+    if (v.car.fling) v.flingIn = v.car.fling.every;
+  }
+}
+
+/**
+ * Sets the battle's trains going (`ModeDef.train`). An armored train starts on the line at rest,
+ * its tail `TRAIN.startGap` ahead of the Behemoth's nose (it pulls out of its station as the
+ * battle opens). Attack trains come later (`stepRaids`).
+ */
+export function createTrain(w: World, strength: Strength, layout?: readonly TrainCarId[], doctrine: DoctrineId = 'combined'): TrainState {
+  const b = w.behemoth;
+  const mode = MODES[w.objective.mode].train;
+  // Its makeup has a stream of its own, so the battle's combat draws are the same whatever it carries.
+  layout ??= mode && !mode.armored ? [] : buildTrain(strength, w.threat, doctrine, new Rng(hashSeed(w.seed, 0x7a12)));
+  const vehicles = consist(layout);
+  const length = trainLength({ vehicles });
   const front = b.x + b.chassis.length / 2 + TRAIN.startGap + length;
+  const raids = mode?.raids;
   const tr: TrainState = {
     vehicles,
-    pieces: vehicles.length > 0 ? [{ first: 0, last: vehicles.length - 1, x: front, speed: 0, state: 'running', fuse: 0, block: null }] : [],
+    pieces: vehicles.length > 0 ? [{ first: 0, last: vehicles.length - 1, x: front, speed: 0, state: 'running', fuse: 0, block: null, track: 0, raid: false }] : [],
+    main: vehicles.length > 0,
+    raid: raids
+      ? { next: raids.first, left: raids.count ? raids.count[strength] : Infinity, targets: !!raids.count, over: false, doctrine, rng: new Rng(hashSeed(w.seed, 0x7a13)) }
+      : null,
     speed: 0,
     top: speedLimits(b).top,
     engines: vehicles.filter((v) => v.car.engine).length,
@@ -231,15 +308,7 @@ export function createTrain(w: World, strength: Strength, layout?: readonly Trai
     contact: false,
     shoving: false,
   };
-  for (const v of vehicles) {
-    const e = spawnEnemy(w, v.car.enemy, front - v.offset, w.terrain.lineY(front - v.offset));
-    e.train = true;
-    e.objective = !!v.car.engine;
-    v.enemyId = e.id;
-    // The railway gun's first shell is the train's introduction (§T7).
-    if (v.car.firstShot !== undefined) e.cooldown = Math.max(0, v.car.firstShot - e.def.aimTime);
-    if (v.car.fling) v.flingIn = v.car.fling.every;
-  }
+  muster(w, vehicles, front, 0, true);
   place(w, tr);
   // Fire aimed at the train never breaks the line under it (SPEC §7.3).
   w.terrain.shield = (col) => shields(w, tr, col);
@@ -248,8 +317,8 @@ export function createTrain(w: World, strength: Strength, layout?: readonly Trai
   return tr;
 }
 
-/** Total length of a train's vehicles and couplings (world units). */
-export function trainLength(tr: TrainState): number {
+/** Total length of a run of vehicles and their couplings (world units). */
+export function trainLength(tr: Pick<TrainState, 'vehicles'>): number {
   const last = tr.vehicles[tr.vehicles.length - 1];
   return last ? last.offset + last.car.length / 2 : 0;
 }
@@ -260,11 +329,11 @@ function pieceOf(tr: TrainState, index: number): TrainPiece | null {
   return tr.pieces.find((p) => index >= p.first && index <= p.last) ?? null;
 }
 
-/** Engines still pulling: alive, in a piece under way (or already off the far end, with the rest following). */
+/** The armored train's engines still pulling: alive, in a piece under way (or already off the far end, with the rest following). */
 export function runningEngines(tr: TrainState): number {
   let count = tr.escaped;
   for (const p of tr.pieces) {
-    if (p.state !== 'running') continue;
+    if (p.state !== 'running' || p.raid) continue;
     for (let i = p.first; i <= p.last; i++) {
       const v = tr.vehicles[i]!;
       if (v.alive && v.car.engine && v.state === 'coupled') count++;
@@ -303,8 +372,10 @@ export function stepTrain(w: World, dt: number): void {
   for (const v of tr.vehicles) if (v.alive && !unitOf(w, v)) v.alive = false;
   setPace(w, tr, dt);
   tr.struck = Math.max(0, tr.struck - dt);
+  stepRaids(w, tr);
   for (const p of [...tr.pieces]) movePiece(w, tr, p, dt);
   place(w, tr);
+  stepLeaks(w, tr, dt);
   stepFlingers(w, tr, dt);
   leave(w, tr);
   settle(w, tr);
@@ -323,10 +394,11 @@ function setPace(w: World, tr: TrainState, dt: number): void {
 function movePiece(w: World, tr: TrainState, p: TrainPiece, dt: number): void {
   switch (p.state) {
     case 'running':
-      p.speed = tr.speed;
+      // An attack train holds its own pace; a struck one eases back up to it.
+      p.speed = p.raid ? approach(p.speed, TRAIN.raid.pace * tr.top, TRAIN.ease * dt) : tr.speed;
       p.x += p.speed * dt;
       // Nothing pulls it any more: once it has rolled to a stop, its crews leave it.
-      if (tr.outcome === 'stopped' && p.speed <= 0) abandon(w, tr, p);
+      if (!p.raid && tr.outcome === 'stopped' && p.speed <= 0) abandon(w, tr, p);
       else obstructed(w, tr, p);
       return;
     case 'derailing':
@@ -353,9 +425,9 @@ function tailOf(tr: TrainState, p: TrainPiece): number {
 }
 
 /**
- * A piece on the move meets something it can't pass: the wreck it was coupled to, a break in the
- * line, the wreckage of its own front, or the tail of a piece stopped ahead of it. Its front
- * vehicle leaves the rails.
+ * A piece on the move meets something it can't pass: the wreck it was coupled to, a break in its
+ * track, the wreckage of its own front, the tail of a piece stopped ahead of it on its track, or
+ * any wreck lying across its track where the Behemoth can see it. Its front vehicle leaves the rails.
  */
 function obstructed(w: World, tr: TrainState, p: TrainPiece): void {
   const nose = noseOf(tr, p);
@@ -364,42 +436,77 @@ function obstructed(w: World, tr: TrainState, p: TrainPiece): void {
     if (nose >= p.block) derail(w, tr, p, false);
     return;
   }
-  if (w.terrain.lineCut(Math.floor(nose / ts))) {
+  if (w.terrain.lineCut(Math.floor(nose / ts), p.track)) {
     // A fallen span: nothing to pile up on, the vehicle goes into the river.
-    const t = w.terrain.tileAt(nose, w.terrain.lineY(nose));
+    const t = w.terrain.tileAt(nose, w.terrain.trackY(nose, p.track));
     derail(w, tr, p, !!t && t.mat !== 'crater' && t.mat !== 'wreck');
     return;
   }
-  const i = tr.pieces.indexOf(p);
-  const ahead = i > 0 ? tr.pieces[i - 1]! : null;
-  if (ahead && ahead.state !== 'running' && nose >= tailOf(tr, ahead) - TRAIN.coupling) derail(w, tr, p, false);
+  for (const q of tr.pieces) {
+    if (q === p || q.track !== p.track || q.state === 'running') continue;
+    if (nose >= tailOf(tr, q) - TRAIN.coupling && nose <= noseOf(tr, q)) {
+      derail(w, tr, p, false);
+      return;
+    }
+  }
+  if (wreckAhead(w, tr, p, nose)) derail(w, tr, p, false);
+}
+
+/** A wreck lying across a piece's track at its nose, in the frame (what's out of sight behind it is no obstacle). */
+function wreckAhead(w: World, tr: TrainState, p: TrainPiece, nose: number): boolean {
+  const width = tr.vehicles[p.first]!.car.width;
+  for (const v of tr.vehicles) {
+    if (v.state !== 'wrecked' || v.x < w.frame.left || v.x > frameRight(w.frame)) continue;
+    const { hx, hy } = extent(v);
+    if (nose < v.x - hx || nose > v.x + hx) continue;
+    // Clipping its corner doesn't count: a good part of it has to be on the rails.
+    if (Math.abs(v.y - w.terrain.trackY(v.x, p.track)) < hy + width / 2 - TRAIN.derail.scatter[0]) return true;
+  }
+  return false;
+}
+
+/** Half a vehicle's bounds on the ground, turned with it. */
+function extent(v: TrainVehicle): { hx: number; hy: number } {
+  const c = Math.abs(Math.cos(v.heading));
+  const s = Math.abs(Math.sin(v.heading));
+  return { hx: (v.car.length / 2) * c + (v.car.width / 2) * s, hy: (v.car.length / 2) * s + (v.car.width / 2) * c };
 }
 
 /**
  * A piece's front vehicle leaves the rails (SPEC §7.3): destroyed, it lies where it stops, and
- * brakes what's behind it. Slowed enough, the rest pulls up short and is abandoned.
+ * brakes what's behind it. Slowed enough, the rest pulls up short and is abandoned. Each one rides
+ * up into the last and is thrown to the other side from it, goes up as it lands, and burns
+ * (`TRAIN.derail`). Underground there's nowhere for it to go: it's lost, like one into a river.
  */
 function derail(w: World, tr: TrainState, p: TrainPiece, sunk: boolean): void {
   const d = TRAIN.derail;
   const v = tr.vehicles[p.first]!;
   const e = unitOf(w, v);
-  // The train itself, off the rails at a break in the line (not a piece piling into a wreck).
-  const first = p.state === 'running';
+  const under = w.terrain.underground(v.x);
+  const lost = sunk || under;
+  // The armored train itself, off the rails at a break in the line (not a piece piling into a wreck).
+  const first = p.state === 'running' && !p.raid;
   if (first) tr.derailed = true;
-  v.pays = sunk ? 0 : d.salvage;
-  v.state = sunk ? 'gone' : 'wrecked';
-  // Jackknifed: thrown to one side and slewed round, the next one maybe to the other.
-  if (!sunk) jackknife(w, tr, v, tr.rng.sign());
+  v.pays = lost ? 0 : d.salvage;
+  v.state = lost ? 'gone' : 'wrecked';
+  // What's behind piles into it: the next one rides up into this one before it goes too. Into a
+  // river there's nothing to pile up on: the next vehicle runs off the end of the line the same
+  // way. In a tunnel the wreck blocks it as surely, out of sight.
+  p.block = sunk ? null : v.x - v.car.length / 2 + (under ? 0 : d.crumple * v.car.length);
+  if (!lost) {
+    p.zig = -(p.zig ?? tr.rng.sign());
+    v.x += tr.rng.range(-4, 6);
+    jackknife(w, tr, v, p.zig);
+    w.blasts.push({ x: v.x, y: v.y, radius: d.blast.radius, damage: d.blast.damage, fuse: tr.rng.range(d.blast.fuse[0], d.blast.fuse[1]) });
+    cookOff(w, tr, v);
+  }
   if (e) {
     e.x = v.x;
     e.y = v.y;
     destroyEnemy(w, e, 'hazard');
   }
   v.alive = false;
-  w.events.push({ type: 'trainDerail', x: v.x, y: v.y, heading: v.heading, first, sunk });
-  // What's behind piles into it: the wreck's near end is the next obstruction. Into a river there's
-  // nothing to pile up on: the next vehicle runs off the end of the line the same way.
-  p.block = sunk ? null : v.x - v.car.length / 2;
+  if (!under) w.events.push({ type: 'trainDerail', x: v.x, y: v.y, heading: v.heading, first, sunk });
   p.first++;
   p.speed = Math.max(0, p.speed - d.brake);
   p.state = 'derailing';
@@ -407,13 +514,32 @@ function derail(w: World, tr: TrainState, p: TrainPiece, sunk: boolean): void {
   else if (p.speed < d.stop) abandon(w, tr, p);
 }
 
-/** A vehicle comes off the rails where it is: thrown to one `side` of the line and slewed round, a wreck on the ground there. */
+/**
+ * A vehicle comes off the rails where it is: thrown to one `side` of the line and slewed round, a
+ * wreck on the ground there, burning.
+ */
 function jackknife(w: World, tr: TrainState, v: TrainVehicle, side: number): void {
   const d = TRAIN.derail;
   v.y += side * tr.rng.range(d.scatter[0], d.scatter[1]);
   v.heading += side * tr.rng.range(0.3, 1) * ((d.turn * Math.PI) / 180);
   const ts = w.terrain.tileSize;
-  w.terrain.strew(Math.floor(v.x / ts), Math.floor(v.y / ts), w.events);
+  const col = Math.floor(v.x / ts);
+  const row = Math.floor(v.y / ts);
+  w.terrain.strew(col, row, w.events);
+  // Its fuel and stores burn on the ground round it (the wreck itself stands in the way of the fire's tile).
+  for (const [dc, dr] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1]] as const) splashFuel(w, col + dc, row + dr, d.burn, true);
+  v.burnsUntil = w.time + d.burn;
+  // And it may leak: plasma from its power cells, or oil.
+  const k = TRAIN.leak;
+  const kind = tr.rng.chance(v.car.engine ? k.engine : k.plasma) ? 'plasma' : tr.rng.chance(k.oil) ? 'oil' : null;
+  if (kind) v.leak = { kind, left: tr.rng.int(k.spots[0], k.spots[1]), in: tr.rng.range(k.every[0], k.every[1]) };
+}
+
+/** What a wrecked vehicle carried may cook off a few seconds later (`TRAIN.derail.cookOff`): a second blast, and fire with it. */
+function cookOff(w: World, tr: TrainState, v: TrainVehicle): void {
+  const c = TRAIN.derail.cookOff;
+  if (!tr.rng.chance(c.odds)) return;
+  w.blasts.push({ x: v.x, y: v.y, radius: c.radius, damage: c.damage, fuse: tr.rng.range(c.fuse[0], c.fuse[1]), fire: true });
 }
 
 /**
@@ -425,15 +551,23 @@ function jackknife(w: World, tr: TrainState, v: TrainVehicle, side: number): voi
 function wreck(w: World, tr: TrainState, p: TrainPiece, index: number, flat: boolean): void {
   const v = tr.vehicles[index]!;
   v.state = 'wrecked';
+  const at = v.x;
   // Blown off the far side of the line from the Behemoth, so a kill from alongside doesn't land on it.
-  if (!flat) jackknife(w, tr, v, Math.sign(v.y - w.behemoth.y) || tr.rng.sign());
+  const side = Math.sign(v.y - w.behemoth.y) || tr.rng.sign();
+  // (One that burns out in a tunnel stays down there: nothing of it is seen again.)
+  if (w.terrain.underground(v.x)) v.state = 'gone';
+  else if (!flat) {
+    jackknife(w, tr, v, side);
+    cookOff(w, tr, v);
+  }
   const behind = p.last - index;
   const rear = behind > 0 ? split(tr, p, index + 1) : null;
   p.last = index - 1;
   if (p.first > p.last) removePiece(tr, p);
   if (rear) {
     rear.state = 'derailing';
-    rear.block = v.x - v.car.length / 2;
+    rear.block = at - v.car.length / 2 + TRAIN.derail.crumple * v.car.length;
+    rear.zig = side;
     strand(w, tr, rear);
   }
   w.events.push({ type: 'trainBroken', x: v.x, y: v.y, heading: v.heading, behind });
@@ -603,7 +737,7 @@ function stepFlingers(w: World, tr: TrainState, dt: number): void {
       const v = tr.vehicles[i]!;
       const f = v.car.fling;
       const e = f && unitOf(w, v);
-      if (!f || !e || !inFrame(w, e)) continue;
+      if (!f || !e || e.ai.under || !inFrame(w, e)) continue;
       v.flingIn = (v.flingIn ?? f.every) - dt;
       if (v.flingIn > 0) continue;
       const live = tr.flung.filter((m) => m.from === i).length + tr.laid.filter((m) => m.from === i).length;
@@ -645,10 +779,9 @@ export function trainBodies(w: World): TrainBody[] {
   tr.vehicles.forEach((v, index) => {
     if (v.state === 'gone') return;
     const p = pieceOf(tr, index);
-    const c = Math.abs(Math.cos(v.heading));
-    const s = Math.abs(Math.sin(v.heading));
-    const hx = (v.car.length / 2) * c + (v.car.width / 2) * s;
-    const hy = (v.car.length / 2) * s + (v.car.width / 2) * c;
+    // Under the roof of a tunnel: the hull drives over it.
+    if (p && w.terrain.underground(v.x)) return;
+    const { hx, hy } = extent(v);
     out.push({
       index,
       vehicle: v,
@@ -701,8 +834,12 @@ export function trainStrikes(w: World, index: number): void {
     e.hp -= s.front;
     if (e.hp <= 0) destroyEnemy(w, e, 'crushed');
   }
-  tr.speed *= 1 - s.slow;
-  for (const p of tr.pieces) if (p.state === 'running') p.speed = tr.speed;
+  const struck = pieceOf(tr, index);
+  if (struck?.raid) struck.speed *= 1 - s.slow;
+  else {
+    tr.speed *= 1 - s.slow;
+    for (const p of tr.pieces) if (p.state === 'running' && !p.raid) p.speed = tr.speed;
+  }
   w.events.push({ type: 'trainStrike', x: nose, y: v.y });
 }
 
@@ -722,16 +859,19 @@ function uncouple(tr: TrainState, index: number): void {
 
 /**
  * The share of its salvage a train vehicle pays when it's destroyed (`destroyEnemy`): a derailed one
- * less, one lost in a river nothing, and an abandoned one only if the Behemoth destroys it before its
- * own charge does (a blast or its own side's fire pays nothing).
+ * less (and one the pile's own fire or blasts finish before it gets there the same), one lost in a
+ * river nothing, and an abandoned one only if the Behemoth destroys it before its own charge does
+ * (a blast or its own side's fire pays nothing).
  */
 export function trainSalvageShare(w: World, e: Enemy, cause: KillCause): number {
   const tr = w.train;
   const index = tr ? tr.vehicles.findIndex((v) => v.enemyId === e.id) : -1;
   const v = tr?.vehicles[index];
   if (!tr || !v) return 1;
-  const left = pieceOf(tr, index)?.state === 'abandoned';
-  return left && (cause === 'hazard' || cause === 'friendly') ? 0 : v.pays;
+  const state = pieceOf(tr, index)?.state;
+  if (state === 'abandoned' && (cause === 'hazard' || cause === 'friendly')) return 0;
+  // Burnt or blown up by the pile it's running into: it was a wreck either way.
+  return state === 'derailing' && cause === 'hazard' ? Math.min(v.pays, TRAIN.derail.salvage) : v.pays;
 }
 
 /** Writes every coupled vehicle's place on the line, and its unit's. */
@@ -742,13 +882,18 @@ function place(w: World, tr: TrainState): void {
       const v = tr.vehicles[i]!;
       if (v.state !== 'coupled') continue;
       v.x = p.x - v.offset;
-      v.y = t.lineY(v.x);
-      v.heading = Math.atan2(t.lineY(v.x + 4) - t.lineY(v.x - 4), 8);
+      v.y = t.trackY(v.x, p.track);
+      v.heading = Math.atan2(t.trackY(v.x + 4, p.track) - t.trackY(v.x - 4, p.track), 8);
       const e = unitOf(w, v);
       if (!e) continue;
       e.x = v.x;
       e.y = v.y;
       e.heading = v.heading;
+      // In a crossover's tunnel it's out of the fight until it comes out the other end.
+      const under = t.underground(v.x);
+      if (under && !e.ai.under && i === p.first && p.state === 'running') w.events.push({ type: 'trainTunnel', x: v.x, y: v.y, raid: p.raid });
+      if (under) e.ai.under = true;
+      else delete e.ai.under;
       e.vx = p.speed * Math.cos(v.heading);
       e.vy = p.speed * Math.sin(v.heading);
     }
@@ -757,25 +902,26 @@ function place(w: World, tr: TrainState): void {
 
 /**
  * Vehicles that leave the battle: off the far end of the line with the train still under way (an
- * engine that does has escaped, `objectiveLost`), or far behind the frame once they're no longer
- * part of the running train.
+ * engine that does has escaped, `objectiveLost`); an attack train's once they're well ahead of
+ * the frame (the same); or far behind the frame once they're no longer part of a running train.
  */
 function leave(w: World, tr: TrainState): void {
   const far = w.exitX + OBJECTIVE.escapeBeyond;
+  const ahead = frameRight(w.frame) + TRAIN.raid.leave;
   const behind = w.frame.left - TRAIN.dropBehind;
   const live = !w.behemoth.destroyed && w.extractedAt === null;
   for (const p of [...tr.pieces]) {
     for (let i = p.first; i <= p.last; i++) {
       const v = tr.vehicles[i]!;
       if (v.state !== 'coupled') continue;
-      const through = p.state === 'running' && tr.outcome === 'running' && v.x - v.car.length / 2 > far;
+      const through = p.state === 'running' && (p.raid ? v.x - v.car.length / 2 > ahead : tr.outcome === 'running' && v.x - v.car.length / 2 > far);
       if (!through && !(p.state !== 'running' && v.x + v.car.length / 2 < behind)) continue;
       v.state = 'gone';
       const e = unitOf(w, v);
       v.alive = false;
       if (!e) continue;
       // An engine that gets away still pulls the vehicles behind it off the field.
-      if (through && v.car.engine) tr.escaped++;
+      if (through && v.car.engine && !p.raid) tr.escaped++;
       if (through && e.objective && live) objectiveLost(w, e);
       else e.alive = false;
     }
@@ -783,7 +929,7 @@ function leave(w: World, tr: TrainState): void {
     while (p.last >= p.first && tr.vehicles[p.last]!.state !== 'coupled') p.last--;
     if (p.first > p.last) {
       removePiece(tr, p);
-      if (p.state === 'running' && tr.outcome === 'running' && !tr.pieces.some((q) => q.state === 'running')) {
+      if (p.state === 'running' && !p.raid && tr.outcome === 'running' && !tr.pieces.some((q) => q.state === 'running' && !q.raid)) {
         tr.outcome = 'through';
         // Nothing left to chase: the extraction line comes in, as it does when the train is stopped.
         if (live) w.exitX = Math.min(w.exitX, Math.max(w.behemoth.x, w.frame.left) + TRAIN.extractAhead);
@@ -799,7 +945,7 @@ function leave(w: World, tr: TrainState): void {
  * comes in to `TRAIN.extractAhead` ahead of the Behemoth.
  */
 function settle(w: World, tr: TrainState): void {
-  if (tr.outcome !== 'running' || runningEngines(tr) > 0) return;
+  if (!tr.main || tr.outcome !== 'running' || runningEngines(tr) > 0) return;
   // What's still rolling brakes to a stop from here (`setPace`, `movePiece`).
   tr.outcome = 'stopped';
   const at = tr.vehicles.find((v) => v.state !== 'gone') ?? tr.vehicles[0];
@@ -809,4 +955,78 @@ function settle(w: World, tr: TrainState): void {
     w.exitX = Math.min(w.exitX, Math.max(b.x, w.frame.left) + TRAIN.extractAhead);
   }
   w.events.push({ type: 'trainStopped', x: at?.x ?? b.x, y: at?.y ?? b.y, derailed: tr.derailed });
+}
+
+/**
+ * Attack trains (`ModeDef.train.raids`): one comes up from behind the frame every so often, while
+ * the Behemoth is still fighting and (where there's an armored train) that's still running. In a
+ * Gauntlet a fixed number come; once the last has been destroyed or has got away, the extraction
+ * line comes in.
+ */
+function stepRaids(w: World, tr: TrainState): void {
+  const r = tr.raid;
+  const def = MODES[w.objective.mode].train?.raids;
+  if (!r || !def) return;
+  const b = w.behemoth;
+  const live = !b.destroyed && w.extractedAt === null;
+  if (r.targets && !r.over && r.left <= 0 && !w.enemies.some((e) => e.alive && e.train && e.objective)) {
+    r.over = true;
+    if (live) w.exitX = Math.min(w.exitX, Math.max(b.x, w.frame.left) + TRAIN.extractAhead);
+    w.events.push({ type: 'raidsOver', x: b.x, y: b.y });
+  }
+  if (!live || r.left <= 0 || w.time < r.next || (tr.main && tr.outcome !== 'running')) return;
+  const tracks = [...def.tracks];
+  if (tracks.length > 1 && r.rng.chance(0.5)) tracks.reverse();
+  const track = tracks.find((t) => clearBehind(w, tr, t));
+  // Something's standing on the line just behind the frame: it waits for the hull to draw off.
+  if (track === undefined) {
+    r.next = w.time + 2;
+    return;
+  }
+  r.left--;
+  r.next = w.time + r.rng.range(def.every[0], def.every[1]);
+  const vehicles = consist(buildRaider(r.doctrine, r.rng.chance(def.caboose), r.rng));
+  const first = tr.vehicles.length;
+  tr.vehicles.push(...vehicles);
+  const front = w.frame.left - TRAIN.raid.behind;
+  tr.pieces.push({ first, last: tr.vehicles.length - 1, x: front, speed: TRAIN.raid.pace * tr.top, state: 'running', fuse: 0, block: null, track, raid: true });
+  muster(w, vehicles, front, track, r.targets);
+  w.events.push({ type: 'trainRaid', x: front, y: w.terrain.trackY(front, track), track, cars: vehicles.length });
+}
+
+/** Nothing of a train stands on a track where an attack train would start: on the rails or wrecked across them, behind the frame's edge. */
+function clearBehind(w: World, tr: TrainState, track: 0 | 1): boolean {
+  const from = w.frame.left - TRAIN.dropBehind;
+  const to = w.frame.left + TRAIN.raid.clear;
+  for (const p of tr.pieces) {
+    if (p.track === track && tailOf(tr, p) < to && noseOf(tr, p) > from) return false;
+  }
+  return true;
+}
+
+/** The plasma a wreck leaks burns as the plasma thrower's does (its `vs` scales what it does to units). */
+const LEAKED = WEAPONS.plasmaThrower.projectile as ShellSpec;
+
+/** Wrecks leaking (`TRAIN.leak`): a spot of plasma or oil lands near each one every so often, until it's run dry or been swept away. */
+function stepLeaks(w: World, tr: TrainState, dt: number): void {
+  const k = TRAIN.leak;
+  for (const v of tr.vehicles) {
+    const leak = v.leak;
+    if (!leak) continue;
+    if (v.state !== 'wrecked' || leak.left <= 0) {
+      delete v.leak;
+      continue;
+    }
+    leak.in -= dt;
+    if (leak.in > 0) continue;
+    leak.in = tr.rng.range(k.every[0], k.every[1]);
+    leak.left--;
+    const a = tr.rng.range(0, Math.PI * 2);
+    const d = tr.rng.range(k.reach[0], k.reach[1]);
+    const x = v.x + Math.cos(a) * d;
+    const y = v.y + Math.sin(a) * d;
+    if (y < 0 || y > w.terrain.height) continue;
+    if (leak.kind === 'plasma') spawnPool(w, x, y, LEAKED, k.pool);
+    else spillOil(w, x, y, tr.rng.range(k.slick[0], k.slick[1]));
+  }
 }

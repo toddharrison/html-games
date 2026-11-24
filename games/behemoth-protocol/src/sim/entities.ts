@@ -124,6 +124,8 @@ export interface AiMemory {
   marked?: boolean;
   /** Bomb truck: its run has started (it's been in the frame), so the view strobes it (SPEC §7.4). A train's vehicle: abandoned, its scuttling charge set. */
   charging?: boolean;
+  /** A train's vehicle in a crossover's tunnel (`Terrain.underground`): out of sight and out of reach, its guns quiet. */
+  under?: boolean;
   /** Bomb truck: within `BOMB.close` of the hull, the last stretch (its strobe quickens). */
   close?: boolean;
   /** It's been on screen (and its kind counted in `World.sighted`, its callout made if it has one). */
@@ -184,6 +186,16 @@ export interface Pool {
   tick: number;
   /** Damage ticks left; it's gone after the last. */
   ticks: number;
+}
+
+/** An oil slick on the ground (`sim/spills.ts`): harmless until fire reaches it, then it all burns. */
+export interface OilSpill {
+  id: number;
+  x: number;
+  y: number;
+  radius: number;
+  /** Seconds it has lain there. */
+  age: number;
 }
 
 /**
@@ -247,6 +259,8 @@ export function allocId(w: { nextId: number }): number {
  * it by. It's exposed from the moment the team pops up to aim until the lid is down again.
  */
 export function sealed(e: Enemy): boolean {
+  // A train's vehicle in a tunnel is as far out of reach.
+  if (e.ai.under) return true;
   const lid = e.ai.lid ?? 'shut';
   return !!e.def.trapdoor && (lid === 'shut' || lid === 'lifting');
 }

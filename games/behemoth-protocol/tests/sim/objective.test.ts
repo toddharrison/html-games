@@ -50,7 +50,7 @@ const targets = (w: World) => w.enemies.filter((e) => e.alive && e.objective);
 
 describe('modes on the map', () => {
   it('the opening battle is an Assault; later battles draw every mode, Assault the commonest', () => {
-    const count: Record<string, number> = { assault: 0, breach: 0, chase: 0, intercept: 0 };
+    const count: Record<string, number> = Object.fromEntries(MODE_IDS.map((m) => [m, 0]));
     for (let seed = 1; seed <= 40; seed++) {
       const map = generateMap(seed);
       expect(map.sectors[0]!.nodes[0]!.battle!.mode).toBe('assault');

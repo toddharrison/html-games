@@ -324,8 +324,8 @@ const CENTER = { x: 0, y: 0 };
 /** Every gun on the unit: the main one (on its center), then any extra turrets. */
 function aimAndFire(w: World, e: Enemy, dt: number): void {
   const d = e.def;
-  // A train's vehicle abandoned behind a wreck: its crew has left the guns (SPEC §7.3).
-  if (e.train && e.ai.charging) {
+  // A train's vehicle abandoned behind a wreck: its crew has left the guns (SPEC §7.3). One in a tunnel can't see to shoot.
+  if (e.train && (e.ai.charging || e.ai.under)) {
     for (const g of [e, ...e.guns]) {
       g.windup = 0;
       g.salvoLeft = 0;

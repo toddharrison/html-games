@@ -26,4 +26,5 @@ Create `games/<slug>/` with the scripts and fields above, run `npm install` at t
 
 ## Workflow
 - Leave changes **uncommitted** so the user can review diffs in VS Code. Commit only when asked.
+- **Version numbers are semantic.** Each game's `package.json` `version` follows semver, and every set of changes bumps it by what changed: **patch** for fixes, tuning, and polish; **minor** for new features or content (a mode, a unit, a weapon, a system); **major** for a change that breaks saves or remakes how the game plays. Before 1.0 a breaking change is a minor bump. Bump it along with the work, once per set of changes headed for one commit (the largest kind of change in the set decides), and run `npm install` at the root so the lockfile follows.
 - When asked to commit while on `main`: create a branch, commit, then fast-forward merge to `main` and delete the branch if the user asks. Pushing to `main` deploys the public site.

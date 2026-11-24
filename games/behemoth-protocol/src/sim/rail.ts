@@ -5,6 +5,7 @@ import { sealed, type Enemy } from './entities';
 import { igniteAt, ignitesOf } from './fire';
 import { damageEnemy } from './projectiles';
 import { mineAt, triggerMine } from './trailer';
+import { shieldStop } from './shield';
 import type { World } from './world';
 
 /**
@@ -30,6 +31,10 @@ export function shootRail(w: World, weapon: WeaponDef, x: number, y: number, ang
   const dy = Math.sin(a);
   markFlash(w);
 
+  // A shield car's plate stops even this (`sim/shield.ts`).
+  const plate = shieldStop(w, x, y, x + dx * spec.range, y + dy * spec.range);
+  const range = plate === null ? spec.range : plate * spec.range;
+  if (plate !== null) w.events.push({ type: 'shieldBlock', x: x + dx * range, y: y + dy * range });
   // Every unit the line passes through, nearest first, with where the slug meets it.
   const inLine: { e: Enemy; t: number }[] = [];
   for (const e of w.enemies) {
@@ -39,14 +44,14 @@ export function shootRail(w: World, weapon: WeaponDef, x: number, y: number, ang
     const r = e.def.radius + WIDTH;
     if (along <= 0 || across > r) continue;
     const t = Math.max(0, along - Math.sqrt(r * r - across * across));
-    if (t <= spec.range) inLine.push({ e, t });
+    if (t <= range) inLine.push({ e, t });
   }
   inLine.sort((p, q) => p.t - q.t);
 
   const ts = w.terrain.tileSize;
   let share = 1;
   let next = 0;
-  let end = spec.range;
+  let end = range;
   let lastTile = -1;
   const hits: { x: number; y: number }[] = [];
   const strike = (upTo: number) => {
@@ -59,7 +64,7 @@ export function shootRail(w: World, weapon: WeaponDef, x: number, y: number, ang
       share *= spec.falloff;
     }
   };
-  for (let d = 0; d <= spec.range; d += STEP) {
+  for (let d = 0; d <= range; d += STEP) {
     strike(d);
     if (share < SPENT) {
       end = inLine[next - 1]?.t ?? d;
@@ -96,7 +101,7 @@ export function shootRail(w: World, weapon: WeaponDef, x: number, y: number, ang
   }
 
   // Ran its full length: whatever stands at the very end of its reach.
-  if (end === spec.range) strike(spec.range);
+  if (end === range) strike(range);
 
   w.events.push({ type: 'fire', owner: 'player', weapon: weapon.id, x, y, angle: a, slot: opts.slot });
   w.events.push({ type: 'rail', weapon: weapon.id, x0: x, y0: y, x1: x + dx * end, y1: y + dy * end, hits });

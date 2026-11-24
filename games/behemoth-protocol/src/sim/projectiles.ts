@@ -9,6 +9,7 @@ import { frameRight } from './frame';
 import { closestInBox, pointInBox, rotateToward } from './math';
 import { fireBurst, igniteAt, igniteBlast, ignitesOf } from './fire';
 import { spawnPool } from './pools';
+import { shieldStop } from './shield';
 import { hitTrailer, mineAt, triggerMine } from './trailer';
 import type { World } from './world';
 
@@ -63,8 +64,10 @@ export function fireBeam(w: World, weapon: WeaponDef, x: number, y: number, angl
   const dx = Math.cos(angle);
   const dy = Math.sin(angle);
 
+  // A shield car's plate stops it short.
+  const plate = shieldStop(w, x, y, x + dx * spec.range, y + dy * spec.range);
   // The nearest unit the line passes through.
-  let reach = spec.range;
+  let reach = plate === null ? spec.range : plate * spec.range;
   let target: Enemy | null = null;
   for (const e of w.enemies) {
     if (!e.alive || sealed(e)) continue;
@@ -97,7 +100,10 @@ export function fireBeam(w: World, weapon: WeaponDef, x: number, y: number, angl
     }
   }
   const end = { x: x + dx * reach, y: y + dy * reach };
-  if (!target) return { ...end, hit: false };
+  if (!target) {
+    if (plate !== null) w.events.push({ type: 'shieldBlock', x: end.x, y: end.y });
+    return { ...end, hit: plate !== null };
+  }
   damageEnemy(w, target, spec, spec.damage, { dx, dy, ...end });
   // It can light what burns where it strikes (a unit among the trees).
   igniteAt(w, target.x, target.y, ignitesOf(spec));
@@ -115,7 +121,7 @@ export function stepProjectiles(w: World, dt: number): void {
       p.x += p.vx * sdt;
       p.y += p.vy * sdt;
       p.traveled += speed * sdt;
-      if (p.owner === 'player') stepPlayerRound(w, p);
+      if (p.owner === 'player') stepPlayerRound(w, p, sdt);
       else stepEnemyRound(w, p);
     }
   }
@@ -165,10 +171,20 @@ function spent(p: Projectile): boolean {
   return p.kind === 'missile' && p.targetId === null && Math.hypot(p.tx - p.x, p.ty - p.y) <= MISSILE_ARRIVE;
 }
 
-function stepPlayerRound(w: World, p: Projectile): void {
+function stepPlayerRound(w: World, p: Projectile, dt: number): void {
   const spec = roundSpec(p.weapon);
   if (spec.kind === 'shell' && spec.lobbed) {
     if (spent(p) || outOfField(w, p)) detonate(w, p);
+    return;
+  }
+  // A shield car's plate in its way (`sim/shield.ts`): it stops there. Lobbed shells went over.
+  const stop = shieldStop(w, p.x - p.vx * dt, p.y - p.vy * dt, p.x, p.y);
+  if (stop !== null) {
+    p.x -= p.vx * dt * (1 - stop);
+    p.y -= p.vy * dt * (1 - stop);
+    w.events.push({ type: 'shieldBlock', x: p.x, y: p.y });
+    if (spec.kind === 'bullet') p.alive = false;
+    else detonate(w, p);
     return;
   }
   for (const e of w.enemies) {

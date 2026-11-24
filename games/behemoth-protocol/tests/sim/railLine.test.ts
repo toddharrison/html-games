@@ -4,7 +4,8 @@ import { BIOMES, type BiomeId } from '../../src/content/biomes';
 import { isLine, isWet, MATERIALS } from '../../src/content/terrain';
 import { TERRAIN_GEN } from '../../src/content/tuning';
 import type { SimEvent } from '../../src/sim/events';
-import { generateChunk, riverCenter, Terrain, type TerrainRecipe } from '../../src/sim/terrain';
+import { BEND, generateChunk, riverCenter, Terrain, type TerrainRecipe } from '../../src/sim/terrain';
+import { railLine } from '../../src/sim/world';
 
 const TS = TERRAIN_GEN.tileSize;
 const G = TERRAIN_GEN.railLine;
@@ -59,15 +60,43 @@ describe('an armored train\'s rail line (SPEC §4.4 Intercept)', () => {
     }
   });
 
-  it('keeps a railbed either side clear of obstacles, and rock farther off', () => {
+  it('is a double track: a second track on the narrow side, gravel between the two', () => {
+    for (const { t, cols: COLS, name } of fields()) {
+      let gravel = 0;
+      for (let col = 0; col < COLS; col++) {
+        const row = t.lineRow(col)!;
+        const where = `${name} col ${col}`;
+        const own = t.tile(col, row)!;
+        const second = t.tile(col, row + G.twin * t.lineSide)!;
+        // Both carry rails, on the ground and on a bridge (a river's bank isn't square to the line,
+        // so one track can be on the span a column before the other).
+        for (const tile of [own, second]) {
+          expect(['track', 'railBridge'], `${where}: ${tile.mat}`).toContain(tile.mat);
+          if (tile.mat === 'railBridge') expect(tile.links, where).toBeTruthy();
+        }
+        for (let k = 1; k < G.twin; k++) {
+          const between = t.tile(col, row + k * t.lineSide)!;
+          expect(isLine(between.mat), `${where}: ${between.mat}`).toBe(true);
+          if (between.mat === 'ballast') gravel++;
+          // Gravel, or the bridge's deck: no rails.
+          if (between.mat === 'railBridge') expect(between.links, where).toBeFalsy();
+        }
+      }
+      expect(gravel, name).toBeGreaterThan(COLS / 2);
+    }
+  });
+
+  it('keeps a railbed either side of the line clear of obstacles, and rock farther off', () => {
     for (const { t, cols: COLS, name } of fields()) {
       for (let col = 0; col < COLS; col++) {
         const row = t.lineRow(col)!;
-        for (const d of [-2, -1, 1, 2]) {
-          const tile = t.tile(col, row + d)!;
-          const where = `${name} col ${col} row ${row + d}: ${tile.mat}`;
+        // Depth from the train's track toward the narrow side: the line is 0..twin.
+        for (const depth of [-2, -1, G.twin + 1, G.twin + 2]) {
+          const tile = t.tile(col, row + depth * t.lineSide);
+          if (!tile) continue;
+          const where = `${name} col ${col} row ${row + depth * t.lineSide}: ${tile.mat}`;
           expect(tile.mat, where).not.toBe('rock');
-          if (Math.abs(d) === 1 && !isLine(tile.mat)) expect(['none', 'soft', 'trivial'], where).toContain(MATERIALS[tile.mat].obstacle[tile.state]);
+          if ((depth === -1 || depth === G.twin + 1) && !isLine(tile.mat)) expect(['none', 'soft', 'trivial'], where).toContain(MATERIALS[tile.mat].obstacle[tile.state]);
         }
       }
     }
@@ -79,7 +108,7 @@ describe('an armored train\'s rail line (SPEC §4.4 Intercept)', () => {
       for (let col = 0; col < COLS; col++) {
         const row = t.lineRow(col)!;
         const where = `${name} col ${col}`;
-        for (const d of [-1, 0, 1]) expect(isWet(t.tile(col, row + d)!.mat), where).toBe(false);
+        for (let k = 0; k <= G.twin; k++) expect(isWet(t.tile(col, row + k * t.lineSide)!.mat), where).toBe(false);
         if (t.tile(col, row)!.mat !== 'railBridge') continue;
         bridged++;
         expect(t.tile(col, row)!.links, where).toBeTruthy();
@@ -90,8 +119,8 @@ describe('an armored train\'s rail line (SPEC §4.4 Intercept)', () => {
         const row = t.lineRow(Math.floor(rv.col))!;
         const mid = Math.floor(riverCenter(rv, row + 0.5, ROWS));
         if (mid < 0 || mid >= COLS) continue;
-        // The span is three rows wide there, the rails down the middle.
-        for (const d of [-1, 0, 1]) expect(t.tile(mid, t.lineRow(mid)! + d)!.mat, `${name} river at ${mid}`).toBe('railBridge');
+        // The span is as wide as the line there, a track down each edge.
+        for (let k = 0; k <= G.twin; k++) expect(t.tile(mid, t.lineRow(mid)! + k * t.lineSide)!.mat, `${name} river at ${mid}`).toBe('railBridge');
       }
     }
   });
@@ -145,9 +174,10 @@ describe('an armored train\'s rail line (SPEC §4.4 Intercept)', () => {
     const t = terrain(3, 'temperate', null, SHORT);
     const st = G.station;
     const row = t.lineRow(st.col + 3)!;
-    expect(t.tile(st.col + 3, row - 1)!.mat).toBe('road');
-    expect(t.tile(st.col + 3, row + 1)!.mat).toBe('road');
-    expect(t.tile(st.col + 3, row + 2 * t.lineSide)!.mat).toBe('building');
+    const far = row + G.twin * t.lineSide;
+    expect(t.tile(st.col + 3, row - t.lineSide)!.mat).toBe('road');
+    expect(t.tile(st.col + 3, far + t.lineSide)!.mat).toBe('road');
+    expect(t.tile(st.col + 3, far + 2 * t.lineSide)!.mat).toBe('building');
     expect(t.tile(st.col + 3, row - 2 * t.lineSide)!.mat).not.toBe('building');
   });
 
@@ -187,6 +217,17 @@ describe('hardened track (SPEC §7.3)', () => {
     expect(t.lineCut(col + 1)).toBe(false);
   });
 
+  it('is cut only on the train\'s own track: the gravel and the second track can be cratered', () => {
+    const t = terrain(3, 'temperate', null, SHORT);
+    const events: SimEvent[] = [];
+    const [col, row] = at(t, 40);
+    for (let k = 1; k <= G.twin; k++) {
+      t.damage(col, row + k * t.lineSide, 500, events);
+      expect(t.tile(col, row + k * t.lineSide)!.mat).toBe('crater');
+    }
+    expect(t.lineCut(col)).toBe(false);
+  });
+
   it('never breaks to enemy fire, or under the train', () => {
     const t = terrain(3, 'temperate', null, SHORT);
     const events: SimEvent[] = [];
@@ -210,17 +251,158 @@ describe('hardened track (SPEC §7.3)', () => {
     let end = col;
     while (t.tile(end + 1, row)!.mat === 'railBridge') end++;
     expect(MATERIALS.railBridge.bearing!.limit).toBe(Infinity);
-    expect(t.bear({ x0: col * TS, y0: (row - 1) * TS, x1: (end + 1) * TS, y1: (row + 2) * TS }, 5000, 1, events)).toBe(0);
+    const far = row + G.twin * t.lineSide;
+    expect(t.bear({ x0: col * TS, y0: Math.min(row, far) * TS, x1: (end + 1) * TS, y1: (Math.max(row, far) + 1) * TS }, 5000, 1, events)).toBe(0);
     // The train on the far end of the span shields all of it.
     t.shield = (c) => c === end;
     t.damage(col, row, 1000, events);
     expect(t.tile(col, row)!.mat).toBe('railBridge');
     t.shield = null;
-    t.damage(col, row + 1, 1000, events);
+    // Shot out on its second track: the whole span goes, the train's track with it.
+    t.damage(col, far, 1000, events);
     for (let c = col; c <= end; c++) {
       expect(t.tile(c, row)!.mat).not.toBe('railBridge');
       expect(t.lineCut(c)).toBe(true);
     }
     expect(events.some((e) => e.type === 'bridgeCollapse')).toBe(true);
+  });
+});
+
+describe('crossovers (SPEC §4.4): the line changes sides of the field through a tunnel under the lane', () => {
+  const X = G.crossover;
+  /** A stretch with a crossover at column `at`, and a river forced well past it. */
+  function crossing(seed: number, biome: BiomeId, at = 90, cols = 192): Terrain {
+    const t = new Terrain(seed, ROWS, { biome, approach: null, line: { rivers: [10], crossovers: [at] } });
+    t.ensure(0, cols * TS - 1);
+    return t;
+  }
+  const FIELDS = BIOME_LIST.flatMap((biome, i) => [3, 20 + i].map((seed) => ({ t: crossing(seed, biome), name: `${seed} ${biome}` })));
+
+  it('runs from one side to the other a row at a time, and the lane crosses it the other way', () => {
+    for (const { t, name } of FIELDS) {
+      const before = t.lineSideAt(40 * TS);
+      expect(t.lineSideAt(140 * TS), name).toBe(-before);
+      const row0 = t.lineRow(90 - X.cols)!;
+      const row1 = t.lineRow(90 + X.cols)!;
+      expect(Math.sign(row1 - row0), name).toBe(-before);
+      expect(Math.abs(row1 - row0), name).toBeGreaterThan(ROWS / 3);
+      for (let col = 1; col < 192; col++) expect(Math.abs(t.lineRow(col)! - t.lineRow(col - 1)!), `${name} col ${col}`).toBeLessThanOrEqual(1);
+      // The lane was on the wide side before and is on the wide side after.
+      const gap = (col: number) => t.laneY((col + 0.5) * TS) / TS - (t.lineRow(col)! + 0.5);
+      expect(Math.sign(gap(60)), name).toBe(-before);
+      expect(Math.sign(gap(120)), name).toBe(before);
+      // And it moves gently: the hull follows it at speed.
+      for (let col = 1; col < 192; col++) expect(Math.abs(t.laneY((col + 0.5) * TS) - t.laneY((col - 0.5) * TS)), `${name} col ${col}`).toBeLessThan(TS);
+    }
+  });
+
+  it('is underground wherever the lane comes near: no track in the open within three rows of the road', () => {
+    for (const { t, name } of FIELDS) {
+      let under = 0;
+      for (let col = 0; col < 192; col++) {
+        const x = (col + 0.5) * TS;
+        if (t.underground(x)) {
+          under++;
+          continue;
+        }
+        for (const track of [0, 1] as const) expect(Math.abs(t.laneY(x) - t.trackY(x, track)), `${name} col ${col} track ${track}`).toBeGreaterThanOrEqual(3 * TS);
+      }
+      // A stretch of it, in the middle of the crossover.
+      expect(under, name).toBeGreaterThanOrEqual(6);
+      expect(under, name).toBeLessThan(X.cols);
+      expect(t.underground(90 * TS), name).toBe(true);
+    }
+  });
+
+  it('has a portal over the line at each end of the tunnel, and the land as it comes between them, the road across it', () => {
+    for (const { t, name } of FIELDS) {
+      const cols: number[] = [];
+      for (let col = 0; col < 192; col++) if (t.underground((col + 0.5) * TS)) cols.push(col);
+      const c0 = cols[0]!;
+      const c1 = cols[cols.length - 1]!;
+      for (const col of cols) {
+        const where = `${name} col ${col}`;
+        const row = t.lineRow(col)!;
+        const portal = Math.min(col - c0, c1 - col) < X.portal;
+        for (let k = 0; k <= G.twin; k++) {
+          const mat = t.tile(col, row + k * t.lineSideAt(col * TS))!.mat;
+          // No rails in the open over a tunnel.
+          expect(isLine(mat), `${where}: ${mat}`).toBe(false);
+          if (portal) expect(mat, where).toBe('tunnel');
+          else expect(mat, where).not.toBe('tunnel');
+        }
+        // The service road is as clear here as anywhere.
+        const lane = t.laneY((col + 0.5) * TS) / TS;
+        for (let r = Math.ceil(lane - G.serviceRoad / 2 - 0.5 + 1e-9); r + 0.5 < lane + G.serviceRoad / 2; r++) {
+          const tile = t.tile(col, r)!;
+          expect(['none', 'soft', 'trivial'], `${where} row ${r}: ${tile.mat}`).toContain(MATERIALS[tile.mat].obstacle[tile.state]);
+        }
+      }
+      // The rails run into the portal's face from the open at both ends.
+      expect(isLine(t.tile(c0 - 1, t.lineRow(c0 - 1)!)!.mat), name).toBe(true);
+      expect(isLine(t.tile(c1 + 1, t.lineRow(c1 + 1)!)!.mat), name).toBe(true);
+      // Nothing breaks a portal, and it's open ground.
+      t.damage(c0, t.lineRow(c0)!, 5000, []);
+      expect(t.tile(c0, t.lineRow(c0)!)!.mat, name).toBe('tunnel');
+      expect(MATERIALS.tunnel.obstacle.intact).toBe('none');
+    }
+  });
+
+  it('keeps rivers clear of it', () => {
+    for (const { t, name } of FIELDS) {
+      for (const rv of t.riversNear(0, 192 * TS)) expect(Math.abs(rv.col - 90), `${name} river at ${rv.col}`).toBeGreaterThan(X.cols / 2 + G.riverFlat);
+    }
+  });
+
+  it('carries the second track on the line\'s narrow side, and under the first in the tunnel', () => {
+    const t = crossing(3, 'temperate');
+    for (let col = 20; col < 170; col++) {
+      const x = (col + 0.5) * TS;
+      const off = (t.trackY(x, 1) - t.trackY(x, 0)) / TS;
+      if (Math.abs(col - 90) > X.cols / 2 + 1) expect(off, `col ${col}`).toBeCloseTo(G.twin * t.lineSideAt(x));
+      // A smooth path the whole way, for what runs on it.
+      expect(Math.abs(t.trackY(x + 1, 1) - t.trackY(x, 1)), `col ${col}`).toBeLessThan(1.5);
+    }
+    // Its own break doesn't cut the armored train's track, and the other way round.
+    const col = 40;
+    const row = t.lineRow(col)!;
+    t.damage(col, row + G.twin * t.lineSideAt(col * TS), 500, []);
+    expect(t.lineCut(col, 1)).toBe(true);
+    expect(t.lineCut(col, 0)).toBe(false);
+    t.damage(col + 2, row, 500, []);
+    expect(t.lineCut(col + 2, 0)).toBe(true);
+    expect(t.lineCut(col + 2, 1)).toBe(false);
+  });
+
+  it('marks every sideways step of its tracks and gravel so they\'re drawn as one curve', () => {
+    const t = crossing(3, 'temperate');
+    let bends = 0;
+    for (let col = 2; col < 180; col++) {
+      const step = t.lineRow(col + 1)! - t.lineRow(col)!;
+      for (let k = 0; k <= G.twin; k++) {
+        const tile = t.tile(col, t.lineRow(col)! + k * t.lineSideAt(col * TS))!;
+        if (tile.mat !== 'track' && tile.mat !== 'ballast') continue;
+        // (Where the line changes sides its rows shift under the tunnel, not in the open.)
+        if (t.lineSideAt(col * TS) !== t.lineSideAt((col + 1) * TS)) continue;
+        const links = tile.links ?? 0;
+        expect(!!(links & BEND.aheadRight), `col ${col}`).toBe(step === 1);
+        expect(!!(links & BEND.aheadLeft), `col ${col}`).toBe(step === -1);
+        const next = t.tile(col + 1, t.lineRow(col + 1)! + k * t.lineSideAt(col * TS))!;
+        if (step !== 0 && (next.mat === 'track' || next.mat === 'ballast')) {
+          // The tile it steps into knows where it came from: the other half of the curve.
+          expect(!!((next.links ?? 0) & (step === 1 ? BEND.behindLeft : BEND.behindRight)), `col ${col}`).toBe(true);
+          bends++;
+        }
+      }
+    }
+    expect(bends).toBeGreaterThan(10);
+  });
+
+  it('is part of every battle with a line: two crossovers, clear of its rivers', () => {
+    const spec = railLine(7000);
+    expect(spec.crossovers).toHaveLength(2);
+    for (const x of spec.crossovers!) {
+      for (const chunk of spec.rivers) expect(Math.abs((chunk + 0.5) * TERRAIN_GEN.chunkCols - x)).toBeGreaterThan(X.cols + G.riverFlat + TERRAIN_GEN.chunkCols);
+    }
   });
 });

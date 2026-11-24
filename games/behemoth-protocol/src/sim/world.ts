@@ -21,11 +21,12 @@ import { stepReactor } from './detonation';
 import { stepEnemies } from './enemies';
 import { stepLastStand, type LastStandState } from './lastStand';
 import { createObjective, planFortress, startObjective, stepObjective, type ObjectiveSpec, type ObjectiveState } from './objective';
-import type { Barrage, Drone, Enemy, Mine, Pool, Projectile, TileFire } from './entities';
+import type { Barrage, Drone, Enemy, Mine, OilSpill, Pool, Projectile, TileFire } from './entities';
 import type { SimEvent } from './events';
 import { centerFrame, createFrame, frameRight, stepFrame, type FrameState } from './frame';
 import { SIM_DT } from './loop';
 import { stepPools } from './pools';
+import { stepSpills } from './spills';
 import { stepFire } from './fire';
 import { stepLightning } from './lightning';
 import { stepProjectiles } from './projectiles';
@@ -35,6 +36,7 @@ import { stepHazards } from './hazards';
 import { DEFAULT_RECIPE, Terrain, type RailLineSpec, type TerrainBlast, type TerrainRecipe } from './terrain';
 import { stepMines, stepTrailer } from './trailer';
 import { stepWeapons } from './weapons';
+import { stepShields } from './shield';
 import { stepTrain, type TrainState } from './train';
 import { paySalvage } from './salvage';
 
@@ -86,6 +88,8 @@ export interface World {
   drones: Drone[];
   /** Plasma burning on the ground (SPEC §6). */
   pools: Pool[];
+  /** Oil slicks leaked by wrecks (`sim/spills.ts`). */
+  spills: OilSpill[];
   /** Burning tiles (SPEC §6 "Fire"), keyed by `fireKey`; and seconds to the next burn tick. */
   fires: Map<number, TileFire>;
   fireTick: number;
@@ -148,10 +152,14 @@ export const START_X = 70;
 /** Enemies this far behind the frame's left edge are dropped. */
 const DESPAWN_BEHIND = 200;
 
-/** An Intercept battle's rail line (SPEC §4.4): it always crosses a river or two, `TRAIN.rivers` of the way to the extraction line. */
+/** A battle's rail line (SPEC §4.4): it always crosses a river or two, `TRAIN.rivers` of the way to the extraction line, and changes sides of the field at `TRAIN.crossovers`. */
 export function railLine(exitX: number = START_X + RUN.battleLength * (MODES.intercept.length ?? 1)): RailLineSpec {
   const chunk = TERRAIN_GEN.tileSize * TERRAIN_GEN.chunkCols;
-  return { rivers: TRAIN.rivers.map((share) => Math.floor((START_X + (exitX - START_X) * share) / chunk)) };
+  const at = (share: number) => START_X + (exitX - START_X) * share;
+  return {
+    rivers: TRAIN.rivers.map((share) => Math.floor(at(share) / chunk)),
+    crossovers: TRAIN.crossovers.map((share) => Math.round(at(share) / TERRAIN_GEN.tileSize)),
+  };
 }
 
 export function createWorld(opts: WorldOptions): World {
@@ -184,6 +192,7 @@ export function createWorld(opts: WorldOptions): World {
     mines: [],
     drones: [],
     pools: [],
+    spills: [],
     fires: new Map(),
     fireTick: 0,
     smoke: new Map(),
@@ -271,12 +280,14 @@ export function stepWorld(w: World, cmd: PlayerCommand): void {
   ensureTerrain(w);
 
   if (!w.dev.frozen) stepTrain(w, dt);
+  if (!w.dev.frozen) stepShields(w, dt);
   if (!b.destroyed && !w.lastStand && w.extractedAt === null) stepEncounter(w, dt);
   if (!b.destroyed && w.extractedAt === null) stepObjective(w, dt);
   if (!w.dev.frozen) stepEnemies(w, dt);
   stepProjectiles(w, dt);
   stepPools(w, dt);
   stepFire(w, dt);
+  stepSpills(w, dt);
   stepLightning(w);
   stepHazards(w, dt);
   stepMines(w, dt);

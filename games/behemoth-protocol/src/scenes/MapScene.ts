@@ -533,7 +533,7 @@ export class MapScene extends Phaser.Scene {
 function objectiveReward(mode: BattleModeId, strength: Strength | null): string {
   const def = MODES[mode];
   const names = def.target ?? ['target', 'targets'];
-  const count = strength && (def.fortress?.guns[strength] ?? def.convoy?.haulers[strength] ?? (def.train ? TRAIN_LAYOUT.sections[strength] : undefined));
+  const count = strength && (def.fortress?.guns[strength] ?? def.convoy?.haulers[strength] ?? (def.train ? (def.train.raids?.count?.[strength] ?? TRAIN_LAYOUT.sections[strength]) : undefined));
   if (!count) return `Up to +${def.bonus}: a share per ${names[0]} destroyed`;
   return `+${Math.round(def.bonus / count)} a ${names[0]} destroyed (${count}), up to +${def.bonus}`;
 }

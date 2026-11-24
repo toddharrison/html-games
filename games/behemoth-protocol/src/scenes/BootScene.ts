@@ -2,7 +2,9 @@ import Phaser from 'phaser';
 import {
   addonsFromUrl,
   depotFromUrl,
+  difficultyFromUrl,
   directiveFromUrl,
+  sectorsFromUrl,
   eventFromUrl,
   gradesFromUrl,
   mapFromUrl,
@@ -28,6 +30,7 @@ import { generatePlaceholderArt } from '../render/placeholder';
 import { generatePixelFont } from '../render/pixelFont';
 import { openDepot } from '../sim/depot';
 import { enterMapNode, newRun, summarizeRun, type RunState } from '../sim/run';
+import { DEFAULT_DIFFICULTY } from '../content/difficulties';
 import { objectiveNode, reachable } from '../sim/sectorMap';
 import { hashSeed } from '../sim/rng';
 import { MAP_EVENT_IDS } from '../content/mapEvents';
@@ -59,7 +62,7 @@ export class BootScene extends Phaser.Scene {
       const weapons = Object.fromEntries(Object.entries(weaponsFromUrl()).filter(([, id]) => id in WEAPONS)) as Record<string, WeaponId>;
       const guns: Record<string, WeaponId> = { sponsonL: 'autocannon', sponsonR: 'rotaryGun', dorsalRing: 'heavyCannon', coax: 'flakCannon', ...weapons };
       const seed = seedFromUrl() ?? randomSeed();
-      let run: RunState = newRun(seed, 'class2', addons, guns, bays, upgradesFromUrl(), directiveFromUrl());
+      let run: RunState = newRun(seed, 'class2', addons, guns, bays, upgradesFromUrl(), directiveFromUrl(), difficultyFromUrl() ?? DEFAULT_DIFFICULTY, sectorsFromUrl());
       const summary = summaryFromUrl();
       if (summary) {
         showSummary(this, previewSummary(run, summary));

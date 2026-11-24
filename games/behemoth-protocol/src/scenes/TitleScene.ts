@@ -2,10 +2,12 @@ import Phaser from 'phaser';
 import { RESOLUTION } from '../config';
 import { FONT_KEY, fontText, wrapText } from '../render/pixelFont';
 import { hex, PAL } from '../render/palette';
+import { BIOME_IDS } from '../content/biomes';
+import { DEFAULT_DIFFICULTY, DIFFICULTIES, DIFFICULTY_IDS, difficultyBrief, type DifficultyId } from '../content/difficulties';
 import { DIRECTIVES, DIRECTIVE_IDS } from '../content/directives';
 import { loadRun } from '../save/runSave';
 import { loadScores } from '../save/scores';
-import { SCORE } from '../content/tuning';
+import { SCORE, SECTOR_MAP } from '../content/tuning';
 import type { ScoreEntry } from '../sim/scores';
 import { newRun, runWhere, type RunState } from '../sim/run';
 import { checkpoint, enterNode, randomSeed, type RunContext } from './flow';
@@ -14,23 +16,42 @@ import { keyLabel } from '../input/gamepad';
 import { padMenu } from '../input/padMenu';
 import { VERSION } from '../version';
 
+/** The 3×5 font's advance per character and per line, in pixels. */
+const CHAR_W = 4;
+const LINE_H = 7;
+
 /**
  * Title screen (SPEC §10): continue the saved run or start a new one. Starting over while a run is
  * saved asks for a second press, since it abandons that run. A new run starts with the run setup:
- * picking its Directive (SPEC §3). Behind it, the attract mode (`DemoBattleScene`) plays short clips
- * of the autopilot fighting in each biome.
+ * picking its Directive, its difficulty, and its length in sectors (SPEC §3). The setup is one list
+ * with a cursor: up and down move through the Directives and then the two settings' rows, left and
+ * right change the setting the cursor is on, and everything can be clicked. Behind it, the attract
+ * mode (`DemoBattleScene`) plays short clips of the autopilot fighting in each biome.
  */
 export class TitleScene extends Phaser.Scene {
   private saved: RunState | null = null;
   private confirmNew = false;
   private prompt!: Phaser.GameObjects.BitmapText;
-  /** The title's own lines, hidden while the Directive picker is up. */
+  /** The title's own lines, hidden while the run setup is up. */
   private titleText: Phaser.GameObjects.GameObject[] = [];
   /** The run setup: the Directive picker (null while it's closed) and its lines. */
   private choosing: number | null = null;
   private picker: Phaser.GameObjects.BitmapText[] = [];
   private orders!: Phaser.GameObjects.BitmapText;
   private pickerHint!: Phaser.GameObjects.BitmapText;
+  /** The row the cursor is on: a Directive's line, then the difficulty's row, then the length's. */
+  private focus = 0;
+  private cursor!: Phaser.GameObjects.BitmapText;
+  /** The run setup's settings: each opens on its default (user's call, Nov 2026: Normal, three sectors). */
+  private difficulty: DifficultyId = DEFAULT_DIFFICULTY;
+  private sectors: number = SECTOR_MAP.sectors;
+  /** The settings' rows: each one's label and options, and the line under them that sums up what's chosen. */
+  private rowLabels: Phaser.GameObjects.BitmapText[] = [];
+  private levels: Phaser.GameObjects.BitmapText[] = [];
+  private lengths: Phaser.GameObjects.BitmapText[] = [];
+  private settingsBrief!: Phaser.GameObjects.BitmapText;
+  /** The menu band's extension under the run setup, where it runs longer than the band. */
+  private pickerBack!: Phaser.GameObjects.Rectangle;
 
   constructor() {
     super('title');
@@ -44,6 +65,12 @@ export class TitleScene extends Phaser.Scene {
     this.confirmNew = false;
     this.choosing = null;
     this.picker = [];
+    this.rowLabels = [];
+    this.levels = [];
+    this.lengths = [];
+    this.focus = 0;
+    this.difficulty = DEFAULT_DIFFICULTY;
+    this.sectors = SECTOR_MAP.sectors;
     const text = (y: number, s: string, color: string, scale = 1) =>
       this.add.bitmapText(cx, y, FONT_KEY, fontText(s)).setTint(hex(color)).setScale(scale).setOrigin(0.5, 0);
 
@@ -64,17 +91,57 @@ export class TitleScene extends Phaser.Scene {
     // The build's version, bottom right (the attract mode's caption takes the bottom left).
     this.add.bitmapText(width - 6, height - 6, FONT_KEY, fontText(VERSION)).setTint(hex(PAL.hudDim)).setOrigin(1, 1).setDepth(10);
 
-    // The run setup (SPEC §10): choose the Directive.
+    // The run setup (SPEC §10): choose the Directive, then the difficulty and the run's length under its orders.
     this.picker.push(text(top, 'Choose your Directive', PAL.glow, 2));
     DIRECTIVE_IDS.forEach((id, i) => {
       const line = text(top + 22 + i * 12, `${i + 1}  ${DIRECTIVES[id].name} - ${DIRECTIVES[id].brief}`, PAL.hudDim);
-      line.setInteractive({ useHandCursor: true }).on('pointerdown', () => (this.choosing === i ? this.startRun() : this.choose(i)));
+      line.setInteractive({ useHandCursor: true }).on('pointerdown', () => (this.choosing === i && this.focus === i ? this.startRun() : this.choose(i)));
       this.picker.push(line);
     });
-    this.orders = text(top + 22 + DIRECTIVE_IDS.length * 12 + 8, '', PAL.hudText);
+    const ordersY = top + 22 + DIRECTIVE_IDS.length * 12 + 8;
+    this.orders = text(ordersY, '', PAL.hudText);
     this.picker.push(this.orders);
-    this.pickerHint = text(Math.round(height * 0.66), '', PAL.hudText);
+    // The settings: two rows clear of the longest orders, their options in the same columns.
+    const ordersLines = Math.max(...DIRECTIVE_IDS.map((id) => wrapText(DIRECTIVES[id].orders, this.ordersWidth()).length));
+    const rowY = ordersY + ordersLines * LINE_H + 7;
+    const gap = 3 * CHAR_W;
+    const rows: { label: string; options: string[]; into: Phaser.GameObjects.BitmapText[]; pick: (i: number) => void }[] = [
+      { label: 'Difficulty', options: DIFFICULTY_IDS.map((id) => DIFFICULTIES[id].name), into: this.levels, pick: (i) => this.setDifficulty(DIFFICULTY_IDS[i]!) },
+      { label: 'Sectors', options: SECTOR_MAP.sectorChoices.map(String), into: this.lengths, pick: (i) => this.setSectors(SECTOR_MAP.sectorChoices[i]!) },
+    ];
+    const labelW = Math.max(...rows.map((r) => r.label.length)) * CHAR_W;
+    const colW = Math.max(...rows.flatMap((r) => r.options.map((o) => o.length))) * CHAR_W;
+    const cols = Math.max(...rows.map((r) => r.options.length));
+    const rowX = cx - Math.round((labelW + cols * (gap + colW)) / 2);
+    rows.forEach((row, r) => {
+      const y = rowY + r * 9;
+      const label = this.add.bitmapText(rowX, y, FONT_KEY, fontText(row.label)).setTint(hex(PAL.hudDim));
+      this.rowLabels.push(label);
+      this.picker.push(label);
+      row.options.forEach((option, i) => {
+        const t = this.add.bitmapText(rowX + labelW + gap + i * (colW + gap), y, FONT_KEY, fontText(option)).setTint(hex(PAL.hudDim));
+        // The whole column is the target (a lone digit is four pixels wide).
+        t.setInteractive({ hitArea: new Phaser.Geom.Rectangle(-gap / 2, -2, colW + gap, 9), hitAreaCallback: Phaser.Geom.Rectangle.Contains, useHandCursor: true });
+        t.on('pointerdown', () => {
+          row.pick(i);
+          this.setFocus(DIRECTIVE_IDS.length + r);
+        });
+        row.into.push(t);
+        this.picker.push(t);
+      });
+    });
+    this.settingsBrief = text(rowY + rows.length * 9 + 2, '', PAL.hudDim);
+    this.picker.push(this.settingsBrief);
+    this.cursor = this.add.bitmapText(0, 0, FONT_KEY, fontText('>')).setTint(hex(PAL.glow));
+    this.picker.push(this.cursor);
+    const hintY = Math.max(Math.round(height * 0.66), rowY + rows.length * 9 + 13);
+    this.pickerHint = text(hintY, '', PAL.hudText);
     this.picker.push(this.pickerHint);
+    // On a short screen the setup runs past the menu's band: more of it, behind the last lines.
+    const bandEnd = Math.round(height * 0.25) + Math.round(height * 0.47);
+    this.pickerBack = this.add.rectangle(0, bandEnd, width, Math.max(0, hintY + 12 - bandEnd), hex(PAL.hudBg), 0.5).setOrigin(0, 0).setDepth(-1).setVisible(false);
+    this.setDifficulty(this.difficulty);
+    this.setSectors(this.sectors);
     for (const p of this.picker) p.setVisible(false);
     this.refresh();
 
@@ -98,13 +165,29 @@ export class TitleScene extends Phaser.Scene {
       this.refresh();
     };
     kb.on('keydown-ESC', back);
-    const pick = (d: number) => this.choosing !== null && this.choose((this.choosing + d + DIRECTIVE_IDS.length) % DIRECTIVE_IDS.length);
-    for (const k of ['UP', 'W', 'LEFT', 'A']) kb.on(`keydown-${k}`, () => pick(-1));
-    for (const k of ['DOWN', 'S', 'RIGHT', 'D']) kb.on(`keydown-${k}`, () => pick(1));
+    // Up and down move the cursor: through the Directives (choosing each as it lands), then the settings' rows.
+    const rowCount = DIRECTIVE_IDS.length + 2;
+    const move = (d: number) => {
+      if (this.choosing === null) return;
+      const to = (this.focus + d + rowCount) % rowCount;
+      if (to < DIRECTIVE_IDS.length) this.choose(to);
+      else this.setFocus(to);
+    };
+    // Left and right change the setting the cursor is on.
+    const step = <T,>(list: readonly T[], at: T, d: number): T => list[(list.indexOf(at) + d + list.length) % list.length]!;
+    const change = (d: number) => {
+      if (this.choosing === null) return;
+      if (this.focus === DIRECTIVE_IDS.length) this.setDifficulty(step(DIFFICULTY_IDS, this.difficulty, d));
+      else if (this.focus === DIRECTIVE_IDS.length + 1) this.setSectors(step<number>(SECTOR_MAP.sectorChoices, this.sectors, d));
+    };
+    for (const k of ['UP', 'W']) kb.on(`keydown-${k}`, () => move(-1));
+    for (const k of ['DOWN', 'S']) kb.on(`keydown-${k}`, () => move(1));
+    for (const k of ['LEFT', 'A']) kb.on(`keydown-${k}`, () => change(-1));
+    for (const k of ['RIGHT', 'D']) kb.on(`keydown-${k}`, () => change(1));
     // The pad: A (or Start) as Enter, B as Esc, Y as N, the D-pad or left stick to choose.
     padMenu(
       this,
-      { a: go, start: go, b: back, y: fresh, up: () => pick(-1), left: () => pick(-1), down: () => pick(1), right: () => pick(1) },
+      { a: go, start: go, b: back, y: fresh, up: () => move(-1), down: () => move(1), left: () => change(-1), right: () => change(1) },
       () => this.refresh(),
     );
     DIRECTIVE_IDS.forEach((_, i) => kb.on(`keydown-${['ONE', 'TWO', 'THREE', 'FOUR', 'FIVE'][i]}`, () => this.choosing !== null && this.choose(i)));
@@ -119,19 +202,24 @@ export class TitleScene extends Phaser.Scene {
     const { width, height } = RESOLUTION;
     const result: Record<ScoreEntry['outcome'], string> = { won: 'Complete', failed: 'Failed', destroyed: 'Destroyed' };
     const row = (cells: string[]) =>
-      `${cells[0]!.padStart(2)}  ${cells[1]!.padEnd(14)} ${cells[2]!.padStart(7)}  ${cells[3]!.padEnd(9)}  ${cells[4]!.padEnd(10)}  ${cells[5]}`;
+      `${cells[0]!.padStart(2)}  ${cells[1]!.padEnd(14)} ${cells[2]!.padStart(7)}  ${cells[3]!.padEnd(6)}  ${cells[4]!.padEnd(9)}  ${cells[5]!.padEnd(10)}  ${cells[6]}`;
     const lines = [
-      row(['#', 'Behemoth', 'Score', 'Result', 'Reached', 'Date']),
-      ...scores.map((e, i) => [String(i + 1), e.callsign, e.score.toLocaleString('en-US'), result[e.outcome], `Sector ${e.reached}/${e.sectors}`, e.date]).map(row),
+      row(['#', 'Behemoth', 'Score', 'Level', 'Result', 'Reached', 'Date']),
+      ...scores
+        .map((e, i) => [String(i + 1), e.callsign, e.score.toLocaleString('en-US'), DIFFICULTIES[e.difficulty].name, result[e.outcome], `Sector ${e.reached}/${e.sectors}`, e.date])
+        .map(row),
     ];
     const top = Math.round(height * 0.74);
     const rowH = 8;
-    this.add.rectangle(0, top - 4, width, (lines.length + 1) * rowH + 6, hex(PAL.hudBg), 0.6).setOrigin(0, 0);
-    this.add.bitmapText(width / 2, top, FONT_KEY, fontText('Top runs')).setTint(hex(PAL.glow)).setOrigin(0.5, 0);
+    // Part of the title: it makes way for the run setup, which runs down into its space.
+    this.titleText.push(
+      this.add.rectangle(0, top - 4, width, (lines.length + 1) * rowH + 6, hex(PAL.hudBg), 0.6).setOrigin(0, 0),
+      this.add.bitmapText(width / 2, top, FONT_KEY, fontText('Top runs')).setTint(hex(PAL.glow)).setOrigin(0.5, 0),
+    );
     lines.forEach((line, i) => {
       // The header dim, the best run bright.
       const color = i === 0 ? PAL.hudDim : i === 1 ? PAL.amber : PAL.hudText;
-      this.add.bitmapText(width / 2, top + (i + 1) * rowH + 2, FONT_KEY, fontText(line)).setTint(hex(color)).setOrigin(0.5, 0);
+      this.titleText.push(this.add.bitmapText(width / 2, top + (i + 1) * rowH + 2, FONT_KEY, fontText(line)).setTint(hex(color)).setOrigin(0.5, 0));
     });
   }
 
@@ -145,26 +233,62 @@ export class TitleScene extends Phaser.Scene {
     this.picker.forEach((line, k) => {
       if (k >= 1 && k <= DIRECTIVE_IDS.length) line.setTint(hex(k - 1 === i ? PAL.glow : PAL.hudDim));
     });
-    const width = RESOLUTION.width;
-    this.orders.setText(fontText(wrapText(DIRECTIVES[DIRECTIVE_IDS[i]!].orders, Math.min(72, Math.floor((width - 48) / 4))).join('\n'))).setCenterAlign();
+    this.orders.setText(fontText(wrapText(DIRECTIVES[DIRECTIVE_IDS[i]!].orders, this.ordersWidth()).join('\n'))).setCenterAlign();
+    this.setFocus(i);
     this.refresh();
+  }
+
+  /** Puts the cursor on a row: beside a Directive's line, or a setting's label (which lights up). */
+  private setFocus(row: number): void {
+    this.focus = row;
+    const setting = row - DIRECTIVE_IDS.length;
+    this.rowLabels.forEach((label, r) => label.setTint(hex(r === setting ? PAL.hudText : PAL.hudDim)));
+    const line = setting >= 0 ? this.rowLabels[setting]! : this.picker[1 + row]!;
+    // A setting's label is drawn from its left edge; a Directive's line is centered.
+    const left = setting >= 0 ? line.x : line.x - line.width / 2;
+    this.cursor.setPosition(Math.round(left) - 2 * CHAR_W, line.y);
+  }
+
+  /** Characters across the orders' lines. */
+  private ordersWidth(): number {
+    return Math.min(72, Math.floor((RESOLUTION.width - 48) / CHAR_W));
+  }
+
+  private setDifficulty(id: DifficultyId): void {
+    this.difficulty = id;
+    this.levels.forEach((t, i) => t.setTint(hex(DIFFICULTY_IDS[i] === id ? PAL.glow : PAL.hudDim)));
+    this.describeSettings();
+  }
+
+  private setSectors(n: number): void {
+    this.sectors = n;
+    this.lengths.forEach((t, i) => t.setTint(hex(SECTOR_MAP.sectorChoices[i] === n ? PAL.glow : PAL.hudDim)));
+    this.describeSettings();
+  }
+
+  /** The line under the settings: the difficulty's rules, and what the length means. */
+  private describeSettings(): void {
+    const n = this.sectors;
+    const length = n === 1 ? '1 sector: a short run' : n >= BIOME_IDS.length ? `${n} sectors: every biome, a long run` : `${n} sectors: the standard run`;
+    this.settingsBrief.setText(fontText(`${DIFFICULTIES[this.difficulty].name}: ${difficultyBrief(this.difficulty)}.  ${length}.`));
   }
 
   private refresh(): void {
     const picking = this.choosing !== null;
     for (const o of this.titleText) (o as unknown as Phaser.GameObjects.Components.Visible).setVisible(!picking);
     for (const p of this.picker) p.setVisible(picking);
+    this.pickerBack.setVisible(picking);
     this.prompt.setVisible(!picking);
     const s = this.saved;
     let lines: string[];
     const enter = keyLabel('Enter', 'A');
     const n = keyLabel('N', 'Y');
     const esc = keyLabel('Esc', 'B');
-    this.pickerHint.setText(fontText(`${enter} - roll out    ${esc} - back`));
+    this.pickerHint.setText(fontText(`${enter} - roll out    Up/Down - select    Left/Right - change    ${esc} - back`));
     if (!s) lines = [`${enter} - new run`];
     else if (this.confirmNew) lines = ['Abandon the saved run?', '', `${n} - yes, start over`, `${esc} - keep it`];
     else {
-      lines = [`${enter} - continue ${s.callsign} (${runWhere(s)}, ${s.salvage} salvage)`, `${n} - new run`];
+      lines = [`${enter} - continue ${s.callsign} (${runWhere(s)}, ${DIFFICULTIES[s.difficulty].name}, ${s.salvage} salvage)`, `${n} - new run`];
     }
     this.prompt.setText(fontText(lines.join('\n'))).setCenterAlign();
   }
@@ -178,7 +302,7 @@ export class TitleScene extends Phaser.Scene {
   private startRun(): void {
     const seed = randomSeed();
     const directive = DIRECTIVE_IDS[this.choosing ?? 0]!;
-    const ctx: RunContext = { run: newRun(seed, 'class2', [], {}, [], undefined, directive), persist: true };
+    const ctx: RunContext = { run: newRun(seed, 'class2', [], {}, [], undefined, directive, this.difficulty, this.sectors), persist: true };
     // Saved straight away, so the run exists from its first battle (and a stale save is replaced).
     checkpoint(ctx);
     enterNode(this, ctx);

@@ -3,6 +3,7 @@ import { ADDONS } from '../content/addons';
 import { APPROACHES } from '../content/approaches';
 import { BIOMES } from '../content/biomes';
 import { ARMOR_ARCS, CHASSIS } from '../content/chassis';
+import { DIFFICULTIES } from '../content/difficulties';
 import { DIRECTIVES, type DirectiveId } from '../content/directives';
 import { CONDITIONS } from '../content/conditions';
 import { DOCTRINES } from '../content/doctrines';
@@ -32,9 +33,9 @@ export const RUN_SAVE_KEY = 'behemoth-protocol/run';
  * 12: conditions on battle nodes, event nodes (and `next: 'event'`), and the last event's result.
  * 13: one Plate mod for both front armor halves (`armor.front`), and the treads' Load mod (no
  * migration needed for that: an older save has none). 14: the unit kinds seen so far in the run.
- * Older saves are migrated on load.
+ * 15: the run's difficulty. Older saves are migrated on load.
  */
-export const RUN_SAVE_VERSION = 14;
+export const RUN_SAVE_VERSION = 15;
 
 /** The slice of the Storage API the save needs, so tests can pass a plain map. */
 export interface StorageLike {
@@ -63,7 +64,7 @@ export function parseRun(text: string): RunState | null {
   }
   if (!isObject(file)) return null;
   const v = file['version'];
-  const migrations = [fromV1, fromV2, fromV3, fromV4, fromV5, fromV6, fromV7, fromV8, fromV9, fromV10, fromV11, fromV12, fromV13];
+  const migrations = [fromV1, fromV2, fromV3, fromV4, fromV5, fromV6, fromV7, fromV8, fromV9, fromV10, fromV11, fromV12, fromV13, fromV14];
   if (typeof v !== 'number' || !Number.isInteger(v) || v < 1 || v > RUN_SAVE_VERSION) return null;
   const run = migrations.slice(v - 1).reduce((r, migrate) => migrate(r), file['run']);
   return isRun(run) ? run : null;
@@ -238,6 +239,12 @@ export function fromV13(run: unknown): unknown {
   return { ...run, sighted: [] };
 }
 
+/** Version 14 predates difficulties: the run was being played at what is now Hard. */
+export function fromV14(run: unknown): unknown {
+  if (!isObject(run) || typeof run['difficulty'] === 'string') return run;
+  return { ...run, difficulty: 'hard' };
+}
+
 export function loadRun(storage: StorageLike | null = browserStorage()): RunState | null {
   const text = safe(() => storage?.getItem(RUN_SAVE_KEY) ?? null, null);
   return text === null ? null : parseRun(text);
@@ -281,6 +288,7 @@ function isRun(v: unknown): v is RunState {
   if (!isObject(v)) return false;
   if (typeof v['callsign'] !== 'string') return false;
   if (typeof v['directive'] !== 'string' || !(v['directive'] in DIRECTIVES)) return false;
+  if (typeof v['difficulty'] !== 'string' || !(v['difficulty'] in DIFFICULTIES)) return false;
   if (!Array.isArray(v['objectives']) || !v['objectives'].every((t) => typeof t === 'boolean')) return false;
   if (!isNum(v['earned']) || !isNum(v['time'])) return false;
   if (!isNum(v['seed']) || !isNum(v['battle']) || !isNum(v['salvage']) || !isNum(v['kills']) || !isNum(v['cache'])) return false;

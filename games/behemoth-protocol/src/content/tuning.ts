@@ -992,7 +992,15 @@ export const DIRECTIVE = {
  * depots, a depot layer, then the sector's objective battle. Provisional numbers (M3).
  */
 export const SECTOR_MAP = {
+  /** Sectors in a run, unless the run setup says otherwise. */
   sectors: 3,
+  /**
+   * Run lengths the run setup offers (user's call, Nov 2026): one sector, the standard three, or
+   * five, which is every biome once. Threat keeps climbing by `threatPerLayer`, so a longer run
+   * ends against a stronger enemy (battles of threat 7 to 10 and an objective of 12 in sector 1, 12 to 14
+   * and 16 in sector 3, 15 to 18 and 20 in sector 5).
+   */
+  sectorChoices: [1, 3, 5] as const,
   /** Nodes on any route through a sector, entry and objective included (inclusive range). */
   layers: [6, 8] as const,
   /** Lanes the branching layers spread across. */

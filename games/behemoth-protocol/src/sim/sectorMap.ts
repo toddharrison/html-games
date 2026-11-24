@@ -87,16 +87,20 @@ export interface MapPos {
   node: number;
 }
 
-/** @param directive sets every objective battle's mode; null draws it like any other battle's. */
-export function generateMap(seed: number, directive: DirectiveId | null = null): SectorMap {
-  const biomes = sectorBiomes(seed);
+/**
+ * @param directive sets every objective battle's mode; null draws it like any other battle's.
+ * @param sectors the run's length (default `SECTOR_MAP.sectors`). A shorter run's map is the start
+ * of a longer one's on the same seed: its sectors are drawn the same, whatever comes after them.
+ */
+export function generateMap(seed: number, directive: DirectiveId | null = null, sectors: number = SECTOR_MAP.sectors): SectorMap {
+  const biomes = sectorBiomes(seed, sectors);
   let offset = 0;
-  const sectors = biomes.map((biome, s) => {
+  const built = biomes.map((biome, s) => {
     const sector = generateSector(seed, s, biome, offset);
     offset += sector.layers;
     return sector;
   });
-  const map = { sectors };
+  const map = { sectors: built };
   placeEvents(map, seed);
   if (directive) setObjectiveModes(map, directive);
   return map;
@@ -140,11 +144,11 @@ export function objectiveNode(map: SectorMap, sector: number): MapNode | undefin
   return s?.nodes.find((n) => n.layer === s.layers - 1);
 }
 
-/** A biome per sector, no repeats; each biome only from its `earliestSector`. */
-function sectorBiomes(seed: number): BiomeId[] {
+/** A biome per sector, no repeats until every biome has come up; each biome only from its `earliestSector`. */
+function sectorBiomes(seed: number, count: number): BiomeId[] {
   const rng = new Rng(hashSeed(seed, 0xb10e));
   const out: BiomeId[] = [];
-  for (let s = 0; s < SECTOR_MAP.sectors; s++) {
+  for (let s = 0; s < count; s++) {
     if (s === 0 && SECTOR_MAP.firstBiome) {
       out.push(SECTOR_MAP.firstBiome);
       continue;

@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { RESOLUTION } from '../config';
 import { BIOMES } from '../content/biomes';
 import { CALLSIGNS } from '../content/callsigns';
+import { DIFFICULTIES } from '../content/difficulties';
 import { DIRECTIVES } from '../content/directives';
 import { ENEMIES } from '../content/enemies';
 import { FONT_KEY, fontText } from '../render/pixelFont';
@@ -90,6 +91,7 @@ export class SummaryScene extends Phaser.Scene {
     row('Kills', String(s.kills));
     row('Salvage earned', String(s.earned), PAL.amber);
     row('Time in battle', clock(s.time));
+    row('Difficulty', DIFFICULTIES[s.difficulty].name);
     row('Seed', String(s.seed), PAL.hudDim);
     y += 4;
     // The score list (on the title): this run's score and its place, if it made it.

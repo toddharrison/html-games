@@ -20,7 +20,7 @@ import { lookFromUrl } from '../config';
 import { LOOKS, lookFor } from '../render/looks';
 import { applyHit, component, damageComponent, damageTreads, igniteReactor } from '../sim/behemoth';
 import { devExtract, devKillAll, devRearm, devRepair, devSpawn, devWave, setInvulnerable, type DevSide } from '../sim/dev';
-import { paySalvage } from '../sim/salvage';
+import { bankSalvage } from '../sim/salvage';
 import type { World } from '../sim/world';
 import type { BattleDev, TopDownBattleScene } from '../scenes/TopDownBattleScene';
 import { TweakStore, leaves, type TweakValue } from './tweaks';
@@ -377,7 +377,7 @@ export class DevConsole {
             'A hit on that armor arc: what gets through strikes a component, like enemy fire',
           ),
         ),
-        row('Salvage', salvage, button('Add', this.act((_, w) => paySalvage(w, w.behemoth.x, w.behemoth.y, Number(salvage.value), 'unit')))),
+        row('Salvage', salvage, button('Add', this.act((_, w) => bankSalvage(w, w.behemoth.x, w.behemoth.y, Number(salvage.value), 'unit')))),
       ),
     );
   }

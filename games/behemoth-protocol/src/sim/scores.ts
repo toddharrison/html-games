@@ -1,3 +1,4 @@
+import type { DifficultyId } from '../content/difficulties';
 import type { DirectiveId } from '../content/directives';
 import { SCORE } from '../content/tuning';
 import type { RunOutcome, RunSummary } from './run';
@@ -17,6 +18,8 @@ export interface ScoreEntry {
   reached: number;
   sectors: number;
   directive: DirectiveId;
+  /** The difficulty it was played at (an entry saved before difficulties reads as Hard). */
+  difficulty: DifficultyId;
   seed: number;
   /** When it ended (an ISO date, YYYY-MM-DD). */
   date: string;
@@ -30,7 +33,7 @@ export function runScore(s: RunSummary): number {
 }
 
 export function scoreEntry(s: RunSummary, date: string): ScoreEntry {
-  return { callsign: s.callsign, score: runScore(s), outcome: s.outcome, reached: s.reached, sectors: s.sectors, directive: s.directive, seed: s.seed, date };
+  return { callsign: s.callsign, score: runScore(s), outcome: s.outcome, reached: s.reached, sectors: s.sectors, directive: s.directive, difficulty: s.difficulty, seed: s.seed, date };
 }
 
 /**

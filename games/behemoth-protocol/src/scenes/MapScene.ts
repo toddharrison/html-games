@@ -9,6 +9,7 @@ import { DOCTRINES } from '../content/doctrines';
 import { DEPOT, DIRECTIVE } from '../content/tuning';
 import { WEAPONS } from '../content/weapons';
 import { CALLSIGNS } from '../content/callsigns';
+import { DIFFICULTIES } from '../content/difficulties';
 import { DIRECTIVES } from '../content/directives';
 import { integrityColor } from '../render/cutaway';
 import { makeMapBackground, MAP_ICON, mapIconSheet, type MapIcon } from '../render/mapArt';
@@ -17,7 +18,8 @@ import { hex, PAL } from '../render/palette';
 import { openDepot } from '../sim/depot';
 import { objectivePercent } from '../sim/objective';
 import { hashSeed } from '../sim/rng';
-import { directiveAsk, enterMapNode, restoreBehemoth, type RunState } from '../sim/run';
+import { directiveAsk, enterMapNode, restoreBehemoth, salvageGain, salvageScale, type RunState } from '../sim/run';
+import { salvageWorth } from '../sim/salvage';
 import { lastEventOutcome } from '../sim/mapEvents';
 import { CONDITIONS, conditionName } from '../content/conditions';
 import { MAP_EVENTS } from '../content/mapEvents';
@@ -365,6 +367,7 @@ export class MapScene extends Phaser.Scene {
     // The run's orders, and each sector's objective so far: + taken, x missed, - ahead.
     const def = DIRECTIVES[run.directive];
     row('Directive', def.name, PAL.glow);
+    row('Difficulty', DIFFICULTIES[run.difficulty].name);
     const marks = map.sectors.map((_, i) => (run.objectives[i] === true ? '+' : run.objectives[i] === false ? 'x' : '-')).join(' ');
     row('Objectives', marks, run.objectives.includes(false) ? PAL.amber : PAL.hudText);
     y += 4;
@@ -520,22 +523,23 @@ export class MapScene extends Phaser.Scene {
     const biome = this.run.map.sectors[this.sector]!.biome;
     field('Conditions', intel.condition ? conditionName(intel.condition, biome) : 'Clear', intel.condition ? PAL.amber : PAL.hudText);
     if (intel.condition) t(CONDITIONS[intel.condition].intel, PAL.hudDim, 4);
-    field('Reward', fog('reward') ? '?' : `+${intel.salvage} salvage on extraction`, PAL.amber);
-    if (!fog('reward') && mode.bonus > 0) t(objectiveReward(intel.mode, fog('strength') ? null : intel.strength), PAL.amber, 4);
+    field('Reward', fog('reward') ? '?' : `+${salvageGain(this.run, intel.salvage)} salvage on extraction`, PAL.amber);
+    if (!fog('reward') && mode.bonus > 0) t(objectiveReward(intel.mode, fog('strength') ? null : intel.strength, salvageScale(this.run)), PAL.amber, 4);
     if (!fog('reward') && intel.cache) t('Supply cache: +1 depot action', PAL.glow, 4);
   }
 }
 
 /**
  * A battle mode's reward line (SPEC §4.4): a share of the bonus per target destroyed. With the
- * strength known, the target count (and so each share) is too.
+ * strength known, the target count (and so each share) is too. `scale`: the run's difficulty bonus on salvage.
  */
-function objectiveReward(mode: BattleModeId, strength: Strength | null): string {
+function objectiveReward(mode: BattleModeId, strength: Strength | null, scale: number): string {
   const def = MODES[mode];
   const names = def.target ?? ['target', 'targets'];
   const count = strength && (def.fortress?.guns[strength] ?? def.convoy?.haulers[strength] ?? (def.train ? (def.train.raids?.count?.[strength] ?? TRAIN_LAYOUT.sections[strength]) : undefined));
-  if (!count) return `Up to +${def.bonus}: a share per ${names[0]} destroyed`;
-  return `+${Math.round(def.bonus / count)} a ${names[0]} destroyed (${count}), up to +${def.bonus}`;
+  const bonus = salvageWorth(def.bonus, scale);
+  if (!count) return `Up to +${bonus}: a share per ${names[0]} destroyed`;
+  return `+${Math.round(bonus / count)} a ${names[0]} destroyed (${count}), up to +${bonus}`;
 }
 
 /** The key hints under the map, for the keyboard and mouse or the pad. */

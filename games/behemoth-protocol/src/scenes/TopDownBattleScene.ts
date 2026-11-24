@@ -53,6 +53,7 @@ import {
   requiredTargets,
   summarizeRun,
   type RunSummary,
+  salvageScale,
 } from '../sim/run';
 import { DIRECTIVES } from '../content/directives';
 import { ENEMIES, type EnemyId } from '../content/enemies';
@@ -211,6 +212,7 @@ export class TopDownBattleScene extends Phaser.Scene {
         objective: { ...battleObjective(run, modeFromUrl(), doctrineFromUrl()), ...(trainFromUrl() ? { train: trainFromUrl()! } : {}) },
         condition: battleCondition(run, conditionFromUrl()),
         sighted: run.sighted,
+        salvageScale: salvageScale(run),
       });
     }
     this.stepper = new FixedStepper();
@@ -629,7 +631,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     }
     // The objective is a share (SPEC §4.4): each target down raises the percentage and pays its part.
     const pct = objectivePercent(o);
-    const paid = objectiveBonus(o);
+    const paid = objectiveBonus(o, this.world.salvageScale);
     if (o.mode === 'intercept') {
       const left = o.total - o.destroyed - o.lost;
       if (what === 'lost') return left > 0 ? `An engine got through\n${left} ${left === 1 ? names[0] : names[1]} left on the field` : `The train got through\n${o.destroyed} of ${o.total} engines destroyed: +${paid}`;
@@ -1176,7 +1178,7 @@ export class TopDownBattleScene extends Phaser.Scene {
           this.fx.impact(ev.x, ev.y);
           break;
         case 'trainStopped':
-          this.objectiveShown = { at: w.time, text: `${ev.derailed ? 'Train derailed' : 'Train stopped'} - objective taken\n+${objectiveBonus(w.objective)} salvage - make for the extraction line` };
+          this.objectiveShown = { at: w.time, text: `${ev.derailed ? 'Train derailed' : 'Train stopped'} - objective taken\n+${objectiveBonus(w.objective, w.salvageScale)} salvage - make for the extraction line` };
           break;
         case 'convoyAlarm':
           this.objectiveShown = { at: w.time, text: MODES.chase.convoy?.alarm.call ?? '' };

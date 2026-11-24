@@ -68,12 +68,14 @@ Fixed 60 Hz stepper, a world/entity store, and the seeded RNG (`sim/rng.ts`), al
 
 ### Practice URL parameters
 `M0`–`M2` · various · `playtest: n/a`
-Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`, `trailer`, `weapons`, `shells`, `cookoff`, `grades`, `mods`, `depot`, `biome`, `approach`, `map`, `mode`, `train`, `directive`, `objective`, `summary`, `condition`, `event`, `doctrine`, `mix`) skips the title screen and never saves.
+Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`, `trailer`, `weapons`, `shells`, `cookoff`, `grades`, `mods`, `depot`, `biome`, `approach`, `map`, `mode`, `train`, `directive`, `difficulty`, `sectors`, `objective`, `summary`, `condition`, `event`, `doctrine`, `mix`) skips the title screen and never saves.
 
 | Param | Effect |
 |---|---|
 | `?seed=N` | Practice run on seed N, straight into its opening battle (which uses the run seed); winning goes to the map |
 | `?immobilize=N` | Treads destroyed N s into the battle (fires once, so a drone revive sticks) |
+| `?difficulty=easy\|normal\|hard` | The run's difficulty (§9 "Difficulty"); a practice run without it is Normal |
+| `?sectors=N` | The run's length in sectors, 1 to 5 (§9 "Run length and the run setup"); `?map=5&sectors=5` opens the last sector's map |
 | `?exit=N` | Extraction line N meters out; keeps the title and the save (for a quick trip to the depot) |
 | `?addons=all` or `?addons=a,b` | Start with add-ons (sponsons get an autocannon and a rotary gun; `dorsalRing` a heavy cannon; `coax` a flak cannon) |
 | `?trailer=missilePod,ammoBunker` | Start with a trailer; `-` = empty bay |
@@ -1006,6 +1008,72 @@ Three Directives, picked on the title when starting a run, each setting every se
 - **Gotcha:** par uses the battle's actual length (`w.exitX - START_X`), so a practice `?exit=` shortens it too.
 - **Limits:** no profile save yet, so a Directive complete unlocks nothing (M5, §9); the picker offers all three every run (§16 Q26); no chassis choice in the run setup (one chassis). Decapitation: the command post has no garrison or reaction when the guns fall, and its pad can sit right behind a bunker (plowing to it means plowing a bunker too).
 
+### Difficulty
+`M3` · `uncommitted` · `playtest: pending` · SPEC §3 "Difficulty", §10, §15 "Difficulty", §16 Q40
+User request (Nov 24, 2026): "add difficulties. when reducing from hard (current) to normal, give a configurable bonus to salvage (I'm thinking 15% more). Easy should also reduce the challenge buy points (maybe by 15%). We'll playtest these values", then "allow difficulty selection in start screen where selecting the directive". Three levels, picked in the run setup and fixed for the run. **Hard is the game as it was** (every scale 1).
+- **The numbers** (`src/content/difficulties.ts`, `DIFFICULTIES`): `easy` salvage 1.4, threat 0.75; `normal` salvage 1.25, threat 0.85; `hard` 1 and 1 (first built at the user's 1.15 and 0.85 for Easy and 1.15 and 1 for Normal; retuned the same day from the playtests below, at the user's request: "run a series of playtests to get better starting numbers ... feel free to tune them as makes sense"). `DEFAULT_DIFFICULTY` (`normal`) is what the run setup opens on. `difficultyBrief(id)` writes the picker's line from the numbers ("defenders -15%, salvage +25%"), so retuning needs no text change.
+- **Salvage** (everything earned, nothing spent):
+  - In battle: `World.salvageScale` (from `WorldOptions.salvageScale`, default 1; the scene passes `salvageScale(run)`). `paySalvage` (sim/salvage.ts) multiplies each payment and **carries the fraction** in `World.salvageCarry`, so a battle's total is its Hard total × the scale, rounded down (a 3-salvage kill pays 3 or 4). Kills, structures, and train cars go through it.
+  - Objective shares: `objectiveBonus(o, scale)` scales the whole bonus and the shares are banked exactly with `bankSalvage`, so the banners (`+N salvage`), the battle report, and the map's "+N a gun destroyed, up to +N" all show what is paid. The dev console's *Add salvage* uses `bankSalvage` too (it adds what's typed).
+  - Outside battle: `salvageGain(run, amount)` (sim/run.ts; `salvageWorth` rounds to the nearest, halves up) for the extraction bonus in `completeBattle` and the map's Reward line, and for an event's find (`applyEffect`; `effectLines(effects, scale)` for its result lines). An event's cost or loss, depot prices, and resale are not scaled.
+- **Threat**: `battleThreat(run)` is the node's threat × the difficulty's, and `battleEnemy` sizes the battle's `Forces` with it, so posts, alert waves, the wave cap (`w.threat × ENCOUNTER.alert.cap`), and an armored train's armed-car budget (`buildTrain` reads `w.threat`) all follow. The node's own `BattleIntel.threat` is untouched: events still shift it by whole points, and **the same seed draws the same map at every difficulty**. Threat is fractional below Hard (the dev console and the debug line show e.g. 5.95). Not scaled: the last stand's waves (`LAST_STAND.budget`), and the counts a mode sets by strength (fortress guns, haulers, raiders, train sections).
+- **Run state:** `RunState.difficulty`, the eighth argument of `newRun` (**default `hard`**, so tests, the bench, and a bare run are the unscaled game); `RunSummary.difficulty`; run save v15; `ScoreEntry.difficulty`.
+- **UI:** the title's run setup (`TitleScene`; see "Run length and the run setup" below for the screen): the row `Difficulty  Easy  Normal  Hard`, the chosen one in the glow color, and its rules in the line under the settings. **It opens on Normal every time** (user's call, Nov 24, 2026; the first build remembered the last pick in `save/prefs.ts`, which is gone). Also shown: the title's continue line, the map's left panel (a `Difficulty` row), the run summary's totals, and the score list's `Level` column.
+- Practice: `?difficulty=easy|normal|hard` (a practice run of its own; without it a practice run is Normal).
+- Tests: `tests/sim/difficulty.test.ts` (the table and its briefs, one map for every difficulty, threat and post sizes, the extraction bonus, event finds and costs, kills, the carried fractions, objective shares, the save and its v14 migration, scores).
+- **Playtests behind the numbers** (Nov 24, 2026; scratch drivers as in §1 "Sim bot", not checked in; about 7,000 whole runs and 4,000 single battles; a 21-row field, `demoCommand` driving):
+  - **Single battles** (every battle node of the maps of seeds 1–18, 376 battles a level, each fought by a fresh stock Class II; the repair bill is what a depot would charge to put everything right):
+
+    | Threat × | Extracted | Objective battles | Kills | Battle + extraction salvage (Hard rates) | Repair bill | Treads left | Armor left |
+    |---|---|---|---|---|---|---|---|
+    | 1 (Hard) | 57% | 24% | 39.1 | 306 + 40 | 255 | 43% | 55% |
+    | 0.85 (Normal) | 62% | 33% | 35.4 | 276 + 42 | 233 | 45% | 61% |
+    | 0.75 (Easy) | 68% | 35% | 32.6 | 272 + 42 | 238 | 46% | 61% |
+    | 0.5 | 76% | 69% | 25.5 | 228 + 48 | 195 | 49% | 71% |
+    | 0 | 82% | 76% | 9.4 | 146 + 49 | 162 | 54% | 80% |
+
+    **The autopilot has a floor**: with no threat at all it still loses 18% of battles and half its treads (terrain, and the fortress guns, convoys, and trains, which threat doesn't buy). Each 10% of threat is worth about 4.5 points of extraction. **Fewer defenders pay less** (8% less at 0.85, 9% less at 0.75), and the bill falls about as fast, so a threat cut alone leaves a battle's surplus where it was. The salvage bonuses are set over that loss: a battle won pays about 15% more than Hard on Normal (318 × 1.25 = 398 against 346) and 27% more on Easy (314 × 1.4 = 440).
+  - **Whole runs** (a run bot: the autopilot fights; at the map it takes a depot when hurt or flush, else the weakest battle; at a depot it repairs treads, reactor, and armor, rearms, then buys sturdiness and guns for empty slots with what's over 100 salvage; it takes an event's first option). As it is, it dies of tread wear in 2–3 battles at any setting, so salvage never comes into it (192 runs each: 1.82 battles won on Hard, 1.81 at +15% salvage, 1.86 at +25%). **A better pilot's stand-in**: the same bot, with every part getting back half of what each sim step took from it. Runs completed (the Directive won), 96–144 runs a row:
+
+    | Salvage × | Threat × | Runs completed | Battles won | Battles extracted |
+    |---|---|---|---|---|
+    | 1 | 1 (**Hard**) | 20%, 26% (two seed sets) | 6.4, 6.7 | 89%, 90% |
+    | 1.15 | 1 (the first Normal) | 25%, 24% | 6.6, 6.6 | 90% |
+    | 1.25 / 1.35 / 1.5 | 1 | 26% / 26% / 29% | 6.7 / 6.9 / 7.0 | 90–91% |
+    | 1.15 / 1.2 / 1.25 | 0.9 | 35% / 35% / 37% | 7.2 / 7.2 / 7.4 | 92–93% |
+    | 1.2 / 1.25 / 1.3 | 0.85 | 44% / 44% / 43% | 7.5 / 7.6 / 7.4 | 93% |
+    | **1.25** | **0.85 (Normal)** | **44%** | 7.6 | 93% |
+    | 1 / 1.15 / 1.3 / 1.5 | 0.75 | 51% / 54% / 56–62% / 69% | 8.3–8.7 | 95–97% |
+    | **1.4** | **0.75 (Easy)** | **65%** | 8.2 | 96% |
+    | 1.3 / 1.4 | 0.7 | 67% / 71% | 8.5 / 8.6 | 97% |
+
+    **Threat is the strong lever and salvage the weak one**: salvage alone moved runs completed by 0 to 9 points, 15% less threat by about 20, 25% less by about 37. That's why Normal cuts threat (the user first asked for a salvage bonus alone). The bot spends poorly (a short shopping list, five actions), so a human will get more from salvage than it does. **A weaker stand-in** (70% of the damage, 144 runs each): Hard 2% of runs completed and 3.7 battles won, Normal 13% and 5.0, Easy 28% and 5.7. The steps hold at both strengths.
+  - Sampling error is about ±4 points on a row of 144 runs. The first pass's table (132 battles a level, Easy at 0.85 threat: 64% extracted against 60%) is superseded by these.
+- **Gotcha:** `paySalvage` takes Hard amounts and scales them; `bankSalvage` banks exactly. A new source of salvage that computes its own scaled total (as the objective does) must use `bankSalvage`, or it's scaled twice.
+- **Gotcha:** a test or tool that builds a world from a run must pass `salvageScale: salvageScale(run)` itself (as `TopDownBattleScene` does); `battleEnemy(run)` already carries the scaled threat.
+- **Limits:** the numbers are an autopilot's, not a player's (it loses half its treads to terrain in any battle, and it can't show what a human does with extra salvage). The score formula isn't adjusted for difficulty (an easier run outscores the same run on Hard by its salvage bonus; the list only labels them). The playtest script (`npm run playtest`) starts its runs on Normal (Enter takes the setup's defaults).
+
+### Run length and the run setup
+`M3` · `uncommitted` · `playtest: pending` · SPEC §3 "Run length", §10, §15 "Run length", §16 Q41
+User request (Nov 24, 2026): "on the start screen with difficulty, also have the player select the number of missions (currently 3) from 1, 3, and 5 (isn't that the total count of our biomes?). have difficulty default to normal and missions default to 3." A run is 1, 3, or 5 sectors; five is every biome once.
+- **Sim:** `generateMap(seed, directive, sectors = SECTOR_MAP.sectors)` and the ninth argument of `newRun` (default 3, so every existing caller, test, and save is unchanged). `SECTOR_MAP.sectorChoices` (`[1, 3, 5]`, tuning.ts) is what the setup offers. Nothing else needed to know: the run's length is `run.map.sectors.length` (the map is in the save, so **no save version bump**), `isFinalNode` is the last sector's objective, and the summary and score entries already carry `sectors`.
+- **A shorter map is the start of a longer one** on the same seed (biomes, routes, intel, and events are drawn sector by sector on streams that don't look ahead), so `?seed=3&sectors=1` is the first sector of `?seed=3`.
+- **Threat isn't refitted to the length** (my call): it climbs `SECTOR_MAP.threatPerLayer` a layer as before. Over 200 seeds: battles of threat 7–10 and an objective of 12 in sector 1; 9–12 and 14 in sector 2; 12–14 and 16 in sector 3; 14–16 and 18 in sector 4; 15–18 and 20–21 in sector 5.
+- **The run setup** (`TitleScene`): under the Directive's orders, two rows with their options in shared columns, `Difficulty  Easy  Normal  Hard` and `Sectors  1  3  5`, then one line summing up both ("Normal: defenders -15%, salvage +25%.  3 sectors: the standard run."; `describeSettings`). **One list with a cursor** (`focus`, a `>` beside the row): up/down (W/S, the pad) move through the Directive lines, choosing each as the cursor lands, and on to the two settings' rows (wrapping); left/right (A/D, the pad) change the setting the cursor is on and do nothing on a Directive; 1–3 still pick a Directive; every option can be clicked (a whole column is the target, since a digit is 4 px wide); Enter rolls out from anywhere. **Both settings open on their defaults every time** (`DEFAULT_DIFFICULTY`, `SECTOR_MAP.sectors`). The title's score list is hidden while the setup is up, and at 480×270 the menu's band is extended under the setup's last lines (`pickerBack`).
+- Practice: `?sectors=N` (1 to the number of biomes; a practice run of its own).
+- Tests: `tests/sim/sectorMap.test.ts` ("a run can be one sector, three, or five": lengths, five distinct biomes, the prefix property, objectives and the final node, objectives' threat rising), `tests/sim/difficulty.test.ts` ("a run's length": `newRun`, the save round trip, the summary, and a one-sector run won at its first objective).
+- **Autopilot numbers** (the half-damage stand-in and run bot of "Difficulty" above, 144 runs a cell; runs completed, and battles won):
+
+  | Sectors | Hard | Normal | Easy |
+  |---|---|---|---|
+  | 1 | 76%, 3.5 | 81%, 3.6 | 82%, 3.6 |
+  | 3 | 26%, 6.7 | 44%, 7.6 | 65%, 8.2 |
+  | 5 | 3%, 7.4 | 15%, 8.8 | 19%, 10.2 |
+
+  **Five sectors is far harder than three** for this bot (an objective of threat 20 against 16, and twice as many battles to survive), and difficulty hardly matters over one sector. Whether that's right for a human who refits better than the bot is SPEC §16 Q41.
+- **Gotcha:** `SECTOR_MAP.sectors` is the default length, not the run's: anything that needs the run's length must read `run.map.sectors.length`.
+- **Limits:** the setup's word is Sectors (the user said missions; Q41). A Directive complete scores the same 1000 at any length. `sectorBiomes` repeats a biome past five sectors (nothing offers more).
+
 ### Run summary
 `M3` · `3471074` · `playtest: pending` · SPEC §3, §5.1, §10
 The screen a run ends on: won (Directive complete), failed, or destroyed. Verdict and callsign; the Directive and each sector's objective (taken, missed, lost in this sector, not reached); totals (sectors reached, battles won, kills, salvage earned, time in battle, seed); for a destroyed run, the final blast (kills, the biggest by threat, the last stand) and a still of the battlefield column.
@@ -1032,7 +1100,7 @@ User request (Nov 2026): the title screen plays short battles in the background.
 - **Gotcha:** a headless screenshot catches the clip's fade-in partway (the loop barely advances in virtual time), so it looks dark.
 
 ### Run save
-`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `3471074` (v11) → `75a116f` (v12) → `7dfa568` (v13) → `54e56de` (v14) · `playtest: pending` · SPEC §2
+`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `3471074` (v11) → `75a116f` (v12) → `7dfa568` (v13) → `54e56de` (v14) → `uncommitted` (v15) · `playtest: pending` · SPEC §2
 `src/save/runSave.ts`: versioned JSON in localStorage, structural validation, `StorageLike` for tests. Older versions migrate forward.
 
 | Version | Added |
@@ -1051,6 +1119,7 @@ User request (Nov 2026): the title screen plays short battles in the background.
 | v12 | Conditions and events (`BattleIntel.condition`, optional `shift`; `MapNode.event`; `next: 'event'`; `lastEvent`). A v11 run keeps its map as drawn: every battle clear (`condition: null`), no events (`event: null`), `lastEvent: null` |
 | v13 | One front Plate mod (`armor.front`) and the treads' `load` track. `fromV12` merges `armor.frontLeft`/`armor.frontRight` Plate levels into `armor.front` at the higher one (no refund) |
 | v14 | `RunState.sighted` (unit kinds seen so far in the run, for once-a-run callouts). `fromV13` starts it empty; `isRun` rejects an unknown unit id |
+| v15 | `RunState.difficulty` (`easy`, `normal`, `hard`). `fromV14` makes an older run Hard (what it was being played at); `isRun` rejects an unknown id |
 
 ### Score list
 `M3` · `7dfa568` · `playtest: pending` · SPEC §10, §15 "Feedback batch (Nov 22, 2026)"
@@ -1060,6 +1129,7 @@ User request: a score list with the Behemoth's (demon) callsign on the title scr
 - Recorded once per real run as it ends (`flow.recordRun`, never for practice runs): in `enterNode` for won/failed, and at the `detonation` event in the battle scene (`final`, so closing the tab during the blast still counts; `toSummary` reuses it). `SummaryData.rank`.
 - UI: the title's "Top runs" block under the menu (`TitleScene.scoreList`, `SCORE.shown` 5; fixed-width columns: rank, callsign (the longest is 14), score, Complete/Failed/Destroyed, `Sector n/3`, date; the best in amber; nothing until a run has ended). The summary's totals add `Score` and `Best run yet` / `#n on the list`.
 - Tests: `tests/save/scores.test.ts` (the formula, ranking and the cut, save round trip, bad files, no storage).
+- Each entry also carries the run's `difficulty`, shown in a `Level` column (see "Difficulty" below; an entry saved before it reads as Hard, with no file version bump).
 
 ### Sector map
 `M3` · `initial` · `playtest: pending` · SPEC §3, §3.1, §7.2, §15 "Sector map (M3)", §16 Q19–21

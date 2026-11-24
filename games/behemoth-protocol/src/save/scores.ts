@@ -1,3 +1,4 @@
+import { DIFFICULTIES } from '../content/difficulties';
 import { DIRECTIVES } from '../content/directives';
 import { addScore, scoreEntry, type ScoreEntry } from '../sim/scores';
 import type { RunSummary } from '../sim/run';
@@ -13,7 +14,8 @@ export const SCORES_VERSION = 1;
 
 const OUTCOMES = ['won', 'failed', 'destroyed'];
 
-function isEntry(v: unknown): v is ScoreEntry {
+/** A well-formed entry; one saved before difficulties has none (`parseScores` reads it as Hard). */
+function isEntry(v: unknown): v is Omit<ScoreEntry, 'difficulty'> & { difficulty?: ScoreEntry['difficulty'] } {
   if (typeof v !== 'object' || v === null) return false;
   const e = v as Record<string, unknown>;
   const num = (k: string) => typeof e[k] === 'number' && Number.isFinite(e[k] as number);
@@ -25,6 +27,7 @@ function isEntry(v: unknown): v is ScoreEntry {
     num('sectors') &&
     typeof e['directive'] === 'string' &&
     e['directive'] in DIRECTIVES &&
+    (e['difficulty'] === undefined || (typeof e['difficulty'] === 'string' && e['difficulty'] in DIFFICULTIES)) &&
     num('seed') &&
     typeof e['date'] === 'string'
   );
@@ -37,7 +40,10 @@ export function parseScores(text: string): ScoreEntry[] {
     if (typeof file !== 'object' || file === null) return [];
     const f = file as Record<string, unknown>;
     if (f['version'] !== SCORES_VERSION || !Array.isArray(f['scores'])) return [];
-    return f['scores'].filter(isEntry).sort((a, b) => b.score - a.score);
+    return f['scores']
+      .filter(isEntry)
+      .map((e): ScoreEntry => ({ ...e, difficulty: e.difficulty ?? 'hard' }))
+      .sort((a, b) => b.score - a.score);
   } catch {
     return [];
   }

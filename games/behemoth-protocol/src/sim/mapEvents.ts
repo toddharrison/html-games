@@ -5,7 +5,8 @@ import { moduleLoads, TRAILER_MODULES } from '../content/trailer';
 import { WEAPONS } from '../content/weapons';
 import { coreMax, fittedChassis } from './depot';
 import { Rng, hashSeed } from './rng';
-import type { BehemothSnapshot, RunState } from './run';
+import { salvageGain, salvageScale, type BehemothSnapshot, type RunState } from './run';
+import { salvageWorth } from './salvage';
 import { nodeAt, onRouteFrom, reachable, revealSector, type MapPos, type SectorMap } from './sectorMap';
 
 /**
@@ -72,8 +73,11 @@ export function chooseEventOption(run: RunState, option: number): RunState {
 
 function applyEffect(run: RunState, e: EventEffect): RunState {
   switch (e.kind) {
-    case 'salvage':
-      return { ...run, salvage: Math.max(0, run.salvage + e.amount), earned: run.earned + Math.max(0, e.amount) };
+    case 'salvage': {
+      // A find pays the difficulty's bonus; a loss is taken as written.
+      const amount = e.amount > 0 ? salvageGain(run, e.amount) : e.amount;
+      return { ...run, salvage: Math.max(0, run.salvage + amount), earned: run.earned + Math.max(0, amount) };
+    }
     case 'damage':
       changePart(run.behemoth, e.part, -e.share);
       return run;
@@ -170,14 +174,17 @@ export function nextBattles(map: SectorMap, at: MapPos | null): MapPos[] {
   return out;
 }
 
-/** What an outcome did, a short line per effect, for the result screen and the map's panel. */
-export function effectLines(effects: readonly EventEffect[]): string[] {
+/**
+ * What an outcome did, a short line per effect, for the result screen and the map's panel.
+ * `salvage`: the run's difficulty bonus on salvage found (×).
+ */
+export function effectLines(effects: readonly EventEffect[], salvage = 1): string[] {
   const pct = (share: number) => `${Math.round(share * 100)}%`;
   const PART: Record<EventPart, string> = { treads: 'Treads', armor: 'Armor', sensors: 'Sensors' };
   return effects.map((e) => {
     switch (e.kind) {
       case 'salvage':
-        return `${e.amount >= 0 ? '+' : ''}${e.amount} salvage`;
+        return e.amount > 0 ? `+${salvageWorth(e.amount, salvage)} salvage` : `${e.amount} salvage`;
       case 'damage':
         return `${PART[e.part]} -${pct(e.share)}`;
       case 'repair':
@@ -205,5 +212,5 @@ export function lastEventOutcome(run: RunState): { title: string; option: string
   const out = opt?.outcomes[r.outcome];
   if (!opt || !out) return null;
   const cost = opt.cost ? [`-${opt.cost} salvage`] : [];
-  return { title: def.title, option: opt.label, text: out.text, lines: [...cost, ...effectLines(out.effects)] };
+  return { title: def.title, option: opt.label, text: out.text, lines: [...cost, ...effectLines(out.effects, salvageScale(run))] };
 }

@@ -37,6 +37,32 @@ describe('sector map generation', () => {
     expect(later.size).toBe(Object.keys(BIOMES).length - 1);
   });
 
+  it('a run can be one sector, three, or five: a shorter map is the start of a longer one, and five is every biome', () => {
+    expect(SECTOR_MAP.sectorChoices).toContain(SECTOR_MAP.sectors);
+    expect(Math.max(...SECTOR_MAP.sectorChoices)).toBe(Object.keys(BIOMES).length);
+    for (const seed of SEEDS.slice(0, 30)) {
+      const long = generateMap(seed, 'interdiction', 5);
+      expect(long.sectors).toHaveLength(5);
+      expect(new Set(long.sectors.map((s) => s.biome)).size).toBe(5);
+      for (const [i, s] of long.sectors.entries()) expect(BIOMES[s.biome].earliestSector ?? 1).toBeLessThanOrEqual(i + 1);
+      // The default is three, and each shorter map is the longer one's first sectors, events and all.
+      expect(generateMap(seed, 'interdiction')).toEqual(generateMap(seed, 'interdiction', SECTOR_MAP.sectors));
+      for (const n of [1, 3]) expect(generateMap(seed, 'interdiction', n).sectors).toEqual(long.sectors.slice(0, n));
+      // Every sector ends on an objective in the Directive's mode, and the last one's is the run's final node.
+      for (const n of SECTOR_MAP.sectorChoices) {
+        const map = generateMap(seed, 'interdiction', n);
+        map.sectors.forEach((sector, s) => {
+          const objective = sector.nodes.find((node) => node.layer === sector.layers - 1)!;
+          expect(objective.battle).toMatchObject({ strength: 'objective', mode: 'chase' });
+          expect(isFinalNode(map, { sector: s, node: objective.id })).toBe(s === n - 1);
+        });
+      }
+      // The enemy keeps getting stronger: each sector's objective outranks the one before.
+      const threats = long.sectors.map((sector) => sector.nodes.find((node) => node.layer === sector.layers - 1)!.battle!.threat);
+      for (let s = 1; s < threats.length; s++) expect(threats[s]!).toBeGreaterThan(threats[s - 1]!);
+    }
+  });
+
   it('routes run from one entry, branch, and meet at one objective, with no crossing paths', () => {
     for (const seed of SEEDS) {
       for (const sector of generateMap(seed).sectors) {

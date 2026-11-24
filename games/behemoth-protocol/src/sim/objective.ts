@@ -12,7 +12,7 @@ import { cutAlert } from './encounter';
 import { drawUnit, edgeSpot } from './spawner';
 import { chunkRiver, riverCenter, type FortressSpec, type Terrain, type TerrainRecipe } from './terrain';
 import type { World } from './world';
-import { paySalvage } from './salvage';
+import { bankSalvage } from './salvage';
 import { createTrain } from './train';
 import { TRAIN_DOCTRINE, type TrainCarId } from '../content/trainCars';
 import type { DoctrineId } from '../content/doctrines';
@@ -305,10 +305,10 @@ function layMines(w: World, e: Enemy, range: number, dt: number): void {
  */
 export function objectiveStopped(w: World, x: number, y: number): void {
   const o = w.objective;
-  const before = objectiveBonus(o);
+  const before = objectiveBonus(o, w.salvageScale);
   o.destroyed = Math.max(o.destroyed, o.total - o.lost);
   for (const e of w.enemies) if (e.train) e.objective = false;
-  paySalvage(w, x, y, objectiveBonus(o) - before, 'objective');
+  bankSalvage(w, x, y, objectiveBonus(o, w.salvageScale) - before, 'objective');
 }
 
 /**
@@ -320,11 +320,11 @@ export function objectiveStranded(w: World, engines: readonly Enemy[]): void {
   const at = targets[0];
   if (!at) return;
   const o = w.objective;
-  const before = objectiveBonus(o);
+  const before = objectiveBonus(o, w.salvageScale);
   for (const e of targets) e.objective = false;
   o.destroyed = Math.min(o.total - o.lost, o.destroyed + targets.length);
   w.events.push({ type: 'objective', what: 'destroyed', enemy: at.def.id, x: at.x, y: at.y, done: objectiveSettled(o), stranded: targets.length });
-  paySalvage(w, at.x, at.y, objectiveBonus(o) - before, 'objective');
+  bankSalvage(w, at.x, at.y, objectiveBonus(o, w.salvageScale) - before, 'objective');
 }
 
 /** A target that's gone without being destroyed: it drops out of the battle. */
@@ -349,10 +349,10 @@ export function objectiveTaken(w: World, e: Enemy): void {
     return;
   }
   // Each target pays its share of the bonus as it falls (SPEC §4.4), so more destroyed is more salvage.
-  const before = objectiveBonus(w.objective);
+  const before = objectiveBonus(w.objective, w.salvageScale);
   w.objective.destroyed++;
   w.events.push({ type: 'objective', what: 'destroyed', enemy: e.def.id, x: e.x, y: e.y, done: objectiveSettled(w.objective) });
-  paySalvage(w, e.x, e.y, objectiveBonus(w.objective) - before, 'objective');
+  bankSalvage(w, e.x, e.y, objectiveBonus(w.objective, w.salvageScale) - before, 'objective');
 }
 
 /** Every target is accounted for, destroyed or lost. */
@@ -367,10 +367,11 @@ export function objectiveComplete(o: ObjectiveState): boolean {
 
 /**
  * Salvage the objective has paid so far: the mode's bonus times the share of targets destroyed. It's
- * banked as each target falls (`objectiveTaken`), not at extraction.
+ * banked as each target falls (`objectiveTaken`), not at extraction. `scale`: the battle's
+ * difficulty bonus on salvage (`World.salvageScale`); the default is its worth on Hard.
  */
-export function objectiveBonus(o: ObjectiveState): number {
-  return o.total > 0 ? Math.round((MODES[o.mode].bonus * o.destroyed) / o.total) : 0;
+export function objectiveBonus(o: ObjectiveState, scale = 1): number {
+  return o.total > 0 ? Math.round((MODES[o.mode].bonus * scale * o.destroyed) / o.total) : 0;
 }
 
 /** The share of the targets destroyed, as a whole percentage (0 with no targets). */

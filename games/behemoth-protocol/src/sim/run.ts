@@ -4,6 +4,7 @@ import { APPROACHES, type ApproachId } from '../content/approaches';
 import { BIOMES, type BiomeId } from '../content/biomes';
 import { ARMOR_ARCS, CHASSIS, type ArmorArc, type ChassisId } from '../content/chassis';
 import { CALLSIGNS } from '../content/callsigns';
+import { DIFFICULTIES, type DifficultyId } from '../content/difficulties';
 import { DIRECTIVES, DIRECTIVE_IDS, type DirectiveDef, type DirectiveId } from '../content/directives';
 import type { ConditionId } from '../content/conditions';
 import type { DoctrineId } from '../content/doctrines';
@@ -11,7 +12,7 @@ import type { EnemyId } from '../content/enemies';
 import type { EventReport } from './mapEvents';
 import { battleForces, type Forces } from './encounter';
 import { moduleLoads, type ModuleId } from '../content/trailer';
-import { DIRECTIVE, RUN } from '../content/tuning';
+import { DIRECTIVE, RUN, SECTOR_MAP } from '../content/tuning';
 import { NO_UPGRADES, type Grades, type Mods, type Upgrades } from '../content/upgrades';
 import { WEAPONS, type Binding, type ShellType, type WeaponId } from '../content/weapons';
 import {
@@ -31,6 +32,7 @@ import { depotKey, generateMap, isFinalNode, nodeAt, reachable, samePos, type Ba
 import { Rng, hashSeed } from './rng';
 import type { TerrainRecipe } from './terrain';
 import { START_X, type BattleStats, type World } from './world';
+import { salvageWorth } from './salvage';
 import { objectiveBonus, objectiveComplete, type ObjectiveSpec, type ObjectiveState } from './objective';
 
 /**
@@ -127,6 +129,8 @@ export interface RunState {
   callsign: string;
   /** The run's orders (SPEC §3): what every sector's objective battle asks. */
   directive: DirectiveId;
+  /** The run's difficulty (SPEC §3): what salvage pays and how strong the defenders are, fixed at the start. */
+  difficulty: DifficultyId;
   /** Each sector's objective so far, in order: taken or missed. */
   objectives: boolean[];
   /** Battles won so far (= the index of the next battle). */
@@ -161,6 +165,8 @@ export interface RunState {
 /**
  * @param addons add-ons to start with, `extra` weapons for their slots, trailer modules, and
  * upgrades (playtesting only: a real run starts with the chassis' own loadout).
+ * @param difficulty default Hard, the game as tuned (the title's picker starts on `DEFAULT_DIFFICULTY`).
+ * @param sectors the run's length (the run setup offers `SECTOR_MAP.sectorChoices`).
  */
 export function newRun(
   seed: number,
@@ -170,6 +176,8 @@ export function newRun(
   bays: readonly (ModuleId | null)[] = [],
   upgrades: Upgrades = NO_UPGRADES,
   directive: DirectiveId = directiveFor(seed),
+  difficulty: DifficultyId = 'hard',
+  sectors: number = SECTOR_MAP.sectors,
 ): RunState {
   const chassis = CHASSIS[chassisId];
   const ids = { ...chassis.loadout, ...extra };
@@ -178,10 +186,11 @@ export function newRun(
     seed: seed >>> 0,
     callsign: callsignFor(seed),
     directive,
+    difficulty,
     objectives: [],
     battle: 0,
     next: 'map',
-    map: generateMap(seed >>> 0, directive),
+    map: generateMap(seed >>> 0, directive, sectors),
     at: null,
     path: [],
     cache: 0,
@@ -352,9 +361,22 @@ export function battleCondition(run: RunState, override?: ConditionId | null): C
   return override !== undefined ? override : currentBattle(run).condition;
 }
 
-/** The run's battle's threat (sizes its defenders and alert waves). */
+/**
+ * The run's battle's threat (sizes its defenders, alert waves, and an armored train's guns): its
+ * node's, times the difficulty's share of it.
+ */
 export function battleThreat(run: RunState): number {
-  return currentBattle(run).threat;
+  return currentBattle(run).threat * DIFFICULTIES[run.difficulty].threat;
+}
+
+/** The run's difficulty bonus on salvage earned (×). */
+export function salvageScale(run: RunState): number {
+  return DIFFICULTIES[run.difficulty].salvage;
+}
+
+/** What a salvage gain (an extraction bonus, an event's find) is worth to the run, with its difficulty bonus. */
+export function salvageGain(run: RunState, amount: number): number {
+  return salvageWorth(amount, salvageScale(run));
 }
 
 /**
@@ -363,7 +385,7 @@ export function battleThreat(run: RunState): number {
  */
 export function battleEnemy(run: RunState, recipe: TerrainRecipe = battleRecipe(run), doctrine?: DoctrineId): Forces {
   const b = currentBattle(run);
-  return battleForces(b.threat, doctrine ?? b.doctrine, recipe.biome, recipe.approach);
+  return battleForces(battleThreat(run), doctrine ?? b.doctrine, recipe.biome, recipe.approach);
 }
 
 /**
@@ -467,8 +489,8 @@ export function completeBattle(run: RunState, w: World): RunState {
     kills: w.stats.kills,
     salvage: w.stats.salvage,
     // The node's reward for extracting (the objective's shares were banked as each target fell).
-    bonus: intel.salvage,
-    ...(o.total > 0 ? { objective: { mode: o.mode, destroyed: o.destroyed, total: o.total, salvage: objectiveBonus(o) } } : {}),
+    bonus: salvageGain(run, intel.salvage),
+    ...(o.total > 0 ? { objective: { mode: o.mode, destroyed: o.destroyed, total: o.total, salvage: objectiveBonus(o, w.salvageScale) } } : {}),
     ...(taken !== undefined ? { taken } : {}),
     time,
   };
@@ -524,6 +546,7 @@ export interface RunSummary {
   seed: number;
   callsign: string;
   directive: DirectiveId;
+  difficulty: DifficultyId;
   /** Sectors in the run, and how far it got (1-based). */
   sectors: number;
   reached: number;
@@ -557,6 +580,7 @@ export function summarizeRun(run: RunState, final: FinalBattle | null = null): R
     seed: run.seed,
     callsign: run.callsign,
     directive: run.directive,
+    difficulty: run.difficulty,
     sectors: run.map.sectors.length,
     reached: (run.at?.sector ?? 0) + 1,
     biomes: run.map.sectors.map((s) => s.biome),

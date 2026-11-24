@@ -21,6 +21,9 @@
  * battle in that condition; `?event=convoy` (also a practice run) opens that event (or a random one).
  * `?doctrine=longGuns` (also a practice run) has every battle's defenders fight that doctrine;
  * `?mix=siegeTank:1,lightTank:2` (also a practice run) sets the units they field and their odds.
+ * `?difficulty=easy|normal|hard` (also a practice run) plays at that difficulty (a practice run's default
+ * is the picker's, `DEFAULT_DIFFICULTY`).
+ * `?sectors=N` (also a practice run) sets the run's length in sectors, 1 to the number of biomes.
  * `?dev` turns on the dev console (`src/dev/console.ts`) outside the dev server; it isn't a practice run.
  */
 
@@ -29,6 +32,7 @@ import { MODES, type BattleModeId } from './content/modes';
 import { ADDONS } from './content/addons';
 import { APPROACHES, type ApproachId } from './content/approaches';
 import { BIOMES, type BiomeId } from './content/biomes';
+import { DIFFICULTIES, type DifficultyId } from './content/difficulties';
 import { DIRECTIVES, type DirectiveId } from './content/directives';
 import { CONDITIONS, type ConditionId } from './content/conditions';
 import { DOCTRINES, type DoctrineId } from './content/doctrines';
@@ -54,7 +58,7 @@ export const RESOLUTION: Resolution = RESOLUTIONS[params.get('res') ?? ''] ?? RE
 /** Dev tool: `?terrain` opens the terrain preview (scenes/TerrainPreviewScene.ts) instead of the game. */
 export const TERRAIN_PREVIEW = params.has('terrain');
 
-export const PRACTICE = ['seed', 'immobilize', 'addons', 'trailer', 'weapons', 'shells', 'cookoff', 'grades', 'mods', 'depot', 'biome', 'approach', 'map', 'mode', 'directive', 'objective', 'summary', 'condition', 'event', 'doctrine', 'mix'].some((k) => params.has(k));
+export const PRACTICE = ['seed', 'immobilize', 'addons', 'trailer', 'weapons', 'shells', 'cookoff', 'grades', 'mods', 'depot', 'biome', 'approach', 'map', 'mode', 'directive', 'difficulty', 'sectors', 'objective', 'summary', 'condition', 'event', 'doctrine', 'mix'].some((k) => params.has(k));
 
 /**
  * Playtest shortcut: the biome and approach every battle is fought over (`?biome=arctic`,
@@ -74,6 +78,18 @@ export function recipeFromUrl(): { biome?: BiomeId; approach?: ApproachId | null
 export function directiveFromUrl(): DirectiveId | undefined {
   const d = params.get('directive');
   return d && d in DIRECTIVES ? (d as DirectiveId) : undefined;
+}
+
+/** Playtest shortcut: the run's difficulty (`?difficulty=easy`, `normal`, `hard`); unknown ids are ignored. */
+export function difficultyFromUrl(): DifficultyId | undefined {
+  const d = params.get('difficulty');
+  return d && d in DIFFICULTIES ? (d as DifficultyId) : undefined;
+}
+
+/** Playtest shortcut: the run's length in sectors (`?sectors=5`), 1 to the number of biomes; undefined when not given. */
+export function sectorsFromUrl(): number | undefined {
+  const n = Math.floor(Number(params.get('sectors') ?? NaN));
+  return Number.isFinite(n) ? Math.min(Object.keys(BIOMES).length, Math.max(1, n)) : undefined;
 }
 
 /** Playtest shortcut: straight into sector N's objective battle (`?objective` = sector 1, `?objective=3` the last). */

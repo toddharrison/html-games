@@ -3,7 +3,7 @@
   "title": "Behemoth Protocol",
   "description": "A roguelike where you play the boss: drive a giant cybernetic war machine up a battlefield against a combined-arms force.",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

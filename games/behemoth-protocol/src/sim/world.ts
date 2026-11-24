@@ -69,6 +69,8 @@ export interface WorldOptions {
   condition?: ConditionId | null;
   /** Unit kinds already seen this run (`RunState.sighted`), so a once-a-run callout isn't made again. */
   sighted?: readonly EnemyId[];
+  /** The run's difficulty bonus on salvage earned (×, default 1; `DIFFICULTIES`). */
+  salvageScale?: number;
 }
 
 export interface World {
@@ -129,6 +131,9 @@ export interface World {
   /** Unit kinds seen so far this run, this battle's included (SPEC §7.4 callouts, §9 first sight). */
   sighted: EnemyId[];
   stats: BattleStats;
+  /** The difficulty bonus on salvage earned (×), and the fraction of a salvage not yet paid (`paySalvage`). */
+  salvageScale: number;
+  salvageCarry: number;
   /** Dev console switches (`sim/dev.ts`); all off in a normal battle. */
   dev: DevFlags;
 }
@@ -220,6 +225,8 @@ export function createWorld(opts: WorldOptions): World {
     condition: createCondition(opts.condition ?? null, opts.seed),
     sighted: [...(opts.sighted ?? [])],
     stats: { kills: 0, blastKills: 0, salvage: 0, blastBest: null },
+    salvageScale: opts.salvageScale ?? 1,
+    salvageCarry: 0,
     dev: { frozen: false },
   };
   ensureTerrain(world);

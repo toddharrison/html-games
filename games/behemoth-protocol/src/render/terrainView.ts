@@ -100,7 +100,7 @@ export class TerrainView {
         // Each tile ripples on its own beat, so the river shimmers rather than blinking in unison.
         const shimmer = Math.floor(time * RIPPLE_RATE + (hashSeed(col, row, 0x3a7e) & 7) / 8) & 1;
         // Craters and bridges are drawn by what's round them (a piece of a big crater, a span's edges).
-        const placed = t && (t.mat === 'crater' || t.mat === 'bridge' || t.mat === 'lightBridge');
+        const placed = t && (t.mat === 'crater' || t.mat === 'bridge' || t.mat === 'lightBridge' || t.mat === 'railBridge');
         const frame = t ? tileFrame(t, shimmer, placed ? { seed: this.terrain.seed, col, row, tile: this.tileAt } : undefined) : 'clear';
         if (column.frames[row] !== frame) {
           column.frames[row] = frame;

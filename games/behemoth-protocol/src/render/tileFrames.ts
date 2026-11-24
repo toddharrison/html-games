@@ -2,7 +2,7 @@ import type { BiomeId } from '../content/biomes';
 import { HALL_STYLES, ROAD_STYLES, SPARSE_TREES, STRUCTURES, structuresOf, TREE_IDS, type RoadStyle, type StructureId, type TileArt, type TreeId } from '../content/structures';
 import { TERRAIN_GEN } from '../content/tuning';
 import { hashSeed } from '../sim/rng';
-import type { Tile } from '../sim/terrain';
+import { LINK, type Tile } from '../sim/terrain';
 
 /**
  * Terrain frame names (Phaser-free, so tests can check them): which frame of a biome's tile and
@@ -56,6 +56,11 @@ export const TILE_FRAMES = [
   'tank_pad',
   'rail',
   'rail_torn',
+  'track',
+  'track_fr',
+  'track_fl',
+  'track_br',
+  'track_bl',
   'wadi0',
   'wadi1',
   'derrick_pad',
@@ -153,6 +158,13 @@ function bridgeEdges(t: Tile, a: Around | undefined): number {
   return (open(a.tile(a.col, a.row - 1)?.mat) ? 1 : 0) | (open(a.tile(a.col, a.row + 1)?.mat) ? 2 : 0);
 }
 
+/** An armored train's track (SPEC §4.4): straight, or bending toward the next row ahead of it or behind (`lineLinks`). */
+function trackFrame(links: number): TileFrame {
+  const side = links & LINK.right ? 'r' : links & LINK.left ? 'l' : null;
+  if (!side) return 'track';
+  return `track_${links & LINK.fwd ? 'f' : 'b'}${side}` as TileFrame;
+}
+
 /**
  * Which frame of a tile sheet represents a tile in its current state. `shimmer` (0/1) flips water
  * between its two frames, so rivers ripple. A mine the sensors haven't swept looks like open ground.
@@ -226,6 +238,10 @@ export function tileFrame(t: Tile, shimmer: number, around?: Around): string {
       return 'tank_pad';
     case 'rail':
       return t.state === 'flattened' ? 'rail_torn' : 'rail';
+    case 'track':
+      return trackFrame(t.links ?? 0);
+    case 'railBridge':
+      return frameName.railBridge(bridgeEdges(t, around), !!t.links, damaged);
     case 'wadi':
       return `wadi${v1}` as TileFrame;
     case 'derrick':
@@ -297,6 +313,8 @@ export const frameName = {
   crater: (size: number, v: number, dc: number, dr: number) => `cr.${size}.${v}.${dc}.${dr}`,
   /** A bridge deck (girder or light), by which sides are the span's edge (1 left, 2 right). */
   bridge: (light: boolean, edges: number, damaged: boolean) => `b.${light ? 'l' : 'g'}.${edges}${damaged ? '.d' : ''}`,
+  /** A rail bridge's deck (SPEC §4.4), by its span edges, and whether this tile carries the rails. */
+  railBridge: (edges: number, rails: boolean, damaged: boolean) => `rb.${edges}${rails ? '.r' : ''}${damaged ? '.d' : ''}`,
   tree: (species: TreeId, v: number) => `t.${species}.${v}`,
   /** Parked cars: nose up or across, a variant, and the state (0 intact, 1 damaged, 2 burnt out, 3 crushed). */
   car: (vertical: boolean, v: number, state: number) => `c.${vertical ? 'v' : 'h'}.${v}.${state}`,
@@ -312,6 +330,7 @@ export function sheetFrameNames(biome: BiomeId): { tiles: Set<string>; clumps: S
     for (let v = 0; v < CRATER_VARIANTS[size]; v++) for (let dc = 0; dc < size; dc++) for (let dr = 0; dr < size; dr++) tiles.add(frameName.crater(size, v, dc, dr));
   }
   for (const light of [false, true]) for (let edges = 0; edges < 4; edges++) for (const d of [false, true]) tiles.add(frameName.bridge(light, edges, d));
+  for (let edges = 0; edges < 4; edges++) for (const rails of [false, true]) for (const d of [false, true]) tiles.add(frameName.railBridge(edges, rails, d));
   for (const id of structuresOf(biome)) {
     const def = STRUCTURES[id];
     for (let style = 0; style < def.styles; style++) {

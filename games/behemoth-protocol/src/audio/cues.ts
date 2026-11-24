@@ -255,6 +255,12 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
       return [{ sound: 'alarm', size: 0.5, x: ev.x, y: ev.y }];
     case 'sighted':
       return [{ sound: 'radio', size: 1 }];
+    // An armored train (SPEC §7.3): the radio calls it out; a section cut loose sounds the alarm.
+    case 'trainStart':
+    case 'trainStopped':
+      return [{ sound: 'radio', size: 1 }];
+    case 'trainCutLoose':
+      return [{ sound: 'alarm', size: 0.8, x: ev.x, y: ev.y }];
     // A heavy weapons team painting the hull: the cab's lock warning, from the team's side.
     case 'lockOn':
       return [{ sound: 'lockOn', size: 1, x: ev.x, y: ev.y }];

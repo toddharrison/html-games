@@ -49,8 +49,8 @@ function reachFortress(w: World): void {
 const targets = (w: World) => w.enemies.filter((e) => e.alive && e.objective);
 
 describe('modes on the map', () => {
-  it('the opening battle is an Assault; later battles draw all three modes, Assault the commonest', () => {
-    const count: Record<string, number> = { assault: 0, breach: 0, chase: 0 };
+  it('the opening battle is an Assault; later battles draw every mode, Assault the commonest', () => {
+    const count: Record<string, number> = { assault: 0, breach: 0, chase: 0, intercept: 0 };
     for (let seed = 1; seed <= 40; seed++) {
       const map = generateMap(seed);
       expect(map.sectors[0]!.nodes[0]!.battle!.mode).toBe('assault');
@@ -59,6 +59,22 @@ describe('modes on the map', () => {
     for (const m of MODE_IDS) expect(count[m]).toBeGreaterThan(0);
     expect(count.assault).toBeGreaterThan(count.breach!);
     expect(count.assault).toBeGreaterThan(count.chase!);
+    expect(count.chase).toBeGreaterThan(count.intercept!);
+  });
+
+  it('a sector holds at most one armored train, and never as its opening battle', () => {
+    let trains = 0;
+    for (let seed = 1; seed <= 120; seed++) {
+      for (const s of generateMap(seed).sectors) {
+        const nodes = s.nodes.filter((n) => n.battle?.mode === 'intercept');
+        expect(nodes.length).toBeLessThanOrEqual(MODES.intercept.perSector!);
+        expect(nodes.every((n) => n.layer > 0 && n.layer < s.layers - 1)).toBe(true);
+        trains += nodes.length;
+      }
+    }
+    // About one sector in two has one.
+    expect(trains).toBeGreaterThan(120);
+    expect(trains).toBeLessThan(300);
   });
 
   it('the save keeps a Breach or Chase node and rejects a mode it doesn’t know', () => {

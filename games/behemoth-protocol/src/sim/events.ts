@@ -70,6 +70,18 @@ export type SimEvent =
   /** A direct hit on a vehicle's flank or rear, where its armor is thinner (SPEC §7). */
   | { type: 'facingHit'; facing: Exclude<Facing, 'front'>; x: number; y: number }
   | { type: 'enemyDestroyed'; id: number; enemy: EnemyId; x: number; y: number; cause: KillCause }
+  /** An armored train (SPEC §7.3) pulls out of its station as the battle opens. */
+  | { type: 'trainStart'; x: number; y: number; engines: number }
+  /** Its crew cut a dead section loose (`cars` vehicles); the scuttling charges are counting down. */
+  | { type: 'trainCutLoose'; x: number; y: number; cars: number }
+  /** A scuttling charge went off under a cut-loose vehicle. */
+  | { type: 'trainScuttle'; x: number; y: number }
+  /** The chain parted at a vehicle blown apart or plowed through. */
+  | { type: 'trainBroken'; x: number; y: number }
+  /** A vehicle left the rails at a break in the line (`first`: the one that starts the pile); `sunk`: into a river. */
+  | { type: 'trainDerail'; x: number; y: number; heading: number; first: boolean; sunk: boolean }
+  /** The train is stopped for good (no engine left running, or derailed): the Intercept is taken. */
+  | { type: 'trainStopped'; x: number; y: number; derailed: boolean }
   /**
    * Salvage banked (SPEC §8.1): a kill, a structure knocked down, or a battle mode's target's share
    * of the objective bonus, at the world point it came from (the renderer flies it to the hull).

@@ -68,7 +68,7 @@ Fixed 60 Hz stepper, a world/entity store, and the seeded RNG (`sim/rng.ts`), al
 
 ### Practice URL parameters
 `M0`–`M2` · various · `playtest: n/a`
-Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`, `trailer`, `weapons`, `shells`, `cookoff`, `grades`, `mods`, `depot`, `biome`, `approach`, `map`, `mode`, `directive`, `objective`, `summary`, `condition`, `event`, `doctrine`, `mix`) skips the title screen and never saves.
+Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`, `trailer`, `weapons`, `shells`, `cookoff`, `grades`, `mods`, `depot`, `biome`, `approach`, `map`, `mode`, `train`, `directive`, `objective`, `summary`, `condition`, `event`, `doctrine`, `mix`) skips the title screen and never saves.
 
 | Param | Effect |
 |---|---|
@@ -87,6 +87,7 @@ Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`
 | `?approach=pass` | Every battle on that approach (`plain`, `forest`, `urban`, `river`, `pass`; `none` = the biome's own mix) |
 | `?look=autumn` | Every battle's look (§3 "Ground looks"; `spring`, `summer`, `autumn`, `deepSnow`, `windswept`, `thaw`, `cinders`, `rust`, `chemical`, `paleSand`, `redSand`, `hamada`, `ash`, `rustDust`, `toxic`); one its biome lacks is ignored. Cosmetic: doesn't make a practice run |
 | `?mode=breach` | Every battle in that mode (`assault`, `breach`, `chase`); the node's strength still sets the target count. With `?exit=60` the fortress is close (Breach) |
+| `?mode=intercept&train=engine,boxcar,boxcar,engine` | An Intercept's train, front to back (`TRAIN_CARS` ids; unknown names are skipped). Without `train`, the node's strength sets it |
 | `?map` or `?map=N` | Opens the sector map at the start of sector N (default 1) instead of a battle; with `?biome`, that sector is drawn in that biome (for looking at the map art) |
 | `?condition=night` | Every battle in that condition (`night`, `storm`; `none` = clear) |
 | `?doctrine=longGuns` | Every battle's defenders fight that doctrine (`combined`, `armoredFist`, `entrenched`, `raiders`, `longGuns`; `longGuns` for field batteries) |
@@ -122,7 +123,7 @@ An HTML panel down the right of the page for playtesting and tuning. It's on in 
 
 ### Terrain preview
 `M3` · `03303f9` · `playtest: n/a` · SPEC §4.6
-`?terrain` opens `scenes/TerrainPreviewScene.ts` instead of the game (checked in `BootScene` before the practice-run params; `TERRAIN_PREVIEW` in config.ts): a battle's terrain with nothing on it, for looking over the tile art. Takes `seed`, `biome`, `approach`, `look` (the battle's terrain for that seed), `col` (start N tiles in), `zoom=2` (zoomed out). Keys: up/down or W/S (Shift faster) or the wheel to scroll, Z zoom, [ ] seed, B biome, A approach, L look (each reloads with the URL updated).
+`?terrain` opens `scenes/TerrainPreviewScene.ts` instead of the game (checked in `BootScene` before the practice-run params; `TERRAIN_PREVIEW` in config.ts): a battle's terrain with nothing on it, for looking over the tile art. Takes `seed`, `biome`, `approach`, `look` (the battle's terrain for that seed), `mode=intercept` (with an armored train's rail line), `col` (start N tiles in), `zoom=2` (zoomed out). Keys: up/down or W/S (Shift faster) or the wheel to scroll, Z zoom, [ ] seed, B biome, A approach, L look (each reloads with the URL updated).
 - Headless: with Vite on 5199, `chrome-headless-shell --screenshot --virtual-time-budget=6000 --window-size=1152,648 'http://localhost:5199/?terrain&seed=3&approach=urban&col=30&zoom=2'` (plus the swiftshader flags above). At zoom 2 the field is x 408–744; ffmpeg `crop=336:648:408:0` and `hstack` put biomes side by side.
 
 ### Offline audio rendering
@@ -281,6 +282,22 @@ User requests (Nov 23, 2026): a big blast's crater was dozens of small ones; bri
 - **Gotcha:** which crater a tile belongs to is worked out in the renderer every frame from the live terrain, because craters appear in battle: a new crater tile can complete a block, and the tiles round it then redraw as one bigger crater.
 - **Gotcha:** dunes and drifts are in the chunk's ground texture, painted once when the chunk comes up; nothing in battle changes them (neither material can be damaged).
 - **Limits:** big craters sit on fixed grids, so they can line up; round craters leave corners of plain-looking ground that still play as crater; a bridge's ends have no abutment art of their own, and its edge throws no shadow on the water; a snowdrift's patch is still blocky at tile scale under its fringe.
+
+### Rail line (an armored train's track, station, and bridges)
+`M4` · `uncommitted` · `playtest: pending` · SPEC-armored-train.md §T3, §T9
+An Intercept battle's terrain has one hardened track from its first column to its last, off to one side of the field, with a station at the start and a rail bridge over every river. It's a recipe option (`TerrainRecipe.line`), so every other battle's terrain is untouched.
+- **Course** (`sim/terrain.ts`): `lineSide(seed)` picks the side; `lineBase` is the mean row plus a wander between knots (`TERRAIN_GEN.railLine`: `meanRow` 0.27, `wander` 1.5, `knotCols` 24, level through `levelCols`); `lineAt` holds it level `riverFlat` columns either side of each river (`lineCrossing`) and bends back at `riverSlope`; `lineRowOf` is its tile row. Remembered by column on the resolved recipe (`Resolved.line.memo`).
+- **Painting** (`paintColumn`, after everything else and from column 0, so through the clear start too): `lineColumn` gives the track rows; the tile either side is the railbed (cleared to open ground unless it's in `RAILBED_KEEPS`); rock stays `rockClear` rows off (also in `fillDeadEnds`' lane test); the station is a `road` platform either side and `building` tiles `station.depth` rows deep on the narrow side.
+- **Rivers:** `RailLineSpec.rivers` forces a river in those chunks (`hasRiver`); `riverShape` is the river before its bridges (the line plans from it); `lineBridge` sets a `railBridge` three rows wide on the line's row, drops fords within a row of it, and adds one on the wide side if none is left. `railLine(exitX)` in `sim/world.ts` picks the chunks (`TRAIN.rivers` of the way).
+- **The lane** moves over: `laneAt` is `laneCenter` pushed `laneGap` rows clear of the line on its wide side. Every internal lane use and `Terrain.laneY` go through it.
+- **Materials** (`content/terrain.ts`): `track` (open ground, `scars`: breaks to a crater at the cratering threshold) and `railBridge` (300 HP, `bearing.limit` Infinity, falls as a span); `isLine(mat)`. `Terrain.damage` ignores a line tile when `credit` is false (enemy fire) or it's shielded (`Terrain.shield`, set by the train; a bridge span is shielded whole). The treads don't tear it (no obstacle).
+- **Terrain API:** `hasLine`, `lineSide`, `lineRow(col)`, `lineY(x)` (the track's row eased over `smooth` columns at a step: what a train follows), `lineCut(col)` (broken columns, kept after their chunk is pruned), `strew(col, row)` (a wreck lands: open dry ground becomes `wreck`).
+- **Art:** `Tile.links` (`lineLinks`) says which way a track tile bends to the next row, or that a bridge tile carries the rails; frames `track`, `track_fr/fl/br/bl`, `rb.<edges>[.r][.d]` (`tileFrames.ts`, `hardRails` and the deck in `tileArt.ts`); `ballast` fringe.
+- Preview: `?terrain&mode=intercept&seed=3` (any biome and approach).
+- **Gotcha:** the track's rows are whole tiles and it steps diagonally; knots and river crossings sit on tile centers, or a course hovering on a row boundary jogs the track back and forth.
+- **Gotcha:** a bridge's end columns follow the banks, which shift row to row, so an end column can have deck on the line's row and bank beside it.
+- **Limits:** placeholder art (the bends are two straight slants); no level crossings where roads meet the track; the station is a platform and a plain building strip; lakes under the line become causeway (the track paints over ice).
+- Tests: `tests/sim/railLine.test.ts` (unbroken, railbed, bridges, lane and fords, smooth path, station, hardened track rules).
 
 ### Terrain hazards
 `M3` · `initial` · `playtest: pending` · SPEC §4.5, §4.6
@@ -844,6 +861,28 @@ Every battle still ends at the extraction line; **Breach** (destroy the fortress
 - **Gotcha:** `recipe.fortress` is part of `neighborOf`'s cache key; a fortress chunk's features depend on it.
 - **Gotcha:** `w.objective.total` for a Chase is the haulers that actually spawned (a lane walled in by buildings can drop one).
 - **Limits:** Breach: fortress guns have no garrison of their own (the posts and the bunkers' infantry fill in), and doctrines don't change the gun mix. Chase: the convoy has no smoke screen; a Chase objective's convoy is still 5 haulers at 1.15× cruise (SPEC §16 Q24); laid mines are drawn swept, with no beat beyond a smoke puff when one drops.
+
+### Armored train (the Intercept mode)
+`M4` · `uncommitted` · `playtest: pending` · SPEC-armored-train.md §T2–§T5, §T8, §T9, §T12
+A fourth battle mode: a train of engines and boxcars runs the battle's rail line (§3 "Rail line") the way the Behemoth is going, a little slower than it cruises. Its engines are the targets. Built from the draft spec's steps 1, 2, 5, and 7; the armed cars, the railway gun, the train strip, and the collision rules are still to come (TODO.md).
+- **Content:** `MODES.intercept` (weight 0.6, bonus 90, posts ×0.3, `length` 1.4, `perSector` 1, `train`: escorts 2/3/3 hovercraft, waves hovercraft only); `content/trainCars.ts` (`TRAIN_CARS`: engine 40 long, boxcar 34; `TRAIN_LAYOUT` 3 sections × 4 cars, 5 strong, 4 × 5 objective; `trainLayout`, `parseTrain`); units `trainEngine` (260 HP, ×0.8 all round, `ramDamage` 60, 30 salvage) and `trainBoxcar` (90 HP, 12 salvage), both `maxSpeed` 0, `fixed`, threat 0; `TRAIN` in tuning.ts.
+- **Sim, `sim/train.ts`** (`World.train`, stepped in `stepWorld` before the encounter): vehicles are units flagged `Enemy.train` whose place the train writes each step (`place`); a destroyed one stays in `TrainState.vehicles` as a hulk (`alive` false, still `coupled`). `pieces` are coupled runs; a piece is `running`, `coasting` (cut loose), `derailing`, or `halted`.
+  - **Pace** (`setPace`, `trainPace`): `TRAIN.pace` (0.85) × the Behemoth's present cruise (`speedLimits`, so treads and load but not terrain), scaled by engines running (0.85, 0.68, 0.51 of three), eased at `TRAIN.ease`; no engines: it brakes at `TRAIN.brake`. It starts at rest. Once the Behemoth can't drive it keeps the last cruise it saw.
+  - **Cutting loose** (`cutLoose`): everything behind the rearmost running engine's section is uncoupled, coasts (`cutLoose.coast`), strobes (`ai.charging`), and after `fuse` s is scuttled from the tail forward (`scuttleNext`: a `TerrainBlast` each, `ripple` s apart; the unit is removed without a kill or salvage). A dead section with a running engine behind it stays coupled.
+  - **Chain breaks** (`trainVehicleDestroyed`, called by `destroyEnemy`): a `volatile` car (none yet) or one killed by `crushed` parts the chain (`uncouple`, `split`). Pieces with a running engine, or ahead of one, keep the train's pace (a gap); the rest are cut loose. A cut-loose car killed early blows at once.
+  - **Derailment** (`obstructed`, `derail`): a piece whose nose reaches `Terrain.lineCut`, its own wreckage (`block`), or the tail of a stopped piece loses its front vehicle: destroyed (`hazard`), thrown `derail.scatter` off the line and slewed (`TrainState.rng`), its tile a `wreck`; into a fallen span it's just gone. Each takes `derail.brake` off the piece's speed.
+  - **Salvage** (`trainSalvageShare`): derailed half, lost in a river none, cut loose only if the Behemoth kills it.
+  - **Ending** (`settle`, `leave`): no engine running = `stopped`: `objectiveStopped` banks the rest of the bonus, clears the targets, and `exitX` comes in to `TRAIN.extractAhead` ahead. An engine past the extraction line is lost (`objectiveLost`) and goes on pulling its cars off the field (`escaped`); the last piece off = `through`. Vehicles no longer running are dropped `dropBehind` behind the frame.
+- **Hooks:** `createWorld` adds the line to the recipe, scales the battle's length by the mode's, starts the hull in the lane, and gives the alert clock the mode's `waves` mix (posts keep the doctrine's); `startObjective` → `startTrain` (the train, then escorts on the wide side); `stepObjective` skips train units; the despawn filter keeps them; `threatBehind` ignores unarmed ones; `Terrain.shield` is the train's (`shields`: `TRAIN.shield` columns round each vehicle on the rails).
+- **Map:** drawn by weight like the other modes; `limitModes` (sectorMap.ts) keeps at most `perSector` a sector (the rest redraw from the unlimited modes on stream `0x30df`) and never the sector's objective. The icon's shoulder shows `I`; the reward line counts engines (`TRAIN_LAYOUT.sections`).
+- **Render and HUD:** live vehicles are ordinary unit views (`train_engine`, `train_boxcar`); `render/trainView.ts` draws hulks and wrecks from the train's state (`EnemyArt.hulk`), hiding a wreck whose tile has been flattened; `enemyDestroyed` for a train unit is a fireball with no decal. Banners for `trainStart`, `trainCutLoose`, `trainBroken`, `trainDerail`, `trainStopped`, and the engine lines in `objectiveCall`; the HUD's objective row reads `Intercept 1/3 engines`. Events are in `sim/events.ts`.
+- **Practice:** `?mode=intercept` (any seed, biome, approach), `&train=engine,boxcar,boxcar,engine` for a layout. The title's attract mode shows it in turn (`MODE_ORDER`, preroll 6 s); the autopilot surges to the next engine and holds beside one in view.
+- **Gotcha:** `destroyEnemy` → `trainVehicleDestroyed` and `sim/train.ts` → `destroyEnemy` import each other (as `objective.ts` does); keep top-level code out of both.
+- **Gotcha:** terrain is only generated near the frame, and the train's front starts about 600 units beyond it. A break in the line can only be made in generated terrain (near the Behemoth), and `lineCut` remembers it after the chunk is pruned. Tests that cut the track call `terrain.ensure` first.
+- **Gotcha:** the train is laid out by distance along x, not along the track; fine while the line's slope stays shallow (`railLine.smooth`).
+- **Gotcha:** a mode with `perSector` changes which modes a map draws; maps for old seeds differ from before the mode was added.
+- **Limits:** hulks and wrecks have no collision of their own (a wreck's tile does); an engine is "shoved" by a ram like a siege tank and put back on the line, so the hull isn't deflected along it; nothing happens when the train runs into a hull on the track; no train strip on the HUD; no train sounds beyond a radio call and the alarm; the autopilot plows the train (SPEC-armored-train.md §T18 Q11); a scuttling blast can wear a rail bridge the train isn't on.
+- Tests: `tests/sim/train.test.ts` (layout and start, spacing through bends, pace, hulks, every cut-loose case, chain breaks, stopped and through, derailment and the pile, the river), `tests/sim/objective.test.ts` (one a sector), `tests/input/demoBot.test.ts` (the clip rotation).
 
 ### Directives and sector objectives
 `M3` · `3471074` · `playtest: pending` · SPEC §3, §3.1, §4.4, §10, §15 "Directives and the run summary (M3)", §16 Q24–26

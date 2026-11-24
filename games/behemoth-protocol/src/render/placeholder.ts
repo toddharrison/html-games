@@ -1238,6 +1238,8 @@ export const EMP = { body: 22, turret: { w: 22, h: 9 }, pivotX: 7 };
 export const TOWER = { body: 18, turret: { w: 15, h: 9 }, pivotX: 5 };
 export const BUNKER = { body: 22, turret: { w: 11, h: 9 }, pivotX: 4 };
 export const HAUL = { body: { w: 24, h: 14 } };
+/** Armored train vehicles (SPEC §7.3), drawn nose to +x: sized to `TRAIN_CARS` lengths. */
+export const TRAIN_ART = { engine: { w: 40, h: 24 }, boxcar: { w: 34, h: 22 } };
 export const LAYER = { body: { w: 16, h: 11 } };
 export const HOVER = { body: { w: 15, h: 11 }, turret: { w: 10, h: 5 }, pivotX: 3 };
 export const POST = { body: 26 };
@@ -1351,6 +1353,56 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
       p.px(14, 8, PAL.ember);
     }
   };
+  // Armored train (SPEC §7.3). Every vehicle: bogies showing under the ends, buffers and a coupling
+  // at each end, a riveted armored body. `dead` is the burnt-out hulk the train drags along.
+  const railBody = (p: Painter, w: number, h: number, dead: boolean) => {
+    const main = dead ? PAL.ash : PAL.enemyDark;
+    for (const x of [4, w - 10]) {
+      p.rect(x, 1, 6, h - 2, PAL.outline);
+      p.rect(x + 1, 2, 4, h - 4, dead ? PAL.hole : PAL.enemyTread);
+    }
+    p.rect(1, 3, w - 2, h - 6, PAL.outline);
+    p.rect(2, 4, w - 4, h - 8, main);
+    p.rect(0, Math.floor(h / 2) - 1, 1, 2, PAL.steelDark);
+    p.rect(w - 1, Math.floor(h / 2) - 1, 1, 2, PAL.steelDark);
+    for (const y of [5, h - 6]) {
+      p.px(0, y, PAL.steelDark);
+      p.px(w - 1, y, PAL.steelDark);
+    }
+  };
+  const engine = (p: Painter, dead: boolean) => {
+    const { w, h } = TRAIN_ART.engine;
+    railBody(p, w, h, dead);
+    const hi = dead ? PAL.ashLight : PAL.enemyHi;
+    const mid = dead ? PAL.ash : PAL.enemy;
+    // A long boiler casing with a wedge prow, a cab at the back, and a stack of exhausts.
+    p.rect(8, 6, w - 14, h - 12, mid);
+    p.rect(8, 6, w - 14, 1, hi);
+    p.rect(w - 6, 7, 3, h - 14, mid);
+    p.rect(w - 3, 9, 1, h - 18, hi);
+    p.rect(3, 5, 6, h - 10, dead ? PAL.hole : PAL.steelDark);
+    p.rect(4, 6, 4, 1, dead ? PAL.ash : PAL.steelMid);
+    for (let x = 14; x < w - 10; x += 6) {
+      p.rect(x, Math.floor(h / 2) - 2, 3, 4, PAL.outline);
+      p.rect(x + 1, Math.floor(h / 2) - 1, 1, 2, dead ? PAL.hole : PAL.amber);
+    }
+    for (let x = 10; x < w - 8; x += 4) p.px(x, h - 7, dead ? PAL.hole : PAL.enemyDark);
+  };
+  const boxcar = (p: Painter, dead: boolean) => {
+    const { w, h } = TRAIN_ART.boxcar;
+    railBody(p, w, h, dead);
+    // An armored box: plates with seams, a sliding door amidships.
+    p.rect(3, 5, w - 6, h - 10, dead ? PAL.ashLight : PAL.concreteDark);
+    p.rect(3, 5, w - 6, 1, dead ? PAL.ash : PAL.concrete);
+    for (let x = 7; x < w - 4; x += 6) p.rect(x, 5, 1, h - 10, dead ? PAL.hole : PAL.steelDark);
+    p.rect(Math.floor(w / 2) - 3, 4, 6, 1, dead ? PAL.hole : PAL.enemy);
+    p.rect(Math.floor(w / 2) - 3, h - 5, 6, 1, dead ? PAL.hole : PAL.enemy);
+    if (dead) for (const [x, y] of [[9, 8], [20, 12], [26, 7]] as const) p.rect(x, y, 3, 2, PAL.hole);
+  };
+  for (const dead of [false, true]) {
+    canvasTexture(scene, dead ? 'train_engine_hulk' : 'train_engine', TRAIN_ART.engine.w, TRAIN_ART.engine.h, (p) => engine(p, dead));
+    canvasTexture(scene, dead ? 'train_boxcar_hulk' : 'train_boxcar', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, (p) => boxcar(p, dead));
+  }
   canvasTexture(scene, 'haul_body', HAUL.body.w, HAUL.body.h, (p) => haulBody(p, false));
   canvasTexture(scene, 'haul_wreck', HAUL.body.w, HAUL.body.h, (p) => haulBody(p, true));
 
@@ -1613,6 +1665,8 @@ export interface EnemyArt {
   turret: { key: string; pivotX: number; w: number } | null;
   /** Ground decal left behind; null = none. */
   wreck: string | null;
+  /** A train vehicle (SPEC §7.3): its burnt-out hulk, which the train view draws where the train has it (no decal). */
+  hulk?: string;
   /** Extra turrets, in `EnemyDef.turrets` order (SPEC §7 siege tank). */
   extra?: { key: string; pivotX: number; w: number }[];
   /**
@@ -1650,6 +1704,8 @@ export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
   spiderWalker: { body: 'walker_body', turret: { key: 'walker_turret', pivotX: WALKER.pivotX, w: WALKER.turret.w }, wreck: 'walker_wreck', gait: WALKER.gait },
   trapdoorTeam: { body: 'trap_shut', turret: null, wreck: 'trap_wreck', lid: { shut: 'trap_shut', open: 'trap_open' } },
   skiTroops: { body: `ski_${SKI_TROOPS.soldiers}`, turret: null, wreck: null, squad: { prefix: 'ski_', soldiers: SKI_TROOPS.soldiers, faceCourse: true } },
+  trainEngine: { body: 'train_engine', turret: null, wreck: null, hulk: 'train_engine_hulk' },
+  trainBoxcar: { body: 'train_boxcar', turret: null, wreck: null, hulk: 'train_boxcar_hulk' },
   hedgeGun: { body: 'hedgegun_body', turret: { key: 'hedgegun_turret', pivotX: HEDGE_GUN.pivotX, w: HEDGE_GUN.turret.w }, wreck: 'hedgegun_wreck' },
 };
 

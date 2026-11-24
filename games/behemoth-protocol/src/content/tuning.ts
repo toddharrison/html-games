@@ -280,6 +280,47 @@ export const OBJECTIVE = {
 };
 
 /**
+ * Armored trains (SPEC §4.4 Intercept, §7.3; `sim/train.ts`). A train runs the battle's rail line
+ * at a share of the Behemoth's own cruise speed, so it's the same fight for any build.
+ */
+export const TRAIN = {
+  /**
+   * Its pace with every engine running, as a share of the Behemoth's present cruise (treads and
+   * load, not terrain). With engines lost it drops toward `paceFloor` of that:
+   * `pace × (paceFloor + (1 − paceFloor) × running ÷ total)`. No engines: it brakes to a stop.
+   */
+  pace: 0.85,
+  paceFloor: 0.4,
+  /** How fast it changes pace (units/s²), and brakes once nothing pulls it. */
+  ease: 4,
+  brake: 10,
+  /** It starts at rest, pulling out of its station, its tail this far ahead of the Behemoth's nose. */
+  startGap: 200,
+  /** The gap between two coupled vehicles (world units). */
+  coupling: 4,
+  /**
+   * Cut loose (SPEC §7.3): a dead section coasts, slowing at `coast` units/s²; `fuse` s later its
+   * scuttling charges fire one vehicle at a time from the tail forward, `ripple` s apart, each a
+   * blast of `radius` and `damage`.
+   */
+  cutLoose: { coast: 6, fuse: 3, ripple: 0.25, radius: 40, damage: 50 },
+  /**
+   * Derailed (SPEC §7.3): each vehicle that leaves the rails takes `brake` units/s off what's behind
+   * it, and comes to rest up to `scatter` units off the line, turned up to `turn` degrees. It pays
+   * `salvage` of its worth (nothing if it went into a river).
+   */
+  derail: { brake: 8, scatter: [8, 24] as const, turn: 50, salvage: 0.5 },
+  /** Line tiles within this many columns of a vehicle take no damage: fire at the train never cuts the track. */
+  shield: 1,
+  /** Once the train is stopped, the extraction line is pulled in to this far ahead of the Behemoth. */
+  extractAhead: 600,
+  /** Vehicles no longer part of the running train are dropped this far behind the frame. */
+  dropBehind: 200,
+  /** Where along the battle its line always crosses a river (shares of the way to the extraction line). */
+  rivers: [0.35, 0.7] as const,
+};
+
+/**
  * Encounters (SPEC §4.2, §7; `sim/encounter.ts`): a battle's enemies come from its node's threat
  * `T` (the sector map's strength) and its mix (doctrine × biome × approach). **Defenders are placed
  * by distance**: posts along the strip, each a group that drives in (or is found dug in) as the
@@ -681,6 +722,36 @@ export const TERRAIN_GEN = {
   /** Rail lines run along the direction of travel for a stretch of this many chunks, 1–2 tracks. */
   railStretch: 4,
   railTracks: [1, 2] as const,
+  /**
+   * An armored train's line (SPEC §4.4 Intercept): one hardened track the whole length of the battle,
+   * off to one side of the field (which side is the seed's).
+   * - `meanRow`: its mean row, as a share of the field's width in from its side's edge.
+   * - It wanders `wander` rows either side of that between knots `knotCols` apart, level for its
+   *   first `levelCols` columns (the station), never within `edge` rows of a field edge.
+   * - `riverFlat`: it runs level this many columns either side of a river's center (its bridge), and
+   *   bends back to its own course no steeper than `riverSlope` rows a column.
+   * - `rockClear`: rows either side of it rock never covers (its own tile and the one each side are
+   *   cleared of everything: the railbed). `laneGap`: the guaranteed lane's center stays at least
+   *   this many rows from it, on the wide side.
+   * - `smooth`: columns the train's path takes to cross from one row to the next.
+   * - `fordWidth`: rows of the ford added on the wide side where a river has none there.
+   * - `station`: a platform beside the track from column `col`, `cols` long, with a station building
+   *   `depth` rows deep behind it on the narrow side, a gap every `gap` columns.
+   */
+  railLine: {
+    meanRow: 0.27,
+    wander: 1.5,
+    knotCols: 24,
+    levelCols: 30,
+    edge: 3,
+    riverFlat: 8,
+    riverSlope: 1 / 3,
+    rockClear: 2,
+    laneGap: 5,
+    smooth: 3,
+    fordWidth: 4,
+    station: { col: 4, cols: 24, depth: 2, gap: 6 },
+  },
   /** Dune ridges: long across the field (rows), shallow along it (columns). */
   dune: { across: [5, 12] as const, along: [1.2, 2.2] as const },
   /** Oilfields: a square patch (tiles a side) of derricks on a 3-tile grid. */

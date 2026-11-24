@@ -2,7 +2,7 @@ import { DETONATION, TRAILER_MINE } from '../content/tuning';
 import Phaser from 'phaser';
 import { BattleAudio } from '../audio/battleAudio';
 import { toggleMute } from '../audio/mute';
-import { battleLayout, battleLengthFromUrl, conditionFromUrl, doctrineFromUrl, lookFromUrl, mixFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
+import { battleLayout, battleLengthFromUrl, conditionFromUrl, doctrineFromUrl, lookFromUrl, mixFromUrl, cookOffAtFromUrl, immobilizeAtFromUrl, modeFromUrl, trainFromUrl, recipeFromUrl, RESOLUTION, type BattleLayout } from '../config';
 import { Controls } from '../input/controls';
 import { keyLabel, usingPad } from '../input/gamepad';
 import { BehemothView, TrackMarks } from '../render/compositor';
@@ -61,6 +61,7 @@ import { objectiveBonus, objectiveComplete, objectivePercent } from '../sim/obje
 import { FONT_KEY, fontText } from '../render/pixelFont';
 import { hex, PAL } from '../render/palette';
 import { checkpoint, endRun, enterNode, randomSeed, recordRun, showSummary, type RunContext } from './flow';
+import { TrainView } from '../render/trainView';
 import { createDemoWorld, DEMO, demoClip, demoRun, prerollDemo, type DemoClip } from './demo';
 import { demoCommand } from '../input/demoBot';
 import { APPROACHES } from '../content/approaches';
@@ -104,6 +105,7 @@ export class TopDownBattleScene extends Phaser.Scene {
   private trailerView: TrailerView | null = null;
   private tracks!: TrackMarks;
   private units!: UnitViews;
+  private trainView!: TrainView;
   private drones!: DroneViews;
   private pools!: PoolViews;
   /** Salvage flying to the hull: the HUD counts it as it lands. */
@@ -203,7 +205,7 @@ export class TopDownBattleScene extends Phaser.Scene {
         ...(urlMix ? { mix: urlMix } : {}),
         battleLength: battleLengthFromUrl() ?? battleLength(run),
         alertPace: battleAlertPace(run),
-        objective: battleObjective(run, modeFromUrl()),
+        objective: { ...battleObjective(run, modeFromUrl()), ...(trainFromUrl() ? { train: trainFromUrl()! } : {}) },
         condition: battleCondition(run, conditionFromUrl()),
         sighted: run.sighted,
       });
@@ -218,6 +220,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.trailerView?.root.setDepth(4.5);
     this.tracks = new TrackMarks(this, Math.ceil((height + 120) / 3) * 2);
     this.units = new UnitViews(this);
+    this.trainView = new TrainView(this);
     this.drones = new DroneViews(this);
     this.pools = new PoolViews(this);
     this.salvage = new SalvageMotes(this);
@@ -607,6 +610,12 @@ export class TopDownBattleScene extends Phaser.Scene {
     // The objective is a share (SPEC §4.4): each target down raises the percentage and pays its part.
     const pct = objectivePercent(o);
     const paid = objectiveBonus(o);
+    if (o.mode === 'intercept') {
+      const left = o.total - o.destroyed - o.lost;
+      if (what === 'lost') return left > 0 ? `An engine got through\n${left} ${left === 1 ? names[0] : names[1]} left on the field` : `The train got through\n${o.destroyed} of ${o.total} engines destroyed: +${paid}`;
+      if (done && objectiveComplete(o)) return `Last engine destroyed - 100%\nThe train is stopped: +${paid}`;
+      return `Engine destroyed - ${pct}%\n+${paid} salvage - the train slows`;
+    }
     if (done) {
       if (objectiveComplete(o)) return o.mode === 'breach' ? `Fortress breached - 100%\nEvery gun silenced: +${paid}` : `Convoy destroyed - 100%\nNothing got away: +${paid}`;
       const whole = o.mode === 'breach' ? 'Fortress' : 'Convoy';
@@ -679,6 +688,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.trailerView?.update(b, w.mines, this.interp, dt, w.time);
     this.tracks.update(this.behemothView, b, (x, y) => this.wet(x, y));
     this.units.update(w.enemies, w.projectiles, this.interp, dt, w.frame.left - 64);
+    this.trainView.update(w.train, w.terrain);
     // Damaged vehicles spark, smoke, and burn. Hidden units give nothing away.
     const damaged: UnitStatus[] = [];
     for (const e of w.enemies) {
@@ -975,6 +985,12 @@ export class TopDownBattleScene extends Phaser.Scene {
           break;
         case 'enemyDestroyed': {
           const wreck = ENEMY_ART[ev.enemy].wreck;
+          if (ENEMY_ART[ev.enemy].hulk) {
+            // A train's vehicle: the fireball, and its hulk stays with the train (`TrainView`).
+            this.fx.bigExplosion(ev.x, ev.y);
+            this.shake(140, ev.cause === 'crushed' ? 2 : 3);
+            break;
+          }
           if (!wreck) {
             // Infantry: no wreck, no fireball.
             this.fx.impact(ev.x, ev.y);
@@ -1040,6 +1056,31 @@ export class TopDownBattleScene extends Phaser.Scene {
           break;
         case 'salvage':
           this.salvage.add(ev.x, ev.y, ev.amount, ev.source);
+          break;
+        case 'trainStart':
+          this.objectiveShown = { at: w.time, text: `Armored train ahead\nDestroy its ${ev.engines} engines` };
+          break;
+        case 'trainCutLoose':
+          this.objectiveShown = { at: w.time, text: `Section cut loose - ${ev.cars} cars\nScuttling charges set: get clear` };
+          break;
+        case 'trainScuttle':
+          this.shake(120, 2.5);
+          break;
+        case 'trainBroken':
+          this.objectiveShown = { at: w.time, text: 'The train is cut in two' };
+          break;
+        case 'trainDerail':
+          if (ev.sunk) this.fx.splash(ev.x, ev.y, 30);
+          else {
+            this.fx.bigExplosion(ev.x, ev.y);
+            this.fx.buildingCollapse(ev.x, ev.y);
+            this.units.addDecal('scorch', ev.x, ev.y, ev.heading, 1.5);
+          }
+          this.shake(260, 4);
+          if (ev.first) this.objectiveShown = { at: w.time, text: ev.sunk ? 'The bridge is down\nThe train goes into the river' : 'Track cut\nThe train is coming off the rails' };
+          break;
+        case 'trainStopped':
+          this.objectiveShown = { at: w.time, text: `${ev.derailed ? 'Train derailed' : 'Train stopped'} - objective taken\n+${objectiveBonus(w.objective)} salvage - make for the extraction line` };
           break;
         case 'convoyAlarm':
           this.objectiveShown = { at: w.time, text: MODES.chase.convoy?.alarm.call ?? '' };

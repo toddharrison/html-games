@@ -1,3 +1,4 @@
+import { TRAIN_LAYOUT } from '../content/trainCars';
 import { MODES, type BattleModeId } from '../content/modes';
 import Phaser from 'phaser';
 import { RESOLUTION } from '../config';
@@ -300,7 +301,7 @@ export class MapScene extends Phaser.Scene {
     g.lineStyle(1, hex(strength === 'normal' ? PAL.enemyHi : PAL.amberHot), 1);
     g.lineBetween(bx - r + 1, by - r + 1, bx + r, by + r).lineBetween(bx + r, by - r + 1, bx - r + 1, by + r);
 
-    // A Breach or Chase battle: its mode's initial on the other shoulder (SPEC §4.4). Never fogged.
+    // A Breach, Chase, or Intercept battle: its mode's initial on the other shoulder (SPEC §4.4). Never fogged.
     const mode = n.battle!.mode;
     if (mode !== 'assault') {
       const mx = x - MAP_ICON / 2 + 3;
@@ -532,7 +533,7 @@ export class MapScene extends Phaser.Scene {
 function objectiveReward(mode: BattleModeId, strength: Strength | null): string {
   const def = MODES[mode];
   const names = def.target ?? ['target', 'targets'];
-  const count = strength && (def.fortress?.guns[strength] ?? def.convoy?.haulers[strength]);
+  const count = strength && (def.fortress?.guns[strength] ?? def.convoy?.haulers[strength] ?? (def.train ? TRAIN_LAYOUT.sections[strength] : undefined));
   if (!count) return `Up to +${def.bonus}: a share per ${names[0]} destroyed`;
   return `+${Math.round(def.bonus / count)} a ${names[0]} destroyed (${count}), up to +${def.bonus}`;
 }

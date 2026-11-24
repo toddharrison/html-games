@@ -28,7 +28,9 @@ export type EnemyId =
   | 'bombTruck'
   | 'skiTroops'
   | 'trapdoorTeam'
-  | 'spiderWalker';
+  | 'spiderWalker'
+  | 'trainEngine'
+  | 'trainBoxcar';
 
 /** Which side of a vehicle a hit lands on, relative to its hull heading (SPEC §7 "Facing armor"). */
 export type Facing = 'front' | 'flank' | 'rear';
@@ -47,6 +49,12 @@ const EMPLACEMENT_FACING: FacingArmor = { front: 0.5, flank: 1, rear: 1.5 };
 
 /** A superheavy: a glacis plate few guns get through, and the usual soft engine deck behind. */
 const SUPERHEAVY_FACING: FacingArmor = { front: 0.5, flank: 1, rear: 1.6 };
+
+/** An armored train's engine (SPEC §7.3): thick all round, no soft side. */
+const ENGINE_FACING: FacingArmor = { front: 0.8, flank: 0.8, rear: 0.8 };
+
+/** Rolling stock: the same plate on every side. */
+const CAR_FACING: FacingArmor = { front: 1, flank: 1, rear: 1 };
 
 /** A concrete bunker: thick all round, a little thinner at the back door. */
 const BUNKER_FACING: FacingArmor = { front: 0.6, flank: 0.8, rear: 1 };
@@ -709,6 +717,57 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     spawn: 'edges',
     threat: 1.25,
     salvage: 6,
+  },
+  trainEngine: {
+    // An armored train's engine (SPEC §4.4 Intercept, §7.3): it pulls its section, and it's the
+    // mode's target. It never drives itself: the train puts it on the line each step
+    // (`sim/train.ts`). Unarmed, thick all round, and too big to crush.
+    id: 'trainEngine',
+    name: 'Engine',
+    hp: 260,
+    targetClass: 'heavy',
+    facing: ENGINE_FACING,
+    reverseSpeed: 0,
+    radius: 15,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 0,
+    weapon: null,
+    fireRange: 0,
+    aimTime: 0,
+    behavior: fixed(),
+    spawn: 'objective',
+    // The train is the battle's set piece: its vehicles cost the alert clock nothing.
+    threat: 0,
+    salvage: 30,
+    ramDamage: 60,
+  },
+  trainBoxcar: {
+    // Unarmed cargo: it fills the places in a train the node's threat doesn't arm.
+    id: 'trainBoxcar',
+    name: 'Boxcar',
+    hp: 90,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 0,
+    weapon: null,
+    fireRange: 0,
+    aimTime: 0,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    // A hold full of supplies.
+    salvage: 12,
   },
 };
 

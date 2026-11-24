@@ -52,6 +52,8 @@ const FRINGE_OF: Partial<Record<MaterialId, FringeKey>> = {
   wreck: 'ash',
   glass: 'ash',
   rail: 'ballast',
+  track: 'ballast',
+  railBridge: 'bank',
 };
 
 /**

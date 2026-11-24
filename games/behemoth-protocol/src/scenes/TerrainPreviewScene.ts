@@ -1,3 +1,4 @@
+import { railLine } from '../sim/world';
 import Phaser from 'phaser';
 import { battleLayout, lookFromUrl, renderScale, RESOLUTION } from '../config';
 import { APPROACH_IDS, type ApproachId } from '../content/approaches';
@@ -38,7 +39,9 @@ export class TerrainPreviewScene extends Phaser.Scene {
     const a = params.get('approach');
     const approach = a && (APPROACH_IDS as string[]).includes(a) ? (a as ApproachId) : null;
     const layout = battleLayout(RESOLUTION, TILE);
-    this.terrain = new Terrain(hashSeed(seed, 0x7e44), layout.fieldTiles, { biome, approach });
+    // `mode=intercept`: with an armored train's rail line (SPEC §4.4).
+    const line = params.get('mode') === 'intercept' ? { line: railLine() } : {};
+    this.terrain = new Terrain(hashSeed(seed, 0x7e44), layout.fieldTiles, { biome, approach, ...line });
     this.view = new TerrainView(this, this.terrain, lookFromUrl());
     this.left = Number(params.get('col') ?? 0) * TILE;
     this.zoomOut = params.get('zoom') === '2' ? 2 : 1;

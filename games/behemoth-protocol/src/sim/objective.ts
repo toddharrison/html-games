@@ -13,6 +13,8 @@ import { drawUnit, edgeSpot } from './spawner';
 import { chunkRiver, riverCenter, type FortressSpec, type Terrain, type TerrainRecipe } from './terrain';
 import type { World } from './world';
 import { paySalvage } from './salvage';
+import { createTrain } from './train';
+import type { TrainCarId } from '../content/trainCars';
 
 /**
  * Battle-mode objectives (SPEC §4.4). Every battle ends at the extraction line; Breach and Chase
@@ -24,6 +26,9 @@ import { paySalvage } from './salvage';
  *   than the Behemoth cruises. Its haulers are the targets; damage slows them; mine layers at the
  *   tail drop mines in the Behemoth's path; light tanks screen it. A hauler past the extraction line
  *   has escaped.
+ * - **Intercept:** an armored train runs the battle's rail line (`sim/train.ts`). Its engines are the
+ *   targets; one that reaches the far end has escaped; a train stopped any other way (derailed) pays
+ *   the rest of the bonus at once (`objectiveStopped`).
  * A target left behind the frame is lost. Each one destroyed pays its share of the mode's bonus
  * (`objectiveBonus`); missing some never stops the battle.
  *
@@ -38,6 +43,8 @@ export interface ObjectiveSpec {
   strength: Strength;
   /** Breach only: a command post stands behind the wall (a Decapitation objective, SPEC §3). */
   command?: boolean;
+  /** Intercept only: the train's vehicles, front to back (a practice layout); default by strength. */
+  train?: readonly TrainCarId[];
 }
 
 /** A command post's fate: placed with the guns, then destroyed or left behind. */
@@ -141,8 +148,9 @@ export function createObjective(spec: ObjectiveSpec | null, terrain: Terrain, b:
   return o;
 }
 
-/** Sets the battle's objective going once the world exists: a Chase convoy starts just ahead. */
-export function startObjective(w: World, strength: Strength): void {
+/** Sets the battle's objective going once the world exists: a Chase convoy starts just ahead, an Intercept's train pulls out. */
+export function startObjective(w: World, strength: Strength, layout?: readonly TrainCarId[]): void {
+  if (MODES[w.objective.mode].train) startTrain(w, strength, layout);
   const c = MODES[w.objective.mode].convoy;
   if (!c) return;
   const column: EnemyId[] = [...Array<EnemyId>(c.haulers[strength]).fill('hauler'), ...Array<EnemyId>(c.layers[strength]).fill('mineLayer')];
@@ -173,6 +181,23 @@ export function startObjective(w: World, strength: Strength): void {
     const e = spawnEnemy(w, id, at.x, at.y);
     e.role = c.escort;
     e.ai.orbitDir = side;
+  }
+}
+
+/** An Intercept's train (its engines are the targets) and the hovercraft that ride with it, on the wide side of the line. */
+function startTrain(w: World, strength: Strength, layout?: readonly TrainCarId[]): void {
+  const m = MODES[w.objective.mode].train!;
+  const tr = (w.train = createTrain(w, strength, layout));
+  w.objective.total = tr.engines;
+  const tail = tr.vehicles[tr.vehicles.length - 1];
+  if (!tail) return;
+  const wide = -w.terrain.lineSide;
+  for (let i = 0; i < m.escorts[strength]; i++) {
+    const x = tail.x + w.rng.range(0, 120);
+    const at = laneSpot(w, m.escort, x, w.terrain.lineY(x) + wide * w.rng.range(50, 90));
+    if (!at) continue;
+    const e = spawnEnemy(w, m.escort, at.x, at.y);
+    e.ai.orbitDir = wide < 0 ? -1 : 1;
   }
 }
 
@@ -220,9 +245,10 @@ export function stepObjective(w: World, dt: number): void {
   }
   stepAlarm(w, dt);
   for (const e of w.enemies) {
-    if (!e.alive) continue;
+    // A train's vehicles are the train's to lose (`sim/train.ts`): they fall behind and come back.
+    if (!e.alive || e.train) continue;
     const d = e.def.behavior;
-    if (e.objective && (e.x >= w.exitX + OBJECTIVE.escapeBeyond || e.x < w.frame.left - OBJECTIVE.lostBehind)) lose(w, e);
+    if (e.objective && (e.x >= w.exitX + OBJECTIVE.escapeBeyond || e.x < w.frame.left - OBJECTIVE.lostBehind)) objectiveLost(w, e);
     else if (d.kind === 'convoy' && d.mines) layMines(w, e, d.mines.range, dt);
   }
 }
@@ -266,8 +292,20 @@ function layMines(w: World, e: Enemy, range: number, dt: number): void {
   w.events.push({ type: 'mineLaid', x: (col + 0.5) * ts, y: (row + 0.5) * ts });
 }
 
+/**
+ * An Intercept's train is stopped for good with engines still standing (derailed, or stuck behind
+ * the pile): they count as taken, and the rest of the bonus is banked at once (SPEC §4.4).
+ */
+export function objectiveStopped(w: World, x: number, y: number): void {
+  const o = w.objective;
+  const before = objectiveBonus(o);
+  o.destroyed = Math.max(o.destroyed, o.total - o.lost);
+  for (const e of w.enemies) if (e.train) e.objective = false;
+  paySalvage(w, x, y, objectiveBonus(o) - before, 'objective');
+}
+
 /** A target that's gone without being destroyed: it drops out of the battle. */
-function lose(w: World, e: Enemy): void {
+export function objectiveLost(w: World, e: Enemy): void {
   e.alive = false;
   if (e.def.id === 'commandPost' && w.objective.command) {
     w.objective.command.state = 'lost';

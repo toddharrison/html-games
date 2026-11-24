@@ -1,7 +1,7 @@
 import { DOCTRINES } from '../content/doctrines';
 import { MODES } from '../content/modes';
 import type { EnemyId } from '../content/enemies';
-import { CAMERA, ENCOUNTER, RUN, SPAWNER, TERRAIN_GEN } from '../content/tuning';
+import { CAMERA, ENCOUNTER, RUN, SPAWNER, TERRAIN_GEN, TRAIN } from '../content/tuning';
 import {
   hitched,
   mobile,
@@ -32,9 +32,10 @@ import { stepProjectiles } from './projectiles';
 import { Rng, hashSeed } from './rng';
 import { newRun, restoreBehemoth, type BehemothSnapshot } from './run';
 import { stepHazards } from './hazards';
-import { DEFAULT_RECIPE, Terrain, type TerrainBlast, type TerrainRecipe } from './terrain';
+import { DEFAULT_RECIPE, Terrain, type RailLineSpec, type TerrainBlast, type TerrainRecipe } from './terrain';
 import { stepMines, stepTrailer } from './trailer';
 import { stepWeapons } from './weapons';
+import { stepTrain, type TrainState } from './train';
 import { paySalvage } from './salvage';
 
 /** The whole battle state plus the fixed-step update that advances it. */
@@ -111,6 +112,8 @@ export interface World {
   encounter: EncounterState;
   /** The battle mode's targets (SPEC §4.4: fortress guns, a convoy); none in an Assault. */
   objective: ObjectiveState;
+  /** An Intercept's armored train (SPEC §7.3); null in every other mode. */
+  train: TrainState | null;
   /** World x of the extraction line: the Behemoth's center crossing it wins the battle (SPEC §4.4). */
   exitX: number;
   /** Sim time the Behemoth reached the extraction line; null until then. */
@@ -145,18 +148,28 @@ export const START_X = 70;
 /** Enemies this far behind the frame's left edge are dropped. */
 const DESPAWN_BEHIND = 200;
 
+/** An Intercept battle's rail line (SPEC §4.4): it always crosses a river or two, `TRAIN.rivers` of the way to the extraction line. */
+export function railLine(exitX: number = START_X + RUN.battleLength * (MODES.intercept.length ?? 1)): RailLineSpec {
+  const chunk = TERRAIN_GEN.tileSize * TERRAIN_GEN.chunkCols;
+  return { rivers: TRAIN.rivers.map((share) => Math.floor((START_X + (exitX - START_X) * share) / chunk)) };
+}
+
 export function createWorld(opts: WorldOptions): World {
   const threat = opts.threat ?? ENCOUNTER.baseThreat;
   const mix = opts.mix ?? homeMix(DOCTRINES.combined.mix, (opts.recipe ?? DEFAULT_RECIPE).biome);
-  const exitX = START_X + (opts.battleLength ?? RUN.battleLength);
+  const spec = opts.objective ?? null;
+  const mode = MODES[spec?.mode ?? 'assault'];
+  const exitX = START_X + (opts.battleLength ?? RUN.battleLength) * (mode.length ?? 1);
   const terrainSeed = hashSeed(opts.seed, 0x7e44);
   let recipe = opts.recipe ?? DEFAULT_RECIPE;
-  const spec = opts.objective ?? null;
+  // An Intercept's rail line runs the whole battle (SPEC §4.4).
+  if (mode.train) recipe = { ...recipe, line: railLine(exitX) };
   if (spec?.mode === 'breach') {
     recipe = { ...recipe, fortress: planFortress(opts.seed, terrainSeed, opts.fieldRows, recipe, START_X, exitX, spec.strength, spec.command ?? false) };
   }
   const terrain = new Terrain(terrainSeed, opts.fieldRows, recipe);
-  const behemoth = restoreBehemoth(opts.behemoth ?? newRun(opts.seed).behemoth, START_X, terrain.height / 2);
+  // Beside a rail line it starts in the lane, on the line's wide side.
+  const behemoth = restoreBehemoth(opts.behemoth ?? newRun(opts.seed).behemoth, START_X, terrain.hasLine ? terrain.laneY(START_X) : terrain.height / 2);
   const frame = createFrame({ ...CAMERA, width: opts.frameWidth }, frameFocus(behemoth), behemoth.chassis.speed.cruise);
   const world: World = {
     seed: opts.seed,
@@ -182,14 +195,16 @@ export function createWorld(opts: WorldOptions): World {
     events: [],
     nextId: 1,
     threat,
-    mix,
+    // Only what can keep up with a running fight reinforces a train (the posts keep the doctrine's mix).
+    mix: mode.train ? mode.train.waves : mix,
     encounter: createEncounter(
       opts.seed,
-      { threat, mix, postScale: (opts.postScale ?? 1) * MODES[spec?.mode ?? 'assault'].posts, waveScale: opts.waveScale ?? 1, alertPace: opts.alertPace ?? 1 },
+      { threat, mix, postScale: (opts.postScale ?? 1) * mode.posts, waveScale: opts.waveScale ?? 1, alertPace: opts.alertPace ?? 1 },
       START_X,
       exitX,
     ),
     objective: createObjective(spec, terrain, behemoth),
+    train: null,
     exitX,
     extractedAt: null,
     lastStand: null,
@@ -199,7 +214,7 @@ export function createWorld(opts: WorldOptions): World {
     dev: { frozen: false },
   };
   ensureTerrain(world);
-  if (spec) startObjective(world, spec.strength);
+  if (spec) startObjective(world, spec.strength, spec.train);
   return world;
 }
 
@@ -223,7 +238,8 @@ export function threatBehind(w: World): boolean {
   const b = w.behemoth;
   const rear = b.x - b.chassis.length / 2;
   const reach = w.frame.left - SPAWNER.spawnDistance - 20;
-  return w.enemies.some((e) => e.alive && e.x < rear && e.x > reach);
+  // A train's unarmed vehicles falling behind aren't a threat (the fight is alongside and ahead).
+  return w.enemies.some((e) => e.alive && e.x < rear && e.x > reach && !(e.train && !e.weapon && e.guns.length === 0));
 }
 
 /** Advance the battle by one fixed 60 Hz step. */
@@ -254,6 +270,7 @@ export function stepWorld(w: World, cmd: PlayerCommand): void {
   else centerFrame(w.frame, frameFocus(b), dt);
   ensureTerrain(w);
 
+  if (!w.dev.frozen) stepTrain(w, dt);
   if (!b.destroyed && !w.lastStand && w.extractedAt === null) stepEncounter(w, dt);
   if (!b.destroyed && w.extractedAt === null) stepObjective(w, dt);
   if (!w.dev.frozen) stepEnemies(w, dt);
@@ -268,7 +285,7 @@ export function stepWorld(w: World, cmd: PlayerCommand): void {
   for (const d of w.terrain.takeSalvageDrops()) paySalvage(w, d.x, d.y, d.amount, 'tile');
 
   const despawnX = w.frame.left - DESPAWN_BEHIND;
-  w.enemies = w.enemies.filter((e) => e.alive && e.x > despawnX);
+  w.enemies = w.enemies.filter((e) => e.alive && (e.train || e.x > despawnX));
   w.projectiles = w.projectiles.filter((p) => p.alive);
   w.barrages = w.barrages.filter((z) => z.until > w.time);
 }

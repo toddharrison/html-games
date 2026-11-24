@@ -97,6 +97,18 @@ function tilePieces(biome: BiomeId, pal: Pal): Piece[] {
       for (const d of [false, true]) out.push(single(frameName.bridge(light, edges, d), TILE, (p) => deck(p, new Rng(6900 + (light ? 1 : 0)), pal, light, d, edges)));
     }
   }
+  for (let edges = 0; edges < 4; edges++) {
+    for (const rails of [false, true]) {
+      for (const d of [false, true]) {
+        out.push(
+          single(frameName.railBridge(edges, rails, d), TILE, (p) => {
+            deck(p, new Rng(6950), pal, false, d, edges);
+            if (rails) hardRails(p, 0, 0);
+          }),
+        );
+      }
+    }
+  }
   // Structures, drawn whole and cut into tiles (screen x is the row, y counts down from the front).
   structuresOf(biome).forEach((id, ii) => {
     const def = STRUCTURES[id];
@@ -432,6 +444,20 @@ function deck(p: Painter, rng: Rng, pal: Pal, light: boolean, damaged: boolean, 
   }
 }
 
+/**
+ * An armored train's rails (SPEC §4.4): heavier than a branch line's, screen-vertical, shifting
+ * `top` px across at the tile's forward edge and `bottom` at its back (a bend to the next row).
+ */
+function hardRails(p: Painter, top: number, bottom: number): void {
+  for (let y = 0; y < TILE; y++) {
+    const dx = Math.round(bottom + ((top - bottom) * (TILE - 1 - y)) / (TILE - 1));
+    for (const x of [3, 11]) {
+      p.rect(x + dx, y, 2, 1, PAL.railSteel);
+      p.px(x + dx + 1, y, PAL.outline);
+    }
+  }
+}
+
 function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
   switch (name) {
     case 'clear':
@@ -730,6 +756,19 @@ function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
       p.speckle(rng, 0, 0, TILE, TILE, 3, pal.ash);
       break;
 
+    case 'track':
+    case 'track_fr':
+    case 'track_fl':
+    case 'track_br':
+    case 'track_bl': {
+      // Hardened main line: pale concrete sleepers close together on a deep ballast bed.
+      p.rect(0, 0, TILE, TILE, pal.gravel);
+      p.speckle(rng, 0, 0, TILE, TILE, 18, pal.stoneDark);
+      for (let y = 0; y < TILE; y += 3) p.rect(1, y, 14, 2, pal.stone);
+      const bend = name === 'track' ? 0 : name.endsWith('r') ? 6 : -6;
+      hardRails(p, name.startsWith('track_f') ? bend : 0, name.startsWith('track_b') ? bend : 0);
+      break;
+    }
     case 'rail':
     case 'rail_torn': {
       // Two rails running with the travel (screen-vertical) on wooden sleepers over ballast.

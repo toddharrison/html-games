@@ -5,12 +5,13 @@ import type { EnemyId } from './enemies';
  * Battle modes (SPEC §4.4): what a battle asks of the Behemoth beyond reaching the extraction line.
  * Every mode ends at the extraction line; Breach and Chase add an objective, a set of target units
  * (`sim/objective.ts`). Destroying them pays the mode's bonus, a share per target; missing some never
- * stops the run, it just pays less. M3: Assault, Breach, Chase. Pursuit and Duel wait for enemy
+ * stops the run, it just pays less. M3: Assault, Breach, Chase. Intercept (M4) sets an armored train
+ * running the length of the field: its engines are the targets. Pursuit and Duel wait for enemy
  * Behemoths (M4).
  */
 
-export type BattleModeId = 'assault' | 'breach' | 'chase';
-export const MODE_IDS: readonly BattleModeId[] = ['assault', 'breach', 'chase'];
+export type BattleModeId = 'assault' | 'breach' | 'chase' | 'intercept';
+export const MODE_IDS: readonly BattleModeId[] = ['assault', 'breach', 'chase', 'intercept'];
 
 /** Targets per node strength (normal, strong, objective). */
 export type ByStrength = { normal: number; strong: number; objective: number };
@@ -26,6 +27,10 @@ export interface ModeDef {
   bonus: number;
   /** Multiplier on the doctrine's post size: the objective brings its own fight. */
   posts: number;
+  /** The battle is this many times the usual length (default 1). */
+  length?: number;
+  /** At most this many battles of the mode in a sector (default: no limit). */
+  perSector?: number;
   /** What a target is called on the HUD and in the banners (singular, plural). */
   target?: [string, string];
   /** Breach: the fortified line holding the objective (SPEC §4.4: walls, bunkers, emplacements). */
@@ -45,6 +50,17 @@ export interface ModeDef {
      */
     batteries: ByStrength;
     batteryDepth: number;
+  };
+  /**
+   * Intercept: an armored train on a rail line the whole length of the field (SPEC §4.4). What the
+   * train is made of is content/trainCars.ts; how it runs is `TRAIN` in tuning.ts.
+   */
+  train?: {
+    /** Hovercraft riding with the train from the start (escorts, not targets). */
+    escorts: ByStrength;
+    escort: EnemyId;
+    /** What the alert clock's waves bring: only units that can keep up with a running fight. */
+    waves: Partial<Record<EnemyId, number>>;
   };
   /** Chase: a convoy fleeing up the field toward the far end (SPEC §4.4). */
   convoy?: {
@@ -146,6 +162,22 @@ export const MODES: Record<BattleModeId, ModeDef> = {
       hurtAt: 0.45,
       aside: 56,
       escort: screen(),
+    },
+  },
+  intercept: {
+    id: 'intercept',
+    name: 'Intercept',
+    goal: 'Stop the armored train: destroy its engines',
+    weight: 0.6,
+    bonus: 90,
+    posts: 0.3,
+    length: 1.4,
+    perSector: 1,
+    target: ['engine', 'engines'],
+    train: {
+      escorts: { normal: 2, strong: 3, objective: 3 },
+      escort: 'hovercraft',
+      waves: { hovercraft: 1 },
     },
   },
 };

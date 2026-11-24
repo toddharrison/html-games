@@ -49,8 +49,13 @@ export interface Enemy extends EnemyGun {
   hidden: boolean;
   /** Seconds it stays visible after firing or being hit, even in concealing terrain. */
   exposed: number;
-  /** One of the battle mode's targets (SPEC §4.4: a fortress gun, a convoy hauler). */
+  /** One of the battle mode's targets (SPEC §4.4: a fortress gun, a convoy hauler, a train's engine). */
   objective: boolean;
+  /**
+   * A vehicle of the battle's armored train (SPEC §7.3): the train puts it on the line each step
+   * (`sim/train.ts`), and drops it itself, so it isn't despawned for falling behind the frame.
+   */
+  train?: true;
   /**
    * A behavior the battle gave it in place of its own (a convoy escort's screen); its own last-stand
    * ring and weave still apply. Dropped once the role has nothing left to do.
@@ -117,7 +122,7 @@ export interface AiMemory {
   lid?: 'shut' | 'lifting' | 'open' | 'lingering';
   lidT?: number;
   marked?: boolean;
-  /** Bomb truck: its run has started (it's been in the frame), so the view strobes it (SPEC §7.4). */
+  /** Bomb truck: its run has started (it's been in the frame), so the view strobes it (SPEC §7.4). A train's vehicle: cut loose, its scuttling charge set. */
   charging?: boolean;
   /** Bomb truck: within `BOMB.close` of the hull, the last stretch (its strobe quickens). */
   close?: boolean;

@@ -24,6 +24,7 @@
  * `?dev` turns on the dev console (`src/dev/console.ts`) outside the dev server; it isn't a practice run.
  */
 
+import { parseTrain, type TrainCarId } from './content/trainCars';
 import { MODES, type BattleModeId } from './content/modes';
 import { ADDONS } from './content/addons';
 import { APPROACHES, type ApproachId } from './content/approaches';
@@ -130,7 +131,17 @@ export function mixFromUrl(): Partial<Record<EnemyId, number>> | undefined {
   return Object.keys(mix).length > 0 ? mix : undefined;
 }
 
-/** Playtest shortcut: every battle in this mode (`?mode=breach`, `chase`, `assault`). */
+/**
+ * Playtest shortcut: an Intercept's train, front to back (`?mode=intercept&train=engine,boxcar,boxcar,engine`);
+ * unknown cars are skipped. Undefined when not given (the node's strength sets the train).
+ */
+export function trainFromUrl(): TrainCarId[] | undefined {
+  const text = params.get('train');
+  const cars = text ? parseTrain(text) : [];
+  return cars.length > 0 ? cars : undefined;
+}
+
+/** Playtest shortcut: every battle in this mode (`?mode=breach`, `chase`, `intercept`, `assault`). */
 export function modeFromUrl(): BattleModeId | undefined {
   const m = params.get('mode');
   return m && m in MODES ? (m as BattleModeId) : undefined;

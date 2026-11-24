@@ -90,6 +90,8 @@ export function demoCommand(w: World): PlayerCommand {
   let throttle: -1 | 0 | 1 = 0;
   if (plan.near >= BOT.brakeAt) throttle = -1;
   else if (w.objective.mode === 'chase' && objectivesAhead.length > 0) throttle = 1;
+  // An armored train: surge up it to the next engine, and keep station beside one in sight.
+  else if (w.objective.mode === 'intercept' && objectivesAhead.length > 0) throttle = objectivesAhead.some((e) => e.x < top) ? 0 : 1;
   else if (w.objective.mode === 'breach' && objectivesAhead.some((e) => e.x < top)) throttle = -1;
   // No surging up to a fortress: it would roll past the guns before it could knock them out.
   else if (seen.length === 0 && plan.total < BOT.surgeBelow && !(w.objective.mode === 'breach' && objectivesAhead.length + (w.objective.fortress ? 1 : 0) > 0)) throttle = 1;

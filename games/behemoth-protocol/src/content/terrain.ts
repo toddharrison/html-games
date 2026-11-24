@@ -33,6 +33,9 @@ export type MaterialId =
   | 'factory'
   | 'fuelTank'
   | 'rail'
+  // An Intercept battle's line (SPEC §4.4)
+  | 'track'
+  | 'railBridge'
   // Desert
   | 'dune'
   | 'wadi'
@@ -154,6 +157,11 @@ const every = <T>(v: T) => ({ intact: v, damaged: v, destroyed: v, flattened: v 
 const NO_PROTECTION = every(0);
 /** Standing structures: `standing` while intact or damaged, `down` once destroyed or flattened. */
 const standing = <T>(up: T, down: T) => ({ intact: up, damaged: up, destroyed: down, flattened: down });
+
+/** An armored train's line: its track and its bridges (SPEC §4.4 Intercept). */
+export function isLine(mat: MaterialId): boolean {
+  return mat === 'track' || mat === 'railBridge';
+}
 
 /** River water (splashes, no scorch marks, no plasma pools). */
 export function isWet(mat: MaterialId): boolean {
@@ -551,8 +559,39 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     // It burns a few seconds, then goes up.
     burns: { dps: 8, spread: 0 },
   },
+  track: {
+    // An armored train's line (SPEC §4.4 Intercept): hardened track on concrete sleepers. Open ground
+    // to everything, and the treads don't tear it. Only a blast hard enough to crater open ground
+    // breaks it, and never under the train or from enemy fire (`Terrain.damage`).
+    id: 'track',
+    maxHp: 0,
+    damagedAt: 0,
+    obstacle: NO_OBSTACLE,
+    blocksShots: NO_COVER,
+    speed: { tracked: ALL_CLEAR, foot: ALL_CLEAR },
+    cover: NO_COVER,
+    conceals: NO_COVER,
+    protection: NO_PROTECTION,
+    scars: SCARS,
+  },
+  railBridge: {
+    // The line's girder span over a river: built for trains, so it holds any Behemoth (its one dry
+    // crossing with no weight limit). The whole span falls when it's shot out.
+    id: 'railBridge',
+    maxHp: 300,
+    damagedAt: 0.5,
+    obstacle: NO_OBSTACLE,
+    blocksShots: NO_COVER,
+    speed: { tracked: ALL_CLEAR, foot: ALL_CLEAR },
+    cover: NO_COVER,
+    conceals: NO_COVER,
+    protection: NO_PROTECTION,
+    bearing: { limit: Infinity, give: 'span' },
+    breaksTo: 'under',
+    debris: 'metal',
+  },
   rail: {
-    // Rail lines along the direction of travel (armored train routes in M4). The treads twist them.
+    // Rail lines along the direction of travel (cosmetic; an armored train runs on `track`). The treads twist them.
     id: 'rail',
     maxHp: 0,
     damagedAt: 0,

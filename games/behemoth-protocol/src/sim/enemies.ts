@@ -18,6 +18,7 @@ import { roundSpec } from './projectiles';
 import { spawnProjectile } from './weapons';
 import type { World } from './world';
 import { paySalvage } from './salvage';
+import { trainSalvageShare, trainVehicleDestroyed } from './train';
 
 /** Shared enemy systems: spawning an instance, movement over terrain, turret, and firing. */
 
@@ -84,8 +85,10 @@ export function destroyEnemy(w: World, e: Enemy, cause: KillCause): void {
   if (bomb) w.blasts.push({ x: e.x, y: e.y, radius: bomb.radius, damage: bomb.damage, fuse: 0, bomb: true });
   // A vehicle brews up where it died and its wreck burns (SPEC §6 "Fire"); one crushed flat or lost to the ground doesn't.
   if (e.def.mobility !== 'foot' && cause !== 'crushed' && cause !== 'hazard') burnWreck(w, e.x, e.y);
-  paySalvage(w, e.x, e.y, e.def.salvage, 'unit');
+  paySalvage(w, e.x, e.y, Math.round(e.def.salvage * (e.train ? trainSalvageShare(w, e, cause) : 1)), 'unit');
   if (e.objective) objectiveTaken(w, e);
+  // A train's vehicle stays in the chain as a hulk, or parts it (SPEC §7.3).
+  if (e.train) trainVehicleDestroyed(w, e, cause);
 }
 
 export function stepEnemies(w: World, dt: number): void {

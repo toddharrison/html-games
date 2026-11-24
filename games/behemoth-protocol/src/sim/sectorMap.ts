@@ -214,6 +214,7 @@ function generateSector(seed: number, s: number, biome: BiomeId, layerOffset: nu
       n.battle = battleIntel(rng, seed, s, n, layers, layerOffset, approaches.pop()!, biome);
     }
   }
+  limitModes(nodes, seed, s, layers);
   return { biome, layers, nodes };
 }
 
@@ -257,6 +258,25 @@ function brokenRoutes(nodes: MapNode[]): number {
   };
   walk(nodes[0]!, 0, null);
   return broken;
+}
+
+/**
+ * A mode a sector may hold only so many of (`ModeDef.perSector`: one armored train): the first node
+ * to draw it keeps it, and any other draws again from the modes with no limit, on a stream of its
+ * own. The sector's objective never keeps one (its mode is the Directive's to set).
+ */
+function limitModes(nodes: MapNode[], seed: number, s: number, layers: number): void {
+  const free = MODE_IDS.filter((m) => MODES[m].perSector === undefined);
+  const count = new Map<BattleModeId, number>();
+  for (const n of nodes) {
+    const b = n.battle;
+    if (!b) continue;
+    const limit = MODES[b.mode].perSector;
+    if (limit === undefined) continue;
+    const have = count.get(b.mode) ?? 0;
+    if (have < limit && n.layer < layers - 1) count.set(b.mode, have + 1);
+    else b.mode = new Rng(hashSeed(seed, 0x30df, s, n.id)).weighted(free, (m) => MODES[m].weight)!;
+  }
 }
 
 function battleIntel(rng: Rng, seed: number, s: number, n: MapNode, layers: number, layerOffset: number, drawn: ApproachId | null, biome: BiomeId): BattleIntel {

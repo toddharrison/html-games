@@ -1009,7 +1009,7 @@ Three Directives, picked on the title when starting a run, each setting every se
 - **Limits:** no profile save yet, so a Directive complete unlocks nothing (M5, §9); the picker offers all three every run (§16 Q26); no chassis choice in the run setup (one chassis). Decapitation: the command post has no garrison or reaction when the guns fall, and its pad can sit right behind a bunker (plowing to it means plowing a bunker too).
 
 ### Difficulty
-`M3` · `uncommitted` · `playtest: pending` · SPEC §3 "Difficulty", §10, §15 "Difficulty", §16 Q40
+`M3` · `8ac5248` · `playtest: pending` · SPEC §3 "Difficulty", §10, §15 "Difficulty", §16 Q40
 User request (Nov 24, 2026): "add difficulties. when reducing from hard (current) to normal, give a configurable bonus to salvage (I'm thinking 15% more). Easy should also reduce the challenge buy points (maybe by 15%). We'll playtest these values", then "allow difficulty selection in start screen where selecting the directive". Three levels, picked in the run setup and fixed for the run. **Hard is the game as it was** (every scale 1).
 - **The numbers** (`src/content/difficulties.ts`, `DIFFICULTIES`): `easy` salvage 1.4, threat 0.75; `normal` salvage 1.25, threat 0.85; `hard` 1 and 1 (first built at the user's 1.15 and 0.85 for Easy and 1.15 and 1 for Normal; retuned the same day from the playtests below, at the user's request: "run a series of playtests to get better starting numbers ... feel free to tune them as makes sense"). `DEFAULT_DIFFICULTY` (`normal`) is what the run setup opens on. `difficultyBrief(id)` writes the picker's line from the numbers ("defenders -15%, salvage +25%"), so retuning needs no text change.
 - **Salvage** (everything earned, nothing spent):
@@ -1054,7 +1054,7 @@ User request (Nov 24, 2026): "add difficulties. when reducing from hard (current
 - **Limits:** the numbers are an autopilot's, not a player's (it loses half its treads to terrain in any battle, and it can't show what a human does with extra salvage). The score formula isn't adjusted for difficulty (an easier run outscores the same run on Hard by its salvage bonus; the list only labels them). The playtest script (`npm run playtest`) starts its runs on Normal (Enter takes the setup's defaults).
 
 ### Run length and the run setup
-`M3` · `uncommitted` · `playtest: pending` · SPEC §3 "Run length", §10, §15 "Run length", §16 Q41
+`M3` · `8ac5248` · `playtest: pending` · SPEC §3 "Run length", §10, §15 "Run length", §16 Q41
 User request (Nov 24, 2026): "on the start screen with difficulty, also have the player select the number of missions (currently 3) from 1, 3, and 5 (isn't that the total count of our biomes?). have difficulty default to normal and missions default to 3." A run is 1, 3, or 5 sectors; five is every biome once.
 - **Sim:** `generateMap(seed, directive, sectors = SECTOR_MAP.sectors)` and the ninth argument of `newRun` (default 3, so every existing caller, test, and save is unchanged). `SECTOR_MAP.sectorChoices` (`[1, 3, 5]`, tuning.ts) is what the setup offers. Nothing else needed to know: the run's length is `run.map.sectors.length` (the map is in the save, so **no save version bump**), `isFinalNode` is the last sector's objective, and the summary and score entries already carry `sectors`.
 - **A shorter map is the start of a longer one** on the same seed (biomes, routes, intel, and events are drawn sector by sector on streams that don't look ahead), so `?seed=3&sectors=1` is the first sector of `?seed=3`.
@@ -1100,7 +1100,7 @@ User request (Nov 2026): the title screen plays short battles in the background.
 - **Gotcha:** a headless screenshot catches the clip's fade-in partway (the loop barely advances in virtual time), so it looks dark.
 
 ### Run save
-`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `3471074` (v11) → `75a116f` (v12) → `7dfa568` (v13) → `54e56de` (v14) → `uncommitted` (v15) · `playtest: pending` · SPEC §2
+`M2` · `34a2e0a` (v1) → `18f3b7b` (v4) → `e49aca3` (v5) → `be2d0d4` (v6, v7) → `2764b71` (v8) → `5383dc3` (v9, v10, M3) → `3471074` (v11) → `75a116f` (v12) → `7dfa568` (v13) → `54e56de` (v14) → `8ac5248` (v15) · `playtest: pending` · SPEC §2
 `src/save/runSave.ts`: versioned JSON in localStorage, structural validation, `StorageLike` for tests. Older versions migrate forward.
 
 | Version | Added |

@@ -119,6 +119,11 @@ export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: nu
   hedgeGunShot: { sound: 'cannon', size: 0.45 },
   trapdoorRocket: { sound: 'rocket', size: 0.5 },
   walkerGuns: { sound: 'autocannon', size: 0.45 },
+  // An armored train's guns (SPEC-armored-train.md §T6, §T7). The railway gun: the deepest boom
+  // on the field, usually from off screen (the shell's long whistle is the `barrage` cue).
+  trainMissiles: { sound: 'missile', size: 0.5 },
+  troopRockets: { sound: 'rocket', size: 0.4 },
+  railwayGunShell: { sound: 'howitzer', size: 1.5 },
 };
 
 const RAM_SIZE: Record<ObstacleClass, number> = { none: 0, soft: 0, trivial: 0, light: 0.3, medium: 0.6, heavy: 1, trap: 0.45, immovable: 0.8 };
@@ -261,6 +266,11 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
       return [{ sound: 'radio', size: 1 }];
     case 'trainCutLoose':
       return [{ sound: 'alarm', size: 0.8, x: ev.x, y: ev.y }];
+    // The train running into the hull: the heaviest ram there is. A flinger's throw: a dull thunk.
+    case 'trainStrike':
+      return [{ sound: 'ram', size: 1.5, x: ev.x, y: ev.y }];
+    case 'mineFlung':
+      return [{ sound: 'mortar', size: 0.3, x: ev.x0, y: ev.y0 }];
     // A heavy weapons team painting the hull: the cab's lock warning, from the team's side.
     case 'lockOn':
       return [{ sound: 'lockOn', size: 1, x: ev.x, y: ev.y }];

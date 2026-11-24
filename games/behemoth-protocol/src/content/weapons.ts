@@ -90,6 +90,8 @@ export interface ShellSpec extends RoundBase {
   incendiary?: BurnSpec;
   /** What it looks like in flight (render only): a rocket, a big missile, a canister; missing = a shell. */
   look?: 'rocket' | 'ballistic' | 'canister';
+  /** Too big to shoot down (SPEC-armored-train.md §T7 railway gun): point defense lets it be. */
+  unstoppable?: boolean;
 }
 
 /** Small direct-fire round: hits the first unit or cover in its path, or fizzles at max range. */
@@ -247,7 +249,10 @@ export type WeaponId =
   | 'hedgeGunShot'
   | 'trapdoorRocket'
   | 'walkerGuns'
-  | 'siegeAutocannon';
+  | 'siegeAutocannon'
+  | 'trainMissiles'
+  | 'troopRockets'
+  | 'railwayGunShell';
 
 /**
  * Main-gun shells (SPEC §6.2), chosen per gun at the depot. The first one a gun lists is its
@@ -306,8 +311,10 @@ export interface WeaponDef {
    * zone instead of at the target. When the aim telegraph ends the zone is fixed where the Behemoth
    * will be if it holds its course, marked on the ground, and every round of the salvo comes down
    * somewhere inside it, each `flight` seconds after it's fired. Enemy weapons only, lobbed shells.
+   * `spread`: how far from the zone's center a round may come down (default the zone's radius; 0
+   * for one big shell aimed at the center, whose burst is the zone).
    */
-  barrage?: { radius: number; flight: number };
+  barrage?: { radius: number; flight: number; spread?: number };
 }
 
 /** The shells a gun can take, default first; empty for guns with no choice. */
@@ -1274,6 +1281,83 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       minRange: 0,
       maxRange: 280,
       spread: 0.025,
+    },
+  },
+  trainMissiles: {
+    id: 'trainMissiles',
+    name: 'Missile car rack',
+    short: 'Rack',
+    role: 'auto',
+    category: 'munitions',
+    // The missile launcher's homing missiles, a pair at a time off an armored train (SPEC-armored-train.md §T6).
+    reload: 6.5,
+    muzzle: 6,
+    traverseDegPerSec: 90,
+    salvo: { count: 2, interval: 0.3 },
+    projectile: {
+      kind: 'missile',
+      speed: 105,
+      turnRate: 2.2,
+      damage: 9,
+      blastRadius: 0,
+      tileDamage: 15,
+      range: 340,
+      spread: 0.35,
+      lockRadius: 0,
+      strike: { target: 'hardpoints', bypass: 0.5 },
+    },
+  },
+  troopRockets: {
+    id: 'troopRockets',
+    name: 'Troop car rockets',
+    short: 'Slits',
+    role: 'auto',
+    category: 'munitions',
+    // Riflemen with anti-tank rockets at a troop car's firing slits (SPEC-armored-train.md §T6):
+    // the infantry's rockets, two at a time, short range, at the running gear.
+    reload: 3.4,
+    muzzle: 6,
+    traverseDegPerSec: 360,
+    salvo: { count: 2, interval: 0.35 },
+    projectile: {
+      kind: 'shell',
+      speed: 150,
+      damage: 5,
+      blastRadius: 0,
+      tileDamage: 4,
+      minRange: 0,
+      maxRange: 125,
+      spread: 0.06,
+      strike: { target: 'treads', bypass: 1 },
+    },
+  },
+  railwayGunShell: {
+    id: 'railwayGunShell',
+    name: 'Railway gun',
+    short: 'Rail gun',
+    role: 'auto',
+    category: 'munitions',
+    // One huge shell (SPEC-armored-train.md §T7), laid on where the Behemoth will be when it lands.
+    reload: 9,
+    muzzle: 30,
+    traverseDegPerSec: 30,
+    barrage: { radius: 40, flight: 3.5, spread: 0 },
+    projectile: {
+      kind: 'shell',
+      // Speed is set per round so it lands `barrage.flight` after it's fired.
+      speed: 150,
+      damage: 45,
+      blastRadius: 40,
+      // Enough to crater all the open ground in its burst (`SCARS` in content/terrain.ts, at the
+      // burst's half-strength edge); as enemy fire, it never breaks the line.
+      tileDamage: 200,
+      // It can't lay its gun on what's close: by then the car is in view and the shelling is over.
+      minRange: 300,
+      maxRange: 1200,
+      spread: 0,
+      lobbed: true,
+      strike: { target: 'hardpoints', bypass: 0.25 },
+      unstoppable: true,
     },
   },
   walkerGuns: {

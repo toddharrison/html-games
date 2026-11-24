@@ -30,6 +30,12 @@ export type EnemyId =
   | 'trapdoorTeam'
   | 'spiderWalker'
   | 'trainEngine'
+  | 'trainRailwayGun'
+  | 'trainGunCar'
+  | 'trainMissileCar'
+  | 'trainTroopCar'
+  | 'trainMineCar'
+  | 'trainAmmoCar'
   | 'trainBoxcar';
 
 /** Which side of a vehicle a hit lands on, relative to its hull heading (SPEC §7 "Facing armor"). */
@@ -174,6 +180,11 @@ export interface EnemyDef {
    * the lock, and it starts over after `relock` seconds.
    */
   lockOn?: { relock: number };
+  /**
+   * Fires from beyond the frame (SPEC-armored-train.md §T7 railway gun): the one exception to the
+   * rule that nothing fires from off screen. Only for area fire, whose marked zone is the warning.
+   */
+  offscreen?: boolean;
 }
 
 export const ENEMIES: Record<EnemyId, EnemyDef> = {
@@ -744,6 +755,151 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     threat: 0,
     salvage: 30,
     ramDamage: 60,
+  },
+  trainRailwayGun: {
+    // The lead section's railway gun (SPEC-armored-train.md §T7): a huge gun on a long car behind
+    // the lead engine. It shells the Behemoth from anywhere on the train, on screen or off, and
+    // can't lay its gun on anything closer than its minimum range. Too big to crush.
+    id: 'trainRailwayGun',
+    name: 'Railway gun',
+    hp: 320,
+    targetClass: 'heavy',
+    facing: ENGINE_FACING,
+    reverseSpeed: 0,
+    // One hit circle for a 60-long car: its ends are a little harder to hit than its middle.
+    radius: 18,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 30,
+    weapon: 'railwayGunShell',
+    fireRange: 1200,
+    aimTime: 1,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 45,
+    ramDamage: 60,
+    offscreen: true,
+  },
+  trainGunCar: {
+    // A turret on a flatcar with the fortress gun in it: the train's hardest shots (§T6).
+    id: 'trainGunCar',
+    name: 'Gun car',
+    hp: 150,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 40,
+    weapon: 'emplacementGun',
+    fireRange: 270,
+    aimTime: 0.9,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 20,
+  },
+  trainMissileCar: {
+    // A rack of the missile launcher's homing missiles, fired in pairs (§T6).
+    id: 'trainMissileCar',
+    name: 'Missile car',
+    hp: 130,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 90,
+    weapon: 'trainMissiles',
+    fireRange: 300,
+    aimTime: 1.1,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 20,
+  },
+  trainTroopCar: {
+    // Riflemen with rockets at firing slits down both sides, aimed low at the treads: short range,
+    // so it punishes hugging the train (§T6). Its squads jump out when it's destroyed or cut loose.
+    id: 'trainTroopCar',
+    name: 'Troop car',
+    hp: 140,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 360,
+    weapon: 'troopRockets',
+    fireRange: 110,
+    aimTime: 0.6,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 15,
+  },
+  trainMineCar: {
+    // A mine flinger: it lobs mines onto the Behemoth's line ahead of it (its throw is
+    // `TrainCarDef.fling`, worked by the train, sim/train.ts). No gun.
+    id: 'trainMineCar',
+    name: 'Mine flinger',
+    hp: 120,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 0,
+    weapon: null,
+    fireRange: 0,
+    aimTime: 0,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 15,
+  },
+  trainAmmoCar: {
+    // Unarmed and thin-skinned: destroyed, it goes up (`TrainCarDef.volatile`) on its neighbors.
+    id: 'trainAmmoCar',
+    name: 'Ammo car',
+    hp: 70,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 0,
+    weapon: null,
+    fireRange: 0,
+    aimTime: 0,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 8,
   },
   trainBoxcar: {
     // Unarmed cargo: it fills the places in a train the node's threat doesn't arm.

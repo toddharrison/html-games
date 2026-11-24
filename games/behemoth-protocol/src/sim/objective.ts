@@ -14,7 +14,8 @@ import { chunkRiver, riverCenter, type FortressSpec, type Terrain, type TerrainR
 import type { World } from './world';
 import { paySalvage } from './salvage';
 import { createTrain } from './train';
-import type { TrainCarId } from '../content/trainCars';
+import { TRAIN_DOCTRINE, type TrainCarId } from '../content/trainCars';
+import type { DoctrineId } from '../content/doctrines';
 
 /**
  * Battle-mode objectives (SPEC §4.4). Every battle ends at the extraction line; Breach and Chase
@@ -43,8 +44,10 @@ export interface ObjectiveSpec {
   strength: Strength;
   /** Breach only: a command post stands behind the wall (a Decapitation objective, SPEC §3). */
   command?: boolean;
-  /** Intercept only: the train's vehicles, front to back (a practice layout); default by strength. */
+  /** Intercept only: the train's vehicles, front to back (a practice layout); default built from the node's threat. */
   train?: readonly TrainCarId[];
+  /** Intercept only: the defenders' doctrine, which shades what the train carries (SPEC-armored-train.md §T6); default combined arms. */
+  doctrine?: DoctrineId;
 }
 
 /** A command post's fate: placed with the guns, then destroyed or left behind. */
@@ -149,8 +152,8 @@ export function createObjective(spec: ObjectiveSpec | null, terrain: Terrain, b:
 }
 
 /** Sets the battle's objective going once the world exists: a Chase convoy starts just ahead, an Intercept's train pulls out. */
-export function startObjective(w: World, strength: Strength, layout?: readonly TrainCarId[]): void {
-  if (MODES[w.objective.mode].train) startTrain(w, strength, layout);
+export function startObjective(w: World, strength: Strength, layout?: readonly TrainCarId[], doctrine?: DoctrineId): void {
+  if (MODES[w.objective.mode].train) startTrain(w, strength, layout, doctrine);
   const c = MODES[w.objective.mode].convoy;
   if (!c) return;
   const column: EnemyId[] = [...Array<EnemyId>(c.haulers[strength]).fill('hauler'), ...Array<EnemyId>(c.layers[strength]).fill('mineLayer')];
@@ -185,14 +188,16 @@ export function startObjective(w: World, strength: Strength, layout?: readonly T
 }
 
 /** An Intercept's train (its engines are the targets) and the hovercraft that ride with it, on the wide side of the line. */
-function startTrain(w: World, strength: Strength, layout?: readonly TrainCarId[]): void {
+function startTrain(w: World, strength: Strength, layout?: readonly TrainCarId[], doctrine: DoctrineId = 'combined'): void {
   const m = MODES[w.objective.mode].train!;
-  const tr = (w.train = createTrain(w, strength, layout));
+  const tr = (w.train = createTrain(w, strength, layout, doctrine));
   w.objective.total = tr.engines;
   const tail = tr.vehicles[tr.vehicles.length - 1];
   if (!tail) return;
   const wide = -w.terrain.lineSide;
-  for (let i = 0; i < m.escorts[strength]; i++) {
+  // Raiders send one more (SPEC-armored-train.md §T6).
+  const escorts = m.escorts[strength] + (TRAIN_DOCTRINE[doctrine].escorts ?? 0);
+  for (let i = 0; i < escorts; i++) {
     const x = tail.x + w.rng.range(0, 120);
     const at = laneSpot(w, m.escort, x, w.terrain.lineY(x) + wide * w.rng.range(50, 90));
     if (!at) continue;

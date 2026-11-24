@@ -324,6 +324,14 @@ const CENTER = { x: 0, y: 0 };
 /** Every gun on the unit: the main one (on its center), then any extra turrets. */
 function aimAndFire(w: World, e: Enemy, dt: number): void {
   const d = e.def;
+  // A train's vehicle cut loose: its crew has left the guns (SPEC §7.3).
+  if (e.train && e.ai.charging) {
+    for (const g of [e, ...e.guns]) {
+      g.windup = 0;
+      g.salvoLeft = 0;
+    }
+    return;
+  }
   aimGun(w, e, e, { turretDegPerSec: d.turretDegPerSec, fireRange: d.fireRange, aimTime: d.aimTime, pivot: CENTER, target: d.target ?? 'behemoth' }, dt);
   for (const g of e.guns) aimGun(w, e, g, g.def, dt);
 }
@@ -378,11 +386,12 @@ function aimGun(w: World, e: Enemy, g: EnemyGun, m: GunMount, dt: number): void 
     return;
   }
   // Fairness: never fire from off-screen. Leaving the frame mid-aim cancels the shot (and the
-  // rest of a volley).
+  // rest of a volley). The one exception is a railway gun's area fire (`EnemyDef.offscreen`): its
+  // marked zone is the warning.
   const margin = e.def.radius + 4;
   const onScreen =
     e.x >= w.frame.left + margin && e.x <= frameRight(w.frame) - margin && e.y >= 0 && e.y <= w.terrain.height;
-  if (!onScreen) {
+  if (!onScreen && !(e.def.offscreen && weapon.barrage)) {
     g.windup = 0;
     g.salvoLeft = 0;
     return;
@@ -489,7 +498,7 @@ function fireRound(w: World, e: Enemy, g: EnemyGun, at: { x: number; y: number }
   if (zone) {
     // Somewhere in the zone, landing `flight` seconds from now.
     const a = w.rng.range(0, Math.PI * 2);
-    const r = zone.radius * Math.sqrt(w.rng.next());
+    const r = (g.weapon.barrage!.spread ?? zone.radius) * Math.sqrt(w.rng.next());
     const tx = zone.x + Math.cos(a) * r;
     const ty = zone.y + Math.sin(a) * r;
     const reach = Math.max(1, Math.hypot(tx - mx, ty - my));

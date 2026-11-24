@@ -1,10 +1,13 @@
+import { ENEMIES } from '../content/enemies';
 import { OBSTACLE_CLASSES, type ObstacleClass } from '../content/obstacles';
-import { DEFLECT, RAM } from '../content/tuning';
+import { DEFLECT, RAM, TRAIN } from '../content/tuning';
 import {
   damageArmor,
   damageTreads,
   frontHalf,
+  footprint,
   groundFootprint,
+  hitched,
   hullBox,
   hullSide,
   hullWidth,
@@ -20,6 +23,7 @@ import type { Enemy } from './entities';
 import type { SimEvent } from './events';
 import { boxBounds, circleIntersectsBox, clamp, rectIntersectsBox, type Box, type Rect } from './math';
 import type { Terrain } from './terrain';
+import { plowVehicle, trainBodies, trainStrikes, type TrainBody } from './train';
 import type { World } from './world';
 
 /**
@@ -31,6 +35,7 @@ import type { World } from './world';
  */
 export function resolveBehemothCollisions(w: World, dt: number, steer: -1 | 0 | 1): void {
   deflectOffRock(w, dt, steer);
+  meetTrain(w, dt, steer);
 
   const b = w.behemoth;
   // The turned hull (it follows the machine's shape as it steers): only tiles it really covers are crushed.
@@ -43,7 +48,8 @@ export function resolveBehemothCollisions(w: World, dt: number, steer: -1 | 0 | 
   }
 
   for (const e of w.enemies) {
-    if (!e.alive || !circleIntersectsBox(box, e.x, e.y, e.def.radius * RAM.crushRadius)) continue;
+    // An armored train's vehicles are `meetTrain`'s.
+    if (!e.alive || e.train || !circleIntersectsBox(box, e.x, e.y, e.def.radius * RAM.crushRadius)) continue;
     if (e.def.ramDamage) {
       ramBig(w, e, box, dt);
       continue;
@@ -87,6 +93,138 @@ function ramBig(w: World, e: Enemy, box: Box, dt: number): void {
 }
 
 /**
+ * The armored train (SPEC-armored-train.md §T10), met before anything is crushed:
+ * - a piece under way whose front reaches the hull on the track ahead of it (or the trailer in
+ *   tow) runs into it (`trainStrikes`) and shoves it out of the way, toward the line's wide side;
+ * - an engine and the railway gun are too big to crush, and so are their hulks and wrecks: the hull
+ *   is deflected and slides along them as against rock, ramming one at first contact head-on
+ *   (`ramDamage`, at the speed it closes; it's on rails, so it isn't shoved), scraping armor all
+ *   the while; held at a hulk's or wreck's face with nowhere to go, it grinds through after a while;
+ * - every other car is a heavy obstacle, plowed through like any unit: destroyed, it parts the
+ *   chain. A hulk in the chain or a car's wreck is plowed the same way (`plowVehicle`).
+ */
+function meetTrain(w: World, dt: number, steer: -1 | 0 | 1): void {
+  const tr = w.train;
+  if (!tr) return;
+  const b = w.behemoth;
+  const wide = -w.terrain.lineSide || 1;
+  let contact = false;
+  let shoved = false;
+  for (const body of trainBodies(w)) {
+    const v = body.vehicle;
+    const was = !!v.touching;
+    v.touching = false;
+    const r = body.rect;
+    const cx = (r.x0 + r.x1) / 2;
+    const cy = (r.y0 + r.y1) / 2;
+    // Struck, or still being shoved clear of the train's path after it.
+    if (body.leading && cx < b.x && body.speed >= b.vx && (strikes(w, body, 0) || (tr.shoving && strikes(w, body, TRAIN.collide.strike.clear)))) {
+      if (tr.struck <= 0 && strikes(w, body, 0)) trainStrikes(w, body.index);
+      tr.shoving = true;
+      // Shoved ahead of its nose and off to the side, until it's clear.
+      const fp = footprint(b);
+      if (r.x1 > fp.x0 && r.y1 > fp.y0 && r.y0 < fp.y1) b.x += r.x1 - fp.x0;
+      b.vy = wide * TRAIN.collide.strike.shove;
+      shoved = true;
+      contact = true;
+      continue;
+    }
+    if (v.car.massive) {
+      if (deflectOffBody(w, body, cx, cy, was, steer, wide, dt)) contact = true;
+      continue;
+    }
+    if (!circleIntersectsBox(hullBox(b), v.x, v.y, ENEMIES[v.car.enemy].radius * RAM.crushRadius)) continue;
+    if (body.unit) {
+      applyObstacle(b, body.unit.def.obstacle, w.events, v.x, v.y);
+      destroyEnemy(w, body.unit, 'crushed');
+    } else {
+      applyObstacle(b, ENEMIES[v.car.enemy].obstacle, w.events, v.x, v.y);
+      plowVehicle(w, body.index);
+    }
+  }
+  tr.shoving = shoved;
+  // Clear of the train: drift on with the shove, but no faster than steering allows (as off rock).
+  if (tr.contact && !contact) {
+    const maxLat = lateralLimit(b);
+    b.vy = clamp(b.vy, -maxLat, maxLat);
+    b.ay = 0;
+  }
+  tr.contact = contact;
+}
+
+/**
+ * A piece's front vehicle is into the hull, or into the trailer in tow. Its nose counts a little
+ * ahead of it (`STRIKE_REACH`), so the hull it's shoving along ahead of it stays in contact, and
+ * `pad` wider either side (to shove the hull well clear of its path).
+ */
+function strikes(w: World, body: TrainBody, pad: number): boolean {
+  const b = w.behemoth;
+  const r = { x0: body.rect.x0, x1: body.rect.x1 + STRIKE_REACH, y0: body.rect.y0 - pad, y1: body.rect.y1 + pad };
+  if (rectIntersectsBox(hullBox(b), r)) return true;
+  const t = hitched(b);
+  return !!t && t.x + t.def.length / 2 > r.x0 && t.x - t.def.length / 2 < r.x1 && t.y + t.def.width / 2 > r.y0 && t.y - t.def.width / 2 < r.y1;
+}
+
+/**
+ * Pushes the hull out of something on the train too big to crush, like rock (`deflectOffRock`),
+ * along the shallower axis of their overlap under the ground box. Returns whether they touch.
+ */
+function deflectOffBody(w: World, body: TrainBody, cx: number, cy: number, was: boolean, steer: -1 | 0 | 1, wide: number, dt: number): boolean {
+  const b = w.behemoth;
+  const v = body.vehicle;
+  const r = body.rect;
+  const fp = groundFootprint(b);
+  const ox = Math.min(fp.x1, r.x1) - Math.max(fp.x0, r.x0);
+  const oy = Math.min(fp.y1, r.y1) - Math.max(fp.y0, r.y0);
+  if (ox <= 0 || oy <= 0) {
+    v.held = 0;
+    return false;
+  }
+  v.touching = true;
+  const cruise = b.chassis.speed.cruise;
+  // It's moving: what counts is how fast the hull closes on it, or slides along it.
+  const closing = Math.max(0, b.vx - body.speed) / cruise;
+  const along = Math.max(Math.abs(b.vx - body.speed), Math.abs(b.vy)) / cruise;
+  const scrape = DEFLECT.scrapePerSec * dt * along * (1 - ramRating(b));
+  if (cx > b.x && (ox < oy || ox <= FACE_DEPTH)) {
+    // Head-on into its end: held there, and slid off to one side (the way the player steers, or
+    // the side the hull is already on).
+    b.x -= ox;
+    const at = { x: r.x0, y: clamp(b.y, r.y0, r.y1) };
+    if (!was) {
+      applyObstacle(b, 'heavy', w.events, at.x, at.y, closing);
+      const e = body.unit;
+      if (e?.def.ramDamage) {
+        e.hp -= e.def.ramDamage * closing * (1 + RAM.gearDamage * ramRating(b));
+        if (e.hp <= 0) destroyEnemy(w, e, 'crushed');
+      }
+    }
+    const dir = steer !== 0 ? steer : Math.sign(b.y - cy) || wide;
+    if (mobile(b)) b.vy = dir * Math.max(DEFLECT.minSlideSpeed, b.vx * DEFLECT.slideSpeedScale);
+    damageTreads(b, damageFront(b, at.x, at.y, scrape, w.events), w.events);
+    // A hulk or a wreck that won't let the hull by: after a while it grinds through.
+    v.held = (v.held ?? 0) + dt;
+    if (!body.unit && body.speed === 0 && v.held >= TRAIN.collide.grind) plowVehicle(w, body.index);
+    if (w.tick % 6 === 0) w.events.push({ type: 'scrape', x: at.x, y: at.y });
+    return true;
+  }
+  v.held = 0;
+  if (cx < b.x && ox < oy) {
+    // Its end is against the hull's tail (it's catching up): it pushes the hull on ahead.
+    b.x += ox;
+    return true;
+  }
+  // Alongside: slide along it, losing any sideways speed into it.
+  const away = cy < b.y ? 1 : -1;
+  b.y += away * oy;
+  if (b.vy * away < 0) b.vy = 0;
+  const arc: ArmorArc = away > 0 ? 'left' : 'right';
+  damageTreads(b, damageArmor(b, arc, scrape), w.events);
+  if (w.tick % 6 === 0) w.events.push({ type: 'scrape', x: clamp(b.x, r.x0, r.x1), y: away > 0 ? r.y1 : r.y0 });
+  return true;
+}
+
+/**
  * Water (SPEC §4.5), measured under the ground box: the treads wear for every unit driven through
  * deep water (by distance, so a slow, crippled hull isn't worn down faster), and what the hull is
  * in (water, drifts, ice) is refreshed for the next step's speed cap and traction.
@@ -98,10 +236,10 @@ function ford(w: World, dt: number): void {
   b.wading = w.terrain.groundAt(groundFootprint(b));
 }
 
-export function applyObstacle(b: BehemothState, cls: ObstacleClass, events: SimEvent[], x: number, y: number): void {
+/** `impact`: how hard it's met, as a share of cruise speed (default the hull's own speed: the obstacle stands still). */
+export function applyObstacle(b: BehemothState, cls: ObstacleClass, events: SimEvent[], x: number, y: number, impact = b.vx / b.chassis.speed.cruise): void {
   if (cls === 'none') return;
   const def = OBSTACLE_CLASSES[cls];
-  const impact = b.vx / b.chassis.speed.cruise;
   const ram = ramRating(b);
   b.vx *= 1 - def.speedDip * (1 - RAM.speedDipCut * ram);
   const dmg = impact * (1 - ram);
@@ -126,6 +264,9 @@ function damageFront(b: BehemothState, x: number, y: number, amount: number, eve
   if (Math.abs(side) > DEAD_CENTER) return damageArmor(b, frontHalf(side), left);
   return damageArmor(b, 'frontLeft', left / 2) + damageArmor(b, 'frontRight', left / 2);
 }
+
+/** How far ahead of a train's nose (units) a hull it's shoving still counts as struck. */
+const STRIKE_REACH = 2;
 
 /** Forward overlap (units) up to which a rock tile at the nose counts as the face: over a tick of travel. */
 const FACE_DEPTH = 2;

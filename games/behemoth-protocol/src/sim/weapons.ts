@@ -532,7 +532,8 @@ function stepPointDefense(w: World, h: HardpointState, weapon: WeaponDef, spec: 
   let target: Projectile | null = null;
   let bestScore = Infinity;
   for (const q of w.projectiles) {
-    if (!q.alive || q.owner !== 'enemy' || q.kind === 'bullet') continue;
+    // A railway gun's shell is too big to stop (SPEC-armored-train.md §T7).
+    if (!q.alive || q.owner !== 'enemy' || q.kind === 'bullet' || (q.weapon.projectile.kind === 'shell' && q.weapon.projectile.unstoppable)) continue;
     const d = Math.hypot(q.x - p.x, q.y - p.y);
     // Only rounds still closing on the Behemoth.
     if (d > reach || (b.x - q.x) * q.vx + (b.y - q.y) * q.vy <= 0) continue;

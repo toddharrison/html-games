@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { MODES } from '../../src/content/modes';
-import { parseTrain, TRAIN_CARS, trainLayout, type TrainCarDef, type TrainCarId } from '../../src/content/trainCars';
+import { parseTrain, plainTrain, TRAIN_CARS, type TrainCarDef, type TrainCarId } from '../../src/content/trainCars';
 import { OBJECTIVE, RUN, TERRAIN_GEN, TRAIN } from '../../src/content/tuning';
 import { IDLE_COMMAND, speedLimits, type PlayerCommand } from '../../src/sim/behemoth';
 import { destroyEnemy } from '../../src/sim/enemies';
@@ -13,9 +13,12 @@ import { createWorld, START_X, stepWorld, type World, type WorldOptions } from '
 const OPTS = { seed: 1, frameWidth: 324, fieldRows: 21 };
 const TS = TERRAIN_GEN.tileSize;
 
-/** An Intercept on a quiet field (no posts, no waves, no escorts) with a Behemoth that can't break. */
-function world(layout?: TrainCarId[], opts: Partial<WorldOptions> = {}): World {
-  const w = createWorld({ ...OPTS, ...opts, objective: { mode: 'intercept', strength: 'normal', ...(layout ? { train: layout } : {}) } });
+/**
+ * An Intercept on a quiet field (no posts, no waves, no escorts) with a Behemoth that can't break.
+ * The train is engines and boxcars unless a layout says otherwise (how a train runs doesn't hang on its guns).
+ */
+function world(layout: TrainCarId[] = plainTrain('normal'), opts: Partial<WorldOptions> = {}): World {
+  const w = createWorld({ ...OPTS, ...opts, objective: { mode: 'intercept', strength: 'normal', train: layout } });
   w.encounter.posts = [];
   w.encounter.alert.next = 1e9;
   w.enemies = w.enemies.filter((e) => e.train);
@@ -68,7 +71,7 @@ describe('an armored train (SPEC §4.4 Intercept, §7.3)', () => {
     const w = world();
     const tr = train(w);
     const b = w.behemoth;
-    expect(tr.vehicles.map((v) => v.car.id)).toEqual(trainLayout('normal'));
+    expect(tr.vehicles.map((v) => v.car.id)).toEqual(plainTrain('normal'));
     expect(tr.vehicles.filter((v) => v.car.engine)).toHaveLength(3);
     expect(tr.vehicles.map((v) => v.section)).toEqual([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2]);
     expect(w.objective.total).toBe(3);

@@ -132,8 +132,9 @@ export function mixFromUrl(): Partial<Record<EnemyId, number>> | undefined {
 }
 
 /**
- * Playtest shortcut: an Intercept's train, front to back (`?mode=intercept&train=engine,boxcar,boxcar,engine`);
- * unknown cars are skipped. Undefined when not given (the node's strength sets the train).
+ * Playtest shortcut: an Intercept's train, front to back (`?mode=intercept&train=engine,railgun,gun,ammo,box,engine`),
+ * by `TRAIN_CARS` id or short name (`engine railgun gun missile troop mines ammo box`); unknown cars
+ * are skipped. Undefined when not given (the node's strength, threat, and doctrine set the train).
  */
 export function trainFromUrl(): TrainCarId[] | undefined {
   const text = params.get('train');

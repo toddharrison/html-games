@@ -370,11 +370,13 @@ export function battleEnemy(run: RunState, recipe: TerrainRecipe = battleRecipe(
  * The battle's mode and strength (SPEC §4.4), which set its objective; `mode` overrides it (practice).
  * A Decapitation objective's fortress holds a command post (SPEC §3).
  */
-export function battleObjective(run: RunState, mode?: BattleModeId): ObjectiveSpec {
+export function battleObjective(run: RunState, mode?: BattleModeId, doctrine?: DoctrineId): ObjectiveSpec {
   const b = currentBattle(run);
   const m = mode ?? b.mode;
   const command = isObjectiveBattle(run) && m === 'breach' && DIRECTIVES[run.directive].goal.kind === 'command';
-  return { mode: m, strength: b.strength, ...(command ? { command } : {}) };
+  // An Intercept's train is armed by the defenders' doctrine (SPEC-armored-train.md §T6); `doctrine` replaces the node's (practice).
+  const train = MODES[m].train ? { doctrine: doctrine ?? b.doctrine } : {};
+  return { mode: m, strength: b.strength, ...(command ? { command } : {}), ...train };
 }
 
 /** Whether the run's battle is a sector's objective (the Directive's battle, SPEC §3). */

@@ -7,15 +7,18 @@ import { viewAngle, viewX, viewY } from './viewTransform';
 /**
  * What an armored train (SPEC §7.3) leaves that isn't a unit any more: the burnt-out hulks it drags
  * along in the chain, and the wrecks of vehicles that left the rails or were scuttled, where they
- * lie. Its live vehicles are ordinary units (`UnitViews`).
+ * lie. Its live vehicles are ordinary units (`UnitViews`). Also its mine flingers' mines on their
+ * way (SPEC-armored-train.md §T6): arcing over in the air, then lying blinking until they're live.
  */
 export class TrainView {
   private readonly hulks = new Map<number, Phaser.GameObjects.Image>();
+  private readonly mines: Phaser.GameObjects.Image[] = [];
 
   constructor(private readonly scene: Phaser.Scene) {}
 
   update(train: TrainState | null, terrain: Terrain): void {
     if (!train) return;
+    this.drawMines(train);
     train.vehicles.forEach((v, i) => {
       const show = !v.alive && v.state !== 'gone' && !this.plowed(v, terrain);
       let img = this.hulks.get(i);
@@ -44,8 +47,31 @@ export class TrainView {
     return !!t && t.mat === 'wreck' && t.state === 'flattened';
   }
 
+  private drawMines(train: TrainState): void {
+    while (this.mines.length < train.flung.length) this.mines.push(this.scene.add.image(0, 0, 'flung_mine').setDepth(6));
+    this.mines.forEach((img, i) => {
+      const m = train.flung[i];
+      if (!m) {
+        img.setVisible(false);
+        return;
+      }
+      const k = Math.min(1, m.t / m.flight);
+      const x = m.x0 + (m.x - m.x0) * k;
+      const y = m.y0 + (m.y - m.y0) * k;
+      // Swelling toward the top of its arc, like a lobbed shell; on the ground it blinks till it's live.
+      const lying = m.t >= m.flight;
+      img
+        .setVisible(!lying || Math.floor(m.t * 8) % 2 === 0)
+        .setPosition(viewX(x, y), viewY(x))
+        .setScale(lying ? 1 : 1 + 1.4 * Math.sin(Math.PI * k))
+        .setDepth(lying ? 2.5 : 6);
+    });
+  }
+
   destroy(): void {
     for (const img of this.hulks.values()) img.destroy();
     this.hulks.clear();
+    for (const img of this.mines) img.destroy();
+    this.mines.length = 0;
   }
 }

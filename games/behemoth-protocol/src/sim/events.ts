@@ -70,8 +70,8 @@ export type SimEvent =
   /** A direct hit on a vehicle's flank or rear, where its armor is thinner (SPEC §7). */
   | { type: 'facingHit'; facing: Exclude<Facing, 'front'>; x: number; y: number }
   | { type: 'enemyDestroyed'; id: number; enemy: EnemyId; x: number; y: number; cause: KillCause }
-  /** An armored train (SPEC §7.3) pulls out of its station as the battle opens. */
-  | { type: 'trainStart'; x: number; y: number; engines: number }
+  /** An armored train (SPEC §7.3) pulls out of its station as the battle opens; `gun`: it has a railway gun. */
+  | { type: 'trainStart'; x: number; y: number; engines: number; gun: boolean }
   /** Its crew cut a dead section loose (`cars` vehicles); the scuttling charges are counting down. */
   | { type: 'trainCutLoose'; x: number; y: number; cars: number }
   /** A scuttling charge went off under a cut-loose vehicle. */
@@ -80,6 +80,10 @@ export type SimEvent =
   | { type: 'trainBroken'; x: number; y: number }
   /** A vehicle left the rails at a break in the line (`first`: the one that starts the pile); `sunk`: into a river. */
   | { type: 'trainDerail'; x: number; y: number; heading: number; first: boolean; sunk: boolean }
+  /** A train's piece under way ran into the Behemoth on the track ahead of it (SPEC-armored-train.md §T10). */
+  | { type: 'trainStrike'; x: number; y: number }
+  /** A train's mine flinger lobbed a mine from (x0, y0) onto (x, y); it lands in `flight` s. */
+  | { type: 'mineFlung'; x0: number; y0: number; x: number; y: number; flight: number }
   /** The train is stopped for good (no engine left running, or derailed): the Intercept is taken. */
   | { type: 'trainStopped'; x: number; y: number; derailed: boolean }
   /**
@@ -112,7 +116,7 @@ export type SimEvent =
    * hauler) escaped off the far end. `done` once no targets are left either way.
    */
   | { type: 'objective'; what: 'destroyed' | 'lost'; enemy: EnemyId; x: number; y: number; done: boolean }
-  /** A convoy's mine layer dropped a mine (world point of the tile's center). */
+  /** A convoy's mine layer dropped a mine, or a train's flung mine went live (world point of the tile's center). */
   | { type: 'mineLaid'; x: number; y: number }
   /** A unit started painting the hull for a guided missile (`EnemyDef.lockOn`); it fires in `time` s unless the lock breaks. */
   | { type: 'lockOn'; id: number; x: number; y: number; time: number }

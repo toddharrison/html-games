@@ -1239,7 +1239,15 @@ export const TOWER = { body: 18, turret: { w: 15, h: 9 }, pivotX: 5 };
 export const BUNKER = { body: 22, turret: { w: 11, h: 9 }, pivotX: 4 };
 export const HAUL = { body: { w: 24, h: 14 } };
 /** Armored train vehicles (SPEC §7.3), drawn nose to +x: sized to `TRAIN_CARS` lengths. */
-export const TRAIN_ART = { engine: { w: 40, h: 24 }, boxcar: { w: 34, h: 22 } };
+export const TRAIN_ART = {
+  engine: { w: 40, h: 24 },
+  boxcar: { w: 34, h: 22 },
+  railwayGun: { w: 60, h: 24 },
+  /** Turrets on the cars, drawn barrel to +x from `pivotX`. */
+  gunTurret: { w: 22, h: 10, pivotX: 6 },
+  rack: { w: 14, h: 9, pivotX: 5 },
+  bigGun: { w: 44, h: 12, pivotX: 9 },
+};
 export const LAYER = { body: { w: 16, h: 11 } };
 export const HOVER = { body: { w: 15, h: 11 }, turret: { w: 10, h: 5 }, pivotX: 3 };
 export const POST = { body: 26 };
@@ -1399,10 +1407,135 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
     p.rect(Math.floor(w / 2) - 3, h - 5, 6, 1, dead ? PAL.hole : PAL.enemy);
     if (dead) for (const [x, y] of [[9, 8], [20, 12], [26, 7]] as const) p.rect(x, y, 3, 2, PAL.hole);
   };
+  // The armed cars (SPEC-armored-train.md §T6) share the boxcar's size and running gear.
+  const car = (p: Painter, dead: boolean, deck: (w: number, h: number) => void) => {
+    const { w, h } = TRAIN_ART.boxcar;
+    railBody(p, w, h, dead);
+    deck(w, h);
+    if (dead) for (const [x, y] of [[8, 9], [21, 12], [27, 7]] as const) p.rect(x, y, 3, 2, PAL.hole);
+  };
+  // Gun car: a flatcar with a sandbagged ring for its turret.
+  const gunCar = (p: Painter, dead: boolean) =>
+    car(p, dead, (w, h) => {
+      p.rect(3, 5, w - 6, h - 10, dead ? PAL.ash : PAL.enemy);
+      p.disc(w / 2, h / 2, 6, PAL.outline);
+      p.disc(w / 2, h / 2, 5, dead ? PAL.hole : PAL.concreteDark, dead ? PAL.ash : PAL.concrete);
+    });
+  // Missile car: a launcher bed with spare tubes racked fore and aft.
+  const missileCar = (p: Painter, dead: boolean) =>
+    car(p, dead, (w, h) => {
+      p.rect(3, 5, w - 6, h - 10, dead ? PAL.ash : PAL.enemyDark);
+      for (const x of [5, w - 10]) {
+        p.rect(x, 6, 5, h - 12, PAL.outline);
+        for (let y = 7; y < h - 7; y += 2) p.rect(x + 1, y, 3, 1, dead ? PAL.hole : PAL.steelMid);
+      }
+      p.disc(w / 2, h / 2, 5, PAL.outline);
+      p.disc(w / 2, h / 2, 4, dead ? PAL.hole : PAL.enemy, dead ? PAL.ash : PAL.enemyHi);
+    });
+  // Troop car: a high armored box with firing slits down both sides.
+  const troopCar = (p: Painter, dead: boolean) =>
+    car(p, dead, (w, h) => {
+      p.rect(3, 5, w - 6, h - 10, dead ? PAL.ashLight : PAL.enemy);
+      p.rect(3, 5, w - 6, 1, dead ? PAL.ash : PAL.enemyHi);
+      for (let x = 6; x < w - 5; x += 4) {
+        p.rect(x, 6, 2, 1, PAL.hole);
+        p.rect(x, h - 7, 2, 1, PAL.hole);
+      }
+      p.rect(Math.floor(w / 2) - 1, 7, 2, h - 14, dead ? PAL.hole : PAL.enemyDark);
+    });
+  // Mine flinger: an open hopper of mines and a throwing arm on a pivot.
+  const mineCar = (p: Painter, dead: boolean) =>
+    car(p, dead, (w, h) => {
+      p.rect(3, 5, 14, h - 10, PAL.outline);
+      p.rect(4, 6, 12, h - 12, dead ? PAL.hole : PAL.enemyDark);
+      for (const [x, y] of [[6, 8], [10, 9], [13, 7], [7, 12], [12, 12]] as const) p.rect(x, y, 2, 2, dead ? PAL.ash : PAL.mineBody);
+      p.rect(19, Math.floor(h / 2) - 1, w - 23, 2, PAL.outline);
+      p.rect(20, Math.floor(h / 2) - 1, w - 25, 1, dead ? PAL.ash : PAL.steelMid);
+      p.disc(20, h / 2, 3, PAL.outline);
+      p.disc(20, h / 2, 2, dead ? PAL.ash : PAL.enemy, dead ? PAL.ash : PAL.enemyHi);
+      p.rect(w - 6, Math.floor(h / 2) - 2, 3, 4, dead ? PAL.hole : PAL.mineBody);
+    });
+  // Ammo car: a thin-skinned box striped in warning colors.
+  const ammoCar = (p: Painter, dead: boolean) =>
+    car(p, dead, (w, h) => {
+      p.rect(3, 5, w - 6, h - 10, dead ? PAL.ash : PAL.concreteDark);
+      if (!dead) for (let x = 4; x < w - 4; x += 4) p.rect(x, 5, 2, h - 10, PAL.warn);
+      p.rect(Math.floor(w / 2) - 3, Math.floor(h / 2) - 2, 6, 4, PAL.outline);
+      p.rect(Math.floor(w / 2) - 2, Math.floor(h / 2) - 1, 4, 2, dead ? PAL.hole : PAL.bad);
+    });
+  // Railway gun: a long double-bogie car, a casemate amidships where the barrel turns.
+  const railwayGun = (p: Painter, dead: boolean) => {
+    const { w, h } = TRAIN_ART.railwayGun;
+    for (const x of [3, 11, w - 17, w - 9]) {
+      p.rect(x, 1, 6, h - 2, PAL.outline);
+      p.rect(x + 1, 2, 4, h - 4, dead ? PAL.hole : PAL.enemyTread);
+    }
+    p.rect(1, 3, w - 2, h - 6, PAL.outline);
+    p.rect(2, 4, w - 4, h - 8, dead ? PAL.ash : PAL.enemyDark);
+    p.rect(0, Math.floor(h / 2) - 1, 1, 2, PAL.steelDark);
+    p.rect(w - 1, Math.floor(h / 2) - 1, 1, 2, PAL.steelDark);
+    p.rect(6, 6, w - 12, h - 12, dead ? PAL.ashLight : PAL.enemy);
+    p.rect(6, 6, w - 12, 1, dead ? PAL.ash : PAL.enemyHi);
+    p.disc(w / 2, h / 2, 8, PAL.outline);
+    p.disc(w / 2, h / 2, 7, dead ? PAL.hole : PAL.concreteDark, dead ? PAL.ash : PAL.concrete);
+    for (const x of [8, w - 11]) p.rect(x, 8, 3, h - 16, dead ? PAL.hole : PAL.amber);
+    if (dead) for (const [x, y] of [[14, 9], [40, 13], [47, 8]] as const) p.rect(x, y, 3, 2, PAL.hole);
+  };
+  const cars: [string, number, number, (p: Painter, dead: boolean) => void][] = [
+    ['train_engine', TRAIN_ART.engine.w, TRAIN_ART.engine.h, engine],
+    ['train_boxcar', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, boxcar],
+    ['train_gun', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, gunCar],
+    ['train_missile', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, missileCar],
+    ['train_troop', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, troopCar],
+    ['train_mines', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, mineCar],
+    ['train_ammo', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, ammoCar],
+    ['train_railgun', TRAIN_ART.railwayGun.w, TRAIN_ART.railwayGun.h, railwayGun],
+  ];
   for (const dead of [false, true]) {
-    canvasTexture(scene, dead ? 'train_engine_hulk' : 'train_engine', TRAIN_ART.engine.w, TRAIN_ART.engine.h, (p) => engine(p, dead));
-    canvasTexture(scene, dead ? 'train_boxcar_hulk' : 'train_boxcar', TRAIN_ART.boxcar.w, TRAIN_ART.boxcar.h, (p) => boxcar(p, dead));
+    for (const [key, w, h, draw] of cars) canvasTexture(scene, dead ? `${key}_hulk` : key, w, h, (p) => draw(p, dead));
   }
+  // Their turrets.
+  canvasTexture(scene, 'train_gun_turret', TRAIN_ART.gunTurret.w, TRAIN_ART.gunTurret.h, (p) => {
+    const { w: tw, h: th, pivotX } = TRAIN_ART.gunTurret;
+    p.rect(pivotX, Math.floor(th / 2) - 1, tw - pivotX, 3, PAL.outline);
+    p.rect(pivotX, Math.floor(th / 2), tw - pivotX - 1, 1, PAL.steelMid);
+    p.rect(tw - 3, Math.floor(th / 2) - 2, 3, 5, PAL.outline);
+    p.rect(0, 1, 12, th - 2, PAL.outline);
+    p.rect(1, 2, 10, th - 4, PAL.enemy);
+    p.rect(1, 2, 10, 1, PAL.enemyHi);
+    p.rect(1, th - 3, 10, 1, PAL.enemyDark);
+  });
+  canvasTexture(scene, 'train_rack', TRAIN_ART.rack.w, TRAIN_ART.rack.h, (p) => {
+    const { w: tw, h: th } = TRAIN_ART.rack;
+    // Two tubes on a turntable, open end forward.
+    p.rect(0, 0, tw, th, PAL.outline);
+    p.rect(1, 1, tw - 2, th - 2, PAL.enemy);
+    p.rect(1, 1, tw - 2, 1, PAL.enemyHi);
+    p.rect(1, th - 2, tw - 2, 1, PAL.enemyDark);
+    for (const y of [1, th - 3]) {
+      p.rect(tw - 3, y, 2, 2, PAL.hole);
+      p.px(tw - 3, y, PAL.amberHot);
+    }
+  });
+  canvasTexture(scene, 'train_biggun', TRAIN_ART.bigGun.w, TRAIN_ART.bigGun.h, (p) => {
+    const { w: tw, h: th, pivotX } = TRAIN_ART.bigGun;
+    // A very long barrel with a muzzle brake, out of a heavy breech.
+    p.rect(pivotX, Math.floor(th / 2) - 2, tw - pivotX - 3, 4, PAL.outline);
+    p.rect(pivotX, Math.floor(th / 2) - 1, tw - pivotX - 4, 2, PAL.steelMid);
+    p.rect(pivotX, Math.floor(th / 2) - 1, tw - pivotX - 4, 1, PAL.steelHi);
+    p.rect(tw - 4, Math.floor(th / 2) - 3, 4, 6, PAL.outline);
+    p.rect(tw - 3, Math.floor(th / 2) - 2, 2, 4, PAL.steelDark);
+    p.rect(0, 1, 16, th - 2, PAL.outline);
+    p.rect(1, 2, 14, th - 4, PAL.enemy);
+    p.rect(1, 2, 14, 1, PAL.enemyHi);
+    p.rect(1, th - 3, 14, 1, PAL.enemyDark);
+  });
+  // A mine in a flinger's throw (SPEC-armored-train.md §T6), before it's live.
+  canvasTexture(scene, 'flung_mine', 5, 5, (p) => {
+    p.disc(2.5, 2.5, 2.5, PAL.outline);
+    p.disc(2.5, 2.5, 1.6, PAL.mineBody, PAL.mineHi);
+    p.px(2, 2, PAL.bad);
+  });
   canvasTexture(scene, 'haul_body', HAUL.body.w, HAUL.body.h, (p) => haulBody(p, false));
   canvasTexture(scene, 'haul_wreck', HAUL.body.w, HAUL.body.h, (p) => haulBody(p, true));
 
@@ -1706,6 +1839,17 @@ export const ENEMY_ART: Record<EnemyId, EnemyArt> = {
   skiTroops: { body: `ski_${SKI_TROOPS.soldiers}`, turret: null, wreck: null, squad: { prefix: 'ski_', soldiers: SKI_TROOPS.soldiers, faceCourse: true } },
   trainEngine: { body: 'train_engine', turret: null, wreck: null, hulk: 'train_engine_hulk' },
   trainBoxcar: { body: 'train_boxcar', turret: null, wreck: null, hulk: 'train_boxcar_hulk' },
+  trainRailwayGun: {
+    body: 'train_railgun',
+    turret: { key: 'train_biggun', pivotX: TRAIN_ART.bigGun.pivotX, w: TRAIN_ART.bigGun.w },
+    wreck: null,
+    hulk: 'train_railgun_hulk',
+  },
+  trainGunCar: { body: 'train_gun', turret: { key: 'train_gun_turret', pivotX: TRAIN_ART.gunTurret.pivotX, w: TRAIN_ART.gunTurret.w }, wreck: null, hulk: 'train_gun_hulk' },
+  trainMissileCar: { body: 'train_missile', turret: { key: 'train_rack', pivotX: TRAIN_ART.rack.pivotX, w: TRAIN_ART.rack.w }, wreck: null, hulk: 'train_missile_hulk' },
+  trainTroopCar: { body: 'train_troop', turret: null, wreck: null, hulk: 'train_troop_hulk' },
+  trainMineCar: { body: 'train_mines', turret: null, wreck: null, hulk: 'train_mines_hulk' },
+  trainAmmoCar: { body: 'train_ammo', turret: null, wreck: null, hulk: 'train_ammo_hulk' },
   hedgeGun: { body: 'hedgegun_body', turret: { key: 'hedgegun_turret', pivotX: HEDGE_GUN.pivotX, w: HEDGE_GUN.turret.w }, wreck: 'hedgegun_wreck' },
 };
 

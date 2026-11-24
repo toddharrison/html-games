@@ -30,6 +30,7 @@ import { hex, PAL } from './palette';
 import { damageLevel } from './statusFx';
 import { usingPad } from '../input/gamepad';
 import { objectivePercent } from '../sim/objective';
+import { TrainStrip } from './trainStrip';
 
 /**
  * Battle HUD in the side panels (SPEC §10). Left: speed, treads, reactor, power, the weapon strip
@@ -198,9 +199,15 @@ export class Hud {
 
   /** The run so far: this battle's number, salvage banked before it, and where it's fought (biome, approach). */
   private readonly run: HudRun;
+  private readonly scene: Phaser.Scene;
+  private readonly layout: BattleLayout;
+  /** An Intercept's train strip (SPEC-armored-train.md §T13), made once the train exists. */
+  private strip: TrainStrip | null = null;
 
   constructor(scene: Phaser.Scene, layout: BattleLayout, b: BehemothState, run: HudRun) {
     this.run = run;
+    this.scene = scene;
+    this.layout = layout;
     const { width, height, fieldX, fieldW } = layout;
     const fixed = <T extends Fixed>(o: T) => o.setScrollFactor(0).setDepth(100);
     const text = (x: number, y: number, s: string, color: string = PAL.hudText) =>
@@ -377,6 +384,9 @@ export class Hud {
     }
 
     this.updateDirective(w);
+
+    if (w.train && !this.strip) this.strip = new TrainStrip(this.scene, this.layout, w.train, w.terrain.lineSide);
+    this.strip?.update(w, w.time);
 
     // The alert clock (SPEC §10): the next reinforcement wave, a bar filling toward it.
     const alert = w.encounter.alert;

@@ -318,6 +318,16 @@ export const TRAIN = {
   dropBehind: 200,
   /** Where along the battle its line always crosses a river (shares of the way to the extraction line). */
   rivers: [0.35, 0.7] as const,
+  /**
+   * Collisions (SPEC-armored-train.md §T10). `strike`: a piece under way runs into the hull on the
+   * track ahead of it. The struck armor takes `arc` (a trailer in tow takes the blow instead, and is
+   * wrecked), the treads `treads`; the train's front vehicle takes `front`, and the train loses
+   * `slow` of its speed (it eases back up at `ease`). The hull is shoved toward the line's wide side
+   * at `shove` units/s until it's `clear` units clear of the train's path, and can't be struck again
+   * for `again` s. `grind`: held this long (s) against a hulk's or a wreck's face, the hull grinds
+   * through it (nothing stops it for good).
+   */
+  collide: { strike: { arc: 60, treads: 15, front: 90, slow: 0.3, shove: 80, clear: 8, again: 1 }, grind: 2 },
 };
 
 /**

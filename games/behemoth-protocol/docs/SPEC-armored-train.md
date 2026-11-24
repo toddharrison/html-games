@@ -1,8 +1,8 @@
 # Armored Train Encounter (Intercept) — Draft Spec
 
-> **Status:** draft, part built (Nov 24, 2026). Not yet part of [SPEC.md](SPEC.md). When the user signs it off it merges into SPEC.md (§T17) and this file is deleted.
-> **Built so far** (`2bb609d`; see FEATURES.md §3 "Rail line" and §9 "Armored train"): steps 1, 2, 5, and 7 of §T15: the line, a train of engines and boxcars that runs, paces the Behemoth, is cut loose and scuttled, and derails, and the map node. **Still to build:** steps 3, 4, and 6: the train strip and collision rules, the armed cars, and the railway gun.
-> **Who decided what:** lines marked *(user)* are the user's brief or calls. Everything else is a proposal, and every number is provisional. The user answered Q1–Q4 on Nov 24 (§T18); Q5–Q10 and the questions the first build raised are open.
+> **Status:** draft, built (Nov 24, 2026), awaiting the user's playtest. Not yet part of [SPEC.md](SPEC.md). When the user signs it off it merges into SPEC.md (§T17) and this file is deleted.
+> **Built** (see FEATURES.md §3 "Rail line", §4 "Meeting the armored train", §9 "Armored train" and the two entries after it, §12 "Train strip"): steps 1, 2, 5, and 7 of §T15 (`2bb609d`): the line, a train that runs, paces the Behemoth, is cut loose and scuttled, and derails, and the map node; steps 3, 4, and 6 (uncommitted): the train strip and the collision rules, the armed cars and building a train from the node's threat and doctrine, and the railway gun. Where the build differs from the first draft, the section says so (*As built*). **Still to do:** train sounds and a theme, an autopilot balance pass, and the merge (§T15 after step 7).
+> **Who decided what:** lines marked *(user)* are the user's brief or calls. Everything else is a proposal, and every number is provisional. The user answered Q1–Q4 on Nov 24 (§T18); Q5–Q14 are open, and steps 3, 4, and 6 were built as this draft proposes them (cars plowable, engines and the railway gun not; the railway gun fires regardless, hurts its own side at half damage, and is silent inside its minimum range).
 > **For the implementer:** read [CLAUDE.md](../CLAUDE.md) first (the architecture rules apply: pure sim, seeded RNG, content tables, tuning in `tuning.ts`). §T14 maps this spec onto the existing code, §T15 is the build order, §T16 is every number in one place.
 > **Units:** 1 tile = 16 world units; 10 units = 1 m. The stock Class II hull is 64 × 40 units; it brakes to 18, cruises at 36, and surges to 64 units/s. Sim +x is forward ("ahead"), y is across the field.
 
@@ -68,7 +68,7 @@ From the user's brief: a map node; a rail line the whole length of the map; seve
 
 The **lead section** will be `engine, railway gun, cars…` once the gun is built (§T7); the others are `engine, cars…`.
 
-**Sizes.** Engine 40 × 24 units (hit radius 15); car 34 × 22 (hit radius 13); a 4-unit coupling gap between vehicles. *Changed while building:* every unit in the sim is hit as a circle, so a 48-unit car would have had ends no shot could touch. Shorter cars, and one more per section, keep the train long. The railway gun will need about 60 × 24 (two hit circles, or one of radius 18).
+**Sizes.** Engine 40 × 24 units (hit radius 15); car 34 × 22 (hit radius 13); a 4-unit coupling gap between vehicles. *Changed while building:* every unit in the sim is hit as a circle, so a 48-unit car would have had ends no shot could touch. Shorter cars, and one more per section, keep the train long. The railway gun is 60 × 24 with one hit circle of radius 18 (its ends are a little harder to hit than its middle). Every car but the engine and the railway gun is 34 × 22, radius 13.
 
 **Movement.** The train's position is a single distance along the field (the line's slope is shallow, so distance along x stands in for distance along the track). Each vehicle sits at its own offset behind the front, on the line, facing along it. There is no physics between cars: position and heading come from the line's shape alone, so the train bends through curves by construction.
 
@@ -105,7 +105,7 @@ The alternatives, for the record: a **fixed speed** (0.85 × the chassis' rated 
 
 *(user: guns, troops, mine flingers, missile launchers, etc.)*
 
-Cars are a content table (`content/trainCars.ts`). The first build was to have these eight, all heavy-class vehicles. **Built so far: the engine and the boxcar** (sizes per §T4); the rest are step 4, and the railway gun step 6.
+Cars are a content table (`content/trainCars.ts`). All eight are built, all heavy-class vehicles (sizes per §T4).
 
 | Vehicle | HP | What it does | Counter | Threat | Salvage |
 |---|---|---|---|---|---|
@@ -127,6 +127,15 @@ Cars are a content table (`content/trainCars.ts`). The first build was to have t
 
 Doctrine weights (gun / missile / troop / mine flinger): combined arms 1/1/1/1; armored fist 2/1/1/0.5; long guns 1/2/0.5/1; entrenched 1/0.5/2/2; mobile raiders 1/1/1/1.5 and one extra hovercraft escort.
 
+*As built* (`buildTrain` in `sim/train.ts`, `TRAIN_LAYOUT` and `TRAIN_DOCTRINE` in `content/trainCars.ts`):
+
+- The railway gun rides behind the lead engine *on top of* the section's car slots (16 vehicles on a normal node), as §T4's table counts it.
+- Sections are filled tail first. Each draws armed cars (by the doctrine's odds, among those its remaining budget can pay for) into random free slots; what it can't spend carries forward to the section ahead, so nothing is wasted until the lead. With four sections (an objective train) the two middle sections share the middle's 35%. Over a run's threat of 7–13 a normal train carries about 4–7 armed cars.
+- The ammo car's 0.5 isn't charged against the budget: it's placed after the budget is spent (rule 3), in a free slot beside an armed car (any free slot if there's none), and an objective train carries two.
+- **Gun car:** the fortress gun (`emplacementGun`: 18 a shot, range 270, reload 4.2) at 40°/s. **Missile car:** the missile launcher's missiles in pairs (`trainMissiles`, reload 6.5, range 300). **Troop car:** the infantry's tread rockets two at a time (`troopRockets`, reload 3.4); it opens fire at 110. Its 2 squads jump out (one each side) when it's destroyed by any means, derailing included, or cut loose, once. **Mine flinger:** throws only while it's in the frame and not cut loose; the mine flies 1.2 s, lies in plain sight 0.5 s, then is a live (seen) mine tile, the kind the treads set off; it needs open ground within 260, or tries again 0.5 s later.
+- A cut-loose car's guns fall silent (§T8) and its flinger stops.
+- Practice: `?mode=intercept&train=engine,railgun,gun,missile,troop,mines,ammo,box` (short names); `&doctrine=` for a built train.
+
 **Later cars** (not in the first build; §T19): flak car, hangar car, observation car, shield car, flatbed with a tank.
 
 ## T7. The railway gun
@@ -142,9 +151,11 @@ It reuses the field battery's area fire (`WeaponDef.barrage`, SPEC §15 "Field a
 - **Destroyed:** its magazine goes up (radius 70, damage 100), damaging the engine ahead and the car behind. It doesn't break the chain.
 - The first shell is fired 4 s into the battle, as the train's introduction.
 
+*As built:* the gun is `EnemyDef.offscreen` (area fire only may skip the frame rule) firing `railwayGunShell` (one lobbed shell, `barrage` radius 40, flight 3.5, aimed at the zone's center, tile damage 200 so every open tile in the burst craters, `unstoppable` for point defense, range 300–1200). Its zone, the half damage to its own side (`BARRAGE.friendlyFire`), and the untouched track (`credit = false`) all come from the field battery's area fire. Two limits: at night or in a squall it can't lay its gun on a hull beyond the enemy's sight unless the hull's muzzle flash marks it (the rule every enemy gun follows); and its whistle is the battery's, longer rather than deeper (sounds are a later step). Its 200 tile damage also knocks down buildings and road bridges in the zone.
+
 ## T8. Cutting loose and scuttling
 
-*(user: a segment can be detached and detonated; confirmed Nov 24 that the crew does it.)* **Built**, apart from troop cars emptying their squads (no troop car yet).
+*(user: a segment can be detached and detonated; confirmed Nov 24 that the crew does it.)* **Built**, troop cars emptying their squads and cut-loose guns falling silent included.
 
 **The rule.** Whenever the train has a dead section (its engine destroyed) with no running engine behind it, the crew **cuts loose** everything behind the rearmost running engine's section and **scuttles** it.
 
@@ -211,6 +222,12 @@ So the track can only be cut **ahead of the train** (or behind it, which does no
 | A running train **runs into the Behemoth** (the hull is on the track ahead of it) | The struck arc takes 60 and the treads 15; a trailer is hit first and wrecked. The hull is shoved clear to the wide side. The train's front vehicle takes 90 and the train loses 30% of its speed for a moment. The train isn't stopped. |
 | The Behemoth crushes **mines, squads, hovercraft** | As anywhere else. |
 
+*As built* (`meetTrain` in `sim/collision.ts`; numbers in `TRAIN.collide`):
+
+- **Cars** (and a hulk in the chain, and any car's wreck, derailed or scuttled) are plowed as heavy obstacles; a hulk or wreck plowed is swept away (gone), and a hulk in the chain parts it there.
+- **Engines and the railway gun** are too big to crush *alive, as hulks, and as wrecks*. The hull is pushed out of the vehicle's box like rock: head-on into its end it's held there and slid off sideways (the way it's steering, else the side it's on), with one heavy ram on first contact at the speed it *closes* on the moving vehicle (a hull at cruise catching an engine at 30.6 barely dents it; at a surge it's most of a full ram). Alongside it's held off and scrapes. Held at the face of a stopped hulk or wreck for 2 s with nowhere to go, the hull grinds through it (nothing stops it for good). An engine or railway gun killed by a ram doesn't part the chain.
+- **The train runs into the hull:** a running piece's front vehicle, at least as fast as the hull and behind its center, meeting the hull (or the trailer in tow). The struck arc takes 60; **with a trailer in tow the trailer takes the blow instead and is wrecked** (its cook-off reaches the rear as always), and the treads take 15 either way. The front vehicle takes 90, the train loses 30% of its speed and eases back up at its usual 4 units/s², and the hull is pushed ahead of the nose and shoved toward the wide side at 80 units/s until it's 8 units clear of the train's path. No second strike for 1 s.
+
 ## T11. Escorts and other defenders
 
 *(user: hovercraft escorts.)*
@@ -230,7 +247,7 @@ So the track can only be cut **ahead of the train** (or behind it, which does no
 ## T13. HUD, feedback, and audio
 
 - **Objective row** (left panel, where Breach and Chase show theirs): `Engines 1/3 33%`.
-- **Train strip** (new): a narrow column down one side of the battlefield, one pip per vehicle, front at the top. Each pip is colored by integrity (green, amber, red, dark for a hulk), with a letter or glyph for its type and a heavier mark for engines. A bracket shows which vehicles are in the frame, a notch shows where the Behemoth is along the train, and cut-loose cars flash until they blow. The train is longer than the screen, so this is how the player finds the engines.
+- **Train strip** (new): a narrow column down one side of the battlefield, one pip per vehicle, front at the top. Each pip is colored by integrity (green, amber, red, dark for a hulk), with a letter or glyph for its type and a heavier mark for engines. A bracket shows which vehicles are in the frame, a notch shows where the Behemoth is along the train, and cut-loose cars flash until they blow. The train is longer than the screen, so this is how the player finds the engines. *As built* (`render/trainStrip.ts`): down the field's edge on the line's narrow side; letters `E R G M T F A B` (engine, railway gun, gun, missile, troop, flinger, ammo, boxcar); engines framed in white, the railway gun in amber; a wreck is an empty frame, a vehicle gone a blank slot.
 - **Edge arrows:** amber arrows point to engines that are off screen (the existing objective arrows).
 - **Banners:** *Armored train ahead* (at the start, with the first shell), *Engine destroyed 1/3 +30*, *Tail section cut loose*, *Train derailed*, *Train stopped*, *The train got through*.
 - **Railway gun:** the target zone drawn on the ground (ring and closing disc), an incoming whistle, a heavy burst, a crater.
@@ -291,11 +308,7 @@ interface TrainPiece   { first: number; last: number; s: number; speed: number; 
 
 Seven steps, each a session that ends playable and tested. Stop after each for the user's playtest (add it to the *Playtest queue* in TODO.md, and move the finished step to FEATURES.md).
 
-**Done (Nov 24, `2bb609d`): steps 1, 2, 5, and 7.** Of step 2, the train strip and the objective row's place were split as planned (the row is built; the strip is step 3). Of step 5, a car the Behemoth plows through already parts the chain (the default crush rule destroys it); the rest of §T10 is step 3. Of step 7, there are banners and two radio and alarm cues but no train sounds, and no bot balance pass. **To do: steps 3, 4, and 6.** Notes for whoever builds them:
-
-- **Step 3:** hulks and derailed wrecks have no collision of their own (a wreck's *tile* does; a hulk in the chain is driven through freely). An engine uses the siege tank's ram rule as it stands (it's "shoved", but the train puts it back on the line next step), so the hull is not yet deflected along it. Nothing handles the train running into a hull on the track.
-- **Step 4:** add each car to `TRAIN_CARS` and `ENEMIES` (and `ENEMY_ART` with a `hulk` texture), then fill `trainLayout` from the node's threat and doctrine (it takes only the strength now). A car's weapons are ordinary unit weapons; the frame rule already keeps them quiet off screen. An ammo car is `volatile` on its `TrainCarDef`: the chain break and blast are built and tested. A troop car's squads on being cut loose or destroyed hook into `cutLoose` and `trainVehicleDestroyed` in `sim/train.ts`.
-- **Step 6:** the gun is another `TRAIN_CARS` entry in the lead section; its shell must pass `credit = false` to `Terrain.damage` (or the track shield won't cover the line ahead of the train).
+**Done (Nov 24, `2bb609d`): steps 1, 2, 5, and 7.** Of step 2, the train strip and the objective row's place were split as planned. Of step 7, there are banners and two radio and alarm cues but no train sounds, and no bot balance pass. **Done (Nov 24, uncommitted): steps 3, 4, and 6**, as the sections above say (*As built*), with tests in `tests/sim/trainCars.test.ts`. **Still to do:** train sounds (wheels, whistle, couplings, the derailment, a deeper whistle for the railway gun) and a theme, an autopilot balance pass (the autopilot still plows up the track, §T18 Q11), and the merge (§T17).
 
 1. **The line.** `railLine`, the `track` and `railBridge` materials, the railbed and bridge guarantees, placeholder tile art, the terrain preview. *Tests:* over 50 seeds × every biome × every approach, the track is unbroken from the first column to the last; slope, edge clearance, and railbed rules hold; every river column on the line is a `railBridge`; at least one river exists; the lane's center is ≥ 5 rows from the track; other modes' terrain is byte-for-byte unchanged for existing seeds.
 2. **A train that runs.** `trainCars.ts` (engine and boxcar only), `train.ts` movement and pace, placeholder sprites that turn with the line, `?mode=intercept`, vehicles as enemies that take damage and leave hulks, engines slowing the train, the objective (shares, stopped, got through), the objective row, the extraction pull-in. *Tests:* vehicles keep their spacing through curves; pace follows the table for each count of engines; a Behemoth at the overload floor still gains at cruise; a cruising bot reaches the front within 10% of the line's end; the three outcomes bank the right salvage.
@@ -319,7 +332,9 @@ All provisional.
 | Railway gun | Every 9 s; zone radius 40; 3.5 s flight; 45 damage, half at the edge, a quarter to deck mounts; half to its own side; minimum range 300; first shell at 4 s; magazine blast 70 / 100 |
 | Scuttling | Coast at −6 units/s²; fuse 3 s; ripple 0.25 s a car; blast 40 / 50 |
 | Derailment | −8 units/s per vehicle derailed; wrecks 8–24 units off the line, up to 50° turned; half salvage; none in a river |
-| Collisions | Train into hull: 60 to the arc, 15 treads, trailer first; 90 to the train's front vehicle; train speed −30% briefly |
+| Collisions | Train into hull: 60 to the arc (or the trailer wrecked instead), 15 treads; 90 to the train's front vehicle; train speed −30%, easing back; hull shoved at 80/s until 8 clear; 1 s between strikes. Hull held at a stopped hulk's or wreck's face 2 s: it grinds through |
+| Armed cars (as built) | Gun car: fortress gun, range 270. Missile car: launcher missiles in pairs, range 300. Troop car: tread rockets ×2, opens at 110, 2 squads. Mine flinger: every 6 s (retry 0.5), 3 s lead, 1.2 s flight, 0.5 s lying, 5 live, range 260. Ammo cars 1 / 2 / 2, not charged to the budget |
+| Railway gun (as built) | 60 × 24, radius 18, 320 HP, ×0.8 all round, ram 60; range 300–1200; tile damage 200 |
 | Forces | Train budget = node threat, split 25 / 35 / 40% tail to lead; escorts 2 / 3 / 3; waves hovercraft only; posts 0.3× |
 | Objective | +90 bonus, an equal share per engine; extraction pulled in to 600 ahead once stopped |
 | Map | Mode weights Assault 2, Breach 1, Chase 1, Intercept 0.6; one per sector; never the opening battle |
@@ -340,9 +355,9 @@ All provisional.
 2. ~~**"Detached and detonated" (§T8)**~~: *user, Nov 24:* the crew does it.
 3. ~~**Who can cut the track (§T9)**~~: *user, Nov 24:* "treat it as hardened track": the treads never cut it; cratering blasts and bridge demolition do.
 4. ~~**Derailment ends the fight (§T9)**~~: *user, Nov 24:* fine for now; the length of the train and how easily it's outrun and derailed are to be tested. The fallbacks if it proves cheap: track that needs two hits, a train that brakes for a break it sees, a pilot car (§T19), or a part bonus.
-5. **Railway gun and its own train (§T7).** Proposed: it fires regardless and hurts its own cars at half damage. The alternative is a no-fire strip beside the train, which makes hugging the train a safe pocket from the gun (with troop cars as the reason not to). Also: is "silent once it's on screen" right, or should it keep firing until destroyed?
+5. **Railway gun and its own train (§T7).** *Built as proposed (Nov 24), to judge in play.* Proposed: it fires regardless and hurts its own cars at half damage. The alternative is a no-fire strip beside the train, which makes hugging the train a safe pocket from the gun (with troop cars as the reason not to). Also: is "silent once it's on screen" right, or should it keep firing until destroyed?
 6. **Scuttled cars pay nothing (§T8).** It makes the order of kills a real choice (engine first is fast, cars first pays). Keep it?
-7. **Plowing through cars (§T10).** SPEC §4.2 already calls train cars heavy obstacles. With ram gear that means cutting the train in two by driving through it. Keep, or make all rolling stock too big to crush?
+7. **Plowing through cars (§T10).** *Built as proposed (Nov 24): cars, hulks, and car wrecks plow; engines and the railway gun don't.* SPEC §4.2 already calls train cars heavy obstacles. With ram gear that means cutting the train in two by driving through it. Keep, or make all rolling stock too big to crush?
 8. **Frequency and stakes (§T2).** One per sector at most, in any biome, at weight 0.6: about right? Should an Intercept always count as a *strong* node?
 9. **Length (§T3, §T4).** A 7000-unit line and about 4 minutes, with a 13-vehicle train on a normal node: right for a set piece, or too long beside 2–4 minute battles?
 10. **Which later car first (§T19)?** Flak, hangar, or observation car.

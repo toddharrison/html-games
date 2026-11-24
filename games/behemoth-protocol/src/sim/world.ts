@@ -214,7 +214,7 @@ export function createWorld(opts: WorldOptions): World {
     dev: { frozen: false },
   };
   ensureTerrain(world);
-  if (spec) startObjective(world, spec.strength, spec.train);
+  if (spec) startObjective(world, spec.strength, spec.train, spec.doctrine);
   return world;
 }
 

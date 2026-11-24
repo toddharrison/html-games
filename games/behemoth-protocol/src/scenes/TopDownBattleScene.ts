@@ -205,7 +205,7 @@ export class TopDownBattleScene extends Phaser.Scene {
         ...(urlMix ? { mix: urlMix } : {}),
         battleLength: battleLengthFromUrl() ?? battleLength(run),
         alertPace: battleAlertPace(run),
-        objective: { ...battleObjective(run, modeFromUrl()), ...(trainFromUrl() ? { train: trainFromUrl()! } : {}) },
+        objective: { ...battleObjective(run, modeFromUrl(), doctrineFromUrl()), ...(trainFromUrl() ? { train: trainFromUrl()! } : {}) },
         condition: battleCondition(run, conditionFromUrl()),
         sighted: run.sighted,
       });
@@ -1058,7 +1058,15 @@ export class TopDownBattleScene extends Phaser.Scene {
           this.salvage.add(ev.x, ev.y, ev.amount, ev.source);
           break;
         case 'trainStart':
-          this.objectiveShown = { at: w.time, text: `Armored train ahead\nDestroy its ${ev.engines} engines` };
+          this.objectiveShown = { at: w.time, text: `Armored train ahead\nDestroy its ${ev.engines} engines${ev.gun ? '\nRailway gun: watch the red rings' : ''}` };
+          break;
+        case 'trainStrike':
+          this.fx.buildingCollapse(ev.x, ev.y);
+          this.shake(300, 5);
+          this.objectiveShown = { at: w.time, text: 'Rammed by the train\nGet off the track' };
+          break;
+        case 'mineFlung':
+          this.fx.smokePuff(ev.x0, ev.y0);
           break;
         case 'trainCutLoose':
           this.objectiveShown = { at: w.time, text: `Section cut loose - ${ev.cars} cars\nScuttling charges set: get clear` };

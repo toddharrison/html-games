@@ -6,7 +6,7 @@ import { lookPalette, type Look, type Pal } from './looks';
 import { canvasTexture, type Painter } from './painter';
 import { PAL } from './palette';
 import { damageTile, drawCar, drawFootbridge, drawHall, drawRoad, drawStructure, drawTree, drawWall } from './structureArt';
-import { CLUMP, CLUMP_FRAMES, frameName, TILE, TILE_FRAMES, type ClumpFrame, type TileFrame } from './tileFrames';
+import { CLUMP, CLUMP_FRAMES, CRATER_MASKS, frameName, TILE, TILE_FRAMES, type ClumpFrame, type TileFrame } from './tileFrames';
 
 /**
  * Procedural placeholder terrain (SPEC §11.1): a tile sheet and a raised-overlay sheet per biome and
@@ -83,6 +83,14 @@ function tilePieces(biome: BiomeId, pal: Pal): Piece[] {
   }
   for (const s of [false, true]) {
     for (const d of [false, true]) out.push(single(frameName.footbridge(s, d), TILE, (p) => drawFootbridge(p, s, d, new Rng(6500 + (s ? 1 : 0)), pal)));
+  }
+  for (const mask of CRATER_MASKS) {
+    for (let v = 0; v < 4; v++) out.push(single(frameName.crater(mask, v), TILE, (p) => crater(p, mask, new Rng(6600 + mask * 5 + v), pal)));
+  }
+  for (const light of [false, true]) {
+    for (let edges = 0; edges < 4; edges++) {
+      for (const d of [false, true]) out.push(single(frameName.bridge(light, edges, d), TILE, (p) => deck(p, new Rng(6900 + (light ? 1 : 0)), pal, light, d, edges)));
+    }
   }
   // Structures, drawn whole and cut into tiles (screen x is the row, y counts down from the front).
   structuresOf(biome).forEach((id, ii) => {
@@ -329,18 +337,84 @@ function rubble(p: Painter, rng: Rng, pal: Pal): void {
   }
 }
 
-/** A shell hole in open ground: a dark bowl with a lit far rim and thrown-out dirt. */
-function crater(p: Painter, rng: Rng, pal: Pal, big: boolean): void {
-  const r = big ? 6.5 : 5;
-  p.speckle(rng, 1, 1, 14, 14, 14, pal.dirt);
-  p.disc(8, 8, r + 1, pal.dirt, pal.dirt, pal.dirtDark);
-  p.disc(8.5, 8.5, r, pal.dirtDark, pal.dirt, pal.hole);
-  p.disc(9, 9, r - 2.5, pal.hole);
-  p.speckle(rng, 2, 2, 12, 12, 5, pal.ash);
+/** How far in from an open side a crater's corner is rounded (px). Alone, that makes it nearly round. */
+const CRATER_ROUND = 7.5;
+
+/**
+ * How deep into a crater a point of its tile is: the distance (px) to the nearest ground round it,
+ * from which neighbors are craters too (`craterMask`). Negative outside a rounded corner; infinite
+ * where every neighbor is crater. Open corners are rounded: a tile on the stepped edge of a big
+ * crater (open on two sides, joined on the other two) is cut in a quarter circle across the whole
+ * tile, so the steps run together into one curving rim; and the notch where two arms of a crater
+ * meet round a corner of ground is rounded too.
+ */
+function craterDepth(x: number, y: number, mask: number): number {
+  const up = mask & 1 ? Infinity : y;
+  const right = mask & 2 ? Infinity : TILE - x;
+  const down = mask & 4 ? Infinity : TILE - y;
+  const left = mask & 8 ? Infinity : x;
+  let d = Infinity;
+  for (const [dy, across] of [
+    [up, down],
+    [down, up],
+  ] as const) {
+    for (const [dx, along] of [
+      [left, right],
+      [right, left],
+    ] as const) {
+      // Joined on both far sides: this is a step in a big crater's edge, rounded right across the tile.
+      const R = across === Infinity && along === Infinity ? TILE : CRATER_ROUND;
+      d = Math.min(d, dx < R && dy < R ? R - Math.hypot(R - dx, R - dy) : Math.min(dx, dy));
+    }
+  }
+  // Ground at a corner between two arms of the crater: the rim bends round it.
+  if ((mask & 3) === 3 && !(mask & 16)) d = Math.min(d, Math.hypot(TILE - x, y));
+  if ((mask & 6) === 6 && !(mask & 32)) d = Math.min(d, Math.hypot(TILE - x, TILE - y));
+  if ((mask & 12) === 12 && !(mask & 64)) d = Math.min(d, Math.hypot(x, TILE - y));
+  if ((mask & 9) === 9 && !(mask & 128)) d = Math.min(d, Math.hypot(x, y));
+  return d;
 }
 
-/** Bridge deck: planks or plates across the span (screen-horizontal), rails along both edges. */
-function deck(p: Painter, rng: Rng, pal: Pal, light: boolean, damaged: boolean): void {
+/**
+ * A crater tile (SPEC §4.5): a lip of thrown-out earth, a wall, and a dark churned floor, by how far
+ * each pixel is from the ground round the crater it's part of, so a patch of crater tiles draws as
+ * one big hole with a single rim, and a tile alone as a round shell hole. Lit from the upper left:
+ * the near wall is in shadow and the far wall catches the light, and the lip the other way round.
+ */
+function crater(p: Painter, mask: number, rng: Rng, pal: Pal): void {
+  for (let y = 0; y < TILE; y++) {
+    for (let x = 0; x < TILE; x++) {
+      const d = craterDepth(x + 0.5, y + 0.5, mask);
+      const roll = rng.next();
+      if (d < 0) {
+        // Outside a rounded corner: the ground, with dirt thrown out over it.
+        if (d > -2.5 && roll < 0.3) p.px(x, y, pal.dirt);
+        continue;
+      }
+      // The far side of the hole from the light: the ground behind this pixel is down and to the right.
+      const far = craterDepth(x - 0.5, y - 0.5, mask) > craterDepth(x + 1.5, y + 1.5, mask);
+      let color: string;
+      if (d < 2) color = far ? (roll < 0.2 ? pal.hole : pal.dirtDark) : roll < 0.18 ? pal.rubble : pal.dirt;
+      else if (d < 4) color = far ? (roll < 0.15 ? pal.rubble : pal.dirt) : pal.hole;
+      else if (d < 6 && far) color = pal.dirtDark;
+      else color = roll < 0.05 ? pal.ash : (x + y) & 1 ? pal.hole : pal.dirtDark;
+      p.px(x, y, color);
+    }
+  }
+  // The floor of a big crater: a few clods and scorched hollows, so it isn't a flat sheet.
+  for (let i = rng.int(0, 2); i > 0; i--) {
+    const x = rng.int(0, 12);
+    const y = rng.int(0, 13);
+    if (craterDepth(x + 1, y + 1, mask) > 7) p.rect(x, y, rng.int(2, 4), rng.int(1, 2), rng.chance(0.5) ? pal.dirtDark : pal.hole);
+  }
+}
+
+/**
+ * Bridge deck: planks or plates across the span (screen-horizontal). `edges` (1 left, 2 right) are
+ * the sides where the span ends over the water: a girder with its flange and rivets on a girder
+ * bridge, a kerb and a handrail on its posts on a light one, and the shadow each throws on the deck.
+ */
+function deck(p: Painter, rng: Rng, pal: Pal, light: boolean, damaged: boolean, edges: number): void {
   const base = light ? PAL.plank : PAL.deck;
   const seam = light ? PAL.plankDark : PAL.girder;
   p.rect(0, 0, TILE, TILE, base);
@@ -353,6 +427,34 @@ function deck(p: Painter, rng: Rng, pal: Pal, light: boolean, damaged: boolean):
     p.rect(rng.int(2, 7), rng.int(2, 7), 5, 4, pal.waterDeep);
     p.speckle(rng, 0, 0, TILE, TILE, 10, pal.hole);
     p.rect(rng.int(8, 12), rng.int(9, 12), 3, 2, pal.waterDeep);
+  }
+  for (const [bit, side] of [
+    [1, 0],
+    [2, 1],
+  ] as const) {
+    if (!(edges & bit)) continue;
+    // Columns counted in from the edge: `at(0)` is the outermost.
+    const at = (i: number) => (side === 0 ? i : TILE - 1 - i);
+    if (light) {
+      p.rect(at(0), 0, 1, TILE, PAL.outline);
+      p.rect(at(1), 0, 1, TILE, PAL.plankDark);
+      p.rect(at(2), 0, 1, TILE, pal.trunk);
+      // Posts under the rail, and the rail's shadow on the planks (it falls to the right).
+      for (let y = 2; y < TILE; y += 4) p.rect(at(1), y, 1, 2, PAL.outline);
+      if (side === 0) p.rect(at(3), 0, 1, TILE, PAL.plankDark);
+    } else {
+      p.rect(at(0), 0, 1, TILE, PAL.outline);
+      p.rect(at(1), 0, 1, TILE, PAL.girderHi);
+      p.rect(at(2), 0, 2, TILE, PAL.girder);
+      if (side === 1) p.rect(at(3), 0, 1, TILE, PAL.girder);
+      p.rect(at(4), 0, 1, TILE, PAL.outline);
+      // Stiffeners across the girder and a rivet between each pair; its shadow on the deck.
+      for (let y = 1; y < TILE; y += 4) {
+        p.rect(Math.min(at(1), at(3)), y, 3, 1, PAL.steelDark);
+        p.px(at(2), y + 2, PAL.girderHi);
+      }
+      if (side === 0) p.rect(at(5), 0, 1, TILE, PAL.girder);
+    }
   }
 }
 
@@ -472,10 +574,6 @@ function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
       break;
 
     // ── Common features ─────────────────────────────────────────────────────────────────────
-    case 'crater0':
-    case 'crater1':
-      crater(p, rng, pal, name === 'crater1');
-      break;
     case 'tankTrap_intact':
     case 'tankTrap_damaged': {
       // Three concrete pyramids, lit from the upper left, with shadows down-right, on open ground.
@@ -530,14 +628,6 @@ function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
       p.rect(2, 2, 1, 2, pal.warn);
       p.rect(12, 12, 2, 1, pal.warn);
       p.rect(13, 11, 1, 2, pal.warn);
-      break;
-    case 'bridge_intact':
-    case 'bridge_damaged':
-      deck(p, rng, pal, false, name === 'bridge_damaged');
-      break;
-    case 'lightBridge_intact':
-    case 'lightBridge_damaged':
-      deck(p, rng, pal, true, name === 'lightBridge_damaged');
       break;
 
     // ── Temperate ───────────────────────────────────────────────────────────────────────────

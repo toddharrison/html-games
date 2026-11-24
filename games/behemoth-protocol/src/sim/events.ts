@@ -35,7 +35,7 @@ export type SimEvent =
    */
   | { type: 'beam'; weapon: WeaponId; x0: number; y0: number; x1: number; y1: number; hit: boolean; slot: string }
   /** A flame from (x, y) along `angle`, reaching `reach`, `cone` radians either side (SPEC §6 flamethrower). */
-  | { type: 'flame'; x: number; y: number; angle: number; reach: number; cone: number }
+  | { type: 'flame'; x: number; y: number; angle: number; reach: number; cone: number; slot: string }
   /** A railgun or coilgun slug from (x0, y0) to where it stopped; `hits`: each unit and wall it went through. */
   | { type: 'rail'; weapon: WeaponId; x0: number; y0: number; x1: number; y1: number; hits: { x: number; y: number }[] }
   /** Lightning from the muzzle through each point in turn (units struck, or cover); `hit`: it struck something. */

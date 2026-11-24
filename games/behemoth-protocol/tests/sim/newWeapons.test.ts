@@ -235,7 +235,8 @@ describe('flamethrower', () => {
     const after = tank.hp;
     steps(w, 60);
     expect(tank.hp).toBeLessThan(after);
-    steps(w, Math.ceil(spec.burn.duration * 60));
+    // The fuel on the ground under it burns out first, then the tank does.
+    steps(w, Math.ceil((FIRE.fuel.flame + FIRE.burn.duration + spec.burn.duration) * 60));
     expect(tank.burn).toBeUndefined();
     const out = tank.hp;
     steps(w, 30);

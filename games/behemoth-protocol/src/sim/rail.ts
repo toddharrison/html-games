@@ -2,6 +2,7 @@ import { MATERIALS } from '../content/terrain';
 import type { RailSpec, WeaponDef } from '../content/weapons';
 import { conditionSpread, markFlash } from './conditions';
 import { sealed, type Enemy } from './entities';
+import { igniteAt, ignitesOf } from './fire';
 import { damageEnemy } from './projectiles';
 import { mineAt, triggerMine } from './trailer';
 import type { World } from './world';
@@ -85,6 +86,7 @@ export function shootRail(w: World, weapon: WeaponDef, x: number, y: number, ang
       break;
     }
     w.terrain.damage(col, row, spec.tileDamage * share, w.events);
+    igniteAt(w, px, py, ignitesOf(spec));
     hits.push({ x: px, y: py });
     share *= spec.wallLoss;
     if (share < SPENT) {

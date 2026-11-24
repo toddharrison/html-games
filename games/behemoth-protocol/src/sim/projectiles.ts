@@ -1,5 +1,5 @@
 import { BARRAGE, CONCEALMENT, SWARM } from '../content/tuning';
-import type { BeamSpec, BurnSpec, ProjectileSpec, RoundSpec, ShellSpec, TargetClass, WeaponDef } from '../content/weapons';
+import type { BeamSpec, ProjectileSpec, RoundSpec, ShellSpec, TargetClass, WeaponDef } from '../content/weapons';
 import { applyHit, hitArc, hitched, hullBox, inTrailer } from './behemoth';
 import { sealed, type Enemy, type Projectile } from './entities';
 import type { KillCause } from './events';
@@ -7,7 +7,7 @@ import { damageDrone, droneAt } from './drones';
 import { breakLock, destroyEnemy, hitFacing } from './enemies';
 import { frameRight } from './frame';
 import { closestInBox, pointInBox, rotateToward } from './math';
-import { igniteEnemy, igniteTile } from './fire';
+import { fireBurst, igniteAt, igniteBlast, ignitesOf } from './fire';
 import { spawnPool } from './pools';
 import { hitTrailer, mineAt, triggerMine } from './trailer';
 import type { World } from './world';
@@ -92,12 +92,15 @@ export function fireBeam(w: World, weapon: WeaponDef, x: number, y: number, angl
     if (w.terrain.blocksShotAt(px, py)) {
       const ts = w.terrain.tileSize;
       w.terrain.damage(Math.floor(px / ts), Math.floor(py / ts), spec.tileDamage, w.events);
+      igniteAt(w, px, py, ignitesOf(spec));
       return { x: px, y: py, hit: true };
     }
   }
   const end = { x: x + dx * reach, y: y + dy * reach };
   if (!target) return { ...end, hit: false };
   damageEnemy(w, target, spec, spec.damage, { dx, dy, ...end });
+  // It can light what burns where it strikes (a unit among the trees).
+  igniteAt(w, target.x, target.y, ignitesOf(spec));
   return { ...end, hit: true };
 }
 
@@ -305,6 +308,7 @@ function inShelter(w: World, p: Projectile): boolean {
 function hitCover(w: World, p: Projectile, tileDamage: number, credit = true): void {
   const ts = w.terrain.tileSize;
   w.terrain.damage(Math.floor(p.x / ts), Math.floor(p.y / ts), tileDamage, w.events, credit);
+  igniteAt(w, p.x, p.y, ignitesOf(roundSpec(p.weapon)));
   w.events.push({ type: 'impact', x: p.x, y: p.y });
   p.alive = false;
 }
@@ -330,7 +334,7 @@ function detonate(w: World, p: Projectile, target?: Enemy): void {
   const ev = { type: 'explosion', x: p.x, y: p.y, radius: r } as const;
   w.events.push(pool ? { ...ev, plasma: true } : fire ? { ...ev, fire: true } : ev);
   if (spec.kind === 'shell' && spec.pool) spawnPool(w, p.x, p.y, spec, spec.pool);
-  if (fire) ignitedBurst(w, p.x, p.y, r, spec, fire);
+  if (fire) fireBurst(w, p.x, p.y, r, fire, undefined, spec);
   for (const m of w.mines) if (Math.hypot(m.x - p.x, m.y - p.y) <= r + m.radius) triggerMine(m);
 
   // A lobbed shell comes down on top of whatever it catches.
@@ -342,17 +346,8 @@ function detonate(w: World, p: Projectile, target?: Enemy): void {
   }
 
   burstTerrain(w, p.x, p.y, r, spec.tileDamage, true);
-}
-
-/** A thermobaric fireball (SPEC §6): every unit in it burns, and so does everything in it that can. */
-function ignitedBurst(w: World, x: number, y: number, r: number, spec: RoundSpec, burn: BurnSpec): void {
-  for (const e of w.enemies) if (e.alive && Math.hypot(e.x - x, e.y - y) - e.def.radius < r) igniteEnemy(e, spec, burn);
-  const ts = w.terrain.tileSize;
-  for (let c = Math.floor((x - r) / ts); c <= Math.floor((x + r) / ts); c++) {
-    for (let row = Math.floor((y - r) / ts); row <= Math.floor((y + r) / ts); row++) {
-      if (Math.hypot((c + 0.5) * ts - x, (row + 0.5) * ts - y) < r + ts * 0.5) igniteTile(w, c, row);
-    }
-  }
+  // An explosive round can start a fire in what's left standing (SPEC §6 "Fire"); a fireball already has.
+  if (!fire) igniteBlast(w, p.x, p.y, r, ignitesOf(spec));
 }
 
 /** Share of the damage a unit avoids where it stands: troops on foot use cover (SPEC §4.5). */

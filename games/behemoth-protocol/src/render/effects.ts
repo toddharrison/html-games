@@ -1,11 +1,14 @@
 import Phaser from 'phaser';
+import type { FlameLayer } from './flameLayer';
 import { hex, PAL } from './palette';
 import type { StatusEmitter } from './statusFx';
 import { viewAngle, viewX, viewY } from './viewTransform';
 
 /**
  * Chunky particle effects: explosions, muzzle flashes, debris, dust, smoke. Render-only.
- * Public methods take sim coordinates and map them to the view.
+ * Public methods take sim coordinates and map them to the view. Anything that burns (a fireball,
+ * a blast's flash of flame, a burning part) goes to the flame layer (`flameLayer.ts`), so all fire
+ * in the game is the same stuff; particles are for what flies: sparks, debris, dust, embers.
  */
 
 type Emitter = Phaser.GameObjects.Particles.ParticleEmitter;
@@ -20,24 +23,27 @@ export class Effects implements StatusEmitter {
   private readonly dust: Emitter;
   private readonly leaves: Emitter;
   private readonly trail: Emitter;
-  private readonly flames: Emitter;
   private readonly spray: Emitter;
   private readonly plasma: Emitter;
   private readonly blackSmoke: Emitter;
   private readonly embers: Emitter;
   private readonly arcs: Emitter;
 
-  constructor(private readonly scene: Phaser.Scene) {
+  constructor(
+    private readonly scene: Phaser.Scene,
+    private readonly flames: FlameLayer,
+  ) {
+    // Burning fragments thrown out of a blast: small, fast, gone quickly. The fireball itself is the flame layer's.
     this.fire = scene.add
-      .particles(0, 0, 'px3', {
+      .particles(0, 0, 'px2', {
         emitting: false,
-        lifespan: { min: 220, max: 520 },
-        speed: { min: 10, max: 70 },
-        scale: { start: 1.6, end: 0.3 },
+        lifespan: { min: 160, max: 420 },
+        speed: { min: 30, max: 110 },
+        scale: { start: 1, end: 0.5 },
         color: FIRE_RAMP,
         colorEase: 'quad.out',
       })
-      .setDepth(7);
+      .setDepth(7.1);
     this.smoke = scene.add
       .particles(0, 0, 'puff', {
         emitting: false,
@@ -95,17 +101,6 @@ export class Effects implements StatusEmitter {
         color: [0xfff0b0, 0x8a8478, 0x4a4540],
       })
       .setDepth(5.5);
-    // Small licking flames on a burning component: short-lived, slow, rising off the hull.
-    this.flames = scene.add
-      .particles(0, 0, 'px2', {
-        emitting: false,
-        lifespan: { min: 120, max: 300 },
-        speed: { min: 2, max: 12 },
-        scale: { start: 1.2, end: 0.3 },
-        color: [0xfff0b0, 0xffb347, 0xe0602a, 0x8a2e1c],
-        colorEase: 'quad.out',
-      })
-      .setDepth(7);
     // Water thrown up by shells and churned by treads.
     this.spray = scene.add
       .particles(0, 0, 'px2', {
@@ -158,13 +153,15 @@ export class Effects implements StatusEmitter {
       .setDepth(8.1);
   }
 
-  /** Glowing bits drifting up off a fire. */
+  /** Glowing bits carried up off a fire (up the screen, as the flames rise), wandering as they go. */
   private makeEmbers(): Emitter {
     return this.scene.add
       .particles(0, 0, 'px', {
         emitting: false,
-        lifespan: { min: 400, max: 900 },
-        speed: { min: 6, max: 22 },
+        lifespan: { min: 500, max: 1300 },
+        speed: { min: 12, max: 38 },
+        angle: { min: -125, max: -55 },
+        accelerationX: { min: -30, max: 30 },
         alpha: { start: 1, end: 0 },
         color: [0xfff0b0, 0xffb347, 0xe0602a],
         blendMode: Phaser.BlendModes.ADD,
@@ -185,9 +182,10 @@ export class Effects implements StatusEmitter {
   }
 
   explosion(x: number, y: number, radius: number): void {
+    this.flames.burst(x, y, Math.max(3, radius * 0.42), 0.16 + radius * 0.004);
     [x, y] = [viewX(x, y), viewY(x)];
     const k = radius / 18;
-    this.fire.explode(Math.round(18 * k), x, y);
+    this.fire.explode(Math.round(7 * k), x, y);
     this.debris.explode(Math.round(10 * k), x, y);
     this.smoke.explode(Math.round(6 * k), x, y);
     this.sparkBurst.explode(8, x, y);
@@ -195,8 +193,9 @@ export class Effects implements StatusEmitter {
   }
 
   bigExplosion(x: number, y: number): void {
+    this.flames.burst(x, y, 11, 0.3);
     [x, y] = [viewX(x, y), viewY(x)];
-    this.fire.explode(30, x, y);
+    this.fire.explode(12, x, y);
     this.debris.explode(18, x, y);
     this.smoke.explode(10, x, y);
     this.sparkBurst.explode(14, x, y);
@@ -210,7 +209,8 @@ export class Effects implements StatusEmitter {
   detonation(x: number, y: number, radius: number): void {
     const vx = viewX(x, y);
     const vy = viewY(x);
-    this.fire.explode(120, vx, vy);
+    this.flames.burst(x, y, radius * 0.45, 1.1);
+    this.fire.explode(60, vx, vy);
     this.debris.explode(60, vx, vy);
     this.smoke.explode(30, vx, vy);
     this.sparkBurst.explode(40, vx, vy);
@@ -223,7 +223,9 @@ export class Effects implements StatusEmitter {
         const d = (i < 5 ? 0.15 : 0.6) * radius * Math.random();
         const ex = vx + Math.cos(a) * d;
         const ey = vy + Math.sin(a) * d;
-        this.fire.explode(20, ex, ey);
+        // View → sim: x = -view y, y = view x.
+        this.flames.burst(-ey, ex, 7 + Math.random() * 6, 0.35);
+        this.fire.explode(8, ex, ey);
         this.smoke.explode(5, ex, ey);
         this.ring(ex, ey, 10 + Math.random() * 10);
       });
@@ -272,10 +274,12 @@ export class Effects implements StatusEmitter {
     this.leaves.explode(4, x, y);
   }
 
+  /** Trees burnt or blasted down to a clearing: a last flare, cinders, and smoke. */
   forestBurnt(x: number, y: number): void {
+    this.flames.burst(x, y, 5, 0.25);
     [x, y] = [viewX(x, y), viewY(x)];
     this.leaves.explode(5, x, y);
-    this.fire.explode(4, x, y);
+    this.embers.explode(4, x, y);
     this.smoke.explode(2, x, y);
   }
 
@@ -284,11 +288,16 @@ export class Effects implements StatusEmitter {
    * of the deck (seen from above, a tall fire burst), with sparks.
    */
   vent(x: number, y: number): void {
+    const [sx, sy] = [x, y];
+    this.flames.burst(sx, sy, 9, 0.5);
     [x, y] = [viewX(x, y), viewY(x)];
-    this.fire.explode(45, x, y);
+    this.fire.explode(20, x, y);
     this.smoke.explode(16, x, y);
     this.sparkBurst.explode(16, x, y);
-    this.scene.time.delayedCall(120, () => this.fire.explode(25, x, y));
+    this.scene.time.delayedCall(120, () => {
+      this.flames.burst(sx, sy, 7, 0.4);
+      this.fire.explode(10, x, y);
+    });
     this.scene.time.delayedCall(260, () => this.smoke.explode(10, x, y));
   }
 
@@ -324,7 +333,7 @@ export class Effects implements StatusEmitter {
   laserSpark(simX: number, simY: number, sparks: number, heavy: boolean): void {
     const [x, y] = [viewX(simX, simY), viewY(simX)];
     this.sparkBurst.explode(sparks, x, y);
-    if (heavy) this.fire.explode(4, x, y);
+    if (heavy) this.flames.burst(simX, simY, 3.5, 0.12);
   }
 
   /** A plasma glob splashing: violet droplets and a quick ring. */
@@ -342,9 +351,9 @@ export class Effects implements StatusEmitter {
 
   /** Plasma eating at the treads or the trailer where they're over a pool. */
   plasmaBurn(x: number, y: number): void {
+    this.flame(x, y);
     [x, y] = [viewX(x, y), viewY(x)];
     this.plasma.explode(3, x, y);
-    this.flames.explode(2, x, y);
   }
 
   /** Exhaust behind a flying missile. */
@@ -370,10 +379,10 @@ export class Effects implements StatusEmitter {
     this.sparkBurst.explode(3 + Math.floor(Math.random() * 4), x, y);
   }
 
-  /** A burning component. */
+  /** A burning component: a lick of flame where it sits (called many times a second while it burns). */
   flame(x: number, y: number): void {
-    [x, y] = [viewX(x, y), viewY(x)];
-    this.flames.explode(3, x, y);
+    this.flames.spot(x, y, 1.3 + Math.random() * 1.3, 190 + Math.random() * 65);
+    this.flames.spot(x + (Math.random() - 0.5) * 3, y + (Math.random() - 0.5) * 3, 1 + Math.random(), 150 + Math.random() * 80);
   }
 
   /**
@@ -435,36 +444,22 @@ export class Effects implements StatusEmitter {
     for (const p of points.slice(1)) this.arcs.explode(heavy ? 6 : 2, viewX(p.x, p.y), viewY(p.x));
   }
 
-  /** A thermobaric fireball (sim coordinates): a rolling ball of flame, then black smoke. */
+  /** A fireball (a thermobaric or incendiary burst, fuel going up): a rolling ball of flame over the whole blast, then smoke. */
   fireball(x: number, y: number, radius: number): void {
-    this.explosion(x, y, radius * 0.6);
+    this.flames.burst(x, y, radius * 0.8, 0.55);
     [x, y] = [viewX(x, y), viewY(x)];
-    this.fire.explode(14 + Math.round(radius), x, y);
-    this.flames.explode(10, x, y);
-    const ring = this.scene.add.circle(x, y, radius, hex(PAL.ember), 0.35).setDepth(7).setBlendMode(Phaser.BlendModes.ADD).setScale(0.3);
-    this.scene.tweens.add({ targets: ring, scale: 1, alpha: 0, duration: 320, ease: 'quad.out', onComplete: () => ring.destroy() });
-    this.scene.time.delayedCall(200, () => this.blackSmoke.explode(4, x, y));
+    this.fire.explode(8 + Math.round(radius * 0.4), x, y);
+    this.debris.explode(4, x, y);
+    this.sparkBurst.explode(8, x, y);
+    this.embers.explode(6 + Math.round(radius * 0.3), x, y);
+    const flash = this.scene.add.circle(x, y, radius, hex(PAL.ember), 0.35).setDepth(7).setBlendMode(Phaser.BlendModes.ADD).setScale(0.3);
+    this.scene.tweens.add({ targets: flash, scale: 1, alpha: 0, duration: 320, ease: 'quad.out', onComplete: () => flash.destroy() });
   }
 
   /** A crackle of electricity: a unit knocked out by an EMP. */
   arc(x: number, y: number): void {
     [x, y] = [viewX(x, y), viewY(x)];
     this.arcs.explode(2 + Math.floor(Math.random() * 3), x, y);
-  }
-
-  /**
-   * A lick of flame from a flamethrower's nozzle (sim coordinates): fire scattered down the cone,
-   * thin at the nozzle and widening, bigger and redder toward the far end.
-   */
-  flameJet(x: number, y: number, angle: number, reach: number, cone: number): void {
-    for (let i = 0; i < 6; i++) {
-      const t = Math.sqrt(Math.random());
-      const d = t * reach;
-      const a = angle + (Math.random() * 2 - 1) * cone * t;
-      const [px, py] = [x + Math.cos(a) * d, y + Math.sin(a) * d];
-      if (t < 0.6) this.flames.explode(1, viewX(px, py), viewY(px));
-      else this.fire.explode(1, viewX(px, py), viewY(px));
-    }
   }
 
   /** An EMP pulse rolling out from (x, y) to `radius`: a fast ring and a pale flash. */

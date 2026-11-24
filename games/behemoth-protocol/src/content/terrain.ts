@@ -131,7 +131,7 @@ export interface MaterialDef {
    */
   breaksTo?: MaterialId | 'under';
   /** Goes up when destroyed or crushed (SPEC §4.6 fuel tanks, minefields): a blast that can chain. */
-  explodes?: { radius: number; damage: number; fuse: number };
+  explodes?: { radius: number; damage: number; fuse: number; fire?: boolean };
   /** Invisible until the Behemoth's sensors sweep it (minefields): it looks like open ground. */
   hidden?: boolean;
   /** Open ground: a single blast hit this hard (tile damage) leaves a crater. */
@@ -544,7 +544,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     conceals: NO_COVER,
     protection: NO_PROTECTION,
     // Reaches the next tank in a farm (2 tiles away) with enough left to hole it.
-    explodes: { radius: 40, damage: 50, fuse: 0.25 },
+    explodes: { radius: 40, damage: 50, fuse: 0.25, fire: true },
     breaksTo: 'crater',
     debris: 'metal',
     salvage: 2,
@@ -606,7 +606,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     conceals: NO_COVER,
     protection: NO_PROTECTION,
     salvage: 3,
-    explodes: { radius: 44, damage: 60, fuse: 0.4 },
+    explodes: { radius: 44, damage: 60, fuse: 0.4, fire: true },
     breaksTo: 'crater',
     debris: 'metal',
     burns: { dps: 6, spread: 0 },

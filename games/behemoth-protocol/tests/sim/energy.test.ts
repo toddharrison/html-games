@@ -165,10 +165,11 @@ describe('plasma', () => {
     const row = Math.floor((b.y - 70) / ts);
     const x = (col + 0.5) * ts;
     const y = (row + 0.5) * ts;
-    Object.assign(w.terrain.tile(col, row)!, { mat: 'building', state: 'intact', hp: 120 });
+    // A wall: it melts, but doesn't burn (a house would catch fire too, tests/sim/fire.test.ts).
+    Object.assign(w.terrain.tile(col, row)!, { mat: 'wall', state: 'intact', hp: 200 });
     spawnPool(w, x, y, spec, pool);
     steps(w, Math.round(pool.duration / SIM_DT) + 5);
-    expect(w.terrain.tile(col, row)!.hp).toBeCloseTo(120 - pool.tileDps * pool.duration, 0);
+    expect(w.terrain.tile(col, row)!.hp).toBeCloseTo(200 - pool.tileDps * pool.duration, 0);
   });
 
   it('burns the Behemoth too: its treads take damage while it drives over a pool', () => {

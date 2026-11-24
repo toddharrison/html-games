@@ -27,6 +27,11 @@ interface HitBase {
   spread: number;
   /** Damage multiplier per target class (missing = 1). */
   vs?: Partial<Record<TargetClass, number>>;
+  /**
+   * Odds (0..1) that it sets alight each tile that burns where it strikes (SPEC §6 "Fire"); a burst
+   * rolls for every such tile in its blast. Missing: its kind's odds (`FIRE.ignites`).
+   */
+  ignites?: number;
   /** Hits on a Behemoth: damage aimed past the armor. */
   strike?: StrikeFocus;
   /**
@@ -78,7 +83,10 @@ export interface ShellSpec extends RoundBase {
   vertical?: boolean;
   /** Each round of a salvo comes down somewhere within this of the aim point (SPEC §6 rocket artillery). */
   scatter?: number;
-  /** The burst sets every unit in it burning and lights whatever burns in it (SPEC §6 thermobaric). */
+  /**
+   * The burst is a fireball (SPEC §6 thermobaric, §6.2 incendiary shells): every unit in it is set
+   * burning, whatever burns in it is set alight, and the ground in it burns for a few seconds.
+   */
   incendiary?: BurnSpec;
   /** What it looks like in flight (render only): a rocket, a big missile, a canister; missing = a shell. */
   look?: 'rocket' | 'ballistic' | 'canister';
@@ -245,12 +253,13 @@ export type WeaponId =
  * Main-gun shells (SPEC §6.2), chosen per gun at the depot. The first one a gun lists is its
  * default (its `projectile`).
  */
-export type ShellType = 'he' | 'ap' | 'canister';
+export type ShellType = 'he' | 'ap' | 'canister' | 'incendiary';
 
 export const SHELL_TYPES: Record<ShellType, { name: string; short: string; blurb: string }> = {
   he: { name: 'High-explosive', short: 'HE', blurb: 'Bursts at the cursor; splash clears cover.' },
   ap: { name: 'Armor-piercing', short: 'AP', blurb: 'Fast and flat, no splash; cracks heavy armor.' },
   canister: { name: 'Canister', short: 'CAN', blurb: 'A short cone of pellets; shreds infantry.' },
+  incendiary: { name: 'Incendiary', short: 'INC', blurb: 'A fireball; sets all it catches alight.' },
 };
 
 export interface WeaponDef {
@@ -368,6 +377,49 @@ const CANNON_CANISTER: BulletSpec = {
   vs: { infantry: 2, light: 0.6, heavy: 0.15 },
 };
 
+const CANNON_INCENDIARY: ShellSpec = {
+  kind: 'shell',
+  // Flies like the high-explosive shell, with half its punch: the fire does the rest.
+  speed: 380,
+  damage: 20,
+  blastRadius: 20,
+  tileDamage: 12,
+  minRange: 30,
+  maxRange: 320,
+  spread: 0.01,
+  incendiary: { dps: 6, duration: 3 },
+  vs: { infantry: 1.4, heavy: 0.4 },
+};
+
+/** The siege howitzer's shells (SPEC §6.2). Numbers are provisional. */
+const HOWITZER_HE: ShellSpec = {
+  kind: 'shell',
+  // Slow and lobbed: it sails over cover and levels whatever is around the aim point.
+  speed: 210,
+  damage: 55,
+  blastRadius: 34,
+  tileDamage: 150,
+  minRange: 70,
+  maxRange: 380,
+  spread: 0.02,
+  lobbed: true,
+  vs: { infantry: 0.8 },
+};
+const HOWITZER_INCENDIARY: ShellSpec = {
+  kind: 'shell',
+  // A firestorm dropped over cover: little blast, and a whole block or stand of trees alight.
+  speed: 210,
+  damage: 24,
+  blastRadius: 36,
+  tileDamage: 15,
+  minRange: 70,
+  maxRange: 380,
+  spread: 0.02,
+  lobbed: true,
+  incendiary: { dps: 6, duration: 4 },
+  vs: { infantry: 1.4, heavy: 0.4 },
+};
+
 /**
  * The ballistic missile (SPEC §6): launched straight up, it comes down on the aim point a couple of
  * seconds later with a blast that craters the ground around it. Shared by the L launcher and the
@@ -386,6 +438,7 @@ const BALLISTIC: ShellSpec = {
   lobbed: true,
   vertical: true,
   look: 'ballistic',
+  ignites: 0.3,
   vs: { heavy: 1.2 },
 };
 
@@ -396,14 +449,14 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     mass: 110,
     name: 'Heavy cannon',
     short: 'Cannon',
-    blurb: 'Slow, heavy shells: high-explosive, AP, or canister.',
+    blurb: 'Slow, heavy shells: HE, AP, canister, or incendiary.',
     role: 'main',
     category: 'ballistic',
     reload: 1.5,
     muzzle: 28,
     traverseDegPerSec: 0,
     projectile: CANNON_HE,
-    shells: { he: CANNON_HE, ap: CANNON_AP, canister: CANNON_CANISTER },
+    shells: { he: CANNON_HE, ap: CANNON_AP, canister: CANNON_CANISTER, incendiary: CANNON_INCENDIARY },
   },
   autocannon: {
     id: 'autocannon',
@@ -482,19 +535,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     muzzle: 24,
     traverseDegPerSec: 0,
     ammo: 16,
-    projectile: {
-      kind: 'shell',
-      // Slow and lobbed: it sails over cover and levels whatever is around the aim point.
-      speed: 210,
-      damage: 55,
-      blastRadius: 34,
-      tileDamage: 150,
-      minRange: 70,
-      maxRange: 380,
-      spread: 0.02,
-      lobbed: true,
-      vs: { infantry: 0.8 },
-    },
+    projectile: HOWITZER_HE,
+    shells: { he: HOWITZER_HE, incendiary: HOWITZER_INCENDIARY },
   },
   rotaryGun: {
     id: 'rotaryGun',
@@ -660,7 +702,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     traverseDegPerSec: 360,
     autoGroup: 1,
     power: 1.65,
-    projectile: { kind: 'beam', damage: 4, tileDamage: 2, range: 110, spread: 0.01, vs: { infantry: 1.4, heavy: 0.3 } },
+    projectile: { kind: 'beam', damage: 4, tileDamage: 2, range: 110, spread: 0.01, ignites: 0.02, vs: { infantry: 1.4, heavy: 0.3 } },
   },
   beamLaser: {
     id: 'beamLaser',
@@ -676,7 +718,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     muzzle: 9,
     traverseDegPerSec: 240,
     power: 1.76,
-    projectile: { kind: 'beam', damage: 2.4, tileDamage: 1.5, range: 260, spread: 0.004 },
+    projectile: { kind: 'beam', damage: 2.4, tileDamage: 1.5, range: 260, spread: 0.004, ignites: 0.04 },
   },
   heavyLaser: {
     id: 'heavyLaser',
@@ -691,7 +733,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     muzzle: 28,
     traverseDegPerSec: 0,
     power: 16.5,
-    projectile: { kind: 'beam', damage: 42, tileDamage: 45, range: 420, spread: 0.002, vs: { infantry: 0.6, heavy: 1.15 } },
+    projectile: { kind: 'beam', damage: 42, tileDamage: 45, range: 420, spread: 0.002, ignites: 0.6, vs: { infantry: 0.6, heavy: 1.15 } },
   },
   plasmaThrower: {
     id: 'plasmaThrower',

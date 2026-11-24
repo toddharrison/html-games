@@ -85,9 +85,13 @@ export interface World {
   drones: Drone[];
   /** Plasma burning on the ground (SPEC §6). */
   pools: Pool[];
-  /** Burning tiles (SPEC §6 flamethrower), keyed by `fireKey`; and seconds to the next burn tick. */
+  /** Burning tiles (SPEC §6 "Fire"), keyed by `fireKey`; and seconds to the next burn tick. */
   fires: Map<number, TileFire>;
   fireTick: number;
+  /** Smoke hanging over tiles (SPEC §6 "Fire"), keyed by `fireKey`: seconds until it clears. */
+  smoke: Map<number, number>;
+  /** Fire's own stream (what catches, what spreads), so a fire never shifts the battle's combat draws. */
+  fireRng: Rng;
   /** Explosive terrain set off and waiting out its fuse (SPEC §4.6). */
   blasts: TerrainBlast[];
   /** Artillery target zones with a volley on the way (SPEC §7). */
@@ -169,6 +173,8 @@ export function createWorld(opts: WorldOptions): World {
     pools: [],
     fires: new Map(),
     fireTick: 0,
+    smoke: new Map(),
+    fireRng: new Rng(hashSeed(opts.seed, 0xf12e)),
     blasts: [],
     barrages: [],
     revive: null,

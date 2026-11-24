@@ -1,6 +1,7 @@
-import { BEARING, BOMB, TERRAIN_BLAST } from '../content/tuning';
+import { BEARING, BOMB, FIRE, TERRAIN_BLAST } from '../content/tuning';
 import { applyHit, damageTreads, groundFootprint, hitArc, hitched, hullBox, loadMass, wearPlow } from './behemoth';
 import { destroyEnemy } from './enemies';
+import { fireBurst } from './fire';
 import { distanceToBox, rectIntersectsBox } from './math';
 import type { TerrainBlast } from './terrain';
 import { blast, hitTrailer, hullBlast } from './trailer';
@@ -47,7 +48,9 @@ export function stepHazards(w: World, dt: number): void {
  */
 function terrainBlast(w: World, bl: TerrainBlast): void {
   const b = w.behemoth;
-  blast(w, bl.x, bl.y, bl.radius, bl.damage, 'hazard', TERRAIN_BLAST.edge);
+  blast(w, bl.x, bl.y, bl.radius, bl.damage, 'hazard', TERRAIN_BLAST.edge, bl.fire);
+  // Fuel going up throws fire about: units burn, what burns catches, the ground burns a while.
+  if (bl.fire) fireBurst(w, bl.x, bl.y, bl.radius * FIRE.blastReach, FIRE.burn);
   if (b.destroyed) return;
   if (bl.bomb && distanceToBox(hullBox(b), bl.x, bl.y) <= BOMB.reach) bombContact(w, bl);
   else hullShare(w, bl);

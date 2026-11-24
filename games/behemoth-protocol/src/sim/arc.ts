@@ -1,6 +1,7 @@
 import type { ArcSpec, WeaponDef } from '../content/weapons';
 import { conditionSpread, markFlash } from './conditions';
 import { sealed, type Enemy } from './entities';
+import { igniteAt, ignitesOf } from './fire';
 import { damageEnemy } from './projectiles';
 import { mineAt, triggerMine } from './trailer';
 import type { World } from './world';
@@ -52,6 +53,7 @@ export function shootArc(w: World, weapon: WeaponDef, x: number, y: number, angl
     if (mine || w.terrain.blocksShotAt(px, py)) {
       const ts = w.terrain.tileSize;
       if (!mine) w.terrain.damage(Math.floor(px / ts), Math.floor(py / ts), spec.tileDamage, w.events);
+      if (!mine) igniteAt(w, px, py, ignitesOf(spec));
       points.push({ x: px, y: py });
       first = null;
       hit = true;
@@ -68,6 +70,7 @@ export function shootArc(w: World, weapon: WeaponDef, x: number, y: number, angl
       struck.add(at);
       points.push({ x: at.x, y: at.y });
       damageEnemy(w, at, spec, dmg, 'splash');
+      igniteAt(w, at.x, at.y, ignitesOf(spec));
       dmg *= spec.falloff;
       at = nextLeap(w, at, spec.jumpRange, struck);
     }

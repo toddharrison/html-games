@@ -1,8 +1,9 @@
-import { CONDITION } from '../content/tuning';
+import { CONDITION, FIRE } from '../content/tuning';
 import { ARMOR_ARCS } from '../content/chassis';
 import type { ArcSpec } from '../content/weapons';
 import { damageArmor, damageComponent, hullBox, pickInternal, type BehemothState } from './behemoth';
 import { sealed, type Enemy } from './entities';
+import { igniteAt } from './fire';
 import { frameRight } from './frame';
 import { distanceToBox } from './math';
 import { damageEnemy } from './projectiles';
@@ -136,6 +137,8 @@ function land(w: World, rng: Rng, m: LightningMark): void {
     // Into the ground: whatever stands there takes it (a fuel tank or derrick goes up).
     const ts = w.terrain.tileSize;
     w.terrain.damage(Math.floor(m.x / ts), Math.floor(m.y / ts), L.tileDamage, w.events);
+    // It sets a tree or a roof alight (SPEC §6 "Fire"); the rain it came with soon damps it.
+    igniteAt(w, m.x, m.y, FIRE.lightning);
     w.events.push({ type: 'lightning', points, hit: false });
     flash(w);
     return;
@@ -154,6 +157,7 @@ function land(w: World, rng: Rng, m: LightningMark): void {
       struck.add(at.e);
       points.push({ x: at.e.x, y: at.e.y });
       damageEnemy(w, at.e, BOLT, dmg, 'top', 'hazard');
+      igniteAt(w, at.e.x, at.e.y, FIRE.lightning);
     }
     dmg *= L.falloff;
     at = nextLeap(w, at, struck);

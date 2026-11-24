@@ -77,6 +77,8 @@ export interface TerrainBlast {
   fuse: number;
   /** A bomb truck's bomb (SPEC §7.4): hits the hull far harder at contact (`BOMB`). */
   bomb?: boolean;
+  /** Fuel going up (SPEC §6 "Fire"): it throws fire over part of its blast. */
+  fire?: boolean;
 }
 
 const TS = TERRAIN_GEN.tileSize;

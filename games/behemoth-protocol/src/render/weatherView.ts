@@ -12,7 +12,7 @@ import { viewX, viewY } from './viewTransform';
 /**
  * The battle's condition on screen (SPEC §4.6), render-only. A **veil** over the field column (a
  * render texture filled dark, or with the storm's haze) has soft holes erased in it wherever there's
- * light: the Behemoth's sight, muzzle flashes and blasts for a moment, plasma burning, and a fading
+ * light: the Behemoth's sight, muzzle flashes and blasts for a moment, plasma and fires burning, and a fading
  * glow on a unit that has just fired (it gave itself away). The veil sits over the ground and the
  * units but under rounds and effects, so tracers and fireballs light up the dark. A storm also
  * blows particles across the column (rain, snow, sand, or ash) that thicken in a squall. In a
@@ -32,6 +32,8 @@ const STORM: Record<BiomeId, { color: number; haze: number; squall: number; part
 
 /** Depth: over the units (3) and the Behemoth (5), under rounds (6) and effects. */
 const VEIL_DEPTH = 5.8;
+/** Most burning tiles that light the night at once (each is an image erased from the veil). */
+const MAX_FIRE_LIGHTS = 70;
 const LIGHT_KEY = 'veil_light';
 const LIGHT_SIZE = 128;
 
@@ -148,6 +150,19 @@ export class WeatherView {
         lights.push({ ...local(at.x, at.y), r: 16 + e.def.radius, a: Math.min(1, e.exposed / CONCEALMENT.afterFire + 0.2) });
       }
       for (const p of w.pools) lights.push({ ...local(p.x, p.y), r: 30, a: 0.8 });
+      // Fire lights the dark: what burns shows, and whatever stands near it.
+      const ts = w.terrain.tileSize;
+      let lit = 0;
+      for (const f of w.fires.values()) {
+        const at = local((f.col + 0.5) * ts, (f.row + 0.5) * ts);
+        if (at.y < -40 || at.y > this.layout.height + 40 || lit++ >= MAX_FIRE_LIGHTS) continue;
+        lights.push({ ...at, r: f.fuel === undefined || f.smokes ? 34 : 24, a: Math.min(1, 0.3 + f.age) * (0.75 + 0.15 * Math.sin(w.time * 13 + f.col * 2.3 + f.row)) });
+      }
+      for (const e of w.enemies) {
+        if (!e.alive || e.hidden || !e.burn) continue;
+        const at = pose(interp, e);
+        lights.push({ ...local(at.x, at.y), r: 20 + e.def.radius, a: 0.8 });
+      }
       for (let i = this.glows.length - 1; i >= 0; i--) {
         const gl = this.glows[i]!;
         gl.t += dt;

@@ -63,12 +63,19 @@ export interface Enemy extends EnemyGun {
   stunned?: number;
 }
 
-/** A burning tile (SPEC §6 flamethrower): it burns until it's down, then goes out. */
+/**
+ * A burning tile (SPEC §6 "Fire"). A tile that burns itself (a wood, a house) burns until it's
+ * down. Ground that doesn't (`fuel` set) has burning fuel lying on it, which burns out.
+ */
 export interface TileFire {
   col: number;
   row: number;
   /** Seconds it has burned. */
   age: number;
+  /** Burning fuel on ground that doesn't burn itself: seconds until it's burnt out. */
+  fuel?: number;
+  /** Burning fuel that pours smoke (a wreck); a tile that burns itself always does. */
+  smokes?: boolean;
 }
 
 /** Behavior state. Each behavior uses the fields it needs (content/behaviors.ts). */

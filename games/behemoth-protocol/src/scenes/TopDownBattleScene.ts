@@ -11,6 +11,7 @@ import { Hud, type HudRun } from '../render/hud';
 import { capturePose, Interp, pose } from '../render/interp';
 import { LaserView } from '../render/laserView';
 import { FireView } from '../render/fireView';
+import { FlameLayer } from '../render/flameLayer';
 import { ENEMY_ART, TILE } from '../render/placeholder';
 import { TerrainView } from '../render/terrainView';
 import { ThreatIndicators } from '../render/threatIndicators';
@@ -115,6 +116,7 @@ export class TopDownBattleScene extends Phaser.Scene {
   private fx!: Effects;
   private lasers!: LaserView;
   private fires!: FireView;
+  private flames!: FlameLayer;
   /** Where each ballistic missile in flight will come down. */
   private landing!: Phaser.GameObjects.Graphics;
   private status!: ComponentFx;
@@ -222,9 +224,10 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.locks = new LockViews(this);
     this.barrages = new BarrageViews(this);
     this.weather = WeatherView.create(this, this.layout, this.world);
-    this.fx = new Effects(this);
+    this.flames = new FlameLayer(this, this.layout);
+    this.fx = new Effects(this, this.flames);
     this.lasers = new LaserView(this, this.fx);
-    this.fires = new FireView(this);
+    this.fires = new FireView(this.flames);
     this.landing = this.add.graphics().setDepth(5);
     // The attract mode is silent: the title shouldn't blare before anyone has asked to play.
     this.audio = demo ? null : BattleAudio.create(this);
@@ -686,7 +689,15 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.unitFx.update(damaged, dt, this.fx);
     this.drones.update(w.drones, this.interp, dt, w.time, this.fx);
     this.pools.update(w.pools, dt, w.time, this.fx);
-    this.fires.update(w.fires, w.enemies, w.terrain.tileSize, this.interp, dt, w.time, this.fx);
+    this.fires.update(
+      w,
+      this.interp,
+      dt,
+      this.fx,
+      (slot) => this.behemothView.drawnMuzzle(b, slot),
+      (x, y) => this.units.addDecal('scorch', x, y, Math.random() * Math.PI * 2, 1.5, 0.7 + Math.random() * 0.5),
+    );
+    this.flames.update(dt, this.cameras.main);
     this.barrages.update(w.barrages, w.time);
     this.locks.update(w.enemies, b, this.interp, w.time);
     // Salvage flies to the hull (a gone hull: it scatters and fades).
@@ -815,7 +826,7 @@ export class TopDownBattleScene extends Phaser.Scene {
           this.fx.plasmaBurn(ev.x, ev.y);
           break;
         case 'flame':
-          this.fx.flameJet(ev.x, ev.y, ev.angle, ev.reach, ev.cone);
+          this.fires.jet(ev);
           break;
         case 'emp':
           this.fx.empRing(ev.x, ev.y, ev.radius);

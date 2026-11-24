@@ -44,10 +44,12 @@ function parked(w: World, id: 'heavyTank' | 'infantry', x: number, y: number, he
 const turret = (w: World) => w.behemoth.hardpoints.find((h) => h.slot.id === 'turret')!;
 
 describe('shell content', () => {
-  it('the heavy cannon takes all three, high-explosive first; the howitzer has no choice', () => {
-    expect(shellsOf(cannon)).toEqual(['he', 'ap', 'canister']);
+  it('the heavy cannon takes all four, high-explosive first; the howitzer high-explosive or incendiary', () => {
+    expect(shellsOf(cannon)).toEqual(['he', 'ap', 'canister', 'incendiary']);
     expect(cannon.shells!.he).toBe(cannon.projectile);
-    expect(shellsOf(WEAPONS.siegeHowitzer)).toEqual([]);
+    expect(shellsOf(WEAPONS.siegeHowitzer)).toEqual(['he', 'incendiary']);
+    expect(WEAPONS.siegeHowitzer.shells!.he).toBe(WEAPONS.siegeHowitzer.projectile);
+    expect(shellsOf(WEAPONS.mortar)).toEqual([]);
   });
 
   it('loading a shell swaps the projectile and keeps the gun; the default is the gun itself', () => {

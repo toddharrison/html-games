@@ -1,4 +1,4 @@
-import { TRAILER_MINE } from '../content/tuning';
+import { FIRE, TRAILER_MINE } from '../content/tuning';
 import {
   applyHit,
   damageComponent,
@@ -16,6 +16,7 @@ import {
 import { blastDrones } from './drones';
 import { destroyEnemy } from './enemies';
 import { allocId, sealed, type Mine } from './entities';
+import { fireBurst } from './fire';
 import { distanceToBox } from './math';
 import type { KillCause, SimEvent } from './events';
 import { TIMER_SLACK } from './loop';
@@ -119,6 +120,7 @@ export function wreckTrailer(w: World, cause: KillCause = 'trailer'): void {
   for (const bay of t.bays) if (bay) bay.integrity.hp = 0;
   w.events.push({ type: 'trailerLost', how: 'wrecked', x: t.x, y: t.y });
   const kills = blast(w, t.x, t.y, radius, damage, cause);
+  fireBurst(w, t.x, t.y, radius * FIRE.detonationReach, FIRE.burn);
   if (!b.destroyed) applyHit(b, 'rear', damage * TRAILER_MINE.hitched, w.rng, w.events, t.x, t.y);
   w.events.push({ type: 'trailerBlast', x: t.x, y: t.y, radius, mine: null, kills });
 }
@@ -233,6 +235,7 @@ export function mineAt(w: World, x: number, y: number): Mine | undefined {
 function blowMine(w: World, m: Mine): void {
   m.alive = false;
   const kills = blast(w, m.x, m.y, m.blastRadius, m.blastDamage, 'trailer');
+  fireBurst(w, m.x, m.y, m.blastRadius * FIRE.detonationReach, FIRE.burn);
   // Too close to its own cargo going up, the Behemoth takes a share on the arc facing it.
   hullBlast(w, m.x, m.y, m.blastRadius, m.blastDamage * TRAILER_MINE.hitched);
   w.events.push({ type: 'trailerBlast', x: m.x, y: m.y, radius: m.blastRadius, mine: m.id, kills });
@@ -261,8 +264,8 @@ export function hullBlast(w: World, x: number, y: number, radius: number, damage
  * terrain is battered, rounds in flight are swallowed, and other mines in reach go off too. Returns
  * the kills. It doesn't touch the Behemoth (see `hullBlast`).
  */
-export function blast(w: World, x: number, y: number, radius: number, damage: number, cause: KillCause, edge: number = TRAILER_MINE.edge): number {
-  w.events.push({ type: 'explosion', x, y, radius });
+export function blast(w: World, x: number, y: number, radius: number, damage: number, cause: KillCause, edge: number = TRAILER_MINE.edge, fire = false): number {
+  w.events.push(fire ? { type: 'explosion', x, y, radius, fire } : { type: 'explosion', x, y, radius });
   let kills = 0;
   for (const e of w.enemies) {
     // A shut trapdoor shrugs off any blast (SPEC §7.4, user's call).

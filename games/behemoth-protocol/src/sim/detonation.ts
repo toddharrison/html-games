@@ -1,6 +1,7 @@
-import { DETONATION } from '../content/tuning';
+import { DETONATION, FIRE } from '../content/tuning';
 import { detonationRadius } from './behemoth';
 import { destroyEnemy } from './enemies';
+import { fireBurst } from './fire';
 import { wreckTrailer } from './trailer';
 import type { World } from './world';
 
@@ -59,6 +60,8 @@ export function detonate(w: World): void {
 
   // A trailer still in tow goes up with it; its kills count toward the final blast.
   wreckTrailer(w, 'blast');
+  // What's left around the crater burns (SPEC §6 "Fire").
+  fireBurst(w, b.x, b.y, radius * FIRE.detonationReach, FIRE.burn, FIRE.fuel.wreck);
 
   w.events.push({ type: 'detonation', x: b.x, y: b.y, radius, kills: w.stats.blastKills - before });
 }

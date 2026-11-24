@@ -63,6 +63,11 @@ export function stormy(id: ConditionId): boolean {
   return id === 'storm' || id === 'thunderstorm';
 }
 
+/** Whether a condition's squalls bring rain in this biome (SPEC §6 "Fire": rain damps fires); the others blow snow, sand, or ash. */
+export function rainy(id: ConditionId, biome: BiomeId): boolean {
+  return stormy(id) && (biome === 'temperate' || biome === 'industrial');
+}
+
 /** What a storm is called in each biome. */
 export const STORM_NAMES: Record<BiomeId, string> = {
   temperate: 'Rainstorm',

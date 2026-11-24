@@ -1,5 +1,5 @@
 import { ENEMIES, type EnemyId, type EnemyTurretDef, type Facing, type GunTarget } from '../content/enemies';
-import { CONCEALMENT, ENEMY, TRAPDOOR } from '../content/tuning';
+import { CONCEALMENT, ENEMY, FIRE, TRAPDOOR } from '../content/tuning';
 import { WEAPONS, type WeaponDef } from '../content/weapons';
 import { behaviorBand } from '../content/behaviors';
 import { behave } from './ai';
@@ -9,6 +9,7 @@ import { hiddenNow } from './concealment';
 import { enemyCanSee, hoverScale } from './conditions';
 import { allocId, type Enemy, type EnemyGun } from './entities';
 import type { KillCause } from './events';
+import { burnWreck, smoky } from './fire';
 import { frameRight } from './frame';
 import { footprint, hitched, hullBox, revealRadius } from './behemoth';
 import { angleDiff, circleIntersectsRect, clamp, distanceToBox, rotateToward, type Rect } from './math';
@@ -81,6 +82,8 @@ export function destroyEnemy(w: World, e: Enemy, cause: KillCause): void {
   // A bomb goes up however its carrier dies (SPEC §7.4 bomb truck); `stepHazards` sets it off.
   const bomb = e.def.bomb;
   if (bomb) w.blasts.push({ x: e.x, y: e.y, radius: bomb.radius, damage: bomb.damage, fuse: 0, bomb: true });
+  // A vehicle brews up where it died and its wreck burns (SPEC §6 "Fire"); one crushed flat or lost to the ground doesn't.
+  if (e.def.mobility !== 'foot' && cause !== 'crushed' && cause !== 'hazard') burnWreck(w, e.x, e.y);
   paySalvage(w, e.x, e.y, e.def.salvage, 'unit');
   if (e.objective) objectiveTaken(w, e);
 }
@@ -493,7 +496,9 @@ function fireRound(w: World, e: Enemy, g: EnemyGun, at: { x: number; y: number }
     const ts = w.terrain.tileSize;
     const col = Math.floor(e.x / ts);
     const row = Math.floor(e.y / ts);
-    spawnProjectile(w, 'enemy', g.weapon, mx, my, g.turret, w.terrain.blocksShot(col, row) ? { shelter: { col, row } } : {});
+    // Out of smoke it shoots half blind (SPEC §6 "Fire").
+    const spreadMul = smoky(w, e.x, e.y) ? FIRE.smoke.spread : 1;
+    spawnProjectile(w, 'enemy', g.weapon, mx, my, g.turret, w.terrain.blocksShot(col, row) ? { shelter: { col, row }, spreadMul } : { spreadMul });
   }
   g.salvoLeft--;
   e.exposed = CONCEALMENT.afterFire;

@@ -153,8 +153,8 @@ export const SWARM = {
 };
 
 /**
- * Fire (SPEC §6 flamethrower, `sim/fire.ts`): burning units, and burning terrain (each material's
- * `burns`). Provisional.
+ * Fire (SPEC §6 "Fire", `sim/fire.ts`): burning units, burning terrain (each material's `burns`),
+ * burning fuel on ground that doesn't burn itself, and what starts fires. Provisional.
  */
 export const FIRE = {
   /** Seconds between burn ticks, for units and tiles alike. */
@@ -163,10 +163,45 @@ export const FIRE = {
   traceStep: 4,
   /** A burning tile scorches every unit standing in it this much a second, and sets it alight. */
   tileDps: 4,
-  /** What a burning tile sets a unit burning with. */
+  /** What a burning tile (or a burning unit's touch) sets a unit burning with. */
   burn: { dps: 4, duration: 2 },
+  /** Burning terrain's damage by target class: troops burn, armor shrugs most of it off. */
+  vs: { infantry: 1.6, light: 0.8, heavy: 0.3 },
   /** Most tiles burning at once: past it, no new fires start (keeps a forest fire in bounds). */
   maxTiles: 160,
+  /** Burning fuel lying on ground that doesn't burn itself: it scorches like any burning tile, then burns out. */
+  fuel: {
+    /** Seconds a flamethrower's fuel burns where it lands, and how far from the nozzle it starts landing. */
+    flame: 2.5,
+    from: 28,
+    /** Seconds the ground burns after a fireball (thermobaric, incendiary shells, a fuel tank going up). */
+    burst: 3.5,
+    /** Seconds a vehicle's wreck burns. */
+    wreck: 7,
+    /** Odds a second that burning fuel catches each neighbor that burns. */
+    spread: 0.25,
+  },
+  /** A burning unit sets alight what burns under it; `spread` is its odds a second of lighting each unit within `touch` of it. */
+  unit: { spread: 0.5, touch: 3 },
+  /**
+   * Odds that a hit sets alight each tile that burns where it strikes, by the kind of round (a
+   * weapon's own `ignites` overrides it). A burst rolls for every tile in its blast and a tile beyond.
+   */
+  ignites: { shell: 0.06, missile: 0.08, bullet: 0, beam: 0, rail: 0.25, arc: 0.2 },
+  /** Odds a lightning strike sets alight the tile it lands on. */
+  lightning: 1,
+  /** A blast of fuel (a tank, a derrick: `explodes.fire`) throws fire over this share of its radius. */
+  blastReach: 0.6,
+  /** The Behemoth's last blast and a trailer going up throw fire over this share of theirs. */
+  detonationReach: 0.55,
+  /** Rain (a rainstorm's squall, at full strength): the spread multiplier, and odds a second that it puts a fire out. */
+  rain: { spread: 0.2, out: 0.25 },
+  /**
+   * Smoke: a tile that burns itself (a wood, a house) and a burning wreck pour smoke once they've
+   * burned `after` seconds, over every tile within `reach` tiles; it hangs `linger` seconds after
+   * the fire is out. A unit in smoke is concealed like one in a wood, and its own fire scatters `spread`×.
+   */
+  smoke: { after: 0.75, reach: 1, linger: 4, spread: 1.8 },
 };
 
 /** EMP (SPEC §6 EMP emitter). Provisional. */

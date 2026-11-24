@@ -5,6 +5,7 @@ import { damageTreads, groundBox, hitched, type BehemothState } from './behemoth
 import { allocId, type Pool } from './entities';
 import { TIMER_SLACK } from './loop';
 import { circleIntersectsBox, closestInBox, orientedBox } from './math';
+import { igniteTile } from './fire';
 import { damageEnemy } from './projectiles';
 import { hitTrailer } from './trailer';
 import type { World } from './world';
@@ -50,7 +51,10 @@ function burn(w: World, p: Pool, dt: number): void {
   const ts = w.terrain.tileSize;
   for (let c = Math.floor((p.x - radius) / ts); c <= Math.floor((p.x + radius) / ts); c++) {
     for (let row = Math.floor((p.y - radius) / ts); row <= Math.floor((p.y + radius) / ts); row++) {
-      if (Math.hypot((c + 0.5) * ts - p.x, (row + 0.5) * ts - p.y) < radius + ts * 0.5) w.terrain.damage(c, row, tileDps * dt, w.events);
+      if (Math.hypot((c + 0.5) * ts - p.x, (row + 0.5) * ts - p.y) >= radius + ts * 0.5) continue;
+      w.terrain.damage(c, row, tileDps * dt, w.events);
+      // Plasma sets alight whatever burns under it (SPEC §6 "Fire").
+      igniteTile(w, c, row);
     }
   }
 

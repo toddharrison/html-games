@@ -14,11 +14,16 @@
 export type VoiceId =
   | 'legno'
   | 'strings'
+  | 'tremolo'
+  | 'basses'
   | 'brass'
   | 'lowBrass'
+  | 'horn'
   | 'timpani'
   | 'snare'
   | 'tamtam'
+  | 'cymbal'
+  | 'swell'
   | 'bells'
   | 'choir'
   | 'anvil'
@@ -74,6 +79,8 @@ export interface Piece {
   thresholds: number[];
   stingers: Record<string, Stinger>;
   themes: Record<string, Theme>;
+  /** A stinger for the bar the music climbs to a level (by level): an arrival, such as a cymbal crash. */
+  rises?: Record<number, string>;
 }
 
 const VEL = { normal: 0.7, accent: 1, ghost: 0.4 };

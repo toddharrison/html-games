@@ -74,6 +74,18 @@ describe('scores', () => {
       for (const s of Object.values(piece.stingers)) for (const id of s.mutes) expect(piece.layers[id], id).toBeDefined();
     });
 
+    it(`${piece.id}: 16 bars (the theme, then the climb), and the siege tank's march over the theme's chords`, () => {
+      expect(Math.max(...Object.values(piece.layers).map((l) => l.bars.length))).toBe(16);
+      expect(piece.layers['siegeTank.ground']!.bars).toEqual(piece.layers.ground!.bars.slice(0, 8));
+      expect(piece.themes.siegeTank!.replaces).toEqual(expect.arrayContaining(['ground', 'bass']));
+    });
+
+    it(`${piece.id}: a crash on the bar it reaches full intensity`, () => {
+      const { plans } = timeline(piece, [calm, at(0.9), at(0.9), calm, calm, calm, at(0.9)]);
+      expect(plans.map((p) => p.stingers.map((s) => s.id))).toEqual([[], ['arrival'], [], [], [], [], ['arrival']]);
+      expect(piece.stingers.arrival!.parts.map((p) => p.voice)).toEqual(['cymbal']);
+    });
+
     it(`${piece.id}: bars of 2–3 s, so a change in the fight is heard within one`, () => {
       expect(barSeconds(piece)).toBeGreaterThan(2);
       expect(barSeconds(piece)).toBeLessThan(3);
@@ -169,13 +181,52 @@ describe('director', () => {
       themes: {},
     };
     const second = barEvents(p, { bar: 3, level: 0, layers: ['a'], stingers: [] });
-    expect(second).toEqual([{ beat: 0, dur: 4, pitch: 50, vel: 0.35, track: 'a', voice: 'legno' }]);
+    expect(second).toEqual([{ beat: 0, dur: 4, pitch: 50, vel: 0.35, dyn: 0.7, slur: -2, track: 'a', voice: 'legno' }]);
     const { notes } = timeline(p, [calm, calm, calm]);
     expect(notes.map((n) => [n.beat, n.pitch])).toEqual([
       [0, 48],
       [4, 50],
       [8, 48],
     ]);
+  });
+});
+
+describe('phrasing', () => {
+  const line = (src: string, beatsPerBar = 4): Piece => ({
+    id: 't',
+    tempo: 120,
+    beatsPerBar,
+    layers: { a: layer('brass', 0.5, src, beatsPerBar) },
+    levels: [['a']],
+    thresholds: [],
+    stingers: {},
+    themes: {},
+  });
+  const slurs = (p: Piece, bar: number) => barEvents(p, { bar, level: 0, layers: ['a'], stingers: [] }).map((n) => n.slur);
+
+  it("a note's dynamic is its own, whatever its part's gain", () => {
+    const [accent, plain, ghost] = barEvents(line("C4:1! D4:1 .:1 E4:1'"), { bar: 0, level: 0, layers: ['a'], stingers: [] });
+    expect([accent!.dyn, plain!.dyn, ghost!.dyn]).toEqual([1, 0.7, 0.4]);
+    expect(accent!.vel).toBe(0.5);
+  });
+
+  it('slurs a note that follows straight on from another pitch, by the interval it came from', () => {
+    expect(slurs(line('C4:1 D4:1 C4:1 G4:1'), 0)).toEqual([undefined, -2, 2, -7]);
+  });
+
+  it('starts afresh on an accent, after a rest, on a repeated pitch, and in or after a chord', () => {
+    expect(slurs(line('C4:1 D4:1! .:1 E4:1'), 0)).toEqual([undefined, undefined, undefined]);
+    expect(slurs(line('C4:1 C4:1 C4+E4:1 D4:1'), 0)).toEqual([undefined, undefined, undefined, undefined, undefined]);
+  });
+
+  it('slurs across a bar line, from a note that ends on it or is tied over it', () => {
+    const p = line('C4:2 E4:2 | D4:4 | -:2 F4:2 | C4:4');
+    expect(slurs(p, 1)).toEqual([2]);
+    expect(slurs(p, 2)).toEqual([-3]);
+    // The piece's first bar has nothing before it; the loop's first bar does.
+    expect(slurs(p, 0)).toEqual([undefined, -4]);
+    expect(slurs(p, 4)).toEqual([undefined, -4]); // C4 after C4: the same pitch
+    expect(slurs(line('C4:4 | D4:4'), 2)).toEqual([2]);
   });
 });
 

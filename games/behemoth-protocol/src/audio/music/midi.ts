@@ -14,11 +14,16 @@ const MELODIC = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 11, 12, 13, 14, 15];
 const GM: Record<VoiceId, { program: number } | { drum: number }> = {
   legno: { program: 45 }, // pizzicato strings
   strings: { program: 48 }, // string ensemble
+  tremolo: { program: 44 }, // tremolo strings
+  basses: { program: 43 }, // contrabass
   brass: { program: 61 }, // brass section
   lowBrass: { program: 57 }, // trombone
+  horn: { program: 60 }, // French horn
   timpani: { program: 47 },
   snare: { drum: 38 },
   tamtam: { drum: 52 }, // Chinese cymbal, the nearest GM has to a tam-tam
+  cymbal: { drum: 49 }, // crash
+  swell: { drum: 55 }, // splash, the nearest GM has to a suspended cymbal's roll
   bells: { program: 14 }, // tubular bells
   choir: { program: 52 }, // choir aahs
   anvil: { drum: 56 }, // cowbell, the nearest GM has to an anvil

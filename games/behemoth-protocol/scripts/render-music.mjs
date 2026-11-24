@@ -2,7 +2,10 @@
 // the game: starts a Vite dev server, loads src/audio/music/render.ts in Playwright's headless
 // Chromium shell over the DevTools protocol, and writes what renderAll() returns.
 //
-//   npm run render:music [-- [--demos] <out dir>]     (default: renders/music, git-ignored; --demos skips the slow battle renders)
+//   npm run render:music [-- [--demos | --voices] <out dir>]
+//
+// Writes to renders/music (git-ignored) unless told otherwise. --demos skips the slow battle
+// renders; --voices renders only the instruments on their own (voices.wav).
 //
 // Needs the headless shell (`npx playwright install chromium-headless-shell`), or set
 // CHROME_HEADLESS to any Chromium binary.
@@ -15,7 +18,7 @@ import { createServer } from 'vite';
 
 const root = resolve(import.meta.dirname, '..');
 const args = process.argv.slice(2);
-const demosOnly = args.includes('--demos');
+const only = args.includes('--voices') ? 'voices' : args.includes('--demos') ? 'demos' : undefined;
 const outDir = resolve(root, args.find((a) => !a.startsWith('--')) ?? 'renders/music');
 
 function findShell() {
@@ -80,7 +83,7 @@ try {
     return result.value;
   };
   // Keep the renders in the page and fetch them one at a time: all at once is too big a message.
-  const count = await evaluate(`import('/src/audio/music/render.ts').then(async (m) => (window.renders = await m.renderAll(${demosOnly})).length)`);
+  const count = await evaluate(`import('/src/audio/music/render.ts').then(async (m) => (window.renders = await m.renderAll(${JSON.stringify(only)})).length)`);
   mkdirSync(outDir, { recursive: true });
   for (let i = 0; i < count; i++) {
     const r = await evaluate(`window.renders[${i}]`);

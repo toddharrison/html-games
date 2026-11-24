@@ -1,10 +1,10 @@
 import { place, type EngineState, type ReactorState, type SoundId } from '../cues';
 import { Synth } from '../synth';
-import { timeline, type MusicInput } from './director';
+import { barEvents, timeline, type BarPlan, type MusicInput } from './director';
 import { duckFor } from './duck';
 import { MusicEngine } from './engine';
 import { writeMidi } from './midi';
-import { barSeconds, type Piece } from './score';
+import { barSeconds, layer, type Piece, type VoiceId } from './score';
 import { PIECES } from './scores';
 
 /**
@@ -18,8 +18,23 @@ const TAIL_SECONDS = 4;
 const bars = (n: number, heat: number, bosses: string[] = [], downed: string[] = []): MusicInput[] =>
   Array.from({ length: n }, (_, i) => ({ heat, bosses, downed: i === 0 ? downed : [] }));
 
-/** The demo run: the music builds level by level, a siege tank arrives and is killed, the fight cools. */
+/**
+ * The demo run, for listening: half the piece at each of the lower levels (the theme at level 0,
+ * the climb at level 1), then right through at each of the upper two, then a siege tank arrives
+ * and is killed, and the fight cools.
+ */
 export const DEMO: MusicInput[] = [
+  ...bars(8, 0.05),
+  ...bars(8, 0.2),
+  ...bars(16, 0.4),
+  ...bars(16, 0.8),
+  ...bars(12, 0.8, ['siegeTank']),
+  ...bars(4, 0.35, [], ['siegeTank']),
+  ...bars(4, 0.05),
+];
+
+/** The battle render's run (`battle` follows it bar for bar): a short fight that builds level by level to a siege tank. */
+export const SKIRMISH: MusicInput[] = [
   ...bars(4, 0.05),
   ...bars(4, 0.2),
   ...bars(4, 0.4),
@@ -45,7 +60,7 @@ async function render(name: string, piece: Piece, inputs: readonly MusicInput[])
   const beat = bar / piece.beatsPerBar;
   const ctx = new OfflineAudioContext(2, Math.ceil((plans.length * bar + TAIL_SECONDS) * SAMPLE_RATE), SAMPLE_RATE);
   const engine = new MusicEngine(ctx, ctx.destination);
-  engine.playBar(notes, 0, beat);
+  byBar(ctx, plans, bar, (plan, start) => engine.playBar(barEvents(piece, plan), start, beat));
   const audio = await ctx.startRendering();
   const log = plans.map(
     (p) => `${String(p.bar + 1).padStart(2)} L${p.level} ${p.layers.join(' ')}${p.stingers.map((s) => ` [${s.id}]`).join('')}`,
@@ -54,12 +69,84 @@ async function render(name: string, piece: Piece, inputs: readonly MusicInput[])
   return { name, wav: base64(wav(data, audio.sampleRate)), mid: base64(writeMidi(notes, piece.tempo, piece.beatsPerBar, piece.beatUnit)), log };
 }
 
-/** Every piece: the demo on its own, and (unless `demosOnly`: they're slow) under the scripted battle. */
-export async function renderAll(demosOnly = false): Promise<Render[]> {
-  const out: Render[] = [];
+/**
+ * Schedules each bar just before its downbeat, as the live player does, by pausing the render
+ * there: the graph only ever holds a bar or two of notes, so a render is fast and its time is a
+ * fair measure of what the music costs in a battle.
+ */
+function byBar(ctx: OfflineAudioContext, plans: readonly BarPlan[], bar: number, play: (plan: BarPlan, start: number) => void): void {
+  const QUANTUM = 128;
+  plans.forEach((plan, i) => {
+    const start = i * bar;
+    const frame = Math.floor(((start - 0.1) * ctx.sampleRate) / QUANTUM) * QUANTUM;
+    if (frame <= 0) return play(plan, start);
+    void ctx.suspend(frame / ctx.sampleRate).then(() => {
+      play(plan, start);
+      void ctx.resume();
+    });
+  });
+}
+
+/** Each voice alone, in its register: two bars (4/4 at `AUDITION_TEMPO`), then a bar to ring out. */
+const AUDITION: Record<VoiceId, string> = {
+  legno: "C3:1/3! C3' C3' C3:1 C3:1/2 C3' C3:1! | G2:1/2! G2' G3 G2' G2! G2' G3 G2'",
+  strings: 'C3+G3+C4:4 | C3+Ab3+Db4+F4:2 G4:1 C5:1',
+  tremolo: 'C4+G4:4 | C4+Gb4:4',
+  basses: 'C3:1! G2:1 Ab2:1 Bb2:1 | C3:2! G2:2',
+  brass: 'G3:3! C4:1 | D4:1 Eb4:1 F4:2!',
+  lowBrass: 'C3+C4:3! Gb2+Gb3:1 | G2+G3:4',
+  horn: '.:3 G3:1/3 G3 G3 | C4:2! Bb3:1 G3:1',
+  timpani: 'C3:1! G2:1 C3:1/3! C3 C3 C3:1! | G2:1/6*12 C3:2!',
+  snare: "D2:1/3! D2' D2' D2:1 D2:1/2' D2' D2:1! | D2:1/6*18 D2:1!",
+  tamtam: 'E3:4! | .:4',
+  cymbal: "E4:2! E4:2' | .:4",
+  swell: '.:2 E4:2 | .:4',
+  bells: 'B5:1/2! E5 C6 F5 .:2 | Bb3:4!',
+  choir: 'B4:3! G4:1 | A4:2 B4:2',
+  anvil: "D5:1! D5:1 D5:1/2' D5' D5:1! | .:4",
+  reed: 'A4:1.5! Bb4:1/2 A4 G4 F#4 G4 | F#4:2 G4:1/2 A4 Bb4 C5',
+};
+const AUDITION_TEMPO = 96;
+/** Bars each voice gets: two to play, one to ring. */
+const SLOT = 3;
+
+/** Every instrument in turn, alone in the hall, for judging (and comparing) the sounds themselves. */
+async function renderVoices(): Promise<Render> {
+  const ids = Object.keys(AUDITION) as VoiceId[];
+  const rest = (n: number) => Array.from({ length: n }, () => '.:4');
+  // A piece with a part per voice, each silent but for its own slot.
+  const piece: Piece = {
+    id: 'voices',
+    tempo: AUDITION_TEMPO,
+    beatsPerBar: 4,
+    layers: Object.fromEntries(
+      ids.map((voice, i) => [voice, layer(voice, 1, [...rest(i * SLOT), AUDITION[voice], ...rest((ids.length - i) * SLOT - 2)].join(' | '), 4)]),
+    ),
+    levels: [ids],
+    thresholds: [],
+    stingers: {},
+    themes: {},
+  };
+  const { plans } = timeline(piece, bars(ids.length * SLOT, 0));
+  const bar = barSeconds(piece);
+  const ctx = new OfflineAudioContext(2, Math.ceil((plans.length * bar + TAIL_SECONDS) * SAMPLE_RATE), SAMPLE_RATE);
+  const engine = new MusicEngine(ctx, ctx.destination);
+  byBar(ctx, plans, bar, (plan, start) => engine.playBar(barEvents(piece, plan), start, bar / 4));
+  const audio = await ctx.startRendering();
+  const log = ids.map((voice, i) => `${(i * SLOT * bar).toFixed(1).padStart(6)} s  ${voice}`);
+  return { name: 'voices', wav: base64(wav([audio.getChannelData(0), audio.getChannelData(1)], audio.sampleRate)), log };
+}
+
+/**
+ * The instruments alone (`voices`), then every piece: its demo and the scripted battle. `only`
+ * stops short: the battles are slow, and the instruments alone are all a change to a voice needs.
+ */
+export async function renderAll(only?: 'voices' | 'demos'): Promise<Render[]> {
+  const out: Render[] = [await renderVoices()];
+  if (only === 'voices') return out;
   for (const piece of new Set(Object.values(PIECES))) {
     out.push(await render(`${piece.id}-demo`, piece, DEMO));
-    if (!demosOnly) out.push(await renderBattle(piece));
+    if (!only) out.push(await renderBattle(piece));
   }
   return out;
 }
@@ -94,7 +181,7 @@ interface Activity {
 }
 
 /**
- * A battle's worth of real sound effects that follows `DEMO`'s story bar for bar: a quiet
+ * A battle's worth of real sound effects that follows `SKIRMISH`'s story bar for bar: a quiet
  * approach, the fight building, a siege tank (its gun every 5 s, a critical alarm), its death,
  * and the fight dying down. Positions are sim units from the Behemoth (+x ahead).
  */
@@ -166,14 +253,14 @@ const STEP = 128 * 16;
 const ONSET = 0.15;
 
 /**
- * The scripted battle through the game's own sound effects (`Synth`) with the demo's music
- * ducking under it, rendered as stems in one pass: the sound effects on channels 1–2, the music
- * on 3–4. The render pauses every step to fire that step's sounds and update the engine loop, as
+ * The scripted battle through the game's own sound effects (`Synth`) with the music (`SKIRMISH`)
+ * ducking under it, rendered as stems in one pass: the sound effects on channels 1–2, the music on
+ * 3–4. The render pauses every step to fire that step's sounds and update the engine loop, as
  * the battle scene would each frame. Writes their sum, and reports how far each kind of sound
  * stands above the music in the moment it lands.
  */
 async function renderBattle(piece: Piece): Promise<Render> {
-  const { plans, notes } = timeline(piece, DEMO);
+  const { plans } = timeline(piece, SKIRMISH);
   const bar = barSeconds(piece);
   const ctx = new OfflineAudioContext(4, Math.ceil((plans.length * bar + TAIL_SECONDS) * SAMPLE_RATE), SAMPLE_RATE);
   const merge = ctx.createChannelMerger(4);
@@ -195,13 +282,21 @@ async function renderBattle(piece: Piece): Promise<Render> {
   const voices = synth as unknown as { voices: number };
   synth.startMachine();
   const music = new MusicEngine(ctx, stem(2));
-  music.playBar(notes, 0, bar / piece.beatsPerBar);
+  // Bars are scheduled a little ahead as the render steps, as the live player does.
+  let planned = 0;
+  const plan = (until: number) => {
+    for (; planned < plans.length && planned * bar < until; planned++) {
+      music.playBar(barEvents(piece, plans[planned]!), planned * bar, bar / piece.beatsPerBar);
+    }
+  };
+  plan(0.3);
   const sfx = battle(bar);
   let next = 0;
   for (let frame = STEP; frame < ctx.length - STEP; frame += STEP) {
     const t = frame / SAMPLE_RATE;
     void ctx.suspend(t).then(() => {
       voices.voices = 0;
+      plan(t + 0.3);
       synth.update(DRIVE, false, CRUISE_FRAC, REACTOR);
       for (; next < sfx.length && sfx[next]!.t < t + STEP / SAMPLE_RATE; next++) {
         const e = sfx[next]!;

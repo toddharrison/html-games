@@ -269,9 +269,13 @@ export function stepFire(w: World, dt: number): void {
     f.age += tick;
     if (f.fuel !== undefined) f.fuel -= tick;
     if ((f.fuel === undefined || f.smokes) && f.age >= FIRE.smoke.after) {
-      const n = FIRE.smoke.reach;
+      // A wood or a house pours it over the tiles round it; a wreck, a wisp over itself.
+      const { reach: n, linger } = f.fuel === undefined ? FIRE.smoke : FIRE.smoke.wreck;
       for (let c = f.col - n; c <= f.col + n; c++) {
-        for (let r = Math.max(0, f.row - n); r <= Math.min(w.terrain.rows - 1, f.row + n); r++) w.smoke.set(fireKey(c, r), FIRE.smoke.linger);
+        for (let r = Math.max(0, f.row - n); r <= Math.min(w.terrain.rows - 1, f.row + n); r++) {
+          const key = fireKey(c, r);
+          w.smoke.set(key, Math.max(linger, w.smoke.get(key) ?? 0));
+        }
       }
     }
     // Units standing in it (troops under burning trees, a garrison in a burning house).

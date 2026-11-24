@@ -333,6 +333,10 @@ describe('smoke', () => {
     steps(w, 90);
     expect(smoky(w, x, y)).toBe(false);
     expect(smoky(w, x + 6 * ts, y)).toBe(true);
+    // Only a wisp, though: over the wreck itself, not the tiles round it as a burning wood's is.
+    expect(smoky(w, x + 7 * ts, y)).toBe(false);
+    expect(smoky(w, x + 6 * ts, y + ts)).toBe(false);
+    expect(FIRE.smoke.wreck.linger).toBeLessThan(FIRE.smoke.linger);
   });
 
   it('hides a vehicle standing in it from the player, unless it is on fire itself or gives itself away', () => {

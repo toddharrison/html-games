@@ -695,7 +695,7 @@ export class TopDownBattleScene extends Phaser.Scene {
       dt,
       this.fx,
       (slot) => this.behemothView.drawnMuzzle(b, slot),
-      (x, y) => this.units.addDecal('scorch', x, y, Math.random() * Math.PI * 2, 1.5, 0.7 + Math.random() * 0.5),
+      (x, y) => this.units.addDecal('char', x, y, Math.random() * Math.PI * 2, 1.5, 0.8 + Math.random() * 0.5),
     );
     this.flames.update(dt, this.cameras.main);
     this.barrages.update(w.barrages, w.time);

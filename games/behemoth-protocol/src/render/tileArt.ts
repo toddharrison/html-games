@@ -6,7 +6,7 @@ import { lookPalette, type Look, type Pal } from './looks';
 import { canvasTexture, type Painter } from './painter';
 import { PAL } from './palette';
 import { damageTile, drawCar, drawFootbridge, drawHall, drawRoad, drawStructure, drawTree, drawWall } from './structureArt';
-import { CLUMP, CLUMP_FRAMES, CRATER_MASKS, frameName, TILE, TILE_FRAMES, type ClumpFrame, type TileFrame } from './tileFrames';
+import { CLUMP, CLUMP_FRAMES, CRATER_SIZES, CRATER_VARIANTS, frameName, TILE, TILE_FRAMES, type ClumpFrame, type TileFrame } from './tileFrames';
 
 /**
  * Procedural placeholder terrain (SPEC §11.1): a tile sheet and a raised-overlay sheet per biome and
@@ -84,8 +84,13 @@ function tilePieces(biome: BiomeId, pal: Pal): Piece[] {
   for (const s of [false, true]) {
     for (const d of [false, true]) out.push(single(frameName.footbridge(s, d), TILE, (p) => drawFootbridge(p, s, d, new Rng(6500 + (s ? 1 : 0)), pal)));
   }
-  for (const mask of CRATER_MASKS) {
-    for (let v = 0; v < 4; v++) out.push(single(frameName.crater(mask, v), TILE, (p) => crater(p, mask, new Rng(6600 + mask * 5 + v), pal)));
+  // Craters, drawn whole and cut into tiles like structures.
+  for (const size of CRATER_SIZES) {
+    for (let v = 0; v < CRATER_VARIANTS[size]; v++) {
+      const frames: Piece['frames'] = [];
+      for (let dc = 0; dc < size; dc++) for (let dr = 0; dr < size; dr++) frames.push([frameName.crater(size, v, dc, dr), dr * TILE, (size - 1 - dc) * TILE, TILE, TILE]);
+      out.push({ w: size * TILE, h: size * TILE, frames, draw: (p) => crater(p, size, new Rng(6600 + size * 11 + v), pal) });
+    }
   }
   for (const light of [false, true]) {
     for (let edges = 0; edges < 4; edges++) {
@@ -337,75 +342,44 @@ function rubble(p: Painter, rng: Rng, pal: Pal): void {
   }
 }
 
-/** How far in from an open side a crater's corner is rounded (px). Alone, that makes it nearly round. */
-const CRATER_ROUND = 7.5;
-
 /**
- * How deep into a crater a point of its tile is: the distance (px) to the nearest ground round it,
- * from which neighbors are craters too (`craterMask`). Negative outside a rounded corner; infinite
- * where every neighbor is crater. Open corners are rounded: a tile on the stepped edge of a big
- * crater (open on two sides, joined on the other two) is cut in a quarter circle across the whole
- * tile, so the steps run together into one curving rim; and the notch where two arms of a crater
- * meet round a corner of ground is rounded too.
+ * A round crater `size` tiles across (SPEC §4.5), drawn whole and cut into tiles: a lip of
+ * thrown-out earth, a wall, and a dark floor that deepens to the middle, with a ragged outline. Lit
+ * from the upper left: the near wall is in shadow and the far wall catches the light, and the lip
+ * the other way round. A bigger crater has a wider lip and wall.
  */
-function craterDepth(x: number, y: number, mask: number): number {
-  const up = mask & 1 ? Infinity : y;
-  const right = mask & 2 ? Infinity : TILE - x;
-  const down = mask & 4 ? Infinity : TILE - y;
-  const left = mask & 8 ? Infinity : x;
-  let d = Infinity;
-  for (const [dy, across] of [
-    [up, down],
-    [down, up],
-  ] as const) {
-    for (const [dx, along] of [
-      [left, right],
-      [right, left],
-    ] as const) {
-      // Joined on both far sides: this is a step in a big crater's edge, rounded right across the tile.
-      const R = across === Infinity && along === Infinity ? TILE : CRATER_ROUND;
-      d = Math.min(d, dx < R && dy < R ? R - Math.hypot(R - dx, R - dy) : Math.min(dx, dy));
-    }
-  }
-  // Ground at a corner between two arms of the crater: the rim bends round it.
-  if ((mask & 3) === 3 && !(mask & 16)) d = Math.min(d, Math.hypot(TILE - x, y));
-  if ((mask & 6) === 6 && !(mask & 32)) d = Math.min(d, Math.hypot(TILE - x, TILE - y));
-  if ((mask & 12) === 12 && !(mask & 64)) d = Math.min(d, Math.hypot(x, TILE - y));
-  if ((mask & 9) === 9 && !(mask & 128)) d = Math.min(d, Math.hypot(x, y));
-  return d;
-}
-
-/**
- * A crater tile (SPEC §4.5): a lip of thrown-out earth, a wall, and a dark churned floor, by how far
- * each pixel is from the ground round the crater it's part of, so a patch of crater tiles draws as
- * one big hole with a single rim, and a tile alone as a round shell hole. Lit from the upper left:
- * the near wall is in shadow and the far wall catches the light, and the lip the other way round.
- */
-function crater(p: Painter, mask: number, rng: Rng, pal: Pal): void {
-  for (let y = 0; y < TILE; y++) {
-    for (let x = 0; x < TILE; x++) {
-      const d = craterDepth(x + 0.5, y + 0.5, mask);
+function crater(p: Painter, size: number, rng: Rng, pal: Pal): void {
+  const w = size * TILE;
+  const c = w / 2;
+  // A single shell hole comes in a few sizes; the bigger craters fill their block.
+  const reach = size === 1 ? c - rng.range(1, 2.6) : c - 1;
+  const lip = 1 + size * 0.5;
+  const wall = lip + 1 + size * 0.5;
+  // The outline wobbles: a few lobes, different for each variant.
+  const [a3, a5] = [rng.range(0, 6.28), rng.range(0, 6.28)];
+  for (let y = 0; y < w; y++) {
+    for (let x = 0; x < w; x++) {
+      const dx = x + 0.5 - c;
+      const dy = y + 0.5 - c;
+      const angle = Math.atan2(dy, dx);
+      const r = reach * (0.93 + 0.05 * Math.sin(3 * angle + a3) + 0.03 * Math.sin(5 * angle + a5));
+      const d = r - Math.hypot(dx, dy);
       const roll = rng.next();
       if (d < 0) {
-        // Outside a rounded corner: the ground, with dirt thrown out over it.
+        // Outside: the ground, with dirt thrown out over it.
         if (d > -2.5 && roll < 0.3) p.px(x, y, pal.dirt);
         continue;
       }
-      // The far side of the hole from the light: the ground behind this pixel is down and to the right.
-      const far = craterDepth(x - 0.5, y - 0.5, mask) > craterDepth(x + 1.5, y + 1.5, mask);
+      // The far side of the hole from the light.
+      const far = dx + dy > 0;
       let color: string;
-      if (d < 2) color = far ? (roll < 0.2 ? pal.hole : pal.dirtDark) : roll < 0.18 ? pal.rubble : pal.dirt;
-      else if (d < 4) color = far ? (roll < 0.15 ? pal.rubble : pal.dirt) : pal.hole;
-      else if (d < 6 && far) color = pal.dirtDark;
+      if (d < lip) color = far ? (roll < 0.2 ? pal.hole : pal.dirtDark) : roll < 0.18 ? pal.rubble : pal.dirt;
+      else if (d < wall) color = far ? (roll < 0.15 ? pal.rubble : pal.dirt) : pal.hole;
+      else if (d < wall + 2 && far) color = pal.dirtDark;
+      else if (size > 1 && d > r * 0.62) color = roll < 0.06 ? pal.ash : pal.hole;
       else color = roll < 0.05 ? pal.ash : (x + y) & 1 ? pal.hole : pal.dirtDark;
       p.px(x, y, color);
     }
-  }
-  // The floor of a big crater: a few clods and scorched hollows, so it isn't a flat sheet.
-  for (let i = rng.int(0, 2); i > 0; i--) {
-    const x = rng.int(0, 12);
-    const y = rng.int(0, 13);
-    if (craterDepth(x + 1, y + 1, mask) > 7) p.rect(x, y, rng.int(2, 4), rng.int(1, 2), rng.chance(0.5) ? pal.dirtDark : pal.hole);
   }
 }
 
@@ -680,19 +654,6 @@ function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
         p.rect(rng.int(3, 11), rng.int(3, 11), 2, 2, pal.waterDeep);
       }
       break;
-    case 'drift0':
-    case 'drift1':
-      // A snowdrift: wind-blown ridges across the field (screen-horizontal), each a bright crest
-      // with blue shade on its lee, on snow that runs to the tile edges so drifts merge.
-      p.rect(0, 0, TILE, TILE, PAL.snow);
-      p.speckle(rng, 0, 0, TILE, TILE, 10, PAL.snowShade);
-      for (const y of name === 'drift0' ? [3, 10] : [6, 13]) {
-        const x0 = rng.int(0, 3);
-        p.rect(x0, y, TILE - x0 - rng.int(0, 3), 1, PAL.snowHi);
-        p.rect(x0 + 1, y + 1, TILE - x0 - 3, 2, PAL.snowShade);
-      }
-      p.speckle(rng, 0, 0, TILE, TILE, 6, PAL.snowHi);
-      break;
 
     // ── Industrial ──────────────────────────────────────────────────────────────────────────
     case 'factory_intact0':
@@ -724,18 +685,6 @@ function drawTile(p: Painter, name: TileFrame, rng: Rng, pal: Pal): void {
       p.speckle(rng, 0, 0, TILE, TILE, 6, pal.hole);
       break;
     // ── Desert ──────────────────────────────────────────────────────────────────────────────
-    case 'dune0':
-    case 'dune1':
-      // Sand ridges blown across the field (screen-horizontal): a lit crest, a shaded lee.
-      p.rect(0, 0, TILE, TILE, pal.grass);
-      p.speckle(rng, 0, 0, TILE, TILE, 10, pal.grassDark);
-      for (const y of name === 'dune0' ? [2, 9] : [5, 12]) {
-        const x0 = rng.int(0, 2);
-        p.rect(x0, y, TILE - x0 - rng.int(0, 2), 1, pal.grassLight);
-        p.rect(x0, y + 1, TILE - x0 - 1, 3, pal.grassDark);
-      }
-      p.speckle(rng, 0, 0, TILE, TILE, 5, pal.grassLight);
-      break;
     case 'wadi0':
     case 'wadi1':
       // A dry bed: darker packed sand, pebbles, a few cracks where water last stood.

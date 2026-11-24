@@ -57,6 +57,8 @@ export class TerrainView {
     });
   }
 
+  private readonly tileAt = (col: number, row: number) => this.terrain.tile(col, row);
+
   /**
    * @param left trailing edge of the frame (sim x); @param length frame length along travel;
    * @param time seconds, for the water ripple.
@@ -97,9 +99,9 @@ export class TerrainView {
         const t = this.terrain.tile(col, row);
         // Each tile ripples on its own beat, so the river shimmers rather than blinking in unison.
         const shimmer = Math.floor(time * RIPPLE_RATE + (hashSeed(col, row, 0x3a7e) & 7) / 8) & 1;
-        // Craters and bridges are drawn by what's beside them (one big crater, a span's edges).
-        const joined = t && (t.mat === 'crater' || t.mat === 'bridge' || t.mat === 'lightBridge');
-        const frame = t ? tileFrame(t, shimmer, joined ? (dc, dr) => this.terrain.tile(col + dc, row + dr) : undefined) : 'clear';
+        // Craters and bridges are drawn by what's round them (a piece of a big crater, a span's edges).
+        const placed = t && (t.mat === 'crater' || t.mat === 'bridge' || t.mat === 'lightBridge');
+        const frame = t ? tileFrame(t, shimmer, placed ? { seed: this.terrain.seed, col, row, tile: this.tileAt } : undefined) : 'clear';
         if (column.frames[row] !== frame) {
           column.frames[row] = frame;
           // Open ground is the painted layer underneath: skip drawing its see-through tile.

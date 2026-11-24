@@ -1,6 +1,7 @@
 import type { BiomeId } from '../content/biomes';
 import { HALL_STYLES, ROAD_STYLES, SPARSE_TREES, STRUCTURES, structuresOf, TREE_IDS, type RoadStyle, type StructureId, type TileArt, type TreeId } from '../content/structures';
 import { TERRAIN_GEN } from '../content/tuning';
+import { hashSeed } from '../sim/rng';
 import type { Tile } from '../sim/terrain';
 
 /**
@@ -12,7 +13,7 @@ import type { Tile } from '../sim/terrain';
 export const TILE = TERRAIN_GEN.tileSize;
 
 export const TILE_FRAMES = [
-  // Open ground is painted under the tiles (render/ground.ts); its tile is see-through.
+  // Open ground is painted under the tiles (render/ground.ts), dunes and snowdrifts with it; their tile is see-through.
   'clear',
   'road0',
   'road1',
@@ -48,8 +49,6 @@ export const TILE_FRAMES = [
   'ice1',
   'thinIce_intact',
   'thinIce_damaged',
-  'drift0',
-  'drift1',
   'factory_intact0',
   'factory_intact1',
   'factory_damaged',
@@ -57,8 +56,6 @@ export const TILE_FRAMES = [
   'tank_pad',
   'rail',
   'rail_torn',
-  'dune0',
-  'dune1',
   'wadi0',
   'wadi1',
   'derrick_pad',
@@ -84,47 +81,85 @@ function roadFrame(t: Tile): string {
   return frameName.road(style, t.links, t.variant & 1);
 }
 
-/** A tile's neighbor: `dCol` ahead (up the screen), `dRow` to the right; undefined off the field or not generated yet. */
-export type Near = (dCol: number, dRow: number) => Tile | undefined;
-
-/**
- * Which of a crater's eight neighbors are craters too, so a patch of them draws as one big crater
- * with a single rim (SPEC §4.5): the `Tile.links` bits for the four sides (up 1, right 2, down 4,
- * left 8), then the corners (up-right 16, down-right 32, down-left 64, up-left 128). A corner only
- * counts when both sides next to it join (otherwise the sides' own rims cover it), which leaves the
- * 47 shapes in `CRATER_MASKS`.
- */
-export function craterMask(joins: (dCol: number, dRow: number) => boolean): number {
-  let m = (joins(1, 0) ? 1 : 0) | (joins(0, 1) ? 2 : 0) | (joins(-1, 0) ? 4 : 0) | (joins(0, -1) ? 8 : 0);
-  if ((m & 3) === 3 && joins(1, 1)) m |= 16;
-  if ((m & 6) === 6 && joins(-1, 1)) m |= 32;
-  if ((m & 12) === 12 && joins(-1, -1)) m |= 64;
-  if ((m & 9) === 9 && joins(1, -1)) m |= 128;
-  return m;
+/** Where a tile is, for tiles drawn by what's round them (craters, bridge edges): its place, the terrain's seed, and a way to look at other tiles. */
+export interface Around {
+  seed: number;
+  col: number;
+  row: number;
+  /** Undefined off the field or where nothing is generated yet. */
+  tile(col: number, row: number): Tile | undefined;
 }
 
-/** Every mask `craterMask` can return. */
-export const CRATER_MASKS: readonly number[] = Array.from({ length: 256 }, (_, m) => m).filter(
-  (m) => (!(m & 16) || (m & 3) === 3) && (!(m & 32) || (m & 6) === 6) && (!(m & 64) || (m & 12) === 12) && (!(m & 128) || (m & 9) === 9),
-);
+/** Crater sizes, in tiles across: a shell hole, and two sizes of big round crater. */
+export const CRATER_SIZES = [1, 2, 3] as const;
+/** Variants drawn of each size. */
+export const CRATER_VARIANTS = { 1: 4, 2: 2, 3: 2 } as const;
+/** Share of the 3×3 and 2×2 blocks of cratered ground that are drawn as one crater (the rest break into smaller ones). */
+const CRATER_ODDS = { 3: 0.7, 2: 0.85 } as const;
+
+/** Whether every tile of the `size`×`size` block at (c0, r0) is crater. */
+function allCrater(a: Around, c0: number, r0: number, size: number): boolean {
+  for (let c = c0; c < c0 + size; c++) for (let r = r0; r < r0 + size; r++) if (a.tile(c, r)?.mat !== 'crater') return false;
+  return true;
+}
+
+/** The corner of the 3×3 crater a tile is part of, or null. Blocks sit on a grid of threes, shifted by the seed. */
+function bigCrater(a: Around, col: number, row: number): [number, number] | null {
+  const ox = hashSeed(a.seed, 0xc3a1) % 3;
+  const oy = hashSeed(a.seed, 0xc3a2) % 3;
+  const c0 = Math.floor((col + ox) / 3) * 3 - ox;
+  const r0 = Math.floor((row + oy) / 3) * 3 - oy;
+  if (hashSeed(a.seed, c0, r0, 0xc3a3) / 0x100000000 >= CRATER_ODDS[3]) return null;
+  return allCrater(a, c0, r0, 3) ? [c0, r0] : null;
+}
+
+/**
+ * The corner of the 2×2 crater a tile is part of, or null. Blocks sit on a grid of twos; `shift`
+ * (0 or 1) picks which of two grids, a tile apart each way. A block on the second grid gives way to
+ * any on the first; either gives way to a big crater.
+ */
+function midCrater(a: Around, col: number, row: number, shift: 0 | 1): [number, number] | null {
+  const c0 = Math.floor((col + shift) / 2) * 2 - shift;
+  const r0 = Math.floor((row + shift) / 2) * 2 - shift;
+  if (hashSeed(a.seed, c0, r0, 0xc2a1 + shift) / 0x100000000 >= CRATER_ODDS[2] || !allCrater(a, c0, r0, 2)) return null;
+  for (let c = c0; c < c0 + 2; c++) {
+    for (let r = r0; r < r0 + 2; r++) if (bigCrater(a, c, r) || (shift === 1 && midCrater(a, c, r, 0))) return null;
+  }
+  return [c0, r0];
+}
+
+/**
+ * Which crater a crater tile is drawn as part of (SPEC §4.5): cratered ground is packed with round
+ * craters of three sizes. Where a 3×3 block of it lines up (and the seed's roll allows) it's one big
+ * crater; failing that a 2×2 block is a middling one; what's left are single shell holes. So a
+ * field of craters, or the ground under a big blast, is a mix of big and small ones. Returns the
+ * size, which piece of it this tile is (`dc` ahead, `dr` to the right of its corner), and a variant.
+ */
+export function craterPiece(a: Around, variant: number): { size: 1 | 2 | 3; dc: number; dr: number; v: number } {
+  const big = bigCrater(a, a.col, a.row);
+  if (big) return { size: 3, dc: a.col - big[0], dr: a.row - big[1], v: hashSeed(a.seed, big[0], big[1]) % CRATER_VARIANTS[3] };
+  const mid = midCrater(a, a.col, a.row, 0) ?? midCrater(a, a.col, a.row, 1);
+  if (mid) return { size: 2, dc: a.col - mid[0], dr: a.row - mid[1], v: hashSeed(a.seed, mid[0], mid[1]) % CRATER_VARIANTS[2] };
+  return { size: 1, dc: 0, dr: 0, v: variant % CRATER_VARIANTS[1] };
+}
 
 /**
  * Which sides of a bridge tile are the span's edge (the deck ends there, over the water): 1 left,
  * 2 right. Not where the deck runs on into more of itself, or into the road at its abutments.
  */
-function bridgeEdges(t: Tile, near: Near | undefined): number {
-  if (!near) return 0;
+function bridgeEdges(t: Tile, a: Around | undefined): number {
+  if (!a) return 0;
   const open = (m: Tile['mat'] | undefined) => m !== t.mat && m !== 'road' && m !== 'car';
-  return (open(near(0, -1)?.mat) ? 1 : 0) | (open(near(0, 1)?.mat) ? 2 : 0);
+  return (open(a.tile(a.col, a.row - 1)?.mat) ? 1 : 0) | (open(a.tile(a.col, a.row + 1)?.mat) ? 2 : 0);
 }
 
 /**
  * Which frame of a tile sheet represents a tile in its current state. `shimmer` (0/1) flips water
  * between its two frames, so rivers ripple. A mine the sensors haven't swept looks like open ground.
- * `near` gives its neighbors, for tiles drawn by what's beside them (craters, bridge edges);
- * without it they draw as if alone.
+ * `around` places the tile, for those drawn by what's round them (craters, bridge edges); without
+ * it they draw as if alone.
  */
-export function tileFrame(t: Tile, shimmer: number, near?: Near): string {
+export function tileFrame(t: Tile, shimmer: number, around?: Around): string {
   const v1 = t.variant & 1;
   const standing = t.state === 'intact' || t.state === 'damaged';
   const damaged = t.state === 'damaged';
@@ -153,8 +188,10 @@ export function tileFrame(t: Tile, shimmer: number, near?: Near): string {
     case 'shallows':
     case 'water':
       return `${t.mat}${v1 ^ shimmer}` as TileFrame;
-    case 'crater':
-      return frameName.crater(near ? craterMask((dc, dr) => near(dc, dr)?.mat === 'crater') : 0, t.variant & 3);
+    case 'crater': {
+      const p = around ? craterPiece(around, t.variant) : { size: 1, dc: 0, dr: 0, v: t.variant % CRATER_VARIANTS[1] };
+      return frameName.crater(p.size, p.v, p.dc, p.dr);
+    }
     case 'tankTrap':
       return standing ? (`tankTrap_${t.state}` as TileFrame) : 'tankTrap_down';
     case 'wall':
@@ -166,7 +203,7 @@ export function tileFrame(t: Tile, shimmer: number, near?: Near): string {
       return t.seen ? 'mine' : 'clear';
     case 'bridge':
     case 'lightBridge':
-      return frameName.bridge(t.mat === 'lightBridge', bridgeEdges(t, near), damaged);
+      return frameName.bridge(t.mat === 'lightBridge', bridgeEdges(t, around), damaged);
     case 'hedgerow':
       if (t.state === 'intact' || t.state === 'damaged') return 'hedge_floor';
       return `forest_${t.state}` as TileFrame;
@@ -177,7 +214,9 @@ export function tileFrame(t: Tile, shimmer: number, near?: Near): string {
     case 'thinIce':
       return t.state === 'damaged' ? 'thinIce_damaged' : 'thinIce_intact';
     case 'snowdrift':
-      return `drift${v1}` as TileFrame;
+    case 'dune':
+      // Blown snow and sand are painted into the ground (render/ground.ts): ridges that run on from tile to tile.
+      return 'clear';
     case 'factory':
       if (standing && art?.kind === 'hall') return hallFrame(art, damaged);
       if (t.state === 'intact') return `factory_intact${v1}` as TileFrame;
@@ -187,8 +226,6 @@ export function tileFrame(t: Tile, shimmer: number, near?: Near): string {
       return 'tank_pad';
     case 'rail':
       return t.state === 'flattened' ? 'rail_torn' : 'rail';
-    case 'dune':
-      return `dune${v1}` as TileFrame;
     case 'wadi':
       return `wadi${v1}` as TileFrame;
     case 'derrick':
@@ -256,8 +293,8 @@ export const frameName = {
   road: (style: RoadStyle, links: number, v: number) => `r.${style}.${links}.${v}`,
   wall: (links: number, damaged: boolean) => `w.${links}${damaged ? '.d' : ''}`,
   footbridge: (shallows: boolean, damaged: boolean) => `fb.${shallows ? 's' : 'w'}${damaged ? '.d' : ''}`,
-  /** A crater by which neighbors it joins (`craterMask`), in four variants. */
-  crater: (mask: number, v: number) => `cr.${mask}.${v}`,
+  /** A piece of a round crater `size` tiles across (`craterPiece`): `dc` ahead, `dr` right of its corner. */
+  crater: (size: number, v: number, dc: number, dr: number) => `cr.${size}.${v}.${dc}.${dr}`,
   /** A bridge deck (girder or light), by which sides are the span's edge (1 left, 2 right). */
   bridge: (light: boolean, edges: number, damaged: boolean) => `b.${light ? 'l' : 'g'}.${edges}${damaged ? '.d' : ''}`,
   tree: (species: TreeId, v: number) => `t.${species}.${v}`,
@@ -271,7 +308,9 @@ export function sheetFrameNames(biome: BiomeId): { tiles: Set<string>; clumps: S
   for (const style of ROAD_STYLES) for (let links = 0; links < 16; links++) for (let v = 0; v < 2; v++) tiles.add(frameName.road(style, links, v));
   for (let links = 0; links < 16; links++) for (const d of [false, true]) tiles.add(frameName.wall(links, d));
   for (const sh of [false, true]) for (const d of [false, true]) tiles.add(frameName.footbridge(sh, d));
-  for (const mask of CRATER_MASKS) for (let v = 0; v < 4; v++) tiles.add(frameName.crater(mask, v));
+  for (const size of CRATER_SIZES) {
+    for (let v = 0; v < CRATER_VARIANTS[size]; v++) for (let dc = 0; dc < size; dc++) for (let dr = 0; dr < size; dr++) tiles.add(frameName.crater(size, v, dc, dr));
+  }
   for (const light of [false, true]) for (let edges = 0; edges < 4; edges++) for (const d of [false, true]) tiles.add(frameName.bridge(light, edges, d));
   for (const id of structuresOf(biome)) {
     const def = STRUCTURES[id];

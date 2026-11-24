@@ -157,6 +157,7 @@ export class FireView {
       const row = key - col * 4096;
       const x0 = col * ts;
       if (!near(x0)) continue;
+      // Thick at a full `linger` left (a wood burning under it), thin over a wreck or as it clears.
       const k = Math.min(1, left / (FIRE.smoke.linger * 0.6));
       for (let n = count(SMOKE.rate, dt); n > 0; n--) flames.smoke(x0 + Math.random() * ts, row * ts + Math.random() * ts, rnd(...SMOKE.r), rnd(...SMOKE.density) * k);
     }
@@ -168,7 +169,7 @@ export class FireView {
       if (e.burn) {
         const big = Math.min(3, 1.2 + r * 0.2);
         for (let n = count(30 + r * 5, dt); n > 0; n--) flames.spot(p.x + rnd(-0.7, 0.7) * r, p.y + rnd(-0.7, 0.7) * r, rnd(1, big), rnd(160, 255));
-        if (Math.random() < 3 * dt) flames.smoke(p.x, p.y, rnd(2, 4), rnd(70, 120));
+        if (Math.random() < 1.2 * dt) flames.smoke(p.x, p.y, rnd(2, 3.5), rnd(60, 100));
       }
       if (e.stunned && Math.random() < STUN_ARCS * dt) fx.arc(p.x + rnd(-0.7, 0.7) * r, p.y + rnd(-0.7, 0.7) * r);
     }

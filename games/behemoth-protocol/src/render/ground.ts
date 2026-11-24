@@ -47,13 +47,28 @@ const FRINGE_OF: Partial<Record<MaterialId, FringeKey>> = {
   fuelTank: 'apron',
   derrick: 'apron',
   rock: 'scree',
-  dune: 'sand',
   snowdrift: 'snow',
   farmland: 'soil',
   wreck: 'ash',
   glass: 'ash',
   rail: 'ballast',
 };
+
+/**
+ * Blown sand and deep snow (SPEC §4.6): painted here, not as tiles, so their ridges run on from
+ * tile to tile. `ramp` colors the ridges (a lit crest, a shaded lee); `fill` lays that ramp's base
+ * under the whole patch (snow lying on bare earth) where dunes just ripple the ground they're on.
+ */
+const DRIFTS: Partial<Record<MaterialId, { ramp: FringeKey; fill: boolean }>> = {
+  dune: { ramp: 'sand', fill: false },
+  snowdrift: { ramp: 'snow', fill: true },
+};
+/**
+ * Ridges: crests `wavelength` px apart running across the wind (which blows down and to the right
+ * of the screen, away from the light), bent by a slow noise (`spacing` px, up to `warp` wavelengths
+ * either way) so they wander, fork, and close up; they fade out over `fade` px at a patch's edge.
+ */
+const RIDGE = { wavelength: 11, warp: 1.2, spacing: 26, fade: 7 };
 
 /** How far each fringe reaches onto the ground (pixels; ragged by up to a third either way). */
 const FRINGE_WIDTH: Record<FringeKey, number> = { bank: 7, litter: 5, apron: 3, scree: 5, sand: 5, snow: 5, soil: 2, ash: 3, ballast: 2 };
@@ -86,7 +101,7 @@ const WOBBLE_SPACING = 5;
 /** Tank ruts: chunks per stretch, half the gauge (pixels), and how much they darken. */
 const RUTS = { chunks: 3, half: 4, shade: 0.78, gaps: 0.15, taper: 24 };
 
-const SALT = { tone: 0x70e1, bare: 0xba4e, wobble: 0x3b61, decal: 0xdeca, fleck: 0xf1ec, ruts: 0x2075 };
+const SALT = { tone: 0x70e1, bare: 0xba4e, wobble: 0x3b61, decal: 0xdeca, fleck: 0xf1ec, ruts: 0x2075, ridge: 0x21d6 };
 
 const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5].map((b) => (b + 0.5) / 16);
 
@@ -205,6 +220,7 @@ export class GroundPainter {
   private readonly bare: Fbm;
   private readonly wobble: Grid;
   private readonly decalField: Grid;
+  private readonly ridge: Grid;
   private readonly tones: RampRgb[];
   private readonly bareRamp: RampRgb;
   private readonly bareAt: number;
@@ -231,6 +247,7 @@ export class GroundPainter {
     this.bare = new Fbm(seed, SALT.bare, BARE_OCTAVES, 0, v0, W, H);
     this.wobble = new Grid(seed, SALT.wobble, WOBBLE_SPACING, 0, v0, W, H);
     this.decalField = new Grid(seed, SALT.decal, DECAL_SPACING, 0, v0, W, H);
+    this.ridge = new Grid(seed, SALT.ridge, RIDGE.spacing, 0, v0, W, H);
     this.tones = look.tones.map(ramp);
     this.bareRamp = ramp(look.bare);
     this.bareAt = bareThreshold(look.bareCover);
@@ -287,6 +304,20 @@ export class GroundPainter {
         }
       }
       const spills = skey.length;
+      // A dune or a drift: its ridges, fading toward any side where the patch ends.
+      const drift = here ? DRIFTS[here.mat] : undefined;
+      const edc: number[] = [];
+      const edr: number[] = [];
+      if (drift) {
+        for (let dc = -1; dc <= 1; dc++) {
+          for (let dr = -1; dr <= 1; dr++) {
+            if ((dc !== 0 || dr !== 0) && src.tile(col + dc, row + dr)?.mat !== here!.mat) {
+              edc.push(dc);
+              edr.push(dr);
+            }
+          }
+        }
+      }
 
       for (let yi = 0; yi < tile; yi++) {
         const y = ty + yi;
@@ -295,7 +326,7 @@ export class GroundPainter {
           const x = tx + xi;
           const b = BAYER[((y & 3) << 2) | (x & 3)]! - 0.5;
           const h = fleck(fleckSeed, x, v);
-          let r: RampRgb | null = null;
+          let r: RampRgb | null = drift?.fill ? this.fringes[drift.ramp] : null;
 
           // Fringe: the nearest spilling neighbor, its edge ragged; solid inside half its width,
           // dithered out to the full width.
@@ -325,7 +356,24 @@ export class GroundPainter {
               r = this.tones[n < TONE_LOW ? 1 : n > TONE_HIGH ? 2 : 0]!;
             }
           }
-          const c = h < FLECK.light ? r[1] : h < FLECK.dark ? r[2] : r[0];
+          let c = h < FLECK.light ? r[1] : h < FLECK.dark ? r[2] : r[0];
+          if (drift) {
+            let edge = Infinity;
+            for (let i = 0; i < edc.length; i++) {
+              const dx = edr[i]! < 0 ? xi + 0.5 : edr[i]! > 0 ? tile - xi - 0.5 : 0;
+              const dy = edc[i]! > 0 ? yi + 0.5 : edc[i]! < 0 ? tile - yi - 0.5 : 0;
+              edge = Math.min(edge, Math.sqrt(dx * dx + dy * dy));
+            }
+            if (b + 0.5 < edge / RIDGE.fade) {
+              // How far along the wind this pixel is, in wavelengths: the windward slope climbs to
+              // a crest (lit more and more, then solid), and the slip face past it is in shade.
+              const along = ((x - v) * Math.SQRT1_2) / RIDGE.wavelength + (this.ridge.at(x, v) - 0.5) * 2 * RIDGE.warp;
+              const phase = along - Math.floor(along);
+              const tones = this.fringes[drift.ramp];
+              if (phase > 0.82) c = tones[2];
+              else if (phase > 0.7 || (phase > 0.45 && b + 0.5 < (phase - 0.45) * 3)) c = tones[1];
+            }
+          }
           const k = (y * W + x) * 4;
           out[k] = c[0];
           out[k + 1] = c[1];

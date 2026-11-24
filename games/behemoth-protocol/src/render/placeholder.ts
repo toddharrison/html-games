@@ -1754,6 +1754,20 @@ function makeFx(scene: Phaser.Scene): void {
     p.rect(3, 3, 3, 3, PAL.amberHot);
     p.px(4, 4, PAL.white);
   });
+  // A burn mark where fire has lain on the ground (burning fuel): a flat, ragged patch of char with a
+  // little pale ash in it. No dark middle and no rim, so it doesn't read as a hole (`scorch` is a blast's mark).
+  canvasTexture(scene, 'char', 22, 22, (p) => {
+    const rng = new Rng(4343);
+    const [a2, a3] = [rng.range(0, 6.28), rng.range(0, 6.28)];
+    for (let y = 0; y < 22; y++) {
+      for (let x = 0; x < 22; x++) {
+        const angle = Math.atan2(y - 10.5, x - 10.5);
+        const d = Math.hypot(x - 10.5, y - 10.5) / (10.5 * (0.78 + 0.14 * Math.sin(2 * angle + a2) + 0.08 * Math.sin(3 * angle + a3)));
+        if (d >= 1 || rng.next() < d * d * d) continue;
+        p.px(x, y, rng.next() < 0.07 ? 'rgba(150,144,132,0.3)' : 'rgba(26,21,15,0.3)');
+      }
+    }
+  });
   canvasTexture(scene, 'scorch', 18, 18, (p) => {
     const rng = new Rng(4242);
     for (let y = 0; y < 18; y++) {

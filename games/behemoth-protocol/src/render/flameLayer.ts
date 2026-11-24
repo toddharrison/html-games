@@ -6,14 +6,17 @@ import { viewX, viewY } from './viewTransform';
 /**
  * Flames and smoke on the battlefield (SPEC §11.3), render-only: two heat fields (`flameField.ts`)
  * the size of the field column, kept in step with the ground as the view scrolls, and drawn as
- * three images: the fire's glow on the ground, the smoke, and the flames over it. Everything that
+ * three images (each left where it was last drawn until its next redraw): the fire's glow on the ground, the smoke, and the flames over it. Everything that
  * burns feeds it through `spot` (a lick of flame), `smoke`, `burst` (a fireball), and `spray` (a
  * flamethrower's stream), all in sim coordinates. With nothing alight it does no work.
  */
 
-/** Game pixels of field kept past each side of the column, above the screen, and below it (flames rise into view). */
+/**
+ * Game pixels of field kept past each side of the column, above the screen, and below it (flames
+ * rise into view; and the picture trails the camera by up to a redraw, a few pixels at speed).
+ */
 const PAD_X = 4;
-const PAD_TOP = 8;
+const PAD_TOP = 16;
 const PAD_BOTTOM = 20;
 /** Steps a second: flames flicker at about a hand-animated frame rate; smoke rolls slower. */
 const FIRE_RATE = 30;
@@ -81,6 +84,8 @@ class Sheet {
   private readonly ramp: Uint32Array;
   private acc = 0;
   private shown = false;
+  /** View y of the field's top row when the texture was last drawn: where its image belongs. */
+  paintedAt = 0;
 
   constructor(scene: Phaser.Scene, key: string, width: number, height: number, depth: number, ramp: readonly RampStop[], field: HeatField) {
     this.field = field;
@@ -92,8 +97,13 @@ class Sheet {
     this.image = scene.add.image(0, 0, key).setOrigin(0, 0).setDepth(depth).setVisible(false);
   }
 
-  /** Steps the field at `rate` and redraws if it moved. Returns whether it was redrawn. */
-  update(dt: number, rate: number): boolean {
+  /**
+   * Steps the field at `rate` and redraws if it moved (`origin`: view y of the field's top row
+   * now). Returns whether it was redrawn. Between redraws the image stays where it was drawn: the
+   * field has scrolled on with the camera but the texture hasn't, so moving the image with it would
+   * make the picture jump ahead and snap back at each redraw.
+   */
+  update(dt: number, rate: number, origin: number): boolean {
     if (!this.field.alight && !this.shown) return false;
     this.acc = Math.min(this.acc + dt, 3 / rate);
     let stepped = false;
@@ -107,7 +117,8 @@ class Sheet {
     this.tex.getContext().putImageData(this.data, 0, 0);
     this.tex.refresh();
     this.shown = this.field.alight;
-    this.image.setVisible(this.shown);
+    this.paintedAt = origin;
+    this.image.setPosition(-PAD_X, origin).setVisible(this.shown);
     return true;
   }
 }
@@ -233,14 +244,13 @@ export class FlameLayer {
     this.stepGobs(dt);
     this.stepBursts(dt);
 
-    for (const img of [this.fire.image, this.smokeSheet.image, this.glowImage]) img.setPosition(-PAD_X, origin);
-    this.smokeSheet.update(dt, SMOKE_RATE);
-    if (this.fire.update(dt, FIRE_RATE)) this.drawGlow();
+    this.smokeSheet.update(dt, SMOKE_RATE, origin);
+    if (this.fire.update(dt, FIRE_RATE, origin)) this.drawGlow();
   }
 
   private drawGlow(): void {
     const field = this.fire.field;
-    this.glowImage.setVisible(field.alight);
+    this.glowImage.setPosition(-PAD_X, this.fire.paintedAt).setVisible(field.alight);
     if (!field.alight) return;
     field.glow(this.glowHeat, GLOW_CELL);
     const px = this.glowData.data;

@@ -200,8 +200,9 @@ export const FIRE = {
    * Smoke: a tile that burns itself (a wood, a house) and a burning wreck pour smoke once they've
    * burned `after` seconds, over every tile within `reach` tiles; it hangs `linger` seconds after
    * the fire is out. A unit in smoke is concealed like one in a wood, and its own fire scatters `spread`×.
+   * A wreck smokes far less (`wreck`): over its own tile only, thinner, and gone sooner.
    */
-  smoke: { after: 0.75, reach: 1, linger: 4, spread: 1.8 },
+  smoke: { after: 0.75, reach: 1, linger: 4, spread: 1.8, wreck: { reach: 0, linger: 1.5 } },
 };
 
 /** EMP (SPEC §6 EMP emitter). Provisional. */

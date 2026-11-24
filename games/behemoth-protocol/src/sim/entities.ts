@@ -122,7 +122,7 @@ export interface AiMemory {
   lid?: 'shut' | 'lifting' | 'open' | 'lingering';
   lidT?: number;
   marked?: boolean;
-  /** Bomb truck: its run has started (it's been in the frame), so the view strobes it (SPEC §7.4). A train's vehicle: cut loose, its scuttling charge set. */
+  /** Bomb truck: its run has started (it's been in the frame), so the view strobes it (SPEC §7.4). A train's vehicle: abandoned, its scuttling charge set. */
   charging?: boolean;
   /** Bomb truck: within `BOMB.close` of the hull, the last stretch (its strobe quickens). */
   close?: boolean;

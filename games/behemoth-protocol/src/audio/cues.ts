@@ -122,6 +122,9 @@ export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: nu
   // An armored train's guns (SPEC-armored-train.md §T6, §T7). The railway gun: the deepest boom
   // on the field, usually from off screen (the shell's long whistle is the `barrage` cue).
   trainMissiles: { sound: 'missile', size: 0.5 },
+  trainAutocannon: { sound: 'autocannon', size: 0.45 },
+  trainHowitzer: { sound: 'howitzer', size: 0.8 },
+  trainRockets: { sound: 'rocket', size: 0.55 },
   troopRockets: { sound: 'rocket', size: 0.4 },
   railwayGunShell: { sound: 'howitzer', size: 1.5 },
 };
@@ -260,11 +263,11 @@ export function cuesFor(ev: SimEvent, ctx: CueContext): Cue[] {
       return [{ sound: 'alarm', size: 0.5, x: ev.x, y: ev.y }];
     case 'sighted':
       return [{ sound: 'radio', size: 1 }];
-    // An armored train (SPEC §7.3): the radio calls it out; a section cut loose sounds the alarm.
+    // An armored train (SPEC §7.3): the radio calls it out; cars abandoned behind a wreck sound the alarm.
     case 'trainStart':
     case 'trainStopped':
       return [{ sound: 'radio', size: 1 }];
-    case 'trainCutLoose':
+    case 'trainAbandoned':
       return [{ sound: 'alarm', size: 0.8, x: ev.x, y: ev.y }];
     // The train running into the hull: the heaviest ram there is. A flinger's throw: a dull thunk.
     case 'trainStrike':

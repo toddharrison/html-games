@@ -285,34 +285,37 @@ export const OBJECTIVE = {
  */
 export const TRAIN = {
   /**
-   * Its pace with every engine running, as a share of the Behemoth's present cruise (treads and
-   * load, not terrain). With engines lost it drops toward `paceFloor` of that:
+   * Its pace with every engine running, as a share of the Behemoth's present **top speed** (treads
+   * and load, not terrain): faster than the hull cruises, so only a full surge gains on it. With
+   * engines lost it drops toward `paceFloor` of that, which is still above the hull's cruise:
    * `pace × (paceFloor + (1 − paceFloor) × running ÷ total)`. No engines: it brakes to a stop.
    */
-  pace: 0.85,
-  paceFloor: 0.4,
+  pace: 0.78,
+  paceFloor: 0.64,
   /** How fast it changes pace (units/s²), and brakes once nothing pulls it. */
-  ease: 4,
+  ease: 8,
   brake: 10,
   /** It starts at rest, pulling out of its station, its tail this far ahead of the Behemoth's nose. */
   startGap: 200,
   /** The gap between two coupled vehicles (world units). */
   coupling: 4,
   /**
-   * Cut loose (SPEC §7.3): a dead section coasts, slowing at `coast` units/s²; `fuse` s later its
-   * scuttling charges fire one vehicle at a time from the tail forward, `ripple` s apart, each a
-   * blast of `radius` and `damage`.
+   * Scuttling (SPEC §7.3): what's left stranded on the rails behind a wreck is abandoned by its
+   * crew. `fuse` s later its charges fire one vehicle at a time from the tail forward, `ripple` s
+   * apart, each a blast of `radius` and `damage`.
    */
-  cutLoose: { coast: 6, fuse: 3, ripple: 0.25, radius: 40, damage: 50 },
+  scuttle: { fuse: 3, ripple: 0.25, radius: 40, damage: 50 },
   /**
-   * Derailed (SPEC §7.3): each vehicle that leaves the rails takes `brake` units/s off what's behind
-   * it, and comes to rest up to `scatter` units off the line, turned up to `turn` degrees. It pays
-   * `salvage` of its worth (nothing if it went into a river).
+   * Wrecks and pileups (SPEC §7.3). A vehicle destroyed on the rails, or one that runs into a
+   * break in the line or a wreck ahead of it, leaves the rails: it comes to rest up to `scatter`
+   * units off the line, turned up to `turn` degrees. Each vehicle that piles in takes `brake`
+   * units/s off what's behind it, and under `stop` units/s the rest pulls up short of the pile.
+   * A vehicle lost to a pileup pays `salvage` of its worth (nothing if it went into a river).
    */
-  derail: { brake: 8, scatter: [8, 24] as const, turn: 50, salvage: 0.5 },
+  derail: { brake: 12, stop: 10, scatter: [8, 24] as const, turn: 50, salvage: 0.5 },
   /** Line tiles within this many columns of a vehicle take no damage: fire at the train never cuts the track. */
   shield: 1,
-  /** Once the train is stopped, the extraction line is pulled in to this far ahead of the Behemoth. */
+  /** Once the train is stopped, or has got away off the far end, the extraction line is pulled in to this far ahead of the Behemoth. */
   extractAhead: 600,
   /** Vehicles no longer part of the running train are dropped this far behind the frame. */
   dropBehind: 200,
@@ -324,10 +327,10 @@ export const TRAIN = {
    * wrecked), the treads `treads`; the train's front vehicle takes `front`, and the train loses
    * `slow` of its speed (it eases back up at `ease`). The hull is shoved toward the line's wide side
    * at `shove` units/s until it's `clear` units clear of the train's path, and can't be struck again
-   * for `again` s. `grind`: held this long (s) against a hulk's or a wreck's face, the hull grinds
+   * for `again` s. `grind`: held this long (s) against a wreck's face, the hull grinds
    * through it (nothing stops it for good).
    */
-  collide: { strike: { arc: 60, treads: 15, front: 90, slow: 0.3, shove: 80, clear: 8, again: 1 }, grind: 2 },
+  collide: { strike: { arc: 60, treads: 15, front: 90, slow: 0.3, shove: 80, clear: 8, again: 2 }, grind: 2 },
 };
 
 /**
@@ -743,6 +746,9 @@ export const TERRAIN_GEN = {
    * - `rockClear`: rows either side of it rock never covers (its own tile and the one each side are
    *   cleared of everything: the railbed). `laneGap`: the guaranteed lane's center stays at least
    *   this many rows from it, on the wide side.
+   * - `serviceRoad`: rows down the lane cleared of obstacles (deep water there is a ford), a road
+   *   along their center: the train outruns a cruise, so the chase is at full speed the whole way,
+   *   and scenery plowed at that speed would wear the treads out before the end.
    * - `smooth`: columns the train's path takes to cross from one row to the next.
    * - `fordWidth`: rows of the ford added on the wide side where a river has none there.
    * - `station`: a platform beside the track from column `col`, `cols` long, with a station building
@@ -757,7 +763,8 @@ export const TERRAIN_GEN = {
     riverFlat: 8,
     riverSlope: 1 / 3,
     rockClear: 2,
-    laneGap: 5,
+    laneGap: 7,
+    serviceRoad: 5,
     smooth: 3,
     fordWidth: 4,
     station: { col: 4, cols: 24, depth: 2, gap: 6 },

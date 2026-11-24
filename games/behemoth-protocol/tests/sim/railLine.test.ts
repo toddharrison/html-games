@@ -112,6 +112,25 @@ describe('an armored train\'s rail line (SPEC §4.4 Intercept)', () => {
     }
   });
 
+  it('clears a service road down the lane: no obstacle and no deep water the whole way, a road along its middle', () => {
+    for (const { t, cols: COLS, name } of fields()) {
+      let road = 0;
+      for (let col = 0; col < COLS; col++) {
+        const lane = t.laneY((col + 0.5) * TS) / TS;
+        for (let row = Math.ceil(lane - G.serviceRoad / 2 - 0.5 + 1e-9); row + 0.5 < lane + G.serviceRoad / 2; row++) {
+          const tile = t.tile(col, row);
+          if (!tile) continue;
+          const where = `${name} col ${col} row ${row}: ${tile.mat}`;
+          expect(['none', 'soft', 'trivial'], where).toContain(MATERIALS[tile.mat].obstacle[tile.state]);
+          expect(tile.mat, where).not.toBe('water');
+          if (tile.mat === 'road') road++;
+        }
+      }
+      // Most of the way it's a road you can see (fords, ice, and the like break it).
+      expect(road, name).toBeGreaterThan(COLS / 2);
+    }
+  });
+
   it('gives what runs on it a smooth path along the track', () => {
     const t = terrain(11, 'temperate', 'river', SHORT);
     for (let x = 8; x < SHORT * TS - 8; x += 1) {

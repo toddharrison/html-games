@@ -91,7 +91,7 @@ class EnemyView {
     this.clock += dt;
     // A bomb truck on its run strobes white like a Behemoth on its reactor fuse (SPEC §7.4), faster
     // in the last stretch.
-    // A train's vehicle cut loose strobes the same way while its scuttling charge counts down (SPEC §7.3).
+    // A train's vehicle abandoned behind a wreck strobes the same way while its scuttling charge counts down (SPEC §7.3).
     const strobe = (!!e.def.bomb || !!e.train) && !!e.ai.charging && Math.floor(this.clock * (e.ai.close ? 20 : 8)) % 2 === 0;
     // Concealed units melt into the trees, and pop out quickly when spotted.
     const fade = e.hidden ? -dt / EnemyView.HIDE_SECONDS : dt / EnemyView.REVEAL_SECONDS;

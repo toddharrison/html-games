@@ -171,7 +171,8 @@ export const MODES: Record<BattleModeId, ModeDef> = {
     weight: 0.6,
     bonus: 90,
     posts: 0.3,
-    length: 1.4,
+    // Long, because the train runs faster than the Behemoth cruises: about four minutes at its full pace.
+    length: 2.5,
     perSector: 1,
     target: ['engine', 'engines'],
     train: {

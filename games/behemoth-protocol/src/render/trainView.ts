@@ -5,9 +5,8 @@ import { ENEMY_ART } from './placeholder';
 import { viewAngle, viewX, viewY } from './viewTransform';
 
 /**
- * What an armored train (SPEC §7.3) leaves that isn't a unit any more: the burnt-out hulks it drags
- * along in the chain, and the wrecks of vehicles that left the rails or were scuttled, where they
- * lie. Its live vehicles are ordinary units (`UnitViews`). Also its mine flingers' mines on their
+ * What an armored train (SPEC §7.3) leaves that isn't a unit any more: the wrecks of vehicles
+ * destroyed, piled up, or scuttled, where they lie. Its live vehicles are ordinary units (`UnitViews`). Also its mine flingers' mines on their
  * way (SPEC-armored-train.md §T6): arcing over in the air, then lying blinking until they're live.
  */
 export class TrainView {
@@ -29,7 +28,7 @@ export class TrainView {
       }
       if (!img) {
         const key = ENEMY_ART[v.car.enemy].hulk ?? ENEMY_ART[v.car.enemy].body;
-        // A wreck lies on the ground under the units; a hulk rides the rails among them.
+        // A wreck lies on the ground under the units.
         img = this.scene.add.image(0, 0, key);
         this.hulks.set(i, img);
       }

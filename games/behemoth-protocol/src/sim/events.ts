@@ -72,13 +72,16 @@ export type SimEvent =
   | { type: 'enemyDestroyed'; id: number; enemy: EnemyId; x: number; y: number; cause: KillCause }
   /** An armored train (SPEC §7.3) pulls out of its station as the battle opens; `gun`: it has a railway gun. */
   | { type: 'trainStart'; x: number; y: number; engines: number; gun: boolean }
-  /** Its crew cut a dead section loose (`cars` vehicles); the scuttling charges are counting down. */
-  | { type: 'trainCutLoose'; x: number; y: number; cars: number }
-  /** A scuttling charge went off under a cut-loose vehicle. */
+  /** Vehicles stranded behind a wreck (`cars` of them) are abandoned by their crews; the scuttling charges are counting down. */
+  | { type: 'trainAbandoned'; x: number; y: number; cars: number }
+  /** A scuttling charge went off under an abandoned vehicle. */
   | { type: 'trainScuttle'; x: number; y: number }
-  /** The chain parted at a vehicle blown apart or plowed through. */
-  | { type: 'trainBroken'; x: number; y: number }
-  /** A vehicle left the rails at a break in the line (`first`: the one that starts the pile); `sunk`: into a river. */
+  /** A vehicle destroyed on the rails wrecked there and parted the chain; `behind` vehicles are piling into it. */
+  | { type: 'trainBroken'; x: number; y: number; heading: number; behind: number }
+  /**
+   * A vehicle left the rails, piling into a wreck or a break ahead of it. `first`: the train itself
+   * ran onto a break in the line (this one starts the pile); `sunk`: into a river.
+   */
   | { type: 'trainDerail'; x: number; y: number; heading: number; first: boolean; sunk: boolean }
   /** A train's piece under way ran into the Behemoth on the track ahead of it (SPEC-armored-train.md §T10). */
   | { type: 'trainStrike'; x: number; y: number }
@@ -113,9 +116,10 @@ export type SimEvent =
   | { type: 'alert'; wave: number }
   /**
    * A battle mode's target (SPEC §4.4) destroyed, or lost: passed and left behind, or (a convoy
-   * hauler) escaped off the far end. `done` once no targets are left either way.
+   * hauler) escaped off the far end. `done` once no targets are left either way. `stranded`: a
+   * train's engines (this many) left behind a wreck, which count as destroyed (SPEC §7.3).
    */
-  | { type: 'objective'; what: 'destroyed' | 'lost'; enemy: EnemyId; x: number; y: number; done: boolean }
+  | { type: 'objective'; what: 'destroyed' | 'lost'; enemy: EnemyId; x: number; y: number; done: boolean; stranded?: number }
   /** A convoy's mine layer dropped a mine, or a train's flung mine went live (world point of the tile's center). */
   | { type: 'mineLaid'; x: number; y: number }
   /** A unit started painting the hull for a guided missile (`EnemyDef.lockOn`); it fires in `time` s unless the lock breaks. */

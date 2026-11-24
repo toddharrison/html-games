@@ -1448,6 +1448,15 @@ function paintColumn(seed: number, col: number, rows: number, neighbors: Neighbo
         else if (!RAILBED_KEEPS.has(mat)) mat = 'ground';
       } else if (line.hall && depth >= 2 && depth <= 1 + TERRAIN_GEN.railLine.station.depth) {
         mat = 'building';
+      } else {
+        // The line's service road, down the lane on the wide side: a track with a cleared verge,
+        // fording every river it meets, so a hull at full speed isn't torn up by scenery the whole way.
+        const off = Math.abs(row + 0.5 - laneAt(seed, col + 0.5, rows, rc));
+        if (off < TERRAIN_GEN.railLine.serviceRoad / 2) {
+          if (mat === 'water') mat = 'shallows';
+          else if (!RAILBED_KEEPS.has(mat)) mat = 'ground';
+        }
+        if (off < 0.5 && (mat === 'ground' || mat === 'farmland')) mat = 'road';
       }
       if (mat !== was) {
         art = undefined;
@@ -1772,11 +1781,12 @@ export class Terrain {
 
   /**
    * A mine dropped on open ground (a convoy's mine layer, SPEC §4.4 Chase): laid in plain sight,
-   * so it's drawn swept. Only on bare ground; returns whether one was laid.
+   * so it's drawn swept. Only on bare ground (`road`: or on a road, where a train's mine flinger
+   * throws them, onto its line's service road); returns whether one was laid.
    */
-  layMine(col: number, row: number, events: SimEvent[]): boolean {
+  layMine(col: number, row: number, events: SimEvent[], road = false): boolean {
     const t = this.tile(col, row);
-    if (!t || t.mat !== 'ground' || t.state !== 'intact') return false;
+    if (!t || !(t.mat === 'ground' || (road && t.mat === 'road')) || t.state !== 'intact') return false;
     this.turnInto(col, row, t, 'mine', 'intact', events);
     t.seen = true;
     return true;

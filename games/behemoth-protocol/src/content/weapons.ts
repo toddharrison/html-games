@@ -251,6 +251,9 @@ export type WeaponId =
   | 'walkerGuns'
   | 'siegeAutocannon'
   | 'trainMissiles'
+  | 'trainAutocannon'
+  | 'trainHowitzer'
+  | 'trainRockets'
   | 'troopRockets'
   | 'railwayGunShell';
 
@@ -1307,6 +1310,78 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
       strike: { target: 'hardpoints', bypass: 0.5 },
     },
   },
+  trainAutocannon: {
+    id: 'trainAutocannon',
+    name: 'Train autocannon',
+    short: 'Autocannon',
+    role: 'auto',
+    category: 'ballistic',
+    // An autocannon car's mount (SPEC-armored-train.md §T6): bursts of light shells, shorter in reach than the train's guns.
+    reload: 2.6,
+    muzzle: 8,
+    traverseDegPerSec: 150,
+    salvo: { count: 4, interval: 0.11 },
+    projectile: {
+      kind: 'shell',
+      speed: 280,
+      damage: 2.5,
+      blastRadius: 0,
+      tileDamage: 4,
+      minRange: 0,
+      maxRange: 230,
+      spread: 0.06,
+    },
+  },
+  trainHowitzer: {
+    id: 'trainHowitzer',
+    name: 'Train howitzer',
+    short: 'Howitzer',
+    role: 'auto',
+    category: 'munitions',
+    // A howitzer car's gun (SPEC-armored-train.md §T6): the field battery's area fire, two rounds
+    // on a smaller zone, from a car in view.
+    reload: 8,
+    muzzle: 12,
+    traverseDegPerSec: 40,
+    salvo: { count: 2, interval: 0.4 },
+    barrage: { radius: 26, flight: 2.6 },
+    projectile: {
+      kind: 'shell',
+      // Speed is set per round so each lands `barrage.flight` after it's fired.
+      speed: 150,
+      damage: 14,
+      blastRadius: 14,
+      tileDamage: 40,
+      // It can't lay its gun on anything close: hug the train and its shells fall beyond the hull.
+      minRange: 90,
+      maxRange: 330,
+      spread: 0,
+      lobbed: true,
+      strike: { target: 'hardpoints', bypass: 0.25 },
+    },
+  },
+  trainRockets: {
+    id: 'trainRockets',
+    name: 'Rocket car rack',
+    short: 'Rockets',
+    role: 'auto',
+    category: 'munitions',
+    // A rocket car's ripple (SPEC-armored-train.md §T6): six unguided rockets, wide of the mark as often as not.
+    reload: 6,
+    muzzle: 6,
+    traverseDegPerSec: 70,
+    salvo: { count: 6, interval: 0.14 },
+    projectile: {
+      kind: 'shell',
+      speed: 190,
+      damage: 4,
+      blastRadius: 5,
+      tileDamage: 12,
+      minRange: 0,
+      maxRange: 260,
+      spread: 0.1,
+    },
+  },
   troopRockets: {
     id: 'troopRockets',
     name: 'Troop car rockets',
@@ -1338,7 +1413,8 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     role: 'auto',
     category: 'munitions',
     // One huge shell (SPEC-armored-train.md §T7), laid on where the Behemoth will be when it lands.
-    reload: 9,
+    // Slower than it might be: the hull is at full speed the whole fight, with only its steering to get clear.
+    reload: 11,
     muzzle: 30,
     traverseDegPerSec: 30,
     barrage: { radius: 40, flight: 3.5, spread: 0 },

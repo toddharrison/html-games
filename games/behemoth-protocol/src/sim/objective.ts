@@ -28,8 +28,9 @@ import type { DoctrineId } from '../content/doctrines';
  *   tail drop mines in the Behemoth's path; light tanks screen it. A hauler past the extraction line
  *   has escaped.
  * - **Intercept:** an armored train runs the battle's rail line (`sim/train.ts`). Its engines are the
- *   targets; one that reaches the far end has escaped; a train stopped any other way (derailed) pays
- *   the rest of the bonus at once (`objectiveStopped`).
+ *   targets; one that reaches the far end has escaped; one left stranded behind a wreck counts as
+ *   destroyed (`objectiveStranded`); a train stopped any other way (derailed) pays the rest of the
+ *   bonus at once (`objectiveStopped`).
  * A target left behind the frame is lost. Each one destroyed pays its share of the mode's bonus
  * (`objectiveBonus`); missing some never stops the battle.
  *
@@ -307,6 +308,22 @@ export function objectiveStopped(w: World, x: number, y: number): void {
   o.destroyed = Math.max(o.destroyed, o.total - o.lost);
   for (const e of w.enemies) if (e.train) e.objective = false;
   paySalvage(w, x, y, objectiveBonus(o) - before, 'objective');
+}
+
+/**
+ * A train's engines left stranded behind a wreck (SPEC §7.3): out of the fight, so each counts as
+ * destroyed and pays its share of the bonus, though not its own salvage.
+ */
+export function objectiveStranded(w: World, engines: readonly Enemy[]): void {
+  const targets = engines.filter((e) => e.objective);
+  const at = targets[0];
+  if (!at) return;
+  const o = w.objective;
+  const before = objectiveBonus(o);
+  for (const e of targets) e.objective = false;
+  o.destroyed = Math.min(o.total - o.lost, o.destroyed + targets.length);
+  w.events.push({ type: 'objective', what: 'destroyed', enemy: at.def.id, x: at.x, y: at.y, done: objectiveSettled(o), stranded: targets.length });
+  paySalvage(w, at.x, at.y, objectiveBonus(o) - before, 'objective');
 }
 
 /** A target that's gone without being destroyed: it drops out of the battle. */

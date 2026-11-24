@@ -30,6 +30,14 @@ export const BOT = {
   /** Cost per unit off the guaranteed lane (it's rock-free and crosses rivers where it can), and per unit of swerve. */
   lanePull: 0.012,
   swerve: 0.03,
+  /**
+   * An armored train's line (SPEC §7.3): what a line on the rails costs, fading to nothing `trainRoom`
+   * units off them. Wrecks pile up there, abandoned cars blow up there, and the train runs down what's ahead of it.
+   */
+  onRails: 30,
+  trainRoom: 64,
+  /** Chasing a train, the pull toward the lane is this strong: its middle is the line's service road, clear the whole way. */
+  roadPull: 0.1,
   /** A new line must beat the current one by this much, so the hull doesn't flap between two. */
   stickiness: 3,
   /** Close enough to the line not to steer. */
@@ -90,8 +98,8 @@ export function demoCommand(w: World): PlayerCommand {
   let throttle: -1 | 0 | 1 = 0;
   if (plan.near >= BOT.brakeAt) throttle = -1;
   else if (w.objective.mode === 'chase' && objectivesAhead.length > 0) throttle = 1;
-  // An armored train: surge up it to the next engine, and keep station beside one in sight.
-  else if (w.objective.mode === 'intercept' && objectivesAhead.length > 0) throttle = objectivesAhead.some((e) => e.x < top) ? 0 : 1;
+  // An armored train outruns a cruise: surge the whole way up it, easing off only once level with the lead engine.
+  else if (w.objective.mode === 'intercept' && objectivesAhead.length > 0) throttle = 1;
   else if (w.objective.mode === 'breach' && objectivesAhead.some((e) => e.x < top)) throttle = -1;
   // No surging up to a fortress: it would roll past the guns before it could knock them out.
   else if (seen.length === 0 && plan.total < BOT.surgeBelow && !(w.objective.mode === 'breach' && objectivesAhead.length + (w.objective.fortress ? 1 : 0) > 0)) throttle = 1;
@@ -166,7 +174,8 @@ function planLine(w: World): Plan {
   let best: Plan | null = null;
   const score = (y: number) => {
     const { near, total, clear } = lineCost(w, y, half, cost);
-    return { near, total, clear, s: total + BOT.lanePull * Math.abs(y - lane) + BOT.swerve * Math.abs(y - b.y) };
+    const rails = w.train ? BOT.onRails * Math.max(0, 1 - Math.abs(y - w.terrain.lineY(b.x + BOT.lookAhead / 2)) / BOT.trainRoom) : 0;
+    return { near, total, clear, s: total + rails + (w.train ? BOT.roadPull : BOT.lanePull) * Math.abs(y - lane) + BOT.swerve * Math.abs(y - b.y) };
   };
   let bestS = Infinity;
   for (let y = margin; y <= w.terrain.height - margin; y += BOT.lineStep) {

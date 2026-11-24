@@ -96,12 +96,13 @@ function ramBig(w: World, e: Enemy, box: Box, dt: number): void {
  * The armored train (SPEC-armored-train.md §T10), met before anything is crushed:
  * - a piece under way whose front reaches the hull on the track ahead of it (or the trailer in
  *   tow) runs into it (`trainStrikes`) and shoves it out of the way, toward the line's wide side;
- * - an engine and the railway gun are too big to crush, and so are their hulks and wrecks: the hull
- *   is deflected and slides along them as against rock, ramming one at first contact head-on
+ * - an engine and the railway gun are too big to crush, and so are their wrecks: the hull is
+ *   deflected and slides along them as against rock, ramming one at first contact head-on
  *   (`ramDamage`, at the speed it closes; it's on rails, so it isn't shoved), scraping armor all
- *   the while; held at a hulk's or wreck's face with nowhere to go, it grinds through after a while;
- * - every other car is a heavy obstacle, plowed through like any unit: destroyed, it parts the
- *   chain. A hulk in the chain or a car's wreck is plowed the same way (`plowVehicle`).
+ *   the while; held at a wreck's face with nowhere to go, it grinds through after a while;
+ * - every other car is a heavy obstacle, plowed through like any unit: destroyed, it wrecks where
+ *   it is and parts the chain like any vehicle destroyed. A car's wreck is plowed the same way
+ *   (`plowVehicle`).
  */
 function meetTrain(w: World, dt: number, steer: -1 | 0 | 1): void {
   const tr = w.train;
@@ -117,8 +118,9 @@ function meetTrain(w: World, dt: number, steer: -1 | 0 | 1): void {
     const r = body.rect;
     const cx = (r.x0 + r.x1) / 2;
     const cy = (r.y0 + r.y1) / 2;
-    // Struck, or still being shoved clear of the train's path after it.
-    if (body.leading && cx < b.x && body.speed >= b.vx && (strikes(w, body, 0) || (tr.shoving && strikes(w, body, TRAIN.collide.strike.clear)))) {
+    // Struck, or still being shoved clear of the train's path after it. Only a hull ahead of its
+    // nose is run into: the train outruns a cruise, and a hull it's merely passing scrapes along it.
+    if (body.leading && r.x1 < b.x && body.speed >= b.vx && (strikes(w, body, 0) || (tr.shoving && strikes(w, body, TRAIN.collide.strike.clear)))) {
       if (tr.struck <= 0 && strikes(w, body, 0)) trainStrikes(w, body.index);
       tr.shoving = true;
       // Shoved ahead of its nose and off to the side, until it's clear.
@@ -202,7 +204,7 @@ function deflectOffBody(w: World, body: TrainBody, cx: number, cy: number, was: 
     const dir = steer !== 0 ? steer : Math.sign(b.y - cy) || wide;
     if (mobile(b)) b.vy = dir * Math.max(DEFLECT.minSlideSpeed, b.vx * DEFLECT.slideSpeedScale);
     damageTreads(b, damageFront(b, at.x, at.y, scrape, w.events), w.events);
-    // A hulk or a wreck that won't let the hull by: after a while it grinds through.
+    // A wreck that won't let the hull by: after a while it grinds through.
     v.held = (v.held ?? 0) + dt;
     if (!body.unit && body.speed === 0 && v.held >= TRAIN.collide.grind) plowVehicle(w, body.index);
     if (w.tick % 6 === 0) w.events.push({ type: 'scrape', x: at.x, y: at.y });

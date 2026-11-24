@@ -87,7 +87,7 @@ export function destroyEnemy(w: World, e: Enemy, cause: KillCause): void {
   if (e.def.mobility !== 'foot' && cause !== 'crushed' && cause !== 'hazard') burnWreck(w, e.x, e.y);
   paySalvage(w, e.x, e.y, Math.round(e.def.salvage * (e.train ? trainSalvageShare(w, e, cause) : 1)), 'unit');
   if (e.objective) objectiveTaken(w, e);
-  // A train's vehicle stays in the chain as a hulk, or parts it (SPEC §7.3).
+  // A train's vehicle wrecks where it is and parts the chain (SPEC §7.3).
   if (e.train) trainVehicleDestroyed(w, e, cause);
 }
 
@@ -324,7 +324,7 @@ const CENTER = { x: 0, y: 0 };
 /** Every gun on the unit: the main one (on its center), then any extra turrets. */
 function aimAndFire(w: World, e: Enemy, dt: number): void {
   const d = e.def;
-  // A train's vehicle cut loose: its crew has left the guns (SPEC §7.3).
+  // A train's vehicle abandoned behind a wreck: its crew has left the guns (SPEC §7.3).
   if (e.train && e.ai.charging) {
     for (const g of [e, ...e.guns]) {
       g.windup = 0;

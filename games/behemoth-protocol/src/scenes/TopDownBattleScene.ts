@@ -597,7 +597,7 @@ export class TopDownBattleScene extends Phaser.Scene {
   }
 
   /** The banner for an objective event (SPEC §4.4). */
-  private objectiveCall(what: 'destroyed' | 'lost', done: boolean, enemy: EnemyId): string {
+  private objectiveCall(what: 'destroyed' | 'lost', done: boolean, enemy: EnemyId, stranded = 0): string {
     const o = this.world.objective;
     const names = MODES[o.mode].target ?? ['target', 'targets'];
     if (enemy === 'commandPost') return what === 'destroyed' ? 'Command post destroyed\nReinforcements cut off' : 'Command post bypassed\nObjective missed';
@@ -613,8 +613,10 @@ export class TopDownBattleScene extends Phaser.Scene {
     if (o.mode === 'intercept') {
       const left = o.total - o.destroyed - o.lost;
       if (what === 'lost') return left > 0 ? `An engine got through\n${left} ${left === 1 ? names[0] : names[1]} left on the field` : `The train got through\n${o.destroyed} of ${o.total} engines destroyed: +${paid}`;
-      if (done && objectiveComplete(o)) return `Last engine destroyed - 100%\nThe train is stopped: +${paid}`;
-      return `Engine destroyed - ${pct}%\n+${paid} salvage - the train slows`;
+      // Left behind a wreck (SPEC §7.3): out of the fight, and counted.
+      const fate = stranded > 0 ? (stranded === 1 ? 'Engine stranded' : `${stranded} engines stranded`) : 'Engine destroyed';
+      if (done && objectiveComplete(o)) return `${stranded > 0 ? fate : 'Last engine destroyed'} - 100%\nThe train is stopped: +${paid}`;
+      return `${fate} - ${pct}%\n+${paid} salvage - the train slows`;
     }
     if (done) {
       if (objectiveComplete(o)) return o.mode === 'breach' ? `Fortress breached - 100%\nEvery gun silenced: +${paid}` : `Convoy destroyed - 100%\nNothing got away: +${paid}`;
@@ -986,7 +988,7 @@ export class TopDownBattleScene extends Phaser.Scene {
         case 'enemyDestroyed': {
           const wreck = ENEMY_ART[ev.enemy].wreck;
           if (ENEMY_ART[ev.enemy].hulk) {
-            // A train's vehicle: the fireball, and its hulk stays with the train (`TrainView`).
+            // A train's vehicle: the fireball; its wreck lies where it left the rails (`TrainView`).
             this.fx.bigExplosion(ev.x, ev.y);
             this.shake(140, ev.cause === 'crushed' ? 2 : 3);
             break;
@@ -1047,7 +1049,7 @@ export class TopDownBattleScene extends Phaser.Scene {
           if (ev.rising) this.squallShownAt = w.time;
           break;
         case 'objective':
-          this.objectiveShown = { at: w.time, text: this.objectiveCall(ev.what, ev.done, ev.enemy) };
+          this.objectiveShown = { at: w.time, text: this.objectiveCall(ev.what, ev.done, ev.enemy, ev.stranded) };
           break;
         case 'mineLaid':
         case 'lidOpen':
@@ -1068,14 +1070,20 @@ export class TopDownBattleScene extends Phaser.Scene {
         case 'mineFlung':
           this.fx.smokePuff(ev.x0, ev.y0);
           break;
-        case 'trainCutLoose':
-          this.objectiveShown = { at: w.time, text: `Section cut loose - ${ev.cars} cars\nScuttling charges set: get clear` };
+        case 'trainAbandoned':
+          this.objectiveShown = { at: w.time, text: `${ev.cars} ${ev.cars === 1 ? 'car' : 'cars'} abandoned behind the wreck\nScuttling charges set: get clear` };
           break;
         case 'trainScuttle':
           this.shake(120, 2.5);
           break;
         case 'trainBroken':
-          this.objectiveShown = { at: w.time, text: 'The train is cut in two' };
+          // Blown off the rails: the wreck's scar, and what was coupled behind it coming on.
+          this.fx.buildingCollapse(ev.x, ev.y);
+          this.units.addDecal('scorch', ev.x, ev.y, ev.heading, 1.5);
+          if (ev.behind > 0) {
+            this.shake(220, 3.5);
+            this.objectiveShown = { at: w.time, text: `The train is cut in two\n${ev.behind} ${ev.behind === 1 ? 'car piles' : 'cars pile'} into the wreck` };
+          }
           break;
         case 'trainDerail':
           if (ev.sunk) this.fx.splash(ev.x, ev.y, 30);

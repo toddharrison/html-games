@@ -32,6 +32,10 @@ export type EnemyId =
   | 'trainEngine'
   | 'trainRailwayGun'
   | 'trainGunCar'
+  | 'trainTwinGunCar'
+  | 'trainAutocannonCar'
+  | 'trainHowitzerCar'
+  | 'trainRocketCar'
   | 'trainMissileCar'
   | 'trainTroopCar'
   | 'trainMineCar'
@@ -806,6 +810,103 @@ export const ENEMIES: Record<EnemyId, EnemyDef> = {
     spawn: 'objective',
     threat: 0,
     salvage: 20,
+  },
+  trainTwinGunCar: {
+    // Two of the gun car's turrets on one long mount, fore and aft, each laid on its own (§T6).
+    id: 'trainTwinGunCar',
+    name: 'Twin gun car',
+    hp: 190,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 0,
+    weapon: null,
+    fireRange: 0,
+    aimTime: 0,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 28,
+    turrets: [
+      { weapon: 'emplacementGun', pivot: { x: 9, y: 0 }, turretDegPerSec: 40, fireRange: 270, aimTime: 0.9, target: 'behemoth' },
+      { weapon: 'emplacementGun', pivot: { x: -9, y: 0 }, turretDegPerSec: 40, fireRange: 270, aimTime: 0.9, target: 'behemoth' },
+    ],
+  },
+  trainAutocannonCar: {
+    // A quick-firing mount: short bursts at anything that comes inside its reach (§T6).
+    id: 'trainAutocannonCar',
+    name: 'Autocannon car',
+    hp: 130,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 150,
+    weapon: 'trainAutocannon',
+    fireRange: 220,
+    aimTime: 0.5,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 16,
+  },
+  trainHowitzerCar: {
+    // A howitzer on a turntable: it marks a zone where the hull will be and drops a pair of rounds
+    // on it (the field battery's fire; it can't lay its gun on what's close, §T6).
+    id: 'trainHowitzerCar',
+    name: 'Howitzer car',
+    hp: 130,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 40,
+    weapon: 'trainHowitzer',
+    fireRange: 320,
+    aimTime: 0.9,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 20,
+  },
+  trainRocketCar: {
+    // A rack of unguided rockets, rippled off at the hull: wild, but a lot of them (§T6).
+    id: 'trainRocketCar',
+    name: 'Rocket car',
+    hp: 120,
+    targetClass: 'heavy',
+    facing: CAR_FACING,
+    reverseSpeed: 0,
+    radius: 13,
+    obstacle: 'heavy',
+    mobility: 'tracked',
+    canHide: false,
+    maxSpeed: 0,
+    accel: 0,
+    turretDegPerSec: 70,
+    weapon: 'trainRockets',
+    fireRange: 250,
+    aimTime: 1,
+    behavior: fixed(),
+    spawn: 'objective',
+    threat: 0,
+    salvage: 18,
   },
   trainMissileCar: {
     // A rack of the missile launcher's homing missiles, fired in pairs (§T6).

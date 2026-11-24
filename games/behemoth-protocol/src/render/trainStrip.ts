@@ -11,16 +11,16 @@ import { damageLevel } from './statusFx';
 const PIP = { w: 9, gap: 2, max: 12, min: 7 };
 /** Space kept clear above and below the strip (the top banner, the field's bottom edge). */
 const MARGIN = 24;
-/** Cut-loose cars flash this many times a second until they blow. */
+/** Abandoned cars flash this many times a second until they blow. */
 const FLASH_HZ = 6;
 
 /**
  * The armored train strip (SPEC-armored-train.md §T13): a narrow column down the battlefield's edge
  * on the line's narrow side, one pip per vehicle, the front at the top. Each pip is colored by
- * integrity (dark for a hulk, an empty frame for a wreck or a vehicle gone), with its car's letter
+ * integrity (an empty frame for a wreck or a vehicle gone), with its car's letter
  * (`TrainCarDef.glyph`); engines are framed, the railway gun framed in amber. A bracket beside it
- * marks the vehicles in the frame, a notch where the Behemoth is along the train, and cut-loose
- * cars flash until their charges go. The train is longer than the screen: this is how the player
+ * marks the vehicles in the frame, a notch where the Behemoth is along the train, and cars
+ * abandoned behind a wreck flash until their charges go. The train is longer than the screen: this is how the player
  * finds the engines. Fixed to the screen.
  */
 export class TrainStrip {
@@ -65,8 +65,8 @@ export class TrainStrip {
     if (!tr) return;
     const h = this.pitch - PIP.gap;
     const units = new Map(w.enemies.filter((e) => e.train && e.alive).map((e) => [e.id, e]));
-    const coasting = new Set<number>();
-    for (const p of tr.pieces) if (p.state === 'coasting') for (let i = p.first; i <= p.last; i++) coasting.add(i);
+    const abandoned = new Set<number>();
+    for (const p of tr.pieces) if (p.state === 'abandoned') for (let i = p.first; i <= p.last; i++) abandoned.add(i);
     const flash = Math.floor(time * FLASH_HZ * 2) % 2 === 0;
     const left = w.frame.left;
     const right = frameRight(w.frame);
@@ -95,7 +95,7 @@ export class TrainStrip {
         return;
       }
       let color = e ? integrityColor(e.hp / e.def.hp) : hex(PAL.hudLine);
-      if (coasting.has(i) && flash) color = 0xffffff;
+      if (abandoned.has(i) && flash) color = 0xffffff;
       g.fillStyle(color).fillRect(this.x, y, PIP.w, h);
       glyph.setTint(hex(e ? PAL.hudBg : PAL.hudDim)).setVisible(h >= 5);
     });

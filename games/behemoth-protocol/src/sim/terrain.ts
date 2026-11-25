@@ -1902,6 +1902,32 @@ export class Terrain {
     return true;
   }
 
+  /**
+   * An EMP pulse over the tiles within `radius` of a point (SPEC §6 EMP emitter): whatever a pulse
+   * kills (`MaterialDef.empTo`: a mine, swept or not) turns into what's left of it without going
+   * off. Returns how many it killed; each pushes a `mineFried`.
+   */
+  pulse(x: number, y: number, radius: number, events: SimEvent[]): number {
+    const r2 = radius * radius;
+    let killed = 0;
+    for (let c = Math.floor((x - radius) / TS); c <= Math.floor((x + radius) / TS); c++) {
+      for (let r = Math.max(0, Math.floor((y - radius) / TS)); r <= Math.min(this.rows - 1, Math.floor((y + radius) / TS)); r++) {
+        const t = this.tile(c, r);
+        const to = t && t.state === 'intact' ? MATERIALS[t.mat].empTo : undefined;
+        if (!t || !to) continue;
+        const cx = (c + 0.5) * TS;
+        const cy = (r + 0.5) * TS;
+        if ((cx - x) * (cx - x) + (cy - y) * (cy - y) > r2) continue;
+        t.mat = to;
+        t.hp = MATERIALS[to].maxHp;
+        delete t.seen;
+        events.push({ type: 'mineFried', x: cx, y: cy });
+        killed++;
+      }
+    }
+    return killed;
+  }
+
   obstacleAt(col: number, row: number): ObstacleClass {
     const t = this.tile(col, row);
     return t ? MATERIALS[t.mat].obstacle[t.state] : 'none';

@@ -139,6 +139,8 @@ export interface MaterialDef {
   explodes?: { radius: number; damage: number; fuse: number; fire?: boolean };
   /** Invisible until the Behemoth's sensors sweep it (minefields): it looks like open ground. */
   hidden?: boolean;
+  /** An EMP pulse kills it (a mine's fuze, SPEC §6 EMP emitter): it turns into this without going off. */
+  empTo?: MaterialId;
   /** Open ground: a single blast hit this hard (tile damage) leaves a crater. */
   scars?: number;
   /** What knocking it down throws off (effects and sound). */
@@ -369,6 +371,7 @@ export const MATERIALS: Record<MaterialId, MaterialDef> = {
     hidden: true,
     explodes: { radius: 14, damage: 30, fuse: 0 },
     breaksTo: 'crater',
+    empTo: 'ground',
   },
   bridge: {
     // A girder bridge over a river: the fast, dry crossing, and the only one besides fords for

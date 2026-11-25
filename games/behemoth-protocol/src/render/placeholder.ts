@@ -1737,11 +1737,16 @@ function makeObjectiveUnits(scene: Phaser.Scene): void {
     // A squat cupola with a fuel tank behind it and a stubby nozzle, its pilot light burning.
     p.rect(pivotX, c - 1, tw - pivotX, 3, PAL.outline);
     p.rect(pivotX, c, tw - pivotX - 1, 1, PAL.steelMid);
-    p.px(tw - 1, c, PAL.amberHot);
+    p.px(tw - 1, c, PAL.torchHot);
     p.rect(0, 0, 6, th, PAL.outline);
     p.rect(1, 1, 4, th - 2, PAL.warn);
     p.rect(1, 1, 4, 1, PAL.amber);
     p.px(2, c, PAL.outline);
+  });
+  // A mine an EMP pulse killed (SPEC §6 EMP emitter): its lid dark and burnt out, no warning ticks.
+  canvasTexture(scene, 'mine_dud', 7, 7, (p) => {
+    p.disc(3.5, 3.5, 3.2, PAL.ash, PAL.mineBody, PAL.hole);
+    p.px(3, 3, PAL.hole);
   });
   // A mine in a flinger's throw (SPEC-armored-train.md §T6), before it's live.
   canvasTexture(scene, 'flung_mine', 5, 5, (p) => {

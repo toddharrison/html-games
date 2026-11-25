@@ -306,6 +306,21 @@ export const FLAME_RAMP: readonly RampStop[] = [
   { heat: 230, color: 0xfff8dc, alpha: 1 },
 ];
 
+/**
+ * A hotter flame, heat for heat: blue through to a white core, the color of a cutting torch. It's
+ * what can burn the Behemoth's armor (an enemy's flame projector, SPEC §6 "Fire"), so it has to
+ * read apart from every fire that can't.
+ */
+export const HOT_RAMP: readonly RampStop[] = [
+  { heat: 22, color: 0x14205e, alpha: 0.55 },
+  { heat: 44, color: 0x1a38a4, alpha: 0.9 },
+  { heat: 70, color: 0x2060dc, alpha: 1 },
+  { heat: 104, color: 0x2e8cf4, alpha: 1 },
+  { heat: 142, color: 0x52b8ff, alpha: 1 },
+  { heat: 186, color: 0x96e0ff, alpha: 1 },
+  { heat: 230, color: 0xeafcff, alpha: 1 },
+];
+
 /** The ramp as a table of packed pixels for `HeatField.paint`, in this machine's byte order (as canvas `ImageData` wants them). */
 export function rampTable(stops: readonly RampStop[] = FLAME_RAMP): Uint32Array {
   const table = new Uint32Array(256);

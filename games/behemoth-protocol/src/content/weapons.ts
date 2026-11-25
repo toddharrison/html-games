@@ -808,8 +808,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     mass: 40,
     name: 'EMP emitter',
     short: 'EMP',
-    blurb: 'A pulse that stops vehicles dead for a few seconds.',
-    // On Auto it waits for a crowd (`EMP.autoMin` vehicles in reach), a bomb truck, or a missile.
+    blurb: 'A pulse that stops vehicles dead for a few seconds and kills mines.',
+    // On Auto it waits for a crowd (`EMP.autoMin` vehicles in reach), a bomb truck, a missile, or a
+    // swept mine in the hull's path (`EMP.mineAhead`).
     role: 'auto',
     category: 'energy',
     reload: 9,
@@ -818,7 +819,7 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     autoGroup: 4,
     // Half a stock capacitor: firing it leaves little for the lasers.
     power: 30,
-    projectile: { kind: 'pulse', radius: 110, stun: 3.5, stunVs: { heavy: 0.6 } },
+    projectile: { kind: 'pulse', radius: 130, stun: 3.5, stunVs: { heavy: 0.6 } },
   },
   flamethrower: {
     id: 'flamethrower',

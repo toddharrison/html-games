@@ -22,6 +22,7 @@ import { OilViews, PoolViews } from '../render/poolView';
 import { SalvageMotes } from '../render/salvageView';
 import { LockViews } from '../render/lockView';
 import { BarrageViews } from '../render/barrageView';
+import { MineRings } from '../render/mineView';
 import { WeatherView } from '../render/weatherView';
 import { CONDITIONS, conditionName } from '../content/conditions';
 import { sightRadius } from '../sim/conditions';
@@ -116,6 +117,7 @@ export class TopDownBattleScene extends Phaser.Scene {
   /** Heavy weapons teams' lock-ons: the designator, the team's ring, the brackets on the hull. */
   private locks!: LockViews;
   private barrages!: BarrageViews;
+  private mineRings!: MineRings;
   /** The condition's veil and weather (SPEC §4.6); null for a clear battle. */
   private weather: WeatherView | null = null;
   private fx!: Effects;
@@ -232,6 +234,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.salvage = new SalvageMotes(this);
     this.locks = new LockViews(this);
     this.barrages = new BarrageViews(this);
+    this.mineRings = new MineRings(this);
     this.weather = WeatherView.create(this, this.layout, this.world);
     this.flames = new FlameLayer(this, this.layout);
     this.fx = new Effects(this, this.flames);
@@ -738,6 +741,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     );
     this.flames.update(dt, this.cameras.main);
     this.barrages.update(w.barrages, w.time);
+    this.mineRings.update(w.terrain, w.frame.left, this.layout.height, w.time);
     this.locks.update(w.enemies, b, this.interp, w.time);
     // Salvage flies to the hull (a gone hull: it scatters and fades).
     const landed = this.salvage.update(dt, b.destroyed ? null : bp);
@@ -870,6 +874,11 @@ export class TopDownBattleScene extends Phaser.Scene {
         case 'emp':
           this.fx.empRing(ev.x, ev.y, ev.radius);
           this.shake(120, 1);
+          break;
+        case 'mineFried':
+          // Its fuze burnt out: a crackle, and the dead lid left lying (under the treads' marks).
+          this.fx.sparks(ev.x, ev.y);
+          this.units.addDecal('mine_dud', ev.x, ev.y, 0, 0.5);
           break;
         case 'rail':
           this.fx.railStreak(ev.x0, ev.y0, ev.x1, ev.y1, WEAPONS[ev.weapon].size === 'L', ev.hits);
@@ -1122,7 +1131,8 @@ export class TopDownBattleScene extends Phaser.Scene {
           break;
         }
         case 'hullBurn':
-          this.fx.flame(ev.x, ev.y);
+          // The projector's blue flame, where it plays on the armor.
+          this.fx.flame(ev.x, ev.y, true);
           if (Math.random() < 0.3) this.fx.ember(ev.x, ev.y);
           break;
         case 'mineFlung':

@@ -316,6 +316,14 @@ An Intercept battle's terrain has a hardened double track from its first column 
 
 ---
 
+### Swept mines pulse a warning ring
+`M4` · `uncommitted` · `playtest: pending` · SPEC §4.5 "Minefields", §15 "Warning colors"
+User request (Nov 24, 2026): "spotted mines should pulse a warning ring (same color as fire warnings)". Every mine the sensors have swept (and every mine a layer or a train's flinger puts down: they're laid seen) shows a 1 px ring in `PAL.enemyHi`, the color of an artillery zone's ring: it swells from the lid (3 px) to the edge of its tile (7.5 px) and fades, once every 1.1 s, and each tile runs 0.09 s behind its neighbor so a field ripples.
+- `render/mineView.ts`: `MINE_RING` (period, radii, alpha, ripple), `mineRing(time, col, row)` (pure: the ring's radius and opacity), `MineRings` (one `Graphics`, depth 5.85: just under the barrage rings, above the night's and a storm's veil at 5.8, so it shows in the dark). It walks the tiles in the frame each frame (`mat === 'mine' && seen`); wired in `TopDownBattleScene` beside `barrages`.
+- The swept mine's tile art (the lid and its tick, `tileArt.ts`) is unchanged under the ring.
+- Tests: `tests/render/mineView.test.ts` (swells and fades inside its tile, repeats each period, neighbors out of step).
+- **Limits:** the ring is drawn over anything standing on the tile (a unit driving across its own minefield, the hull's edge beside one). A jettisoned trailer and a mine in a flinger's throw have their own looks and no ring.
+
 ## 4. Collisions
 
 ### Crush and plow
@@ -449,12 +457,22 @@ User request (Nov 23, 2026): a missile pod that attacks many units on screen at 
 
 ### EMP emitter
 `M3` · `341df36` · `playtest: pending` · SPEC §6, §15 "New weapons (M3)", §16 Q34
-User request (Nov 23, 2026): an EMP pulse that disables nearby vehicles for a short time. An M energy weapon, Auto (group 4) by default: a pulse from the mount that stuns every vehicle within 110 (to its body) for 3.5 s (heavy ×0.6), and fries enemy missiles in reach. Troops on foot are untouched; no damage.
+User request (Nov 23, 2026): an EMP pulse that disables nearby vehicles for a short time. An M energy weapon, Auto (group 4) by default: a pulse from the mount that stuns every vehicle within 130 (to its body; 110 until Nov 24) for 3.5 s (heavy ×0.6), and fries enemy missiles in reach. Troops on foot are untouched; no damage. **Since Nov 24 it also kills mines: the next entry.**
 - Content: `empEmitter` (40 t, power 30, reload 9), `PulseSpec` (kind `pulse`: `radius`, `stun`, `stunVs`), `DEPOT_WEAPONS` (140), `EMP` in tuning.ts (`autoMin` 2, `renew` 0.5).
 - Sim: `sim/emp.ts`: `empable` (alive, not `foot`), `stun` (max of the old and new stun; zeroes velocity; clears every gun's `windup`, `salvoLeft`, `zone`), `pulseWorth` (Auto: `autoMin` working vehicles in reach, any bomb truck, or an enemy missile), `firePulse` (`fire` + `emp` events). `stepPulse` in weapons.ts (Auto or a held trigger). `Enemy.stunned`: `stepEnemies` counts it down and skips moving and firing while it lasts (it can still be sighted, and the hull can still run it down).
 - Render/audio: `Effects.empRing` (expanding ring and flash) and a small shake; `Effects.arc` crackles off stunned units (`FireView`); `wpn_empEmitter` mount, cutaway dish; `emp` sound (falling whine, thump, crackle). No muzzle flash.
 - **Gotcha:** `shotSpec` and `roundSpec` throw for `pulse`; `magazineLoad` reads `'damage' in spec`.
 - **Limits:** it can't fire while lasers keep the capacitor under 30 (the HUD row reads `NO PWR`); a stunned unit just stops (a hovercraft doesn't drift); a field battery's marked zone stays up after its volley is cut off (as when the battery dies).
+
+### EMP kills mines; a longer reach
+`M4` · `uncommitted` · `playtest: pending` · SPEC §6 "EMP emitter", §4.5 "Minefields", §15 "EMP and mines"
+User requests (Nov 24, 2026): "emp should disable mines" and "the range on the emp needs to be a bit bigger". A pulse kills every mine within its reach for good, swept or not, without setting it off; the reach is **130** (was 110). On Auto it now also fires for a swept mine the hull is about to roll onto.
+- Content: `MaterialDef.empTo` (content/terrain.ts: what a pulse turns a tile into; `mine` → `ground`); `empEmitter`'s `radius` 130 and its blurb; `EMP.mineAhead` 60 (tuning.ts).
+- Sim: `Terrain.pulse(x, y, radius, events)` turns every intact `empTo` tile whose center is in reach into that material (no blast, no `tileChanged`) and pushes a `mineFried` each. `fryFlung` (sim/trainCars.ts) drops a train flinger's mines in reach from `TrainState.flung`, by where they are in their throw. `firePulse` (sim/emp.ts) calls both; the `emp` event carries `mines`. `pulseWorth` → `mineAhead`: a seen, intact mine within `EMP.mineAhead` of the nose along the hull's heading, within half the hull's width plus half a tile of its centerline, and within the pulse's reach of the emitter.
+- Render: `mineFried` → sparks and a `mine_dud` decal (placeholder.ts: a burnt-out lid, depth 0.5, under the tread marks). The warning ring (§3 "Swept mines pulse a warning ring") goes with the tile.
+- Tests: `tests/sim/newWeapons.test.ts` "EMP emitter" (mines in reach die, swept or not, one out of reach stays, the treads roll over a dead one unhurt; Auto holds for a mine off to the side and far ahead, then fires within `mineAhead`; a flung mine in reach by where it is in the air).
+- **Gotcha:** the emitter starts a battle on its reload, and on Auto a pulse spent on a mine isn't there for the vehicles that turn up in the next 9 s (and the other way round). Checked in a staged battle: a minefield nine tiles deep cost a stock hull two mines after the first pulse cleared the near three rows.
+- **Limits:** no sound of its own for a mine dying (the pulse's own plays). The autopilot doesn't know a pulse will clear its path: it still steers round swept mines. Not run through the bench. The Behemoth's own jettisoned trailer (`w.mines`) is untouched by design.
 
 ### Flamethrower
 `M3` · `341df36`, stream and fuel `dfa7791` · `playtest: pending` · SPEC §6, §6.3, §15 "New weapons (M3)"
@@ -971,6 +989,15 @@ User request (Nov 24, 2026; quoted at the head of the spec's §T21): flamethrowe
 - **Gotcha:** riders are flagged `Enemy.train`, so everything that tests that flag treats them as part of the train (not crushed by the hull while they ride, not despawned behind the frame, no threat). `trainVehicleDestroyed` is called for them too and finds no vehicle: that's expected.
 - **Limits:** the flame passes over a trailer in tow without harming it. The autopilot never closes in, so it never meets the flamethrowers and has no answer to an ambush car beyond shooting it. The ambush car's turrets overlap a little in the placeholder art. The train strip (hidden) shows an ambush car's `Q` before it unmasks, and nothing for riders. The nests are big for the roof (two fill a boxcar). A train with a car at its head sounds no danger signal before it strikes. Still not consistent with the rest: the fifteen train units in content/enemies.ts each repeat the same dozen fields (a shared base would cut about 200 lines); the four train test files each carry their own copy of the `world`/`run`/`unit` helpers; SPEC-armored-train.md is still apart from SPEC.md.
 - Tests: `tests/sim/trainCloseQuarters.test.ts` (26: the sample train, the flamethrowers in and out of reach, into the lane, and what they don't burn; riders only on clear roofs, by odds and the same for a seed, carried, in cover, shot off, lost with a wreck, set down from an abandoned car, underground; the mask on, dropped by range, given away by a hit, kept off screen; own-train wreck piles, another train's is plowed, never the engine's last hit point, a car at the head piles in; the engine's blast); `tests/audio/cues.test.ts` (the danger signal, the new cues); two older tests changed with the rules (`trainCars.test.ts` strike, now with a car at the head; `attackTrains.test.ts`, the next train plows the wreck). 936 tests pass; headless runs of `?seed=3&mode=intercept`, `?seed=5&mode=gauntlet`, and `?seed=3&mode=intercept&train=all` threw nothing (the two modes before the user's follow-ups, a staged run of riders and nests after).
+
+### Blue flame: the fire that burns the hull
+`M4` · `uncommitted` · `playtest: pending` · SPEC §6.3 "The Behemoth", §11.3 "Fire and smoke", §15 "Warning colors", SPEC-armored-train.md §T21
+User request (Nov 24, 2026): "The flame from the train engine that can damage the behemoth should be blue not red because it's hotter so it can damage the behemoth." An enemy's flame stream (today only the engines' `trainFlamer`) is drawn through a blue ramp; the player's flamethrower and every other fire are as they were. The licks where it plays on the hull (`hullBurn`), its glow on the ground, and the projector's pilot light (`PAL.torchHot` in `train_flamer`) are blue too.
+- Sim: the `flame` event carries `owner` (`shootFlame` in sim/fire.ts). Nothing else changed: what the flame does is as in the entry above.
+- Render: `HOT_RAMP` (render/flameField.ts: `FLAME_RAMP`'s heat stops and opacities, in blue to a white core). `FlameLayer` (render/flameLayer.ts) has a third heat field and sheet for it (`hot`, texture `hot_flame_field`, the flames' depth, its own noise seed); `spot(…, hot)` and `spray(…, hot)` feed it, and a gob keeps its `hot`. `FireView.jet` sets `hot` from `ev.owner === 'enemy'`; `Effects.flame(x, y, hot)`. The glow is one image for both fields: each cell is colored by the two fields' share of its light (`GLOW_COLOR`, `HOT_GLOW_COLOR`).
+- Tests: `tests/render/flameField.test.ts` (the hot ramp has the same bands and is blue over red in each; ordinary fire is red over blue), `tests/sim/trainCloseQuarters.test.ts` (the engine's stream is the enemy's).
+- **Gotcha:** the color follows the owner, not the weapon: any enemy unit given a `flame` round burns blue with no further work, and a `FlameSpec` has no color of its own.
+- **Limits:** what the blue stream sets alight (a wood, a hedge) burns ordinary orange, as it should. The embers off the hull are still orange. With nothing blue burning the third field does no work.
 
 ### Attack trains, the Gauntlet mode, bigger wrecks, a shield car
 `M4` · `8434770` · `playtest: pending` · SPEC-armored-train.md §T20, §T18 Q25–Q31

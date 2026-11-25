@@ -154,7 +154,7 @@ describe('an engine\'s flamethrowers (§T21)', () => {
     // Drawn as a stream of the engine's own, not the Behemoth's.
     const jets = events.filter((e) => e.type === 'flame');
     expect(jets.length).toBe(licks.length);
-    for (const j of jets) expect(j.type === 'flame' && j.slot.startsWith('enemy')).toBe(true);
+    for (const j of jets) expect(j.type === 'flame' && j.slot.startsWith('enemy') && j.owner === 'enemy').toBe(true);
     const burns = events.filter((e) => e.type === 'hullBurn');
     expect(burns.length).toBeGreaterThan(5);
     expect(before - b.armor[arc].hp).toBeCloseTo(burns.length * flamer.damage, 5);

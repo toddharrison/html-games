@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FLAME_RAMP, HeatField, rampTable } from '../../src/render/flameField';
+import { FLAME_RAMP, HeatField, HOT_RAMP, rampTable } from '../../src/render/flameField';
 
 const W = 40;
 const H = 40;
@@ -116,6 +116,20 @@ describe('heat field', () => {
     expect(ramp[FLAME_RAMP[0]!.heat - 1]).toBe(0);
     expect(bytes[255 * 4 + 3]).toBe(255);
     expect(bytes[255 * 4]).toBe(0xff);
+  });
+
+  it('the hot ramp is the same bands in blue: it can never be taken for ordinary fire', () => {
+    expect(HOT_RAMP.map((s) => [s.heat, s.alpha])).toEqual(FLAME_RAMP.map((s) => [s.heat, s.alpha]));
+    const channels = (c: number) => [(c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff] as const;
+    for (const s of HOT_RAMP) {
+      const [r, , b] = channels(s.color);
+      expect(b).toBeGreaterThan(r);
+    }
+    // Ordinary fire is red over blue in every band, up to its near-white core.
+    for (const s of FLAME_RAMP) {
+      const [r, , b] = channels(s.color);
+      expect(r).toBeGreaterThan(b);
+    }
   });
 
   it("the glow is the fire's light at a coarser scale, spread a little past it", () => {

@@ -1,14 +1,19 @@
 import { EMP } from '../content/tuning';
 import type { PulseSpec, WeaponDef } from '../content/weapons';
+import { MATERIALS } from '../content/terrain';
+import { hullWidth } from './behemoth';
 import { markFlash } from './conditions';
 import type { Enemy } from './entities';
+import { fryFlung } from './trainCars';
 import type { World } from './world';
 
 /**
  * EMP (SPEC §6 EMP emitter): a pulse out from the emitter that knocks out every vehicle in reach
  * for a few seconds (`Enemy.stunned`: it stops dead, its guns stop tracking, and any shot it was
- * lining up or volley it was firing is lost) and fries enemy missiles in flight. Troops on foot
- * aren't affected. `stepEnemies` holds a stunned unit still.
+ * lining up or volley it was firing is lost), fries enemy missiles in flight, and kills the mines
+ * in reach for good, swept or not, without setting them off (`Terrain.pulse`; a train flinger's
+ * mines in the air too). Troops on foot aren't affected, nor is the Behemoth's own jettisoned
+ * trailer. `stepEnemies` holds a stunned unit still.
  */
 
 /** Whether a pulse can knock out this unit: any vehicle or emplacement, never troops on foot. */
@@ -34,8 +39,37 @@ export function stun(e: Enemy, seconds: number): void {
 }
 
 /**
+ * Whether a swept, live mine lies in the hull's own path within `EMP.mineAhead` of its nose (and
+ * within `radius` of the emitter at (x, y)): the treads are about to roll onto it.
+ */
+function mineAhead(w: World, x: number, y: number, radius: number): boolean {
+  const b = w.behemoth;
+  const t = w.terrain;
+  const ts = t.tileSize;
+  const fx = Math.cos(b.heading);
+  const fy = Math.sin(b.heading);
+  const nose = b.chassis.length / 2;
+  const half = hullWidth(b) / 2 + ts / 2;
+  const far = nose + EMP.mineAhead;
+  for (let c = Math.floor((b.x - far) / ts); c <= Math.floor((b.x + far) / ts); c++) {
+    for (let r = Math.max(0, Math.floor((b.y - far) / ts)); r <= Math.min(t.rows - 1, Math.floor((b.y + far) / ts)); r++) {
+      const tile = t.tile(c, r);
+      if (!tile || !tile.seen || tile.state !== 'intact' || !MATERIALS[tile.mat].empTo) continue;
+      const cx = (c + 0.5) * ts;
+      const cy = (r + 0.5) * ts;
+      const dx = cx - b.x;
+      const dy = cy - b.y;
+      const along = dx * fx + dy * fy;
+      if (along < 0 || along > far || Math.abs(dy * fx - dx * fy) > half) continue;
+      if (Math.hypot(cx - x, cy - y) <= radius) return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Whether a pulse on Auto is worth its power now: `EMP.autoMin` working vehicles in reach, a bomb
- * truck, or an enemy missile closing.
+ * truck, an enemy missile closing, or a swept mine in the hull's path.
  */
 export function pulseWorth(w: World, x: number, y: number, spec: PulseSpec): boolean {
   let n = 0;
@@ -45,10 +79,11 @@ export function pulseWorth(w: World, x: number, y: number, spec: PulseSpec): boo
     n++;
   }
   if (n >= EMP.autoMin) return true;
-  return w.projectiles.some((p) => p.alive && p.owner === 'enemy' && p.kind === 'missile' && Math.hypot(p.x - x, p.y - y) <= spec.radius);
+  if (w.projectiles.some((p) => p.alive && p.owner === 'enemy' && p.kind === 'missile' && Math.hypot(p.x - x, p.y - y) <= spec.radius)) return true;
+  return mineAhead(w, x, y, spec.radius);
 }
 
-/** Fire a pulse from (x, y). Pushes a `fire` event (sound) and an `emp` event (the ring, and how many it caught). */
+/** Fire a pulse from (x, y). Pushes a `fire` event (sound) and an `emp` event (the ring, and how many vehicles and mines it caught). */
 export function firePulse(w: World, weapon: WeaponDef, x: number, y: number, slot: string): void {
   const spec = weapon.projectile as PulseSpec;
   markFlash(w);
@@ -63,6 +98,7 @@ export function firePulse(w: World, weapon: WeaponDef, x: number, y: number, slo
     p.alive = false;
     w.events.push({ type: 'impact', x: p.x, y: p.y });
   }
+  const mines = w.terrain.pulse(x, y, spec.radius, w.events) + fryFlung(w, x, y, spec.radius);
   w.events.push({ type: 'fire', owner: 'player', weapon: weapon.id, x, y, angle: 0, slot });
-  w.events.push({ type: 'emp', x, y, radius: spec.radius, caught });
+  w.events.push({ type: 'emp', x, y, radius: spec.radius, caught, mines });
 }

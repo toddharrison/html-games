@@ -1,14 +1,17 @@
 import Phaser from 'phaser';
 import type { BattleLayout } from '../config';
-import { FLAME_RAMP, HeatField, rampTable, type RampStop } from './flameField';
+import { FLAME_RAMP, HeatField, HOT_RAMP, rampTable, type RampStop } from './flameField';
 import { viewX, viewY } from './viewTransform';
 
 /**
- * Flames and smoke on the battlefield (SPEC §11.3), render-only: two heat fields (`flameField.ts`)
+ * Flames and smoke on the battlefield (SPEC §11.3), render-only: heat fields (`flameField.ts`)
  * the size of the field column, kept in step with the ground as the view scrolls, and drawn as
- * three images (each left where it was last drawn until its next redraw): the fire's glow on the ground, the smoke, and the flames over it. Everything that
+ * images (each left where it was last drawn until its next redraw): the fire's glow on the ground, the smoke, and the flames over it. Everything that
  * burns feeds it through `spot` (a lick of flame), `smoke`, `burst` (a fireball), and `spray` (a
  * flamethrower's stream), all in sim coordinates. With nothing alight it does no work.
+ *
+ * There are two kinds of flame, each its own field: ordinary fire (red through yellow), and the
+ * **hot** blue flame of an enemy's projector, the only fire that burns the Behemoth (`HOT_RAMP`).
  */
 
 /**
@@ -24,6 +27,7 @@ const SMOKE_RATE = 13;
 /** The glow is drawn at 1/`GLOW_CELL` scale and smoothed up. */
 const GLOW_CELL = 4;
 const GLOW_COLOR = [255, 132, 40] as const;
+const HOT_GLOW_COLOR = [70, 150, 255] as const;
 const GLOW_ALPHA = 0.42;
 
 /**
@@ -64,6 +68,7 @@ interface Gob {
   dist: number;
   swell: number;
   age: number;
+  hot: boolean;
 }
 
 interface Burst {
@@ -125,11 +130,14 @@ class Sheet {
 
 export class FlameLayer {
   private readonly fire: Sheet;
+  /** The blue flame that burns the hull: its own field, so it keeps its own colors where the two meet. */
+  private readonly hot: Sheet;
   private readonly smokeSheet: Sheet;
   private readonly glowTex: Phaser.Textures.CanvasTexture;
   private readonly glowImage: Phaser.GameObjects.Image;
   private readonly glowData: ImageData;
   private readonly glowHeat: Uint8Array;
+  private readonly hotGlowHeat: Uint8Array;
   /** View y of the fields' top row; null until the first update. */
   private originY: number | null = null;
   private readonly gobs: Gob[] = [];
@@ -140,6 +148,7 @@ export class FlameLayer {
     const w = layout.fieldW + PAD_X * 2;
     const h = layout.height + PAD_TOP + PAD_BOTTOM;
     this.fire = new Sheet(scene, 'flame_field', w, h, FLAME_DEPTH, FLAME_RAMP, new HeatField(w, h));
+    this.hot = new Sheet(scene, 'hot_flame_field', w, h, FLAME_DEPTH, HOT_RAMP, new HeatField(w, h, { seed: 0xb1ce }));
     // Smoke: it barely cools, so it hangs and rolls; its own noise, so it doesn't move with the flames.
     this.smokeSheet = new Sheet(scene, 'smoke_field', w, h, SMOKE_DEPTH, SMOKE_RAMP, new HeatField(w, h, { cool: 1, coolNoise: 9, jitter: 0.4, seed: 0x5e0ce }));
 
@@ -150,6 +159,7 @@ export class FlameLayer {
     this.glowTex.setFilter(Phaser.Textures.FilterMode.LINEAR);
     this.glowData = new ImageData(gw, gh);
     this.glowHeat = new Uint8Array(gw * gh);
+    this.hotGlowHeat = new Uint8Array(gw * gh);
     this.glowImage = scene.add.image(0, 0, 'flame_glow').setOrigin(0, 0).setScale(GLOW_CELL).setDepth(GLOW_DEPTH).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
   }
 
@@ -159,10 +169,13 @@ export class FlameLayer {
     return [viewX(simX, simY) + PAD_X, viewY(simX) - this.originY];
   }
 
-  /** A lick of flame at a sim point: `r` game px across its middle, `heat` 0–255 (255 = white-hot). */
-  spot(simX: number, simY: number, r: number, heat: number): void {
+  /**
+   * A lick of flame at a sim point: `r` game px across its middle, `heat` 0–255 (255 = white-hot).
+   * `hot`: the blue flame that burns the hull.
+   */
+  spot(simX: number, simY: number, r: number, heat: number, hot = false): void {
     const p = this.at(simX, simY);
-    if (p) this.fire.field.add(p[0], p[1], r, heat);
+    if (p) (hot ? this.hot : this.fire).field.add(p[0], p[1], r, heat);
   }
 
   /** A puff of smoke at a sim point: `density` 0–255. */
@@ -179,14 +192,14 @@ export class FlameLayer {
   /**
    * A flamethrower's stream for this frame, from a nozzle at (x, y) along `angle` (sim): gobs of
    * burning fuel that fly `reach` and swell. Each keeps the line it left on, so a swinging nozzle
-   * bends the stream the way a real one does.
+   * bends the stream the way a real one does. `hot`: an enemy's, in blue.
    */
-  spray(x: number, y: number, angle: number, reach: number, cone: number, dt: number): void {
+  spray(x: number, y: number, angle: number, reach: number, cone: number, dt: number, hot = false): void {
     this.gobDebt += STREAM.rate * dt;
     while (this.gobDebt >= 1 && this.gobs.length < 160) {
       this.gobDebt -= 1;
       const a = angle + (Math.random() - Math.random()) * cone * STREAM.cone;
-      this.gobs.push({ ox: x, oy: y, dx: Math.cos(a), dy: Math.sin(a), dist: reach * (0.8 + 0.25 * Math.random()), swell: STREAM.swell * (cone / 0.2) * (0.7 + 0.6 * Math.random()), age: Math.random() * dt });
+      this.gobs.push({ ox: x, oy: y, dx: Math.cos(a), dy: Math.sin(a), dist: reach * (0.8 + 0.25 * Math.random()), swell: STREAM.swell * (cone / 0.2) * (0.7 + 0.6 * Math.random()), age: Math.random() * dt, hot });
     }
     this.gobDebt = Math.min(this.gobDebt, 1);
   }
@@ -204,8 +217,8 @@ export class FlameLayer {
       const d = g.dist * (1 - (1 - u) * (1 - u));
       const x = g.ox + g.dx * d;
       const y = g.oy + g.dy * d;
-      // White-hot at the nozzle, cooling to orange where it billows out.
-      this.spot(x, y, STREAM.r0 + g.swell * Math.pow(u, 1.4), 255 * (1 - 0.55 * Math.pow(u, 1.6)));
+      // White-hot at the nozzle, cooling to orange (or to deep blue) where it billows out.
+      this.spot(x, y, STREAM.r0 + g.swell * Math.pow(u, 1.4), 255 * (1 - 0.55 * Math.pow(u, 1.6)), g.hot);
       if (u > 0.75 && Math.random() < 0.08) this.smoke(x, y, 3 + Math.random() * 3, 70 + Math.random() * 50);
     }
   }
@@ -238,6 +251,7 @@ export class FlameLayer {
     if (this.originY !== null && origin !== this.originY) {
       // The view moved up the field: what's burning slides down the screen with the ground.
       this.fire.field.scroll(this.originY - origin);
+      this.hot.field.scroll(this.originY - origin);
       this.smokeSheet.field.scroll(this.originY - origin);
     }
     this.originY = origin;
@@ -245,20 +259,31 @@ export class FlameLayer {
     this.stepBursts(dt);
 
     this.smokeSheet.update(dt, SMOKE_RATE, origin);
-    if (this.fire.update(dt, FIRE_RATE, origin)) this.drawGlow();
+    // One glow serves both flames: redrawn whenever either has moved.
+    const fire = this.fire.update(dt, FIRE_RATE, origin);
+    const hot = this.hot.update(dt, FIRE_RATE, origin);
+    if (fire || hot) this.drawGlow(origin);
   }
 
-  private drawGlow(): void {
-    const field = this.fire.field;
-    this.glowImage.setPosition(-PAD_X, this.fire.paintedAt).setVisible(field.alight);
-    if (!field.alight) return;
-    field.glow(this.glowHeat, GLOW_CELL);
+  /** The light both flames throw on the ground: each cell colored by which flame lights it more. */
+  private drawGlow(origin: number): void {
+    const fire = this.fire.field;
+    const hot = this.hot.field;
+    const alight = fire.alight || hot.alight;
+    this.glowImage.setPosition(-PAD_X, origin).setVisible(alight);
+    if (!alight) return;
+    fire.glow(this.glowHeat, GLOW_CELL);
+    hot.glow(this.hotGlowHeat, GLOW_CELL);
     const px = this.glowData.data;
     for (let i = 0; i < this.glowHeat.length; i++) {
-      px[i * 4] = GLOW_COLOR[0];
-      px[i * 4 + 1] = GLOW_COLOR[1];
-      px[i * 4 + 2] = GLOW_COLOR[2];
-      px[i * 4 + 3] = Math.min(255, this.glowHeat[i]! * GLOW_ALPHA);
+      const a = this.glowHeat[i]!;
+      const b = this.hotGlowHeat[i]!;
+      // Where they overlap the color leans to the stronger, by its share of the light.
+      const k = a + b > 0 ? b / (a + b) : 0;
+      px[i * 4] = GLOW_COLOR[0] + (HOT_GLOW_COLOR[0] - GLOW_COLOR[0]) * k;
+      px[i * 4 + 1] = GLOW_COLOR[1] + (HOT_GLOW_COLOR[1] - GLOW_COLOR[1]) * k;
+      px[i * 4 + 2] = GLOW_COLOR[2] + (HOT_GLOW_COLOR[2] - GLOW_COLOR[2]) * k;
+      px[i * 4 + 3] = Math.min(255, Math.max(a, b) * GLOW_ALPHA);
     }
     this.glowTex.getContext().putImageData(this.glowData, 0, 0);
     this.glowTex.refresh();

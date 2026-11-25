@@ -193,6 +193,27 @@ export function dismount(w: World, v: TrainVehicle, wrecked: boolean): void {
 }
 
 /**
+ * An EMP pulse (SPEC §6 EMP emitter) kills the mines in a flinger's throw within `radius` of a
+ * point, in the air or lying unarmed: they never go live. Returns how many.
+ */
+export function fryFlung(w: World, x: number, y: number, radius: number): number {
+  const tr = w.train;
+  if (!tr) return 0;
+  let killed = 0;
+  for (let k = tr.flung.length - 1; k >= 0; k--) {
+    const m = tr.flung[k]!;
+    const u = Math.min(1, m.t / m.flight);
+    const mx = m.x0 + (m.x - m.x0) * u;
+    const my = m.y0 + (m.y - m.y0) * u;
+    if (Math.hypot(mx - x, my - y) > radius) continue;
+    tr.flung.splice(k, 1);
+    w.events.push({ type: 'mineFried', x: mx, y: my });
+    killed++;
+  }
+  return killed;
+}
+
+/**
  * Mine flingers (§T6): while it's in the frame and its piece isn't abandoned, each one lobs a mine
  * every so often onto open ground where the Behemoth will be (`MineFlingDef`). It lies in plain
  * sight, then turns into a live mine (`Terrain.layMine`).

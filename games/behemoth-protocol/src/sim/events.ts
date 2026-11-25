@@ -34,14 +34,19 @@ export type SimEvent =
    * mine. `slot`: the player hardpoint that fired it (the renderer pins the beam to its barrel).
    */
   | { type: 'beam'; weapon: WeaponId; x0: number; y0: number; x1: number; y1: number; hit: boolean; slot: string }
-  /** A flame from (x, y) along `angle`, reaching `reach`, `cone` radians either side (SPEC §6 flamethrower). */
-  | { type: 'flame'; x: number; y: number; angle: number; reach: number; cone: number; slot: string }
+  /**
+   * A flame from (x, y) along `angle`, reaching `reach`, `cone` radians either side (SPEC §6
+   * flamethrower). `owner`: an enemy's is the kind that burns the hull, and is drawn hotter.
+   */
+  | { type: 'flame'; owner: Owner; x: number; y: number; angle: number; reach: number; cone: number; slot: string }
   /** A railgun or coilgun slug from (x0, y0) to where it stopped; `hits`: each unit and wall it went through. */
   | { type: 'rail'; weapon: WeaponId; x0: number; y0: number; x1: number; y1: number; hits: { x: number; y: number }[] }
   /** Lightning from the muzzle through each point in turn (units struck, or cover); `hit`: it struck something. */
   | { type: 'arc'; weapon: WeaponId; points: { x: number; y: number }[]; hit: boolean }
-  /** An EMP pulse from (x, y) out to `radius`; `caught`: the vehicles it knocked out. */
-  | { type: 'emp'; x: number; y: number; radius: number; caught: number }
+  /** An EMP pulse from (x, y) out to `radius`; `caught`: the vehicles it knocked out; `mines`: the mines it killed. */
+  | { type: 'emp'; x: number; y: number; radius: number; caught: number; mines: number }
+  /** A pulse killed a mine at (x, y) without setting it off: one in the ground, or one in a flinger's throw. */
+  | { type: 'mineFried'; x: number; y: number }
   /** A plasma pool burning the Behemoth's treads or its trailer, at the contact point. */
   | { type: 'plasmaBurn'; x: number; y: number }
   /**

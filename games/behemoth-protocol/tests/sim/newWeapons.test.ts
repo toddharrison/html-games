@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { DEPOT_WEAPONS } from '../../src/content/depot';
-import { FIRE } from '../../src/content/tuning';
+import { EMP, FIRE } from '../../src/content/tuning';
 import { WEAPONS, type ArcSpec, type FlameSpec, type PulseSpec, type RailSpec, type ShellSpec, type WeaponId } from '../../src/content/weapons';
 import { defaultBindingFor, IDLE_COMMAND, type PlayerCommand } from '../../src/sim/behemoth';
+import { firePulse } from '../../src/sim/emp';
 import { destroyEnemy, spawnEnemy } from '../../src/sim/enemies';
 import type { Enemy } from '../../src/sim/entities';
 import { burning, fireKey, igniteTile } from '../../src/sim/fire';
 import { newRun } from '../../src/sim/run';
+import type { TrainState } from '../../src/sim/train';
 import { createWorld, stepWorld, type World } from '../../src/sim/world';
 import { spawnProjectile } from '../../src/sim/weapons';
 import type { EnemyId } from '../../src/content/enemies';
@@ -183,6 +185,87 @@ describe('EMP emitter', () => {
     dummy(w2, w2.behemoth.x + 90, w2.behemoth.y, 'bombTruck');
     steps(w2, 1);
     expect(w2.events.some((e) => e.type === 'emp')).toBe(true);
+  });
+
+  /** Buries a mine in the tile at (x, y); `seen`: the sensors have swept it. */
+  const bury = (w: World, x: number, y: number, seen: boolean) => {
+    const ts = w.terrain.tileSize;
+    const t = w.terrain.tile(Math.floor(x / ts), Math.floor(y / ts))!;
+    Object.assign(t, { mat: 'mine', state: 'intact', hp: 1, seen });
+    return t;
+  };
+
+  it('kills every mine in reach, swept or not, without setting it off', () => {
+    const w = battle({ prow: 'empEmitter' });
+    const b = w.behemoth;
+    slot(w, 'prow').binding = 'rmb';
+    const ahead = bury(w, b.x + b.chassis.length / 2 + 40, b.y, true);
+    const swept = bury(w, b.x + 60, b.y + 70, true);
+    const unswept = bury(w, b.x - 50, b.y - 70, false);
+    const far = bury(w, b.x + spec.radius + 50, b.y + 100, true);
+    b.power.stored = b.power.max;
+    const treads = b.treads.hp;
+    steps(w, 1, { fireSecondary: true });
+    expect(w.events.some((e) => e.type === 'emp' && e.mines === 3)).toBe(true);
+    expect(w.events.filter((e) => e.type === 'mineFried')).toHaveLength(3);
+    for (const t of [ahead, swept, unswept]) {
+      expect(t.mat).toBe('ground');
+      expect(t.seen).toBeUndefined();
+    }
+    expect(far.mat).toBe('mine');
+    // The treads roll over the dead one: nothing goes off.
+    steps(w, 300);
+    expect(ahead.mat).toBe('ground');
+    expect(b.treads.hp).toBe(treads);
+  });
+
+  it("on Auto, pulses for a swept mine in the hull's path once it's close, not for one off to the side", () => {
+    const w = battle({ prow: 'empEmitter' });
+    const b = w.behemoth;
+    b.autoEnabled.fill(true);
+    b.power.stored = b.power.max;
+    const nose = b.chassis.length / 2;
+    const ts = w.terrain.tileSize;
+    const pulsed = () => w.events.some((e) => e.type === 'emp');
+    const aside = bury(w, b.x + nose + 30, b.y + 90, true);
+    steps(w, 2);
+    expect(pulsed()).toBe(false);
+    const at = { x: (Math.floor((b.x + nose + EMP.mineAhead + 120) / ts) + 0.5) * ts, y: b.y };
+    const mine = bury(w, at.x, at.y, true);
+    steps(w, 2);
+    expect(pulsed()).toBe(false);
+    const treads = b.treads.hp;
+    let fired = false;
+    for (let i = 0; i < 600 && !fired; i++) {
+      steps(w, 1);
+      fired = pulsed();
+    }
+    expect(fired).toBe(true);
+    // Not before it's near, and before the nose is on it.
+    const gap = at.x - (b.x + nose);
+    expect(gap).toBeGreaterThan(ts);
+    expect(gap).toBeLessThanOrEqual(EMP.mineAhead + 1);
+    expect(mine.mat).toBe('ground');
+    // The one off to the side was in reach of that pulse too.
+    expect(aside.mat).toBe('ground');
+    steps(w, 240);
+    expect(b.treads.hp).toBe(treads);
+  });
+
+  it("kills a train's mines in the air, and leaves the ones out of reach to land", () => {
+    const w = battle({ prow: 'empEmitter' });
+    const b = w.behemoth;
+    // Half way through its throw it's in reach, though where it will land isn't.
+    const near = { from: 0, x0: b.x - 100, y0: b.y, x: b.x + 2 * spec.radius, y: b.y, t: 0.5, flight: 1, arm: 1 };
+    const far = { from: 0, x0: b.x + 3 * spec.radius, y0: b.y, x: b.x + 2 * spec.radius, y: b.y, t: 0.5, flight: 1, arm: 1 };
+    w.train = { flung: [near, far] } as unknown as TrainState;
+    w.events.length = 0;
+    firePulse(w, WEAPONS.empEmitter, b.x, b.y, 'prow');
+    expect(w.train.flung).toEqual([far]);
+    const fried = w.events.filter((e) => e.type === 'mineFried');
+    expect(fried).toHaveLength(1);
+    expect(fried[0]).toMatchObject({ x: (near.x0 + near.x) / 2, y: b.y });
+    expect(w.events.some((e) => e.type === 'emp' && e.mines === 1)).toBe(true);
   });
 
   it("waits for the power to fire", () => {

@@ -214,7 +214,7 @@ export function shootFlame(w: World, weapon: WeaponDef, x: number, y: number, an
   }
 
   w.events.push({ type: 'fire', owner, weapon: weapon.id, x, y, angle, slot });
-  w.events.push({ type: 'flame', x, y, angle, reach, cone: spec.cone, slot });
+  w.events.push({ type: 'flame', owner, x, y, angle, reach, cone: spec.cone, slot });
 }
 
 /** How hard it's raining (0–1): a rainstorm's squall. */

@@ -1,5 +1,6 @@
 import type { MaterialId } from '../content/terrain';
 import { FIRE } from '../content/tuning';
+import type { Owner } from '../sim/events';
 import { frameRight } from '../sim/frame';
 import { hashSeed } from '../sim/rng';
 import type { World } from '../sim/world';
@@ -73,6 +74,8 @@ interface Jet {
   reach: number;
   cone: number;
   left: number;
+  /** An enemy's stream: the blue flame that burns the hull. */
+  hot: boolean;
 }
 
 export interface Muzzle {
@@ -90,8 +93,8 @@ export class FireView {
   constructor(private readonly flames: FlameLayer) {}
 
   /** A flamethrower's lick (the sim's `flame` event): its stream flows from that mount for a moment. */
-  jet(ev: { slot: string; x: number; y: number; angle: number; reach: number; cone: number }): void {
-    this.jets.set(ev.slot, { x: ev.x, y: ev.y, angle: ev.angle, reach: ev.reach, cone: ev.cone, left: JET_HOLD });
+  jet(ev: { owner: Owner; slot: string; x: number; y: number; angle: number; reach: number; cone: number }): void {
+    this.jets.set(ev.slot, { x: ev.x, y: ev.y, angle: ev.angle, reach: ev.reach, cone: ev.cone, left: JET_HOLD, hot: ev.owner === 'enemy' });
   }
 
   /**
@@ -111,7 +114,7 @@ export class FireView {
         continue;
       }
       const m = muzzle(slot) ?? j;
-      flames.spray(m.x, m.y, m.angle, j.reach, j.cone, dt);
+      flames.spray(m.x, m.y, m.angle, j.reach, j.cone, dt, j.hot);
     }
 
     const seen = new Map<number, { x: number; y: number; own: boolean }>();

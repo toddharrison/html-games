@@ -379,10 +379,13 @@ export class Effects implements StatusEmitter {
     this.sparkBurst.explode(3 + Math.floor(Math.random() * 4), x, y);
   }
 
-  /** A burning component: a lick of flame where it sits (called many times a second while it burns). */
-  flame(x: number, y: number): void {
-    this.flames.spot(x, y, 1.3 + Math.random() * 1.3, 190 + Math.random() * 65);
-    this.flames.spot(x + (Math.random() - 0.5) * 3, y + (Math.random() - 0.5) * 3, 1 + Math.random(), 150 + Math.random() * 80);
+  /**
+   * A burning component: a lick of flame where it sits (called many times a second while it burns).
+   * `hot`: the blue flame of an enemy's projector, where it plays on the hull.
+   */
+  flame(x: number, y: number, hot = false): void {
+    this.flames.spot(x, y, 1.3 + Math.random() * 1.3, 190 + Math.random() * 65, hot);
+    this.flames.spot(x + (Math.random() - 0.5) * 3, y + (Math.random() - 0.5) * 3, 1 + Math.random(), 150 + Math.random() * 80, hot);
   }
 
   /**

@@ -211,6 +211,11 @@ export const EMP = {
   autoMin: 2,
   /** A vehicle with less stun than this left counts as working again (Auto can renew it). */
   renew: 0.5,
+  /**
+   * On Auto it also fires for a swept mine lying in the hull's own path, once the nose is this
+   * close to it: a pulse kills every mine in its reach.
+   */
+  mineAhead: 60,
 };
 
 /**

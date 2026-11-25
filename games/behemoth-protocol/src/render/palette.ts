@@ -57,6 +57,8 @@ export const PAL = {
   glow: '#5ff2ff',
   glowDim: '#2c8c9c',
   glowHot: '#e0ffff',
+  // An enemy flame projector's pilot light: blue, as its flame is (the one fire that burns the hull)
+  torchHot: '#96e0ff',
   // Plasma: violet, so it never reads as fire (orange) or water (blue)
   plasmaDim: '#5a2a8a',
   plasma: '#b45cff',

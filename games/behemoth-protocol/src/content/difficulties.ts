@@ -4,15 +4,17 @@
  * The easier ones scale two things from there: what salvage pays, and the threat every battle's
  * defenders are bought with.
  *
- * The numbers are from autopilot playtests (Nov 24, 2026; FEATURES.md §9 "Difficulty"), for the user
- * to confirm in play. What they showed:
+ * The numbers (Nov 24, 2026): autopilot playtests (FEATURES.md §9 "Difficulty") first set Normal at
+ * threat 0.85 and salvage 1.25, and Easy at 0.75 and 1.4. The user played them and found that
+ * Normal was "more of what I had in mind for easy", so **it is Easy now, and Normal is halfway
+ * between it and Hard** (the user's call). What the playtests showed:
  * - **Threat is the strong lever, salvage the weak one.** An autopilot that takes half damage (a
  *   stand-in for a good pilot) completes about 1 run in 4 on Hard. Salvage alone, +15% to +50%,
- *   moved that by 0 to 9 points; 15% less threat moved it to about 44%, 25% less to about 63%.
- *   So Normal cuts threat too, or it plays like Hard.
- * - **Less threat is less to kill**: a battle won at 0.85 threat pays about 8% less than on Hard,
- *   at 0.75 about 9% less. The salvage bonuses are set over that: a battle won pays about 15% more
- *   than Hard on Normal and about 27% more on Easy.
+ *   moved that by 0 to 9 points; 10% less threat moved it to about 36%, 15% less to about 44%.
+ *   So both easier levels cut threat.
+ * - **Less threat is less to kill**: a battle won at 0.85 threat pays about 8% less than on Hard.
+ *   The salvage bonuses sit over that: a battle won pays about 15% more than Hard on Easy, and
+ *   about 8% more on Normal (an estimate between measured rows; 0.925 itself wasn't played).
  */
 
 export type DifficultyId = 'easy' | 'normal' | 'hard';
@@ -36,8 +38,8 @@ export interface DifficultyDef {
 }
 
 export const DIFFICULTIES: Record<DifficultyId, DifficultyDef> = {
-  easy: { id: 'easy', name: 'Easy', salvage: 1.4, threat: 0.75 },
-  normal: { id: 'normal', name: 'Normal', salvage: 1.25, threat: 0.85 },
+  easy: { id: 'easy', name: 'Easy', salvage: 1.25, threat: 0.85 },
+  normal: { id: 'normal', name: 'Normal', salvage: 1.125, threat: 0.925 },
   hard: { id: 'hard', name: 'Hard', salvage: 1, threat: 1 },
 };
 
@@ -47,7 +49,8 @@ export const DEFAULT_DIFFICULTY: DifficultyId = 'normal';
 /** A difficulty's rules in a line, from its numbers (so the picker follows the tuning). */
 export function difficultyBrief(id: DifficultyId): string {
   const d = DIFFICULTIES[id];
-  const pct = (scale: number) => `${scale >= 1 ? '+' : '-'}${Math.round(Math.abs(scale - 1) * 100)}%`;
+  // To a tenth of a percent, so a half step reads as what it is (0.925 is "-7.5%").
+  const pct = (scale: number) => `${scale >= 1 ? '+' : '-'}${Math.round(Math.abs(scale - 1) * 1000) / 10}%`;
   const parts = [...(d.threat !== 1 ? [`defenders ${pct(d.threat)}`] : []), ...(d.salvage !== 1 ? [`salvage ${pct(d.salvage)}`] : [])];
   return parts.length > 0 ? parts.join(', ') : 'the enemy at full strength, salvage at its bare worth';
 }

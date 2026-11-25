@@ -41,11 +41,14 @@ describe('difficulty content', () => {
   });
 
   it('each one is summed up in a line from its numbers, in characters the pixel font has', () => {
-    const pct = (scale: number) => `${Math.round(Math.abs(scale - 1) * 100)}%`;
+    const pct = (scale: number) => `${Math.round(Math.abs(scale - 1) * 1000) / 10}%`;
     expect(difficultyBrief('easy')).toBe(`defenders -${pct(DIFFICULTIES.easy.threat)}, salvage +${pct(DIFFICULTIES.easy.salvage)}`);
     // Only what a difficulty changes is named.
     const normal = [...(DIFFICULTIES.normal.threat !== 1 ? [`defenders -${pct(DIFFICULTIES.normal.threat)}`] : []), `salvage +${pct(DIFFICULTIES.normal.salvage)}`];
     expect(difficultyBrief('normal')).toBe(normal.join(', '));
+    // A half step is shown, not rounded away.
+    expect(difficultyBrief('easy')).toBe('defenders -15%, salvage +25%');
+    expect(difficultyBrief('normal')).toBe('defenders -7.5%, salvage +12.5%');
     expect(difficultyBrief('hard')).not.toMatch(/%/);
     for (const id of DIFFICULTY_IDS) expect(difficultyBrief(id)).toMatch(/^[A-Za-z0-9 .,:;'\-/%!?+()*<>=#]+$/);
   });

@@ -11,6 +11,9 @@ import { DEMO, demoClip, demoLoadout, demoRun } from '../../src/scenes/demo';
 import { benchReport, runBench } from '../../src/dev/bench';
 import { DEPOT_WEAPONS } from '../../src/content/depot';
 import { fits, loadOf, slotsOf } from '../../src/sim/depot';
+import { newRun } from '../../src/sim/run';
+import type { AddonId } from '../../src/content/addons';
+import type { WeaponId } from '../../src/content/weapons';
 
 const OPTS = { seed: 2, frameWidth: 324, fieldRows: 36 };
 
@@ -158,6 +161,46 @@ describe('autopilot', () => {
     expect(cmd.aimY).toBeCloseTo(hauler.y);
     expect(cmd.fireMissile).toBe(true);
     expect(near.alive).toBe(true);
+  });
+
+  it('points a laser at the target itself, and leads for a gun on the same cursor only when it is about to fire', () => {
+    const tank = (w: World, dx: number) => {
+      w.encounter.posts = [];
+      const e = spawnEnemy(w, 'heavyTank', w.behemoth.x + dx, w.behemoth.y - 30);
+      e.vx = 40;
+      e.vy = 0;
+      return e;
+    };
+    const fitted = (weapons: Record<string, WeaponId>, addons: AddonId[] = []) => createWorld({ ...OPTS, behemoth: newRun(2, 'class2', addons, weapons).behemoth });
+    // A laser for a main gun, out of the secondaries' reach: no lead (it arrives at once).
+    let w = fitted({ turret: 'heavyLaser' });
+    let e = tank(w, BOT.secondaryRange + 60);
+    expect(demoCommand(w)).toMatchObject({ aimX: e.x, aimY: e.y, fireMain: true, fireSecondary: false });
+    // In close, the autocannon on RMB opens up too: the main gun still decides.
+    e.x = w.behemoth.x + 120;
+    expect(demoCommand(w)).toMatchObject({ aimX: e.x, aimY: e.y, fireSecondary: true });
+    // The stock cannon is led, as ever.
+    w = fitted({});
+    e = tank(w, BOT.secondaryRange + 60);
+    expect(demoCommand(w).aimX).toBeGreaterThan(e.x + 5);
+    // A cannon and a laser on one turret: on the target while the cannon reloads, led as it comes ready.
+    w = fitted({ turret: 'heavyCannon', twinTurret: 'heavyLaser' }, ['twinTurret']);
+    e = tank(w, BOT.secondaryRange + 60);
+    const cannon = w.behemoth.hardpoints.find((h) => h.slot.id === 'turret')!;
+    cannon.cooldown = 2;
+    expect(demoCommand(w)).toMatchObject({ aimX: e.x, aimY: e.y });
+    cannon.cooldown = BOT.leadWindow / 2;
+    expect(demoCommand(w).aimX).toBeGreaterThan(e.x + 5);
+    // A cannon with a beam laser on RMB: the same, once the laser is in play.
+    w = fitted({ spine: 'beamLaser' });
+    const spine = w.behemoth.hardpoints.find((h) => h.slot.id === 'spine')!;
+    expect(spine.binding).toBe('rmb');
+    e = tank(w, 120);
+    const gun = w.behemoth.hardpoints.find((h) => h.slot.id === 'turret')!;
+    gun.cooldown = 2;
+    expect(demoCommand(w)).toMatchObject({ aimX: e.x, aimY: e.y, fireSecondary: true });
+    gun.cooldown = 0;
+    expect(demoCommand(w).aimX).toBeGreaterThan(e.x + 5);
   });
 
   it('saves its missiles for the big ones', () => {

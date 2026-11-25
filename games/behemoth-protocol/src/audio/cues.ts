@@ -166,7 +166,7 @@ export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: nu
   railwayGunShell: { sound: 'howitzer', size: 1.5 },
 };
 
-const RAM_SIZE: Record<ObstacleClass, number> = { none: 0, soft: 0, trivial: 0, light: 0.3, medium: 0.6, heavy: 1, trap: 0.45, immovable: 0.8 };
+const RAM_SIZE: Record<ObstacleClass, number> = { none: 0, soft: 0, trivial: 0, light: 0.3, medium: 0.6, heavy: 1, trap: 0.45, immovable: 0.8, rock: 0.9 };
 
 /** Blast radius (units) that counts as size 1. */
 const BLAST_UNIT = 30;

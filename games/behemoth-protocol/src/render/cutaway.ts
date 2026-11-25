@@ -66,27 +66,51 @@ interface Layout {
   /** How far a dorsal ring is raised when a twin turret's second gun sits over the main one. */
   twinLift: number;
   /**
-   * The trailer, behind the hull (to the left, at negative x): where its bed, belt, and bays sit
-   * (`trailerLayout` lays them out for however many bays it has), and how far behind the origin
-   * the standard trailer reaches.
+   * The trailer, behind the hull (to the left, at negative x): where its bed, belt, and the bays
+   * on the bed sit (`trailerLayout` lays them out for however many bays it has, stacking a bigger
+   * trailer's on a rack), and how far behind the origin a trailer reaches.
    */
   trailer: { bedY: number; bedH: number; treadY: number; treadH: number; bayY: number; bayH: number; hitchX: number; barY: number; rear: number };
 }
 
-/** A trailer of `n` bays laid out behind the hull: its bed, belt and wheels, a box per bay (front first), and the tow bar. */
-function trailerLayout(T: Layout['trailer'], n: number): { bed: Box; treads: Box; wheels: number[]; bays: Box[]; bar: [number, number, number, number] } {
-  // A longer trailer sits closer behind the hull, on slimmer bays, so it still fits on the screen.
-  const front = n > 2 ? 8 : -2;
-  const bayW = n > 3 ? 13 : n > 2 ? 17 : 20;
-  const gap = n > 3 ? 1 : n > 2 ? 2 : 3;
-  const bedW = n * bayW + (n - 1) * gap + 5;
+/**
+ * A trailer of `n` bays laid out behind the hull: its bed, belt and wheels, a box per bay (front
+ * first), the rack that carries an upper tier, and the tow bar. Two bays sit on the bed; a bigger
+ * trailer stacks the rest above them on a rack, in a grid two bays long (user's call, Nov 2026:
+ * four in a row made each too slim to read). They fill a column at a time, the front one first and
+ * the bed before the rack: three bays are the front pair and one behind, four are a 2×2. So every
+ * trailer is the same length in profile, and a bigger one stands taller.
+ */
+function trailerLayout(
+  T: Layout['trailer'],
+  n: number,
+): { bed: Box; treads: Box; wheels: number[]; bays: Box[]; rack: Box[]; bar: [number, number, number, number] } {
+  const front = -2;
+  const bayW = 20;
+  const gap = 3;
+  const cols = Math.min(2, n);
+  const rows = Math.ceil(n / cols);
+  const bedW = cols * bayW + (cols - 1) * gap + 5;
   const bed = { x: front - bedW, y: T.bedY, w: bedW, h: T.bedH };
   const treads = { x: bed.x - 2, y: T.treadY, w: bedW + 4, h: T.treadH };
   // Road wheels evenly along the belt, about 14 apart.
   const count = Math.max(2, Math.round((treads.w - 24) / 14) + 1);
   const wheels = Array.from({ length: count }, (_, i) => Math.round(treads.x + 12 + (i * (treads.w - 24)) / (count - 1)));
-  const bays = Array.from({ length: n }, (_, i) => ({ x: front - 3 - bayW - i * (bayW + gap), y: T.bayY, w: bayW, h: T.bayH }));
-  return { bed, treads, wheels, bays, bar: [front, T.barY, T.hitchX, T.barY] };
+  const bays = Array.from({ length: n }, (_, i) => ({
+    x: front - 3 - bayW - Math.floor(i / rows) * (bayW + gap),
+    y: T.bayY - (i % rows) * (T.bayH + gap),
+    w: bayW,
+    h: T.bayH,
+  }));
+  // Under each bay above the bed: a shelf in the gap, on a post either side down to the bed.
+  const rack = bays
+    .filter((b) => b.y < T.bayY)
+    .flatMap((b) => [
+      { x: b.x - 1, y: b.y + b.h + 1, w: b.w + 2, h: 2 },
+      { x: b.x - 1, y: b.y + b.h + 1, w: 1, h: T.bedY - (b.y + b.h + 1) },
+      { x: b.x + b.w, y: b.y + b.h + 1, w: 1, h: T.bedY - (b.y + b.h + 1) },
+    ]);
+  return { bed, treads, wheels, bays, rack, bar: [front, T.barY, T.hitchX, T.barY] };
 }
 
 /** Cutaway geometry per chassis (local game pixels). */
@@ -227,6 +251,7 @@ export function drawCutaway(
     rect({ x: T.bed.x, y: T.bed.y, w: T.bed.w, h: 2 }, PAL.steelHi);
     frame(T.bed, integrityColor(tf), 1);
     line(T.bed.x, T.bed.y - 2, T.bed.x, T.bed.y + T.bed.h, integrityColor(s.trailer.armor / tdef.armor), 3);
+    for (const r of T.rack) rect(r, PAL.steelMid);
     s.trailer.bays.forEach((bay, i) => {
       const box = T.bays[i];
       if (!box) return;

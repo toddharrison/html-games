@@ -667,7 +667,7 @@ export class DepotScene extends Phaser.Scene {
       }
       y += 4;
       y = this.actionButton(x, y, w, `Repair ${def.kind === 'trailer' ? 'frame' : def.name.toLowerCase()}`, { kind: 'repair', component: id });
-      // A tread set takes the upgrades the main treads take.
+      // A tread set takes the upgrades the main treads take; the plow, Harden and the Breaker.
       y = this.modRow(x, y, w, id);
       const scraps = def.kind === 'trailer' && s.trailer?.bays.some((b) => b) ? ' (and modules)' : '';
       this.actionButton(x, y, w, `Remove ${def.name.toLowerCase()}${scraps}`, { kind: 'removeAddon', addon: addon.id });
@@ -943,7 +943,7 @@ function coreStats(now: ChassisDef, next: ChassisDef, comp: CoreComponent): stri
 function addonStats(def: AddonDef, slot: HardpointSlotDef | undefined): string[] {
   switch (def.kind) {
     case 'plow':
-      return [`Takes ${def.hp} ram damage (not fire)`, `ram ${Math.round(def.ram * 100)}%`];
+      return [`Takes ${def.hp} ram damage (not fire)`, `ram ${Math.round(def.ram * 100)}%`, ...(def.breaksRock ? ['crushes rock'] : [])];
     case 'panels':
       return ['Spares the hull from a cook-off once; repair to re-arm'];
     case 'treads':

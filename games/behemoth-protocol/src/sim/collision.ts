@@ -2,6 +2,7 @@ import { ENEMIES } from '../content/enemies';
 import { OBSTACLE_CLASSES, type ObstacleClass } from '../content/obstacles';
 import { DEFLECT, RAM, TRAIN } from '../content/tuning';
 import {
+  breaksRock,
   damageArmor,
   damageTreads,
   frontHalf,
@@ -28,8 +29,9 @@ import type { World } from './world';
 
 /**
  * Behemoth vs. the battlefield (SPEC §4.2). Nothing stops it: obstacles are crushed or plowed
- * through, and immovable rock deflects it into a glancing slide. The class decides the speed dip
- * and the damage, scaled by impact speed and reduced by ram gear.
+ * through, and immovable rock deflects it into a glancing slide (or is broken, by a plow with the
+ * Breaker upgrade). The class decides the speed dip and the damage, scaled by impact speed and
+ * reduced by ram gear.
  *
  * @param steer the player's steering this tick, which picks the slide direction off a rock face.
  */
@@ -290,12 +292,18 @@ function tilesUnder(t: Terrain, fp: Rect): [number, number][] {
  * shallower axis. A side contact slides it along the rock. A head-on contact holds it against the
  * face and shoves it sideways (its forward momentum turned into a slide) until it clears, scraping
  * armor the whole time. It never stops for good: boxed in both ways, it grinds through the face.
+ *
+ * A plow with the Breaker upgrade (`breaksRock`) changes the head-on case: each rock tile the nose
+ * reaches is broken and flattened at a price (`OBSTACLE_CLASSES.rock`, the blade first), and the
+ * hull drives on through the gap it cuts. Rock met from the side still slides it along, and once
+ * the blade is spent the next tile deflects it as before.
  */
 function deflectOffRock(w: World, dt: number, steer: -1 | 0 | 1): void {
   const b = w.behemoth;
   const t = w.terrain;
   const ts = t.tileSize;
   const d = b.deflect;
+  let breaker = breaksRock(b);
   const faceCols = new Set<number>();
   // Where the nose is held at the face (its x), if it is.
   let faceX: number | null = null;
@@ -311,10 +319,18 @@ function deflectOffRock(w: World, dt: number, steer: -1 | 0 | 1): void {
       const ox = Math.min(fp.x1, tx + ts) - Math.max(fp.x0, tx);
       const oy = Math.min(fp.y1, ty + ts) - Math.max(fp.y0, ty);
       if (ox <= 0 || oy <= 0) continue;
-      pushed = true;
       // A tile at the nose that the hull has only just reached is part of the face, even if it came
       // in from the side while sliding along the face.
-      if (tx + ts / 2 > b.x && (ox < oy || ox <= FACE_DEPTH)) {
+      const head = tx + ts / 2 > b.x && (ox < oy || ox <= FACE_DEPTH);
+      if (head && breaker && t.smash(c, r, w.events)) {
+        // Broken, at the middle of what the nose covers of it (which picks the front armor half).
+        applyObstacle(b, 'rock', w.events, tx, (Math.max(fp.y0, ty) + Math.min(fp.y1, ty + ts)) / 2);
+        // The blade may have spent itself on that one: the next tile turns the hull aside.
+        breaker = breaksRock(b);
+        continue;
+      }
+      pushed = true;
+      if (head) {
         // Head-on: held at the face. This only undoes this tick's advance; it never reverses.
         b.x -= ox;
         faceCols.add(c);

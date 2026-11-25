@@ -45,13 +45,19 @@ interface AddonBase {
 
 /**
  * A ram plow (SPEC §5.5): rams, plowing, and rock scraping at the nose wear it first, and what it
- * can't take spills into the front armor half that struck. Incoming fire skips it.
+ * can't take spills into the front armor half that struck. Incoming fire skips it. It takes two
+ * upgrades at a depot (SPEC §5.6): Harden (more `hp`) and the Breaker (`breaksRock`).
  */
 export interface PlowAddon extends AddonBase {
   kind: 'plow';
   hp: number;
   /** Ram gear rating it adds while it holds (SPEC §4.2). */
   ram: number;
+  /**
+   * The Breaker upgrade is fitted: while the blade holds, rock at the nose is broken and driven
+   * over instead of turning the hull aside (SPEC §4.2). Set by `fitAddon`, never in the table.
+   */
+  breaksRock?: boolean;
 }
 
 /**

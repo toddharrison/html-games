@@ -90,10 +90,16 @@ export function fitChassis(base: ChassisDef, u: Upgrades): ChassisDef {
 
 /**
  * An add-on with the upgrades applied, like `fitChassis` for the hull: an add-on tread set takes
- * the treads' grade (every set runs the same gear) and its own Harden and Load mods, filed under
- * its add-on id. Any other add-on, or one with nothing applied, is returned as it is.
+ * the treads' grade (every set runs the same gear) and its own Harden and Load mods; the ram plow
+ * takes Harden and the Breaker. An add-on's mods are filed under its add-on id. Any other add-on,
+ * or one with nothing applied, is returned as it is.
  */
 export function fitAddon(def: AddonDef, u: Upgrades): AddonDef {
+  if (def.kind === 'plow') {
+    const hp = Math.round(def.hp * modScale(u, def.id, 'harden'));
+    const breaksRock = modLevel(u, def.id, 'breaker') > 0;
+    return hp === def.hp && !breaksRock ? def : { ...def, hp, breaksRock };
+  }
   if (def.kind !== 'treads') return def;
   const gen = u.grades.treads;
   const g = gen ? GRADES.treads[gen] : null;

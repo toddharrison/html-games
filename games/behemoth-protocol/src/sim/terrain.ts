@@ -2090,6 +2090,18 @@ export class Terrain {
     return cls;
   }
 
+  /**
+   * An immovable tile broken under the nose and driven flat, there and then (a plow with the
+   * Breaker upgrade, SPEC §4.2). Returns whether there was one to break.
+   */
+  smash(col: number, row: number, events: SimEvent[]): boolean {
+    const t = this.tile(col, row);
+    if (!t || this.obstacleAt(col, row) !== 'immovable') return false;
+    t.state = 'flattened';
+    events.push({ type: 'tileChanged', col, row, state: 'flattened', mat: t.mat });
+    return true;
+  }
+
   /** Grinds an immovable tile down to rubble (the deflection failsafe when boxed in both ways). */
   crumble(col: number, row: number, events: SimEvent[]): void {
     const t = this.tile(col, row);

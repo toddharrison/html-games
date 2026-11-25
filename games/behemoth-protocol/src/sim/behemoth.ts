@@ -332,7 +332,7 @@ export function createBehemoth(
       };
     }),
     addons: fitted.map((id) => {
-      // A tread set's own upgrades are already in its def, as the chassis' are in `chassis`.
+      // A tread set's or the plow's own upgrades are already in its def, as the chassis' are in `chassis`.
       const def = fitAddon(ADDONS[id], upgrades);
       return { def, integrity: def.kind === 'mount' ? null : full(def.hp) };
     }),
@@ -485,6 +485,11 @@ export function ramRating(b: BehemothState): number {
   let ram = b.chassis.ram;
   for (const a of b.addons) if (a.def.kind === 'plow' && a.integrity && a.integrity.hp > 0) ram += a.def.ram;
   return Math.min(RAM.max, ram);
+}
+
+/** Whether rock at the nose is broken instead of turning the hull aside (SPEC §4.2): a plow with the Breaker upgrade, while its blade holds. */
+export function breaksRock(b: BehemothState): boolean {
+  return b.addons.some((a) => a.def.kind === 'plow' && !!a.def.breaksRock && !!a.integrity && a.integrity.hp > 0);
 }
 
 /** Can still drive: not Immobilized, and the reactor isn't about to go. */

@@ -223,9 +223,9 @@ describe('outboard treads take the upgrades the main treads take', () => {
     expect(partKind(s, 'outerTreads')).toBe('treads');
     expect(tracksOf(s, 'outerTreads')).toEqual(tracksOf(s, 'treads'));
     expect(tracksOf(s, 'outerTreads')).toEqual(['harden', 'load']);
-    // Other add-ons with parts of their own still take none; mounts take what their slot takes.
+    // The panels and the trailer still take none (the plow has its own, tests/sim/plowUpgrades.test.ts); mounts take what their slot takes.
     const all = newRun(11, 'class2', ['ramPlow', 'blowoutPanels', 'trailer', 'sponsonL']).behemoth;
-    for (const id of ['ramPlow', 'blowoutPanels', 'trailer']) expect(tracksOf(all, id)).toEqual([]);
+    for (const id of ['blowoutPanels', 'trailer']) expect(tracksOf(all, id)).toEqual([]);
     expect(tracksOf(all, 'sponsonL')).toEqual(['harden', 'traverse']);
   });
 

@@ -124,4 +124,7 @@ export const DEPOT_TRACKS: Record<TrackId, readonly number[]> = {
   load: [40, 60, 90],
   // One level, and dear: most of a battle's pay for a third weapon on Auto.
   channel: [240],
+  // One level. Nearly the plow's own price (120) again: rock stops being a wall. The Auto link stays
+  // the dearest upgrade by more than double.
+  breaker: [110],
 };

@@ -1,7 +1,7 @@
 import { OBSTACLE_CLASSES } from '../content/obstacles';
 import { MATERIALS } from '../content/terrain';
 import { MOVEMENT, TERRAIN_GEN } from '../content/tuning';
-import { IDLE_COMMAND, loadMass, type BehemothState, type PlayerCommand } from '../sim/behemoth';
+import { breaksRock, firingBinding, IDLE_COMMAND, loadMass, type BehemothState, type PlayerCommand } from '../sim/behemoth';
 import type { Enemy } from '../sim/entities';
 import { frameRight } from '../sim/frame';
 import type { World } from '../sim/world';
@@ -64,6 +64,11 @@ export const BOT = {
   secondaryRange: 200,
   /** Assumed round speed for leading a moving target (world units/s). */
   leadSpeed: 400,
+  /**
+   * With guns that need a lead and weapons that don't (lasers) on the triggers together, the one
+   * cursor leads only once a gun is this close (s) to ready; until then it stays on the target.
+   */
+  leadWindow: 0.35,
   /** Missiles only for units this threatening, or a battle mode's targets. */
   missileThreat: 3,
 } as const;
@@ -104,8 +109,9 @@ export function demoCommand(w: World): PlayerCommand {
   // No surging up to a fortress: it would roll past the guns before it could knock them out.
   else if (seen.length === 0 && plan.total < BOT.surgeBelow && !(w.objective.mode === 'breach' && objectivesAhead.length + (w.objective.fortress ? 1 : 0) > 0)) throttle = 1;
 
+  const fireSecondary = target !== null && dist(b, target) < BOT.secondaryRange;
   // Nothing to shoot: knock down what's in the way.
-  const aim = target ? lead(b, target) : (plan.clear ?? { x: b.x + 200, y: b.y });
+  const aim = target ? aimAt(b, target, fireSecondary) : (plan.clear ?? { x: b.x + 200, y: b.y });
   return {
     ...IDLE_COMMAND,
     throttle,
@@ -113,7 +119,7 @@ export function demoCommand(w: World): PlayerCommand {
     aimX: aim.x,
     aimY: aim.y,
     fireMain: target !== null || plan.clear !== null,
-    fireSecondary: target !== null && dist(b, target) < BOT.secondaryRange,
+    fireSecondary,
     fireMissile: target !== null && (target.objective || target.def.threat >= BOT.missileThreat),
   };
 }
@@ -152,6 +158,44 @@ function pickTarget(w: World, seen: Enemy[]): Enemy | null {
     }
   }
   return best;
+}
+
+/**
+ * Where to point the cursor to hit a target. A round with a flight time is led; a beam, a slug, an
+ * arc, or flame arrives at once, and a lead would point it ahead of a moving target (the laser
+ * that played along a tank's leading edge), so it's pointed at the target itself. One cursor
+ * serves every trigger, so with both kinds firing (`secondary`: RMB is held too) it leads only
+ * while a gun that needs it is about to fire (`BOT.leadWindow`) and stays on the target between
+ * shots. The main trigger's guns come first: the secondary's get their lead only when the main
+ * trigger has nothing to aim.
+ */
+function aimAt(b: BehemothState, e: Enemy, secondary: boolean): { x: number; y: number } {
+  const main = aimNeeds(b, 'lmb');
+  const sec = secondary ? aimNeeds(b, 'rmb') : NO_NEEDS;
+  if (!main.instant && !sec.instant) return lead(b, e);
+  const due = main.led ? main.due : !main.instant && sec.due;
+  return due ? lead(b, e) : { x: e.x, y: e.y };
+}
+
+const NO_NEEDS = { instant: false, led: false, due: false };
+
+/**
+ * What a trigger's working weapons ask of the cursor: `instant` (something on it arrives at once),
+ * `led` (something needs a lead), and `due` (one of those is about ready to fire).
+ */
+function aimNeeds(b: BehemothState, trigger: 'lmb' | 'rmb'): { instant: boolean; led: boolean; due: boolean } {
+  const needs = { ...NO_NEEDS };
+  for (const h of b.hardpoints) {
+    if (!h.weapon || h.integrity.hp <= 0 || h.ammo === 0 || firingBinding(b, h) !== trigger) continue;
+    const spec = h.weapon.projectile;
+    // Point defense and the EMP aren't aimed with the cursor; a missile homes.
+    if (spec.kind === 'intercept' || spec.kind === 'pulse' || spec.kind === 'missile') continue;
+    if ('speed' in spec) {
+      needs.led = true;
+      needs.due ||= h.cooldown <= BOT.leadWindow;
+    } else needs.instant = true;
+  }
+  return needs;
 }
 
 /** Where a round fired now would meet the target, if it holds its course. */
@@ -253,7 +297,9 @@ function tileCost(w: World, col: number, row: number, mass: number): number {
   const m = MATERIALS[t.mat];
   if (m.hidden && !t.seen) return 0;
   const ob = m.obstacle[t.state];
-  let c = ob === 'immovable' ? BOT.immovable : OBSTACLE_CLASSES[ob].treadDamage + 0.3 * OBSTACLE_CLASSES[ob].armorDamage;
+  // Rock is a wall, unless the plow breaks it: then it's an obstacle with a price like any other.
+  const cls = ob === 'immovable' && breaksRock(w.behemoth) ? 'rock' : ob;
+  let c = cls === 'immovable' ? BOT.immovable : OBSTACLE_CLASSES[cls].treadDamage + 0.3 * OBSTACLE_CLASSES[cls].armorDamage;
   if (m.hidden && t.state === 'intact') c += BOT.sweptMine;
   else if (m.explodes && (t.state === 'intact' || t.state === 'damaged')) c += BOT.explosive;
   if (m.wading) c += (m.wading.wear * TS) / 100 + (m.wading.cap === 'min' ? 0.5 : 0);

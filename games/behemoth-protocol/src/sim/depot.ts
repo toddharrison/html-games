@@ -219,6 +219,7 @@ export function partKind(s: BehemothSnapshot, id: string): PartKind | null {
   // An add-on tread set takes what the chassis' own treads take.
   const addon = addonPart(s, id);
   if (addon && ADDONS[addon.id].kind === 'treads') return 'treads';
+  if (addon && ADDONS[addon.id].kind === 'plow') return 'plow';
   const slot = slotDef(s, id);
   if (!slot || slot.position === 'trailer') return null;
   if (!slot.ring) return 'mount';
@@ -264,7 +265,7 @@ export function trailerDef(s: BehemothSnapshot): TrailerAddon | null {
   return s.trailer ? trailerOf(s.addons.map((a) => a.id)) : null;
 }
 
-/** An add-on as fitted to this Behemoth: a tread set's integrity and capacity include its upgrades. */
+/** An add-on as fitted to this Behemoth: a tread set's integrity and capacity include its upgrades, and so do the plow's integrity and its Breaker. */
 export function addonDef(s: BehemothSnapshot, id: AddonId): AddonDef {
   return fitAddon(ADDONS[id], { grades: s.grades, mods: s.mods });
 }

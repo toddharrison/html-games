@@ -62,16 +62,16 @@ export const GRADES: Record<CoreComponent, Record<UpgradeGen, GradeDef>> = {
 };
 
 /** Mod tracks. */
-export type TrackId = 'harden' | 'traverse' | 'plate' | 'capacitor' | 'load' | 'channel';
+export type TrackId = 'harden' | 'traverse' | 'plate' | 'capacitor' | 'load' | 'channel' | 'breaker';
 
 /**
  * The kinds of part a mod can go on: the reactor, a tread set (the chassis' own, or an add-on set
  * like the outboard pods), fire control, any other core component, a turret ring's main slot (the
  * ring itself), any other slot on a ring (a coax or a twin turret's second gun: no traverse of its
- * own), a hull mount that turns on its own, and an armor zone. Trailer pods and the other add-ons'
- * own parts take none (yet).
+ * own), a hull mount that turns on its own, an armor zone, and the ram plow. Trailer pods and the
+ * other add-ons' own parts (panels, the trailer frame) take none (yet).
  */
-export type PartKind = 'reactor' | 'treads' | 'fireControl' | 'core' | 'ring' | 'coax' | 'mount' | 'armor';
+export type PartKind = 'reactor' | 'treads' | 'fireControl' | 'core' | 'ring' | 'coax' | 'mount' | 'armor' | 'plow';
 
 export interface TrackDef {
   name: string;
@@ -79,7 +79,7 @@ export interface TrackDef {
   on: readonly PartKind[];
   /** What one level does, for the depot. */
   blurb: string;
-  /** Added to the stat's multiplier per level (+20% = 0.2); for `channel`, channels added per level. */
+  /** Added to the stat's multiplier per level (+20% = 0.2); for `channel`, channels added per level; unused by `breaker` (it's on or off). */
   per: number;
   /** Tons per level. */
   mass: number;
@@ -89,7 +89,7 @@ export interface TrackDef {
 
 /** In the order the depot lists them. */
 export const TRACKS: Record<TrackId, TrackDef> = {
-  harden: { name: 'Harden', on: ['reactor', 'treads', 'fireControl', 'core', 'ring', 'coax', 'mount'], blurb: '+20% integrity', per: 0.2, mass: 2 },
+  harden: { name: 'Harden', on: ['reactor', 'treads', 'fireControl', 'core', 'ring', 'coax', 'mount', 'plow'], blurb: '+20% integrity', per: 0.2, mass: 2 },
   traverse: { name: 'Traverse', on: ['ring', 'mount'], blurb: '+25% traverse', per: 0.25, mass: 1 },
   plate: { name: 'Plate', on: ['armor'], blurb: '+20% armor', per: 0.2, mass: 4 },
   capacitor: { name: 'Cap bank', on: ['reactor'], blurb: '+20% capacitor', per: 0.2, mass: 3 },
@@ -100,6 +100,10 @@ export const TRACKS: Record<TrackId, TrackDef> = {
   // one level, and dear (user's call, Nov 2026: "upgradable to 3 autos, but be expensive"). It's
   // on top of whatever the fire control's grade gives.
   channel: { name: 'Auto link', on: ['fireControl'], blurb: '+1 Auto channel', per: 1, mass: 4, max: 1 },
+  // Teeth and a wedge on the ram plow (user's request, Nov 2026: "an upgrade to the plow that allows
+  // the behemoth to crush rocks instead of being redirected left or right"). One level; it works
+  // only while the blade holds, and each rock tile wears it (`OBSTACLE_CLASSES.rock`).
+  breaker: { name: 'Breaker', on: ['plow'], blurb: 'crushes rock', per: 1, mass: 6, max: 1 },
 };
 
 /** Levels a track goes up to: its own cap, or `fallback` (`DEPOT.maxModLevel`). */

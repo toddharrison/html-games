@@ -1066,7 +1066,7 @@ export class TopDownBattleScene extends Phaser.Scene {
         }
         case 'collision': {
           const shake = OBSTACLE_CLASSES[ev.obstacle].shake;
-          this.fx.plow(ev.x, ev.y, ev.obstacle === 'heavy' || ev.obstacle === 'medium');
+          this.fx.plow(ev.x, ev.y, ev.obstacle === 'heavy' || ev.obstacle === 'medium' || ev.obstacle === 'rock');
           this.behemothView.onRam();
           if (shake > 0) this.shake(140, 3.5 * shake);
           break;

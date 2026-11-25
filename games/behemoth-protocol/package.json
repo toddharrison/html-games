@@ -3,7 +3,7 @@
   "title": "Behemoth Protocol",
   "description": "A roguelike where you play the boss: drive a giant cybernetic war machine up a battlefield against a combined-arms force.",
   "private": true,
-  "version": "0.6.1",
+  "version": "0.6.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,7 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "render:music": "node scripts/render-music.mjs",
     "playtest": "node scripts/playtest.mjs",
+    "audit:text": "node scripts/text-audit.mjs",
     "bench": "node scripts/bench.mjs"
   },
   "dependencies": {

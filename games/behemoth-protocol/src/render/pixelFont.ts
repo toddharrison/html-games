@@ -96,17 +96,3 @@ export function generatePixelFont(scene: Phaser.Scene): void {
 export function fontText(s: string): string {
   return s.toUpperCase();
 }
-
-/** Greedy word wrap to lines of at most `max` characters. */
-export function wrapText(s: string, max: number): string[] {
-  const lines: string[] = [];
-  let cur = '';
-  for (const word of s.split(' ')) {
-    if (cur && cur.length + 1 + word.length > max) {
-      lines.push(cur);
-      cur = word;
-    } else cur = cur ? `${cur} ${word}` : word;
-  }
-  if (cur) lines.push(cur);
-  return lines;
-}

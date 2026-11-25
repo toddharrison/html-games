@@ -62,6 +62,7 @@ import { isFinalNode } from '../sim/sectorMap';
 import { MODES } from '../content/modes';
 import { objectiveBonus, objectiveComplete, objectivePercent } from '../sim/objective';
 import { FONT_KEY, fontText } from '../render/pixelFont';
+import { uiText } from '../render/uiText';
 import { hex, PAL } from '../render/palette';
 import { checkpoint, endRun, enterNode, randomSeed, recordRun, showSummary, type RunContext } from './flow';
 import { TrainView } from '../render/trainView';
@@ -231,7 +232,7 @@ export class TopDownBattleScene extends Phaser.Scene {
     this.drones = new DroneViews(this);
     this.pools = new PoolViews(this);
     this.oil = new OilViews(this);
-    this.salvage = new SalvageMotes(this);
+    this.salvage = new SalvageMotes(this, this.world.terrain.height);
     this.locks = new LockViews(this);
     this.barrages = new BarrageViews(this);
     this.mineRings = new MineRings(this);
@@ -445,7 +446,8 @@ export class TopDownBattleScene extends Phaser.Scene {
     const weather = clip.condition ? ` - ${conditionName(clip.condition, clip.biome)}` : '';
     // What it's fighting with: the guns on its turret rings.
     const guns = this.world.behemoth.hardpoints.filter((h) => h.slot.size === 'L' && h.weapon).map((h) => h.weapon!.name);
-    this.add.bitmapText(6, height - 6, FONT_KEY, fontText(`${where}\n${mode}${weather}\n${guns.join(', ')}`)).setOrigin(0, 1).setTint(hex(PAL.hudText)).setScrollFactor(0).setDepth(150);
+    // Bottom left, in the margin beside the title's score list; a long line wraps, and the caption grows upward.
+    uiText(this, 6, height - 6, `${where}\n${mode}${weather}\n${guns.join(', ')}`, { valign: 'bottom', width: Math.floor(this.layout.width * DEMO_CAPTION_W) }).setScrollFactor(0).setDepth(150);
     this.cameras.main.fadeIn(DEMO.fade * 1000);
   }
 
@@ -1213,7 +1215,7 @@ export class TopDownBattleScene extends Phaser.Scene {
       `ENEMIES ${w.enemies.length} HIDDEN ${w.enemies.filter((e) => e.hidden).length}`,
       `SHOTS ${w.projectiles.length}`,
       `ALERT ${w.encounter.alert.wave} NEXT ${w.encounter.alert.next.toFixed(1)} Q ${w.encounter.alert.queue.toFixed(1)}`,
-      `POSTS ${w.encounter.posts.length} THREAT ${w.threat}`,
+      `POSTS ${w.encounter.posts.length} THREAT ${w.threat.toFixed(1)}`,
       ...(this.audio?.musicStatus() ? [this.audio.musicStatus()!] : []),
       ...(w.condition ? [`${w.condition.id.toUpperCase()} SIGHT ${sightRadius(w)?.toFixed(0) ?? '-'} SQUALL ${w.condition.squall.toFixed(2)}`] : []),
       `MODE ${w.objective.mode.toUpperCase()} ${w.objective.destroyed}/${w.objective.total} LOST ${w.objective.lost}`,
@@ -1244,6 +1246,9 @@ export class DemoBattleScene extends TopDownBattleScene {
     super.init({ run: demoRun(clip), persist: false, demo: clip });
   }
 }
+
+/** The attract mode's caption: its width as a share of the screen's (the margin left of the title's score list). */
+const DEMO_CAPTION_W = 0.18;
 
 /** The run summary's still of the blast: its texture key, and how long after the detonation it's taken. */
 const SHOT_KEY = 'summary_shot';

@@ -4,7 +4,7 @@ import { ARMOR_ARCS } from '../content/chassis';
 import { MAP_EVENTS } from '../content/mapEvents';
 import { integrityColor } from '../render/cutaway';
 import { MAP_ICON, mapIconSheet } from '../render/mapArt';
-import { FONT_KEY, fontText, wrapText } from '../render/pixelFont';
+import { below, uiRow, uiText, type TextStyle } from '../render/uiText';
 import { hex, PAL } from '../render/palette';
 import { canChoose, chooseEventOption, currentEvent, lastEventOutcome } from '../sim/mapEvents';
 import { treadIntegrity } from '../sim/behemoth';
@@ -89,8 +89,9 @@ export class EventScene extends Phaser.Scene {
     this.draw();
   }
 
-  private text(x: number, y: number, s: string, color: string = PAL.hudText, scale = 1): Phaser.GameObjects.BitmapText {
-    const t = this.add.bitmapText(x, y, FONT_KEY, fontText(s)).setTint(hex(color)).setScale(scale);
+  /** Text fitted to its box (render/uiText.ts): with a `width` it wraps, at the screen's line spacing. */
+  private text(x: number, y: number, s: string, color: string = PAL.hudText, style: TextStyle = {}): Phaser.GameObjects.BitmapText {
+    const t = uiText(this, x, y, s, { color, ...(style.scale ? {} : { pitch: LINE }), ...style });
     this.ui.push(t);
     return t;
   }
@@ -105,60 +106,52 @@ export class EventScene extends Phaser.Scene {
     const def = MAP_EVENTS[currentEvent(run)!.id];
     this.drawStatus();
 
-    // The scene: the icon, the title, the text.
+    // The scene: the icon, the title, the text. Everything is fitted to the column right of the
+    // status panel: a long line wraps, and what's under it moves down.
     const x = 150;
-    const cols = Math.floor((width - x - 16) / 4);
+    const w = width - x - 16;
     const biome = run.map.sectors[at.sector]!.biome;
     this.ui.push(this.add.image(x + MAP_ICON / 2, 12 + MAP_ICON / 2, mapIconSheet(biome), 'event'));
-    this.text(x + MAP_ICON + 8, 14, def.title, PAL.glow, 2);
-    this.text(x + MAP_ICON + 8, 30, `Sector ${at.sector + 1} event`, PAL.hudDim);
-    let y = 48;
-    for (const line of wrapText(def.text, cols)) {
-      this.text(x, y, line);
-      y += 9;
-    }
-    y += 10;
+    const headX = x + MAP_ICON + 8;
+    const title = this.text(headX, 14, def.title, PAL.glow, { scale: 2, width: x + w - headX });
+    const sub = this.text(headX, below(title), `Sector ${at.sector + 1} event`, PAL.hudDim, { width: x + w - headX });
+    let y = Math.max(48, below(sub, 8));
+    y = below(this.text(x, y, def.text, PAL.hudText, { width: w }), 12);
 
     if (this.decided) {
       const out = lastEventOutcome(run)!;
-      this.text(x, y, out.option, PAL.glowHot);
-      y += 13;
-      for (const line of wrapText(out.text, cols)) {
-        this.text(x, y, line);
-        y += 9;
-      }
-      y += 6;
+      y = below(this.text(x, y, out.option, PAL.glowHot, { width: w }), 6);
+      y = below(this.text(x, y, out.text, PAL.hudText, { width: w }), 8);
       for (const line of out.lines) {
-        this.text(x + 4, y, line, line.startsWith('-') || line.includes(' -') || line.includes('alerted') ? PAL.amber : PAL.glow);
-        y += 9;
+        y = below(this.text(x + 4, y, line, line.startsWith('-') || line.includes(' -') || line.includes('alerted') ? PAL.amber : PAL.glow, { width: w - 4 }));
       }
-      this.text(x, height - 16, usingPad() ? 'A - continue' : 'Enter or click - continue', PAL.hudText);
+      this.text(x, height - 16, usingPad() ? 'A - continue' : 'Enter or click - continue', PAL.hudText, { width: w, lines: 1 });
       // Armed a moment later, so the click that chose can't also skip the result.
       this.time.delayedCall(250, () => this.input.once('pointerdown', () => this.confirm()));
       return;
     }
 
-    // The options: numbered rows, the selected one framed.
+    // The options: numbered rows, the selected one framed. A row is as tall as its text.
     def.options.forEach((opt, i) => {
       const ok = canChoose(run, i);
       const sel = i === this.selected;
-      const rowH = 22;
       const top = y - 3;
-      const frame = this.add.rectangle(x - 4, top, width - x - 12, rowH - 2).setOrigin(0, 0).setStrokeStyle(1, hex(sel ? PAL.glow : PAL.hudLine), sel ? 1 : 0.6);
+      const cost = opt.cost ? `  (${opt.cost} salvage)` : '';
+      const label = this.text(x, y, `${i + 1}  ${opt.label}${cost}`, !ok ? PAL.hudDim : sel ? PAL.glow : PAL.hudText, { width: w });
+      const hint = this.text(x + 12, below(label), ok ? opt.hint : `Not enough salvage. ${opt.hint}`, PAL.hudDim, { width: w - 12 });
+      y = below(hint, 6);
+      const frame = this.add.rectangle(x - 4, top, width - x - 12, y - top - 5).setOrigin(0, 0).setStrokeStyle(1, hex(sel ? PAL.glow : PAL.hudLine), sel ? 1 : 0.6);
       frame.setInteractive({ useHandCursor: true });
       frame.on('pointerover', () => this.selected !== i && this.pick(i));
       frame.on('pointerdown', () => (this.selected === i ? this.confirm() : this.pick(i)));
       this.ui.push(frame);
-      const cost = opt.cost ? `  (${opt.cost} salvage)` : '';
-      this.text(x, y, `${i + 1}  ${opt.label}${cost}`, !ok ? PAL.hudDim : sel ? PAL.glow : PAL.hudText);
-      this.text(x + 12, y + 9, ok ? opt.hint : `Not enough salvage. ${opt.hint}`, PAL.hudDim);
-      y += rowH;
     });
     this.text(
       x,
       height - 16,
       usingPad() ? 'D-pad to choose, A to decide    B - title' : `1-${def.options.length} or click to choose, Enter to decide    Esc - title`,
       PAL.hudDim,
+      { width: w, lines: 1 },
     );
   }
 
@@ -167,12 +160,12 @@ export class EventScene extends Phaser.Scene {
     const run = this.ctx.run;
     const x = 12;
     let y = 14;
-    this.text(x, y, run.callsign, PAL.glow);
+    this.text(x, y, run.callsign, PAL.glow, { width: STATUS_W, lines: 1 });
     y += 14;
     const row = (label: string, value: string, color: string = PAL.hudText) => {
-      this.text(x, y, label, PAL.hudDim);
-      this.text(x + 120, y, value, color).setOrigin(1, 0);
-      y += 9;
+      const r = uiRow(this, x, y, STATUS_W, label, value, color);
+      this.ui.push(r.label, r.value);
+      y += LINE;
     };
     row('Salvage', String(run.salvage), PAL.amber);
     if (run.cache > 0) row('Supply caches', `+${run.cache}`, PAL.glow);
@@ -196,3 +189,7 @@ export class EventScene extends Phaser.Scene {
     }
   }
 }
+
+/** The status panel's width (from x = 12), and the screen's line spacing. */
+const STATUS_W = 120;
+const LINE = 9;

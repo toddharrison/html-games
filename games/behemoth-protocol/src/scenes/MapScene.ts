@@ -13,7 +13,8 @@ import { DIFFICULTIES } from '../content/difficulties';
 import { DIRECTIVES } from '../content/directives';
 import { integrityColor } from '../render/cutaway';
 import { makeMapBackground, MAP_ICON, mapIconSheet, type MapIcon } from '../render/mapArt';
-import { FONT_KEY, fontText, wrapText } from '../render/pixelFont';
+import { firstFit, charsIn } from '../render/textLayout';
+import { below, updateText, uiRow, uiText, type TextStyle } from '../render/uiText';
 import { hex, PAL } from '../render/palette';
 import { openDepot } from '../sim/depot';
 import { objectivePercent } from '../sim/objective';
@@ -111,7 +112,7 @@ export class MapScene extends Phaser.Scene {
       this,
       { left: () => this.cycle(-1), up: () => this.cycle(-1), right: () => this.cycle(1), down: () => this.cycle(1), a: () => this.go(), start: () => this.go(), b: () => this.scene.start('title') },
       () => {
-        this.keyHint?.setText(fontText(mapHint()));
+        if (this.keyHint) updateText(this.keyHint, mapHint());
         this.drawIntel();
       },
     );
@@ -190,8 +191,9 @@ export class MapScene extends Phaser.Scene {
 
   // ── Drawing ───────────────────────────────────────────────────────────────────────────────────
 
-  private text(x: number, y: number, s: string, color: string = PAL.hudText, scale = 1, list = this.ui): Phaser.GameObjects.BitmapText {
-    const t = this.add.bitmapText(x, y, FONT_KEY, fontText(s)).setTint(hex(color)).setScale(scale);
+  /** Text fitted to its box (render/uiText.ts): with a `width` it wraps, at the panels' line spacing. */
+  private text(x: number, y: number, s: string, color: string = PAL.hudText, style: TextStyle = {}, list = this.ui): Phaser.GameObjects.BitmapText {
+    const t = uiText(this, x, y, s, { color, pitch: LINE, ...style });
     list.push(t);
     return t;
   }
@@ -222,7 +224,7 @@ export class MapScene extends Phaser.Scene {
     frame.lineStyle(1, hex(PAL.hudLine), 1).strokeRect(left - 2.5, top - 2.5, w + 5, h + 5);
     for (let gx = GRID, i = 0; gx < w; gx += GRID, i++) this.text(left + gx + 2, top + 2, String.fromCharCode(65 + i), INK_TEXT).setAlpha(0.7);
     for (let gy = GRID, i = 1; gy < h; gy += GRID, i++) this.text(left + 2, top + gy + 2, String(i), INK_TEXT).setAlpha(0.7);
-    this.text(right - 16, top + 26, 'N', INK_TEXT).setOrigin(0.5, 0);
+    this.text(right - 16, top + 26, 'N', INK_TEXT, { align: 'center' });
 
     // Routes: inked dashes; the way taken in the player's cyan over a dark edge; the roads out of
     // the node the Behemoth is at, bolder.
@@ -243,7 +245,7 @@ export class MapScene extends Phaser.Scene {
     for (const n of sector.nodes) this.drawNode(n, xy[n.id]!);
     this.drawRings();
 
-    this.keyHint = this.text((left + right) / 2, RESOLUTION.height - 12, mapHint(), PAL.hudDim).setOrigin(0.5, 0);
+    this.keyHint = this.text((left + right) / 2, RESOLUTION.height - 12, mapHint(), PAL.hudDim, { align: 'center', width: right - left, lines: 1 });
   }
 
   /** What a node's icon shows: its ground (fogged ground shows as fog), a depot, or an event. */
@@ -338,7 +340,7 @@ export class MapScene extends Phaser.Scene {
       // The choice's number on a dark tag at the frame's corner.
       const tag = this.add.rectangle(p.x - R - 1, p.y - R - 1, 7, 9, hex(PAL.outline)).setOrigin(0, 0);
       this.rings.push(tag);
-      this.rings.push(this.add.bitmapText(p.x - R + 1, p.y - R + 1, FONT_KEY, String(i + 1)).setTint(hex(sel ? PAL.glow : PAL.glowDim)));
+      this.rings.push(uiText(this, p.x - R + 1, p.y - R + 1, String(i + 1), { color: sel ? PAL.glow : PAL.glowDim }));
     });
   }
 
@@ -346,23 +348,23 @@ export class MapScene extends Phaser.Scene {
     const run = this.run;
     const map = run.map;
     const x = 12;
-    this.text(x, 10, `Sector ${this.sector + 1}`, PAL.glow, 2);
-    this.text(x + 76, 17, `of ${map.sectors.length}`, PAL.hudDim);
-    this.text(x, 28, BIOMES[map.sectors[this.sector]!.biome].name, PAL.hudText);
+    // Everything in the panel is fitted to its width: a long line wraps, and what's under it moves down.
+    const w = PANEL_W;
+    const para = (s: string, color: string = PAL.hudText) => {
+      y = below(this.text(x, y, s, color, { width: w }));
+    };
+    this.text(x, 10, `Sector ${this.sector + 1}`, PAL.glow, { scale: 2 });
+    this.text(x + 76, 17, `of ${map.sectors.length}`, PAL.hudDim, { width: w - 76, lines: 1 });
+    let y = 28;
+    para(BIOMES[map.sectors[this.sector]!.biome].name);
     const later = map.sectors.slice(this.sector + 1).map((s) => BIOMES[s.biome].name);
-    let y = 37;
-    if (later.length > 0) {
-      for (const l of wrapText(`Then: ${later.join(', ')}`, PANEL_CHARS)) {
-        this.text(x, y, l, PAL.hudDim);
-        y += 9;
-      }
-    }
+    if (later.length > 0) para(`Then: ${later.join(', ')}`, PAL.hudDim);
 
     y += 8;
     const row = (label: string, value: string, color: string = PAL.hudText) => {
-      this.text(x, y, label, PAL.hudDim);
-      this.text(x + 120, y, value, color).setOrigin(1, 0);
-      y += 9;
+      const r = uiRow(this, x, y, w, label, value, color);
+      this.ui.push(r.label, r.value);
+      y += LINE;
     };
     // The run's orders, and each sector's objective so far: + taken, x missed, - ahead.
     const def = DIRECTIVES[run.directive];
@@ -379,13 +381,10 @@ export class MapScene extends Phaser.Scene {
     // The Behemoth's condition: what the next fight starts with.
     y += 6;
     // The Behemoth, under its callsign, and who the name belonged to.
-    this.text(x, y, run.callsign, PAL.glow);
+    para(run.callsign, PAL.glow);
     const sign = CALLSIGNS.find((c) => c.name === run.callsign);
-    if (sign) {
-      this.text(x, y + 9, sign.note, PAL.hudDim);
-      y += 9;
-    }
-    y += 10;
+    if (sign) para(sign.note, PAL.hudDim);
+    y += 1;
     const b = restoreBehemoth(run.behemoth, 0, 0);
     const frac = (i: { hp: number; max: number }) => (i.max > 0 ? i.hp / i.max : 0);
     const pct = (f: number) => (f > 0 ? `${Math.round(f * 100)}%` : 'Offline');
@@ -406,32 +405,22 @@ export class MapScene extends Phaser.Scene {
     const ev = lastEventOutcome(run);
     if (ev && this.run.at && nodeAt(map, this.run.at)?.kind === 'event') {
       y += 6;
-      this.text(x, y, ev.title, PAL.glow);
-      y += 9;
-      for (const l of ev.lines) {
-        for (const w of wrapText(l, PANEL_CHARS)) {
-          this.text(x, y, w, PAL.hudDim);
-          y += 9;
-        }
-      }
+      para(ev.title, PAL.glow);
+      for (const l of ev.lines) para(l, PAL.hudDim);
     }
     const r = run.lastBattle;
     if (r && this.run.at && nodeAt(map, this.run.at)?.kind === 'battle') {
       y += 6;
       const time = `${Math.floor(r.time / 60)}:${String(Math.floor(r.time % 60)).padStart(2, '0')}`;
-      this.text(x, y, `Battle ${r.battle} won in ${time}`, PAL.glow);
-      this.text(x, y + 9, `${r.kills} kills, +${r.salvage + r.bonus} salvage`, PAL.hudDim);
+      para(`Battle ${r.battle} won in ${time}`, PAL.glow);
+      para(`${r.kills} kills, +${r.salvage + r.bonus} salvage`, PAL.hudDim);
       const o = r.objective;
       const names = o && MODES[o.mode].target;
       if (o && names) {
-        y += 9;
         const paid = o.salvage !== undefined ? ` +${o.salvage}` : '';
-        this.text(x, y + 9, `${MODES[o.mode].name}: ${o.destroyed}/${o.total} ${names[1]} ${objectivePercent(o)}%${paid}`, o.destroyed === o.total ? PAL.glow : PAL.amber);
+        para(`${MODES[o.mode].name}: ${o.destroyed}/${o.total} ${names[1]} ${objectivePercent(o)}%${paid}`, o.destroyed === o.total ? PAL.glow : PAL.amber);
       }
-      if (r.taken !== undefined) {
-        y += 9;
-        this.text(x, y + 9, r.taken ? `Objective taken: +${DIRECTIVE.sectorReward} action` : 'Objective missed', r.taken ? PAL.glow : PAL.amber);
-      }
+      if (r.taken !== undefined) para(r.taken ? `Objective taken: +${DIRECTIVE.sectorReward} action` : 'Objective missed', r.taken ? PAL.glow : PAL.amber);
     }
   }
 
@@ -444,12 +433,13 @@ export class MapScene extends Phaser.Scene {
     if (!pos || !node) return;
     const x = RESOLUTION.width - INTEL_W;
     let y = 12;
-    // Every line wraps to the panel, so no string runs off the right edge.
+    // Every line wraps to the panel, so no string runs off the right edge; and the panel ends at
+    // the screen's foot, so a node with more to say than there's room for is cut short there.
+    const foot = RESOLUTION.height - 4;
     const t = (s: string, color: string = PAL.hudText, dx = 0) => {
-      for (const l of wrapText(s, Math.floor((INTEL_W - INTEL_MARGIN - dx) / CHAR_W))) {
-        this.text(x + dx, y, l, color, 1, this.intel);
-        y += 9;
-      }
+      const lines = Math.floor((foot - y) / LINE);
+      if (lines < 1) return;
+      y = below(this.text(x + dx, y, s, color, { width: INTEL_W - INTEL_MARGIN - dx, lines }, this.intel));
     };
     const near = this.visited(pos) || this.options.some((o) => samePos(o, pos));
     const done = this.visited(pos);
@@ -542,9 +532,13 @@ function objectiveReward(mode: BattleModeId, strength: Strength | null, scale: n
   return `+${Math.round(bonus / count)} a ${names[0]} destroyed (${count}), up to +${bonus}`;
 }
 
-/** The key hints under the map, for the keyboard and mouse or the pad. */
+/** The key hints under the map, for the keyboard and mouse or the pad: the wording that fits the map's width. */
 function mapHint(): string {
-  return usingPad() ? 'D-pad to choose, A to roll out    B - title' : 'Click a node or 1-9, then Enter    Esc - title';
+  const { left, right } = mapRect();
+  const hints = usingPad()
+    ? ['D-pad to choose, A to roll out    B - title', 'D-pad, then A   B - title']
+    : ['Click a node or 1-9, then Enter    Esc - title', 'Click or 1-9, then Enter   Esc - title', '1-9, Enter   Esc - title'];
+  return firstFit(hints, charsIn(right - left));
 }
 
 /** The map sheet's area: between the side panels, above the key hints. */
@@ -559,10 +553,9 @@ const MAP_SHEET = 'map_sheet';
 /** Ink on the map sheet (grid references, the routes). */
 const INK_TEXT = '#1d1a16';
 
-/** Characters that fit across the left panel (the 3×5 font is 4 pixels a character). */
-const PANEL_CHARS = 30;
-/** The 3×5 font's advance per character, in pixels. */
-const CHAR_W = 4;
+/** The left panel's width (from x = 12, short of the map sheet's frame), and the panels' line spacing. */
+const PANEL_W = 120;
+const LINE = 9;
 /** The intel panel's width at the right edge, and the gap its text keeps from the screen edge. */
 const INTEL_W = 160;
 const INTEL_MARGIN = 4;

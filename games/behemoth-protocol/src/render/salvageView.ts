@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import type { SalvageSource } from '../sim/events';
 import { hex, PAL } from './palette';
 import { FONT_KEY, fontText } from './pixelFont';
+import { textWidth } from './textLayout';
 import { viewX, viewY } from './viewTransform';
 
 /** Salvage per mote: a kill worth 12 throws 3 of them. */
@@ -56,7 +57,11 @@ export class SalvageMotes {
   private motes: Mote[] = [];
   private tags: Tag[] = [];
 
-  constructor(private readonly scene: Phaser.Scene) {
+  /** `fieldW`: the battlefield's width, which the "+N" tags stay inside (the HUD's panels cover what's past it). */
+  constructor(
+    private readonly scene: Phaser.Scene,
+    private readonly fieldW: number,
+  ) {
     // Over units and the hull, under the aim glints.
     this.gfx = scene.add.graphics().setDepth(6.4).setBlendMode(Phaser.BlendModes.ADD);
   }
@@ -74,8 +79,11 @@ export class SalvageMotes {
       this.motes.push({ x, y, px: x, py: y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, age: 0, delay: Math.random() * 0.12, amount: share, color });
     }
     if (amount >= TAG_MIN) {
+      const label = fontText(`+${amount}`);
+      // Centered on the pickup, but pulled in from the field's edge so the whole number shows.
+      const half = Math.ceil(textWidth(label) / 2) + 1;
       const text = this.scene.add
-        .bitmapText(viewX(x, y), viewY(x) - 6, FONT_KEY, fontText(`+${amount}`))
+        .bitmapText(Math.min(Math.max(viewX(x, y), half), this.fieldW - half), viewY(x) - 6, FONT_KEY, label)
         .setOrigin(0.5, 1)
         .setTint(color)
         .setDepth(6.45);

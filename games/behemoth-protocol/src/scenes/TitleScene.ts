@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { RESOLUTION } from '../config';
-import { FONT_KEY, fontText, wrapText } from '../render/pixelFont';
+import { CHAR_W, LINE_H, tableRows, wrapText } from '../render/textLayout';
+import { updateText, uiText, type TextStyle } from '../render/uiText';
 import { hex, PAL } from '../render/palette';
 import { BIOME_IDS } from '../content/biomes';
 import { DEFAULT_DIFFICULTY, DIFFICULTIES, DIFFICULTY_IDS, difficultyBrief, type DifficultyId } from '../content/difficulties';
@@ -16,9 +17,8 @@ import { keyLabel } from '../input/gamepad';
 import { padMenu } from '../input/padMenu';
 import { VERSION } from '../version';
 
-/** The 3×5 font's advance per character and per line, in pixels. */
-const CHAR_W = 4;
-const LINE_H = 7;
+/** The gap the title's centered lines keep from the screen's sides. */
+const MARGIN = 8;
 
 /**
  * Title screen (SPEC §10): continue the saved run or start a new one. Starting over while a run is
@@ -71,8 +71,9 @@ export class TitleScene extends Phaser.Scene {
     this.focus = 0;
     this.difficulty = DEFAULT_DIFFICULTY;
     this.sectors = SECTOR_MAP.sectors;
-    const text = (y: number, s: string, color: string, scale = 1) =>
-      this.add.bitmapText(cx, y, FONT_KEY, fontText(s)).setTint(hex(color)).setScale(scale).setOrigin(0.5, 0);
+    // Centered lines, fitted to the screen: a long one wraps (or, with `lines`, is clipped).
+    const text = (y: number, s: string, color: string, scale = 1, style: TextStyle = {}) =>
+      uiText(this, cx, y, s, { color, scale, align: 'center', width: width - 2 * MARGIN, ...style });
 
     // The attract mode runs underneath, dimmed, with a darker band so the menu reads over it.
     this.scene.launch('demo');
@@ -89,17 +90,18 @@ export class TitleScene extends Phaser.Scene {
     this.prompt = text(Math.round(height * 0.62), '', PAL.hudText);
     this.scoreList(loadScores().slice(0, SCORE.shown));
     // The build's version, bottom right (the attract mode's caption takes the bottom left).
-    this.add.bitmapText(width - 6, height - 6, FONT_KEY, fontText(VERSION)).setTint(hex(PAL.hudDim)).setOrigin(1, 1).setDepth(10);
+    uiText(this, width - 6, height - 6, VERSION, { color: PAL.hudDim, align: 'right', valign: 'bottom' }).setDepth(10);
 
     // The run setup (SPEC §10): choose the Directive, then the difficulty and the run's length under its orders.
     this.picker.push(text(top, 'Choose your Directive', PAL.glow, 2));
     DIRECTIVE_IDS.forEach((id, i) => {
-      const line = text(top + 22 + i * 12, `${i + 1}  ${DIRECTIVES[id].name} - ${DIRECTIVES[id].brief}`, PAL.hudDim);
+      // One line each, with room at the left for the cursor.
+      const line = text(top + 22 + i * 12, `${i + 1}  ${DIRECTIVES[id].name} - ${DIRECTIVES[id].brief}`, PAL.hudDim, 1, { lines: 1, width: width - 2 * MARGIN - 6 * CHAR_W });
       line.setInteractive({ useHandCursor: true }).on('pointerdown', () => (this.choosing === i && this.focus === i ? this.startRun() : this.choose(i)));
       this.picker.push(line);
     });
     const ordersY = top + 22 + DIRECTIVE_IDS.length * 12 + 8;
-    this.orders = text(ordersY, '', PAL.hudText);
+    this.orders = text(ordersY, '', PAL.hudText, 1, { width: this.ordersWidth() * CHAR_W });
     this.picker.push(this.orders);
     // The settings: two rows clear of the longest orders, their options in the same columns.
     const ordersLines = Math.max(...DIRECTIVE_IDS.map((id) => wrapText(DIRECTIVES[id].orders, this.ordersWidth()).length));
@@ -115,11 +117,11 @@ export class TitleScene extends Phaser.Scene {
     const rowX = cx - Math.round((labelW + cols * (gap + colW)) / 2);
     rows.forEach((row, r) => {
       const y = rowY + r * 9;
-      const label = this.add.bitmapText(rowX, y, FONT_KEY, fontText(row.label)).setTint(hex(PAL.hudDim));
+      const label = uiText(this, rowX, y, row.label, { color: PAL.hudDim });
       this.rowLabels.push(label);
       this.picker.push(label);
       row.options.forEach((option, i) => {
-        const t = this.add.bitmapText(rowX + labelW + gap + i * (colW + gap), y, FONT_KEY, fontText(option)).setTint(hex(PAL.hudDim));
+        const t = uiText(this, rowX + labelW + gap + i * (colW + gap), y, option, { color: PAL.hudDim });
         // The whole column is the target (a lone digit is four pixels wide).
         t.setInteractive({ hitArea: new Phaser.Geom.Rectangle(-gap / 2, -2, colW + gap, 9), hitAreaCallback: Phaser.Geom.Rectangle.Contains, useHandCursor: true });
         t.on('pointerdown', () => {
@@ -130,12 +132,12 @@ export class TitleScene extends Phaser.Scene {
         this.picker.push(t);
       });
     });
-    this.settingsBrief = text(rowY + rows.length * 9 + 2, '', PAL.hudDim);
+    this.settingsBrief = text(rowY + rows.length * 9 + 2, '', PAL.hudDim, 1, { lines: 1 });
     this.picker.push(this.settingsBrief);
-    this.cursor = this.add.bitmapText(0, 0, FONT_KEY, fontText('>')).setTint(hex(PAL.glow));
+    this.cursor = uiText(this, 0, 0, '>', { color: PAL.glow });
     this.picker.push(this.cursor);
     const hintY = Math.max(Math.round(height * 0.66), rowY + rows.length * 9 + 13);
-    this.pickerHint = text(hintY, '', PAL.hudText);
+    this.pickerHint = text(hintY, '', PAL.hudText, 1, { lines: 1 });
     this.picker.push(this.pickerHint);
     // On a short screen the setup runs past the menu's band: more of it, behind the last lines.
     const bandEnd = Math.round(height * 0.25) + Math.round(height * 0.47);
@@ -201,25 +203,25 @@ export class TitleScene extends Phaser.Scene {
     if (scores.length === 0) return;
     const { width, height } = RESOLUTION;
     const result: Record<ScoreEntry['outcome'], string> = { won: 'Complete', failed: 'Failed', destroyed: 'Destroyed' };
-    const row = (cells: string[]) =>
-      `${cells[0]!.padStart(2)}  ${cells[1]!.padEnd(14)} ${cells[2]!.padStart(7)}  ${cells[3]!.padEnd(6)}  ${cells[4]!.padEnd(9)}  ${cells[5]!.padEnd(10)}  ${cells[6]}`;
-    const lines = [
-      row(['#', 'Behemoth', 'Score', 'Level', 'Result', 'Reached', 'Date']),
-      ...scores
-        .map((e, i) => [String(i + 1), e.callsign, e.score.toLocaleString('en-US'), DIFFICULTIES[e.difficulty].name, result[e.outcome], `Sector ${e.reached}/${e.sectors}`, e.date])
-        .map(row),
-    ];
+    // Columns as wide as what's in them (the place and the score right-aligned), so any callsign or score lines up.
+    const lines = tableRows(
+      [
+        ['#', 'Behemoth', 'Score', 'Level', 'Result', 'Reached', 'Date'],
+        ...scores.map((e, i) => [String(i + 1), e.callsign, e.score.toLocaleString('en-US'), DIFFICULTIES[e.difficulty].name, result[e.outcome], `Sector ${e.reached}/${e.sectors}`, e.date]),
+      ],
+      [0, 2],
+    );
     const top = Math.round(height * 0.74);
     const rowH = 8;
     // Part of the title: it makes way for the run setup, which runs down into its space.
     this.titleText.push(
       this.add.rectangle(0, top - 4, width, (lines.length + 1) * rowH + 6, hex(PAL.hudBg), 0.6).setOrigin(0, 0),
-      this.add.bitmapText(width / 2, top, FONT_KEY, fontText('Top runs')).setTint(hex(PAL.glow)).setOrigin(0.5, 0),
+      uiText(this, width / 2, top, 'Top runs', { color: PAL.glow, align: 'center' }),
     );
     lines.forEach((line, i) => {
       // The header dim, the best run bright.
       const color = i === 0 ? PAL.hudDim : i === 1 ? PAL.amber : PAL.hudText;
-      this.titleText.push(this.add.bitmapText(width / 2, top + (i + 1) * rowH + 2, FONT_KEY, fontText(line)).setTint(hex(color)).setOrigin(0.5, 0));
+      this.titleText.push(uiText(this, width / 2, top + (i + 1) * rowH + 2, line, { color, align: 'center' }));
     });
   }
 
@@ -233,7 +235,7 @@ export class TitleScene extends Phaser.Scene {
     this.picker.forEach((line, k) => {
       if (k >= 1 && k <= DIRECTIVE_IDS.length) line.setTint(hex(k - 1 === i ? PAL.glow : PAL.hudDim));
     });
-    this.orders.setText(fontText(wrapText(DIRECTIVES[DIRECTIVE_IDS[i]!].orders, this.ordersWidth()).join('\n'))).setCenterAlign();
+    updateText(this.orders, DIRECTIVES[DIRECTIVE_IDS[i]!].orders);
     this.setFocus(i);
     this.refresh();
   }
@@ -270,7 +272,7 @@ export class TitleScene extends Phaser.Scene {
   private describeSettings(): void {
     const n = this.sectors;
     const length = n === 1 ? '1 sector: a short run' : n >= BIOME_IDS.length ? `${n} sectors: every biome, a long run` : `${n} sectors: the standard run`;
-    this.settingsBrief.setText(fontText(`${DIFFICULTIES[this.difficulty].name}: ${difficultyBrief(this.difficulty)}.  ${length}.`));
+    updateText(this.settingsBrief, `${DIFFICULTIES[this.difficulty].name}: ${difficultyBrief(this.difficulty)}.  ${length}.`);
   }
 
   private refresh(): void {
@@ -284,13 +286,13 @@ export class TitleScene extends Phaser.Scene {
     const enter = keyLabel('Enter', 'A');
     const n = keyLabel('N', 'Y');
     const esc = keyLabel('Esc', 'B');
-    this.pickerHint.setText(fontText(`${enter} - roll out    Up/Down - select    Left/Right - change    ${esc} - back`));
+    updateText(this.pickerHint, `${enter} - roll out    Up/Down - select    Left/Right - change    ${esc} - back`);
     if (!s) lines = [`${enter} - new run`];
     else if (this.confirmNew) lines = ['Abandon the saved run?', '', `${n} - yes, start over`, `${esc} - keep it`];
     else {
       lines = [`${enter} - continue ${s.callsign} (${runWhere(s)}, ${DIFFICULTIES[s.difficulty].name}, ${s.salvage} salvage)`, `${n} - new run`];
     }
-    this.prompt.setText(fontText(lines.join('\n'))).setCenterAlign();
+    updateText(this.prompt, lines.join('\n'));
   }
 
   private continueRun(): void {

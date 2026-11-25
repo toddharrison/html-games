@@ -25,12 +25,13 @@ import { feedingInto } from '../sim/trailer';
 import { clock } from '../sim/run';
 import type { World } from '../sim/world';
 import type { DirectiveGoal } from '../content/directives';
-import { FONT_KEY, fontText } from './pixelFont';
 import { hex, PAL } from './palette';
 import { damageLevel } from './statusFx';
 import { usingPad } from '../input/gamepad';
 import { objectivePercent } from '../sim/objective';
 import { TRAIN_STRIP_SHOWN, TrainStrip } from './trainStrip';
+import { charsIn, firstFit, fitRow, LINE_H } from './textLayout';
+import { updateRow, updateText, uiRow, uiText, type TextRow, type TextStyle } from './uiText';
 
 /**
  * Battle HUD in the side panels (SPEC §10). Left: speed, treads, reactor, power, the weapon strip
@@ -148,38 +149,44 @@ interface WeaponRow {
   mounts: HardpointState[];
   /** Weapon name and count; the key in front can change (fire control lost: back to a trigger). */
   name: string;
-  label: Phaser.GameObjects.BitmapText;
-  status: Phaser.GameObjects.BitmapText;
+  /** The key and name at the left, the status at the right; the name gives way to the status. */
+  text: TextRow;
   y: number;
 }
 
-/** Top of the weapon strip in the left panel, and the spacing between rows. */
+/** Top of the weapon strip in the left panel, and the spacing between rows: `ROW_H` with room, down to `ROW_MIN` when a big loadout crowds it. */
 const STRIP_Y = 96;
 const ROW_H = 17;
+const ROW_MIN = 10;
 
 export class Hud {
   private readonly g: Phaser.GameObjects.Graphics;
-  private readonly speedText: Phaser.GameObjects.BitmapText;
-  private readonly treadText: Phaser.GameObjects.BitmapText;
-  private readonly reactorText: Phaser.GameObjects.BitmapText;
-  private readonly powerText: Phaser.GameObjects.BitmapText;
+  /** The left panel's readouts: a label and its value. */
+  private readonly speed: TextRow;
+  private readonly treads: TextRow;
+  private readonly reactor: TextRow;
+  private readonly power: TextRow;
   private readonly rows: WeaponRow[] = [];
+  /** The weapon strip's row spacing, and where a row's reload bar sits under its text. */
+  private readonly rowH: number;
+  private readonly rowBar: number;
   private readonly components: Phaser.GameObjects.BitmapText;
   private readonly componentValues: Phaser.GameObjects.BitmapText;
   private readonly stats: Phaser.GameObjects.BitmapText;
+  /** Lines the stats have room for, down to the bottom of the panel. */
+  private readonly statsRoom: number;
   /** The key hints at the bottom left: keyboard and mouse, or the pad's. */
   private readonly keyHints: Phaser.GameObjects.BitmapText;
   private readonly padHints: Phaser.GameObjects.BitmapText;
+  /** False when a big loadout's weapon strip needs the hints' room. */
+  private readonly hintsShown: boolean;
   /** The alert clock's readout in the left panel, above the key hints. */
-  private readonly alertLabel: Phaser.GameObjects.BitmapText;
-  private readonly alertText: Phaser.GameObjects.BitmapText;
+  private readonly alert: TextRow;
   private readonly alertY: number;
   /** The battle mode's objective (SPEC §4.4): targets destroyed out of all, and lost, above the alert clock. */
-  private readonly objectiveLabel: Phaser.GameObjects.BitmapText;
-  private readonly objectiveText: Phaser.GameObjects.BitmapText;
+  private readonly objective: TextRow;
   /** A sector's objective battle (SPEC §3): the Directive's ask, above the mode's objective. */
-  private readonly directiveLabel: Phaser.GameObjects.BitmapText;
-  private readonly directiveText: Phaser.GameObjects.BitmapText;
+  private readonly directive: TextRow;
   private readonly center: Phaser.GameObjects.BitmapText;
   private readonly centerBg: Phaser.GameObjects.Rectangle;
   private readonly debug: Phaser.GameObjects.BitmapText;
@@ -210,15 +217,22 @@ export class Hud {
     this.layout = layout;
     const { width, height, fieldX, fieldW } = layout;
     const fixed = <T extends Fixed>(o: T) => o.setScrollFactor(0).setDepth(100);
-    const text = (x: number, y: number, s: string, color: string = PAL.hudText) =>
-      fixed(scene.add.bitmapText(x, y, FONT_KEY, fontText(s)).setTint(hex(color)));
-
     const rightX = fieldX + fieldW;
     this.lx = 6;
     this.lw = fieldX - 12;
     this.rx = rightX + 6;
     this.rw = width - rightX - 12;
     this.sx = this.rx + Math.floor((this.rw - SCH.w) / 2);
+    // Every text is fitted to its panel (render/uiText.ts): nothing runs out over the battlefield or off the screen.
+    const text = (x: number, y: number, s: string, color: string = PAL.hudText, style: TextStyle = {}) =>
+      fixed(uiText(scene, x, y, s, { color, width: x < fieldX ? this.lw : this.rw, wrap: false, ...style }));
+    /** A label at the left of the left panel and its value at the right, on one line. */
+    const row = (y: number, label: string, labelColor: string = PAL.hudDim): TextRow => {
+      const r = uiRow(scene, this.lx, y, this.lw, label, '', PAL.hudText, labelColor);
+      fixed(r.label);
+      fixed(r.value);
+      return r;
+    };
 
     // Panel backgrounds cover anything that spills past the battlefield's sides.
     fixed(scene.add.rectangle(0, 0, fieldX, height, hex(PAL.hudBg)).setOrigin(0, 0));
@@ -229,17 +243,13 @@ export class Hud {
 
     // Over the tread capacity the label turns into a warning: that's why it's slow (SPEC §5.3).
     const over = loadMass(b) > massCapacity(b);
-    text(this.lx, 6, over ? 'Overload' : 'Speed', over ? PAL.warn : PAL.hudDim);
-    text(this.lx, 26, 'Treads', PAL.hudDim);
-    text(this.lx, 46, 'Reactor', PAL.hudDim);
-    text(this.lx, 66, 'Power', PAL.hudDim);
-    this.speedText = text(this.lx + this.lw, 6, '').setOrigin(1, 0);
-    this.treadText = text(this.lx + this.lw, 26, '').setOrigin(1, 0);
-    this.reactorText = text(this.lx + this.lw, 46, '').setOrigin(1, 0);
-    this.powerText = text(this.lx + this.lw, 66, '').setOrigin(1, 0);
+    this.speed = row(6, over ? 'Overload' : 'Speed', over ? PAL.warn : PAL.hudDim);
+    this.treads = row(26, 'Treads');
+    this.reactor = row(46, 'Reactor');
+    this.power = row(66, 'Power');
 
     // Weapon strip: one row per trigger or auto group, identical weapons grouped together.
-    text(this.lx, STRIP_Y - 10, 'Weapons', PAL.hudDim);
+    const groupsByBinding: HardpointState[][] = [];
     for (const binding of BINDING_ORDER) {
       const groups = new Map<string, HardpointState[]>();
       for (const h of b.hardpoints) {
@@ -250,23 +260,11 @@ export class Hud {
       }
       // Autos list in toggle-key order.
       const ordered = [...groups.values()].sort((x, y) => autoGroupOf(x[0]!.weapon!) - autoGroupOf(y[0]!.weapon!));
-      for (const mounts of ordered) {
-        const w = mounts[0]!.weapon!;
-        const shell = mounts[0]!.shell;
-        const name = `${w.short}${shell ? ` ${SHELL_TYPES[shell].short}` : ''}${mounts.length > 1 ? ` x${mounts.length}` : ''}`;
-        const y = STRIP_Y + this.rows.length * ROW_H;
-        this.rows.push({
-          mounts,
-          name,
-          label: text(this.lx, y, `${stripKey(b, mounts[0]!).padEnd(4)}${name}`),
-          status: text(this.lx + this.lw, y, '').setOrigin(1, 0),
-          y,
-        });
-      }
+      groupsByBinding.push(...ordered);
     }
 
     // Key hints for the keyboard and mouse, or the pad's (the same number of lines), whichever
-    // was used last.
+    // was used last. Laid out first: the weapon strip takes the room that's left above them.
     const hints = ['W/S  speed', 'A/D  steer', 'LMB RMB SPC  fire', '1-4  autos on/off', 'X    final protocol'];
     const padHints = ['LS   speed, steer', 'RS   aim  R3 recenter', 'RT LT RB  fire', 'D-pad autos on/off', 'X    final protocol'];
     if (b.trailer) {
@@ -275,34 +273,60 @@ export class Hud {
     }
     hints.push('ESC pause  R retry');
     padHints.push('START pause BACK mute');
-    const hintsY = height - 5 - hints.length * 7;
-    this.keyHints = text(this.lx, hintsY, hints.join('\n'), PAL.hudDim);
+    // The strip's rows can close up to `ROW_MIN` apart. A loadout too big even for that (a small
+    // screen) takes the hints' room: the weapons' states matter more than the reminder of the keys.
+    const stripEnd = (hintsTop: number) => hintsTop - 22 - 23 - 3;
+    const withHints = height - 5 - hints.length * LINE_H;
+    this.hintsShown = stripEnd(withHints) - STRIP_Y >= groupsByBinding.length * ROW_MIN;
+    const hintsY = this.hintsShown ? withHints : height + 8;
+    this.keyHints = text(this.lx, hintsY, hints.join('\n'), PAL.hudDim).setVisible(this.hintsShown);
     this.padHints = text(this.lx, hintsY, padHints.join('\n'), PAL.hudDim).setVisible(false);
     this.alertY = hintsY - 22;
-    this.alertLabel = text(this.lx, this.alertY, 'Alert', PAL.hudDim);
-    this.alertText = text(this.lx + this.lw, this.alertY, '').setOrigin(1, 0);
-    this.objectiveLabel = text(this.lx, this.alertY - 14, '', PAL.hudDim).setVisible(false);
-    this.objectiveText = text(this.lx + this.lw, this.alertY - 14, '').setOrigin(1, 0).setVisible(false);
-    this.directiveLabel = text(this.lx, this.alertY - 23, '', PAL.hudDim).setVisible(false);
-    this.directiveText = text(this.lx + this.lw, this.alertY - 23, '').setOrigin(1, 0).setVisible(false);
+    this.alert = row(this.alertY, 'Alert');
+    this.objective = row(this.alertY - 14, '');
+    this.directive = row(this.alertY - 23, '');
+    for (const r of [this.objective, this.directive]) {
+      r.label.setVisible(false);
+      r.value.setVisible(false);
+    }
+
+    text(this.lx, STRIP_Y - 10, 'Weapons', PAL.hudDim);
+    // The rows share the room down to the Directive's line: closer together when there are many.
+    const stripRoom = stripEnd(hintsY) - STRIP_Y;
+    this.rowH = Math.max(ROW_MIN, Math.min(ROW_H, Math.floor(stripRoom / Math.max(1, groupsByBinding.length))));
+    this.rowBar = this.rowH >= 12 ? 8 : 6;
+    for (const mounts of groupsByBinding) {
+      const w = mounts[0]!.weapon!;
+      const shell = mounts[0]!.shell;
+      const name = `${w.short}${shell ? ` ${SHELL_TYPES[shell].short}` : ''}${mounts.length > 1 ? ` x${mounts.length}` : ''}`;
+      const y = STRIP_Y + this.rows.length * this.rowH;
+      this.rows.push({ mounts, name, text: row(y, '', PAL.hudText), y });
+    }
 
     // The schematic is headed with the Behemoth's callsign.
     text(this.rx, 6, run.callsign, PAL.glow);
     const listY = this.sy + SCH.h + 8;
-    this.components = text(this.rx, listY, '', PAL.hudDim);
-    this.componentValues = text(this.rx + this.rw, listY, '').setOrigin(1, 0);
     const own = b.hardpoints.filter((h) => h.weapon && h.slot.position !== 'trailer').length;
     const addons = b.addons.filter((a) => a.integrity && a.def.kind !== 'trailer').length;
     // Each bay has a row; a drone bay a second one for its drones.
     const trailer = b.trailer ? 2 + b.trailer.bays.reduce((n, bay) => n + (bay ? (bay.def.kind === 'drones' ? 2 : 1) : 0), 0) : 0;
     const readoutRows = 4 + own + addons + trailer;
-    this.stats = text(this.rx, listY + readoutRows * 7 + 10, '');
-    this.debug = text(this.rx, height - 4, '', PAL.hudDim).setOrigin(0, 1).setVisible(false);
+    // The stats sit under the readout, but never so low that kills, salvage, and the exit don't
+    // fit: then the readout is the one cut short (the schematic above it shows the same parts).
+    const statsY = Math.min(listY + readoutRows * LINE_H + 10, height - 3 - 3 * LINE_H);
+    this.statsRoom = Math.max(1, Math.floor((height - 3 - statsY) / LINE_H));
+    this.stats = text(this.rx, statsY, '', PAL.hudText, { lines: this.statsRoom });
+    const listRoom = Math.max(1, Math.floor((statsY - 2 - listY) / LINE_H));
+    this.components = text(this.rx, listY, '', PAL.hudDim, { lines: listRoom });
+    this.componentValues = text(this.rx + this.rw, listY, '', PAL.hudText, { align: 'right', lines: listRoom });
+    // The debug readout (dev) goes over the foot of the battlefield, clear of both panels.
+    this.debug = text(fieldX + 4, height - 4, '', PAL.hudDim, { valign: 'bottom', width: fieldW - 8 }).setVisible(false);
 
     const cx = fieldX + fieldW / 2;
     this.midMessageY = height / 2;
     this.centerBg = fixed(scene.add.rectangle(cx, height / 2, 10, 13, hex(PAL.hudBg), 0.85)).setVisible(false);
-    this.center = text(cx, height / 2, '').setOrigin(0.5, 0.5);
+    // A line too long for the field wraps inside it.
+    this.center = text(cx, height / 2, '', PAL.hudText, { align: 'center', valign: 'middle', width: fieldW - 24, wrap: true });
   }
 
   /** Highlight a component (id) or armor arc on the schematic after a hit. */
@@ -316,8 +340,8 @@ export class Hud {
     const g = this.g;
     g.clear();
     const pad = usingPad();
-    this.keyHints.setVisible(!pad);
-    this.padHints.setVisible(pad);
+    this.keyHints.setVisible(this.hintsShown && !pad);
+    this.padHints.setVisible(this.hintsShown && pad);
     for (const [id, t] of this.flashes) {
       if (t - dt <= 0) this.flashes.delete(id);
       else this.flashes.set(id, t - dt);
@@ -339,22 +363,20 @@ export class Hud {
     // (min speed, tread wear), ICE when the treads are sliding.
     const label = b.wading.label;
     const deep = b.wading.min > 0.05;
-    this.speedText
-      .setText(`${label ? `${label} ` : ''}${Math.round(b.vx)}`)
-      .setTint(hex(deep || label === 'ICE' ? PAL.warn : PAL.hudText));
+    updateText(this.speed.value, `${label ? `${label} ` : ''}${Math.round(b.vx)}`).setTint(hex(deep || label === 'ICE' ? PAL.warn : PAL.hudText));
 
     const ti = treadIntegrity(b);
     bar(34, ti, integrityColor(ti));
     // BURN while plasma is eating at the treads (the hull hides the pool under it).
     const burning = w.pools.some((p) => poolUnder(b, p));
-    this.treadText.setText(`${burning ? 'BURN ' : ''}${Math.round(ti * 100)}%`).setTint(hex(burning ? PAL.bad : PAL.hudText));
+    updateText(this.treads.value, `${burning ? 'BURN ' : ''}${Math.round(ti * 100)}%`).setTint(hex(burning ? PAL.bad : PAL.hudText));
 
     const ri = fraction(b.reactor);
     bar(54, ri, integrityColor(ri));
-    this.reactorText.setText(`${Math.round(ri * 100)}%`);
+    updateText(this.reactor.value, `${Math.round(ri * 100)}%`);
 
     bar(74, b.power.stored / b.power.max, hex(PAL.glow));
-    this.powerText.setText(`${Math.floor(b.power.stored)} +${powerOutput(b).toFixed(0)}/S`);
+    updateText(this.power.value, `${Math.floor(b.power.stored)} +${powerOutput(b).toFixed(0)}/S`);
 
     for (const row of this.rows) this.drawWeaponRow(b, row, bar);
 
@@ -363,24 +385,30 @@ export class Hud {
     const exit = w.extractedAt !== null ? 'Extracted' : `Exit ${toGo}m`;
     // The condition under where it's fought; a storm says when a squall is on.
     const squall = (w.condition?.squall ?? 0) > 0.3 ? ' - squall' : '';
-    const weather = this.run.condition ? `\n${this.run.condition}${squall}` : '';
-    let stats = `Battle ${this.run.battle}\n${this.run.where}${weather}\nKills ${w.stats.kills}\nSalvage ${this.run.salvage + w.stats.salvage - pending}\n${exit}`;
+    const where = [`Battle ${this.run.battle}`, ...this.run.where.split('\n'), ...(this.run.condition ? [`${this.run.condition}${squall}`] : [])];
+    const tally = [`Kills ${w.stats.kills}`, `Salvage ${this.run.salvage + w.stats.salvage - pending}`, exit];
     const ls = w.lastStand;
-    if (ls && !b.destroyed) stats += `\n\nLast stand\nWave ${ls.wave}  next ${Math.ceil(ls.nextWave)}s\nHeld ${Math.floor(ls.time)}s`;
-    this.stats.setText(fontText(stats));
+    const stand = ls && !b.destroyed ? ['Last stand', `Wave ${ls.wave}  next ${Math.ceil(ls.nextWave)}s`, `Held ${Math.floor(ls.time)}s`] : [];
+    // A big loadout's readout above leaves less room. What gives way, in order: the last stand's
+    // blank line, then where it's fought a line at a time from the top (the weather goes last).
+    const spaced = stand.length > 0 ? ['', ...stand] : [];
+    const layouts = [[...where, ...tally, ...spaced], ...where.map((_, i) => [...where.slice(i), ...tally, ...stand]), [...tally, ...stand]];
+    updateText(this.stats, (layouts.find((l) => l.length <= this.statsRoom) ?? layouts.at(-1)!).join('\n'));
 
     // The objective (SPEC §4.4): the targets destroyed, amber while some are still out there.
     const o = w.objective;
     const names = MODES[o.mode].target;
     const showObjective = o.total > 0 && !!names && !b.destroyed;
-    this.objectiveLabel.setVisible(showObjective);
-    this.objectiveText.setVisible(showObjective);
+    this.objective.label.setVisible(showObjective);
+    this.objective.value.setVisible(showObjective);
     if (showObjective) {
       const open = o.total - o.destroyed - o.lost;
-      this.objectiveLabel.setText(fontText(MODES[o.mode].name));
-      this.objectiveText
-        .setText(fontText(`${o.destroyed}/${o.total} ${names[1]} ${objectivePercent(o)}%${o.lost > 0 ? ` -${o.lost}` : ''}`))
-        .setTint(hex(open === 0 ? (o.destroyed === o.total ? PAL.glow : PAL.hudDim) : PAL.amber));
+      const mode = MODES[o.mode].name;
+      const lost = o.lost > 0 ? ` -${o.lost}` : '';
+      // The count names its targets when there's room beside the mode's name.
+      const count = firstFit([`${o.destroyed}/${o.total} ${names[1]} ${objectivePercent(o)}%${lost}`, `${o.destroyed}/${o.total} ${objectivePercent(o)}%${lost}`], this.objective.chars - mode.length - 1);
+      updateRow(this.objective, mode, count);
+      this.objective.value.setTint(hex(open === 0 ? (o.destroyed === o.total ? PAL.glow : PAL.hudDim) : PAL.amber));
     }
 
     this.updateDirective(w);
@@ -391,13 +419,13 @@ export class Hud {
     // The alert clock (SPEC §10): the next reinforcement wave, a bar filling toward it.
     const alert = w.encounter.alert;
     const clock = !ls && !b.destroyed && w.extractedAt === null && !w.encounter.off;
-    this.alertLabel.setVisible(clock);
-    this.alertText.setVisible(clock);
+    this.alert.label.setVisible(clock);
+    this.alert.value.setVisible(clock);
     if (clock && alert.cut) {
       // A command post destroyed: no more waves this battle.
-      this.alertText.setText(fontText('Cut off')).setTint(hex(PAL.glow));
+      updateRow(this.alert, 'Alert', 'Cut off').value.setTint(hex(PAL.glow));
     } else if (clock) {
-      this.alertText.setText(fontText(`Wave ${alert.wave + 1} ${Math.ceil(alert.next)}s`)).setTint(hex(alert.next < 5 ? PAL.warn : PAL.hudText));
+      updateRow(this.alert, 'Alert', `Wave ${alert.wave + 1} ${Math.ceil(alert.next)}s`).value.setTint(hex(alert.next < 5 ? PAL.warn : PAL.hudText));
       bar(this.alertY + 8, 1 - alert.next / alert.span, hex(alert.next < 5 ? PAL.warn : PAL.amber));
     }
   }
@@ -406,14 +434,14 @@ export class Hud {
   private updateDirective(w: World): void {
     const d = this.run.directive;
     const show = !!d && !w.behemoth.destroyed;
-    this.directiveLabel.setVisible(show);
-    this.directiveText.setVisible(show);
+    this.directive.label.setVisible(show);
+    this.directive.value.setVisible(show);
     if (!d || !show) return;
     const o = w.objective;
     // Above the mode's target count, or in its place when there's none (Breakthrough).
-    const y = this.objectiveLabel.visible ? this.alertY - 23 : this.alertY - 14;
-    this.directiveLabel.setY(y);
-    this.directiveText.setY(y);
+    const y = this.objective.label.visible ? this.alertY - 23 : this.alertY - 14;
+    this.directive.label.setY(y);
+    this.directive.value.setY(y);
     let label: string;
     let value: string;
     let color: string;
@@ -442,8 +470,7 @@ export class Hud {
         break;
       }
     }
-    this.directiveLabel.setText(fontText(label));
-    this.directiveText.setText(fontText(value)).setTint(hex(color));
+    updateRow(this.directive, label, value).value.setTint(hex(color));
   }
 
   private drawWeaponRow(b: BehemothState, row: WeaponRow, bar: (y: number, frac: number, color: number) => void): void {
@@ -466,9 +493,9 @@ export class Hud {
     else if (weapon.power && b.power.stored < weapon.power) [status, tint] = ['NO PWR', PAL.warn];
     else if (weapon.ammo !== undefined) status = String(ammo);
     else if (auto) status = 'ON';
-    row.status.setText(status).setTint(hex(tint));
-    row.label.setText(fontText(`${stripKey(b, row.mounts[0]!).padEnd(4)}${row.name}`));
-    row.label.setTint(hex(live.length === 0 || !enabled ? PAL.hudDim : PAL.hudText));
+    updateRow(row.text, `${stripKey(b, row.mounts[0]!).padEnd(4)}${row.name}`, status);
+    row.text.value.setTint(hex(tint));
+    row.text.label.setTint(hex(live.length === 0 || !enabled ? PAL.hudDim : PAL.hudText));
 
     // Reload bar: the readiest live mount in the group.
     let ready = 0;
@@ -477,7 +504,7 @@ export class Hud {
       ready = Math.max(ready, h.salvo ? 0 : 1 - h.cooldown / reload);
     }
     const usable = live.length > 0 && enabled && hasAmmo;
-    bar(row.y + 8, usable ? ready : 0, ready >= 1 ? hex(PAL.good) : hex(PAL.hudDim));
+    bar(row.y + this.rowBar, usable ? ready : 0, ready >= 1 ? hex(PAL.good) : hex(PAL.hudDim));
   }
 
   private drawSchematic(b: BehemothState, revive: World['revive']): void {
@@ -564,8 +591,10 @@ export class Hud {
     } else if (t) {
       rows.push(['Trailer', t.status === 'jettisoned' ? 'DROPPED' : 'LOST']);
     }
-    this.components.setText(fontText(rows.map((r) => r[0]).join('\n')));
-    this.componentValues.setText(rows.map((r) => r[1]).join('\n'));
+    // Each name gives way to its value, so a long one can't run under the numbers.
+    const fitted = rows.map(([name, value]) => fitRow(name, value, charsIn(this.rw)));
+    updateText(this.components, fitted.map((r) => r[0]).join('\n'));
+    updateText(this.componentValues, fitted.map((r) => r[1]).join('\n'));
   }
 
   /**
@@ -581,15 +610,15 @@ export class Hud {
     const y = top ? this.topMessageY : this.midMessageY;
     this.center.setY(y);
     this.centerBg.setY(y);
-    this.center.setText(fontText(text)).setVisible(true);
+    updateText(this.center, text).setVisible(true);
     const bounds = this.center.getTextBounds().local;
     this.centerBg.setSize(bounds.width + 10, bounds.height + 8).setOrigin(0.5, 0.5).setVisible(true);
   }
 
-  /** Short lines only: the panel is about 20 characters wide. */
+  /** The dev readout, over the foot of the battlefield; a line longer than the field is clipped. */
   setDebug(lines: string[] | null): void {
     this.debug.setVisible(lines !== null);
-    if (lines) this.debug.setText(fontText(lines.join('\n')));
+    if (lines) updateText(this.debug, lines.join('\n'));
   }
 }
 

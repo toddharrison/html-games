@@ -94,11 +94,17 @@ const MOUNT_BOX: Record<MountPosition, Box> = {
 const TRAILER_BOX = {
   bar: { x: 17, y: 57, w: 2, h: 3 },
   body: { x: 8, y: 60, w: 20, h: 22 },
-  bays: [
-    { x: 11, y: 63, w: 14, h: 7 },
-    { x: 11, y: 72, w: 14, h: 7 },
-  ],
+  /** The strip of the body its bays share, front bay at the top. */
+  bays: { x: 11, y: 63, w: 14, h: 16 },
 };
+
+/** Bay `i` of `count` on the schematic: the bays share the body, so a longer trailer's are slimmer. */
+function bayBox(i: number, count: number): Box {
+  const { x, y, w, h } = TRAILER_BOX.bays;
+  const gap = count > 3 ? 1 : 2;
+  const each = Math.floor((h - (count - 1) * gap) / count);
+  return { x, y: y + i * (each + gap), w, h: each };
+}
 /** Slots that don't sit where their position's box is (several share a position). */
 const SLOT_BOX: Record<string, Box> = {
   pd: { x: 25, y: 9, w: 3, h: 3 },
@@ -108,8 +114,11 @@ const SLOT_BOX: Record<string, Box> = {
   dorsalRing: { x: 13, y: 28, w: 10, h: 6 },
   // On the turret's right cheek.
   coax: { x: 24, y: 17, w: 3, h: 4 },
-  bay0: TRAILER_BOX.bays[0]!,
-  bay1: TRAILER_BOX.bays[1]!,
+};
+/** A twin turret: the two main guns share the turret's box, the first on the left. */
+const TWIN_BOX: Record<string, Box> = {
+  turret: { x: 12, y: 16, w: 5, h: 10 },
+  twinTurret: { x: 19, y: 16, w: 5, h: 10 },
 };
 /** Add-ons' own parts: the ram plow ahead of the front armor, the outboard pods outside the hull. */
 const ADDON_BOX: Partial<Record<AddonId, Box[]>> = {
@@ -540,9 +549,10 @@ export class Hud {
       for (const box of ADDON_BOX[a.def.id] ?? []) fill(box, color(a.def.id, fraction(a.integrity)));
     }
 
+    const twin = b.hardpoints.some((h) => h.slot.id === 'twinTurret');
     for (const h of b.hardpoints) {
       if (h.slot.position === 'trailer') continue;
-      const box = SLOT_BOX[h.slot.id] ?? MOUNT_BOX[h.slot.position];
+      const box = (twin ? TWIN_BOX[h.slot.id] : undefined) ?? SLOT_BOX[h.slot.id] ?? MOUNT_BOX[h.slot.position];
       if (h.weapon) fill(box, color(h.slot.id, fraction(h.integrity)));
       else outline(box, hex(PAL.hudDim));
     }
@@ -558,8 +568,7 @@ export class Hud {
       g.fillStyle(hex(PAL.hudBg)).fillRect(ox + x + 1, oy + y + 1, w - 2, h - 2);
       g.fillStyle(this.flashes.has('trailer') ? 0xffffff : integrityColor(fraction(t.frame)), 0.45).fillRect(ox + x + 1, oy + y + 1, w - 2, h - 2);
       t.bays.forEach((bay, i) => {
-        const box = TRAILER_BOX.bays[i];
-        if (!box) return;
+        const box = bayBox(i, t.bays.length);
         if (bay) fill(box, color(`bay${i}`, fraction(bay.integrity)));
         else outline(box, hex(PAL.hudDim));
       });

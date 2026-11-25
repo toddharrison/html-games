@@ -1,9 +1,9 @@
-import { ADDONS, type AddonId } from '../content/addons';
-import { ARMOR_ARCS, CHASSIS, type ChassisDef, type CoreComponent, type HardpointSlotDef } from '../content/chassis';
+import { ADDONS, trailerOf, type AddonDef, type AddonId, type TrailerAddon } from '../content/addons';
+import { ARMOR_ARCS, CHASSIS, HARDPOINT_SIZES, type ChassisDef, type CoreComponent, type HardpointSlotDef } from '../content/chassis';
 import { DEPOT_ADDONS, DEPOT_GRADES, DEPOT_MODULES, DEPOT_TRACKS, DEPOT_WEAPONS } from '../content/depot';
 import { moduleLoads, TRAILER_MODULES, type ModuleId } from '../content/trailer';
 import { DEPOT } from '../content/tuning';
-import { armorArcsOf, TRACKS, type PartKind, type TrackId, type UpgradeGen } from '../content/upgrades';
+import { armorArcsOf, trackMax, TRACKS, type Gen, type PartKind, type TrackId, type UpgradeGen } from '../content/upgrades';
 import { shellsOf, WEAPONS, type Binding, type ShellType, type WeaponId } from '../content/weapons';
 import {
   allowedBindings,
@@ -26,7 +26,7 @@ import {
   type HardpointSnapshot,
   type RunState,
 } from './run';
-import { CORE_COMPONENTS, fitChassis } from './upgrades';
+import { CORE_COMPONENTS, fitAddon, fitChassis } from './upgrades';
 
 /**
  * The depot (SPEC §8.2): a limited number of actions, each costing salvage. Works on the run's
@@ -116,34 +116,67 @@ function draw<T>(rng: Rng, pool: T[], count: number, weight: (id: T) => number):
   return out;
 }
 
+/** The multiplier a sector's depots put on the stock weight of goods of a generation (`DEPOT.genOdds`). */
+export function genOdds(sector: number, gen: Gen = 1): number {
+  const rows = DEPOT.genOdds;
+  return rows[Math.max(0, Math.min(rows.length - 1, Math.floor(sector)))]![gen - 1]!;
+}
+
 /**
- * A depot reached after `run.battle` battles won, with its stock seeded by `key` (a map node's
- * `depotKey`; by default the battle count). Add-ons the Behemoth `s` already has, or can't take,
- * aren't offered. They're drawn on their own stream, so the weapons on sale don't depend on them.
- * Gen 3 parts only turn up once enough battles are won.
+ * A depot in sector `sector` (0 = the first), with its stock seeded by `key` (a map node's
+ * `depotKey`; by default the battle count).
+ * - **Weapons:** always at least one of each hardpoint size (user's call, Nov 2026: a depot with no
+ *   L gun for sale was a wasted stop), and for that one, a weapon the Behemoth `s` doesn't already
+ *   carry when there is one. Listed biggest first.
+ * - **Generations:** what's on offer gets better as the run goes on: every item's stock weight is
+ *   multiplied by the sector's odds for its generation (`genOdds`), core components' grades included.
+ * - Add-ons the Behemoth already has, or can't take, aren't offered, nor is a trailer no bigger than
+ *   the one in tow. Add-ons, modules, and grades are each drawn on a stream of their own, so the
+ *   weapons on sale don't depend on them.
  */
-export function openDepot(run: Pick<RunState, 'seed' | 'battle'>, s?: BehemothSnapshot, key: number = run.battle): DepotState {
+export function openDepot(run: Pick<RunState, 'seed' | 'battle'>, s?: BehemothSnapshot, key: number = run.battle, sector = 0): DepotState {
+  const odds = (gen?: Gen) => genOdds(sector, gen);
   const rng = new Rng(hashSeed(run.seed, 0xde90, key));
-  const weapons = draw(rng, Object.keys(DEPOT_WEAPONS) as WeaponId[], rng.int(DEPOT.stock[0], DEPOT.stock[1]), (id) => DEPOT_WEAPONS[id]!.weight);
+  const weaponWeight = (id: WeaponId) => DEPOT_WEAPONS[id]!.weight * odds(DEPOT_WEAPONS[id]!.gen);
+  const sold = (Object.keys(DEPOT_WEAPONS) as WeaponId[]).filter((id) => weaponWeight(id) > 0);
+  const count = rng.int(DEPOT.stock[0], DEPOT.stock[1]);
+  const weapons: WeaponId[] = [];
+  for (const size of HARDPOINT_SIZES) {
+    const sized = sold.filter((id) => WEAPONS[id].size === size);
+    const fresh = sized.filter((id) => !s || !onBoard(s, id));
+    const pick = rng.weighted(fresh.length > 0 ? fresh : sized, weaponWeight);
+    if (pick) weapons.push(pick);
+  }
+  weapons.push(...draw(rng, sold.filter((id) => !weapons.includes(id)), count - weapons.length, weaponWeight));
+  const sizeOrder = (id: WeaponId) => HARDPOINT_SIZES.indexOf(WEAPONS[id].size!);
+  weapons.sort((a, b) => sizeOrder(a) - sizeOrder(b));
+
   const arng = new Rng(hashSeed(run.seed, 0xadd0, key));
   const chassis = s ? CHASSIS[s.chassis] : null;
-  const offered = (Object.keys(DEPOT_ADDONS) as AddonId[]).filter(
-    (id) => !s || (chassis!.addonMounts[id] !== undefined && !s.addons.some((a) => a.id === id)),
-  );
-  const addons = draw(arng, offered, arng.int(DEPOT.addonStock[0], DEPOT.addonStock[1]), (id) => DEPOT_ADDONS[id]!.weight);
+  const towed = s ? trailerDef(s) : null;
+  const addonWeight = (id: AddonId) => DEPOT_ADDONS[id]!.weight * odds(DEPOT_ADDONS[id]!.gen);
+  const offered = (Object.keys(DEPOT_ADDONS) as AddonId[]).filter((id) => {
+    if (addonWeight(id) <= 0) return false;
+    if (!s) return true;
+    const def = ADDONS[id];
+    if (def.kind === 'trailer' && towed && def.bays.length <= towed.bays.length) return false;
+    return chassis!.addonMounts[id] !== undefined && !s.addons.some((a) => a.id === id);
+  });
+  const addons = draw(arng, offered, arng.int(DEPOT.addonStock[0], DEPOT.addonStock[1]), addonWeight);
   // Modules only make sense with a trailer to put them in; they're on a stream of their own too.
   const mrng = new Rng(hashSeed(run.seed, 0x70d5, key));
-  const trailer = !s || s.addons.some((a) => a.id === 'trailer') || addons.includes('trailer');
+  const trailer = !s || towed !== null || trailerOf(addons) !== null;
+  const moduleWeight = (id: ModuleId) => DEPOT_MODULES[id].weight * odds(DEPOT_MODULES[id].gen);
   const modules = trailer
-    ? draw(mrng, Object.keys(DEPOT_MODULES) as ModuleId[], mrng.int(DEPOT.moduleStock[0], DEPOT.moduleStock[1]), (id) => DEPOT_MODULES[id].weight)
+    ? draw(mrng, (Object.keys(DEPOT_MODULES) as ModuleId[]).filter((id) => moduleWeight(id) > 0), mrng.int(DEPOT.moduleStock[0], DEPOT.moduleStock[1]), moduleWeight)
     : [];
-  // Core components above the grade fitted, Gen 3 only later in the run; their own stream too.
+  // Core components above the grade fitted; their own stream too.
   const grng = new Rng(hashSeed(run.seed, 0x9e4d, key));
   const gens: UpgradeGen[] = [2, 3];
   const pool = CORE_COMPONENTS.flatMap((component) =>
-    gens.filter((gen) => gen > (s?.grades[component] ?? 1) && run.battle >= DEPOT_GRADES[component][gen].minBattle).map((gen) => ({ component, gen })),
+    gens.filter((gen) => gen > (s?.grades[component] ?? 1) && odds(gen) > 0).map((gen) => ({ component, gen })),
   );
-  const grades = draw(grng, pool, grng.int(DEPOT.gradeStock[0], DEPOT.gradeStock[1]), (g) => DEPOT_GRADES[g.component][g.gen].weight);
+  const grades = draw(grng, pool, grng.int(DEPOT.gradeStock[0], DEPOT.gradeStock[1]), (g) => DEPOT_GRADES[g.component][g.gen].weight * odds(g.gen));
   return {
     actions: DEPOT.actions,
     total: DEPOT.actions,
@@ -181,8 +214,11 @@ function isCore(id: string): id is CoreComponent {
 
 /** What kind of part an id is, for mods (SPEC §5.6); null when nothing can be modded there. */
 export function partKind(s: BehemothSnapshot, id: string): PartKind | null {
-  if (isCore(id)) return id === 'reactor' || id === 'treads' ? id : 'core';
+  if (isCore(id)) return id === 'reactor' || id === 'treads' || id === 'fireControl' ? id : 'core';
   if (armorArcsOf(id).length > 0) return 'armor';
+  // An add-on tread set takes what the chassis' own treads take.
+  const addon = addonPart(s, id);
+  if (addon && ADDONS[addon.id].kind === 'treads') return 'treads';
   const slot = slotDef(s, id);
   if (!slot || slot.position === 'trailer') return null;
   if (!slot.ring) return 'mount';
@@ -223,10 +259,14 @@ export function bayPart(s: BehemothSnapshot, id: string): BaySnapshot | null {
   return i === null ? null : (s.trailer?.bays[i] ?? null);
 }
 
-/** The trailer's frame, if fitted. */
-function trailerDef(s: BehemothSnapshot) {
-  const def = ADDONS.trailer;
-  return s.trailer && def.kind === 'trailer' ? def : null;
+/** The trailer in tow (its frame's add-on), if there is one. */
+export function trailerDef(s: BehemothSnapshot): TrailerAddon | null {
+  return s.trailer ? trailerOf(s.addons.map((a) => a.id)) : null;
+}
+
+/** An add-on as fitted to this Behemoth: a tread set's integrity and capacity include its upgrades. */
+export function addonDef(s: BehemothSnapshot, id: AddonId): AddonDef {
+  return fitAddon(ADDONS[id], { grades: s.grades, mods: s.mods });
 }
 
 function slotDef(s: BehemothSnapshot, id: string): HardpointSlotDef | undefined {
@@ -248,7 +288,7 @@ export function damageOf(s: BehemothSnapshot, component: string): { missing: num
     return { missing: Math.max(0, max - s[component]), max };
   }
   const addon = addonPart(s, component);
-  const def = addon && ADDONS[addon.id];
+  const def = addon && addonDef(s, addon.id);
   if (addon && def && def.kind !== 'mount' && addon.hp !== null) return { missing: Math.max(0, def.hp - addon.hp), max: def.hp };
   const bay = bayPart(s, component);
   if (bay && bay.hp !== null) {
@@ -362,10 +402,10 @@ function moduleResale(s: BehemothSnapshot, bay: number): number {
 function addonResale(s: BehemothSnapshot, addon: AddonId): number {
   if (!addonPart(s, addon)) return 0;
   const slot = CHASSIS[s.chassis].addonMounts[addon]?.hardpoint;
-  // A mount's mods go with it.
-  const weapon = slot ? weaponResale(s, slot.id) + resale(s, slot.id, modsSpent(s, slot.id)) : 0;
-  const modules = addon === 'trailer' ? (s.trailer?.bays.reduce((sum, _, i) => sum + moduleResale(s, i), 0) ?? 0) : 0;
-  return resale(s, addon, DEPOT_ADDONS[addon]?.price) + weapon + modules;
+  // A mount's mods go with it (they're filed under its slot, which has the add-on's id), and so do a tread set's.
+  const weapon = slot ? weaponResale(s, slot.id) : 0;
+  const modules = ADDONS[addon].kind === 'trailer' ? (s.trailer?.bays.reduce((sum, _, i) => sum + moduleResale(s, i), 0) ?? 0) : 0;
+  return resale(s, addon, (DEPOT_ADDONS[addon]?.price ?? 0) + modsSpent(s, addon)) + weapon + modules;
 }
 
 export interface Load {
@@ -445,6 +485,14 @@ export function quote(run: RunState, action: DepotAction): Quote {
       if (!CHASSIS[s.chassis].addonMounts[item.addon]) return no("Doesn't fit");
       if (addonPart(s, item.addon)) return no('Fitted');
       salvage = DEPOT_ADDONS[item.addon]?.price ?? 0;
+      // A bigger trailer takes over from the one in tow: its modules move across, and the old
+      // frame's resale comes off the price.
+      const def = ADDONS[item.addon];
+      const towed = trailerDef(s);
+      if (def.kind === 'trailer' && towed) {
+        if (def.bays.length <= towed.bays.length) return no('No bigger');
+        salvage -= resale(s, towed.id, DEPOT_ADDONS[towed.id]?.price);
+      }
       break;
     }
     case 'repair': {
@@ -493,7 +541,7 @@ export function quote(run: RunState, action: DepotAction): Quote {
     case 'mod': {
       if (!tracksOf(s, action.part).includes(action.track)) return no("Doesn't apply");
       const level = s.mods[action.part]?.[action.track] ?? 0;
-      if (level >= DEPOT.maxModLevel) return no('Maxed');
+      if (level >= trackMax(action.track, DEPOT.maxModLevel)) return no('Maxed');
       // A mount's own traverse: nothing to speed up while it carries a weapon that doesn't turn.
       const h = hardpoint(s, action.part);
       if (action.track === 'traverse' && partKind(s, action.part) === 'mount' && h?.weapon && WEAPONS[h.weapon].traverseDegPerSec <= 0) return no('Fixed weapon');
@@ -555,7 +603,7 @@ export function applyAction(run: RunState, action: DepotAction): RunState {
         if (action.component === 'treads') s.treads = Math.min(c.treadHp, s.treads + q.partial);
         else {
           const part = addonPart(s, action.component)!;
-          const def = ADDONS[part.id];
+          const def = addonDef(s, part.id);
           if (def.kind !== 'mount') part.hp = Math.min(def.hp, (part.hp ?? 0) + q.partial);
         }
       } else if (action.component === 'treads') s.treads = c.treadHp;
@@ -569,7 +617,7 @@ export function applyAction(run: RunState, action: DepotAction): RunState {
         bay.hp = TRAILER_MODULES[bay.module].hp;
       } else {
         const part = addonPart(s, action.component)!;
-        const def = ADDONS[part.id];
+        const def = addonDef(s, part.id);
         part.hp = def.kind === 'mount' ? null : def.hp;
       }
       break;
@@ -577,7 +625,15 @@ export function applyAction(run: RunState, action: DepotAction): RunState {
     case 'installAddon': {
       const item = depot.addons[action.stock]!;
       item.sold = true;
-      const def = ADDONS[item.addon];
+      const def = addonDef(s, item.addon);
+      const towed = def.kind === 'trailer' ? trailerDef(s) : null;
+      if (def.kind === 'trailer' && towed) {
+        // The new frame arrives whole and takes the old one's place; its modules move across, bay for bay.
+        const at = s.addons.findIndex((a) => a.id === towed.id);
+        s.addons[at] = { id: def.id, hp: def.hp };
+        s.trailer = { armor: def.armor, bays: def.bays.map((_, i) => s.trailer?.bays[i] ?? null) };
+        break;
+      }
       s.addons.push({ id: def.id, hp: def.kind === 'mount' ? null : def.hp });
       const slot = c.addonMounts[def.id]?.hardpoint;
       if (slot) s.hardpoints.push({ slot: slot.id, weapon: null, hp: slot.hp, ammo: null, binding: null, shell: null });
@@ -588,7 +644,8 @@ export function applyAction(run: RunState, action: DepotAction): RunState {
       s.addons = s.addons.filter((a) => a.id !== action.addon);
       const slot = c.addonMounts[action.addon]?.hardpoint;
       if (slot) s.hardpoints = s.hardpoints.filter((h) => h.slot !== slot.id);
-      if (slot) delete s.mods[slot.id];
+      // Its mods go with it: a mount's are under its slot (the same id), a tread set's under its own.
+      delete s.mods[action.addon];
       if (ADDONS[action.addon].kind === 'trailer') {
         s.trailer?.bays.forEach((_, i) => clearBay(s, i));
         s.trailer = null;
@@ -643,17 +700,23 @@ export function applyAction(run: RunState, action: DepotAction): RunState {
     case 'installGrade': {
       const item = depot.grades[action.stock]!;
       item.sold = true;
-      // The new part arrives whole; the old one's mods went with it.
+      // The new part arrives whole; the old one's mods went with it. Add-on tread sets run the
+      // treads' grade too: each keeps the share of integrity it had.
+      const sets = s.addons.filter((a) => ADDONS[a.id].kind === 'treads' && a.hp !== null).map((a) => ({ a, before: addonDef(s, a.id) }));
       s.grades[item.component] = item.gen;
       delete s.mods[item.component];
       s[item.component] = coreMax(fittedChassis(s), item.component);
+      for (const { a, before } of sets) {
+        const after = addonDef(s, a.id);
+        if (before.kind === 'treads' && after.kind === 'treads' && before.hp > 0) a.hp = (a.hp! * after.hp) / before.hp;
+      }
       break;
     }
     case 'mod': {
-      const before = partMax(c, action.part);
+      const before = partMax(s, c, action.part);
       s.mods[action.part] = { ...s.mods[action.part], [action.track]: (s.mods[action.part]?.[action.track] ?? 0) + 1 };
       // The part keeps the share of integrity it had: a wreck stays a wreck.
-      const after = partMax(fittedChassis(s), action.part);
+      const after = partMax(s, fittedChassis(s), action.part);
       if (before && after && after !== before) scaleHp(s, action.part, after / before);
       break;
     }
@@ -661,9 +724,15 @@ export function applyAction(run: RunState, action: DepotAction): RunState {
   return { ...run, salvage: run.salvage - q.salvage, behemoth: s, depot };
 }
 
-/** A part's integrity (or armor) at full on a fitted chassis: core components, hardpoint slots, armor zones. */
-function partMax(c: ChassisDef, id: string): number | null {
+/**
+ * A part's integrity (or armor) at full on a fitted chassis: core components, hardpoint slots,
+ * armor zones, and add-ons with integrity of their own (as `s` has them upgraded).
+ */
+function partMax(s: BehemothSnapshot, c: ChassisDef, id: string): number | null {
   if (isCore(id)) return coreMax(c, id);
+  const addon = addonPart(s, id);
+  const def = addon && addonDef(s, addon.id);
+  if (def && def.kind !== 'mount') return def.hp;
   // A shared front plate: both halves are the same size, so either gives the ratio.
   const arc = armorArcsOf(id)[0];
   if (arc) return c.armor[arc];
@@ -676,6 +745,8 @@ function scaleHp(s: BehemothSnapshot, id: string, k: number): void {
   for (const arc of armorArcsOf(id)) s.armor[arc] *= k;
   const h = hardpoint(s, id);
   if (h) h.hp *= k;
+  const addon = addonPart(s, id);
+  if (addon && addon.hp !== null) addon.hp *= k;
 }
 
 /** Empties a trailer bay (a pod's hardpoint goes with it). */

@@ -11,13 +11,26 @@ import type { ArmorArc } from './chassis';
  *   on the main turret;
  * - **blowout panels** are hinged plates over the magazine: a cook-off vents up through them
  *   instead of into the hull, blowing them off (fire never touches them);
- * - the **trailer** is towed behind the hull: its own armor, frame, and module bays
- *   (content/trailer.ts). Its integrity is the frame's.
+ * - a **trailer** is towed behind the hull: its own armor, frame, and module bays
+ *   (content/trailer.ts). Its integrity is the frame's. They come in three sizes (two, three, and
+ *   four bays); a Behemoth tows one, and a bigger one bought at a depot takes over the modules of
+ *   the one it replaces.
  * Where each sits on the hull, and a mount's slot (and ring), are per chassis (`ChassisDef.addonMounts`).
  * A mount's slot id is the add-on's id.
  */
 
-export type AddonId = 'ramPlow' | 'outerTreads' | 'sponsonL' | 'sponsonR' | 'dorsalRing' | 'coax' | 'blowoutPanels' | 'trailer';
+export type AddonId =
+  | 'ramPlow'
+  | 'outerTreads'
+  | 'sponsonL'
+  | 'sponsonR'
+  | 'dorsalRing'
+  | 'coax'
+  | 'twinTurret'
+  | 'blowoutPanels'
+  | 'trailer'
+  | 'heavyTrailer'
+  | 'superTrailer';
 
 interface AddonBase {
   id: AddonId;
@@ -136,6 +149,16 @@ export const ADDONS: Record<AddonId, AddonDef> = {
     blurb: 'An M gun beside the main gun: fires where it points.',
     mass: 5,
   },
+  // The main turret rebuilt wider, with a second main-gun mount beside the first (user's request,
+  // Nov 2026). Both guns turn with the main ring; on one trigger they ripple.
+  twinTurret: {
+    id: 'twinTurret',
+    kind: 'mount',
+    name: 'Twin turret',
+    short: 'Twin',
+    blurb: 'The main turret rebuilt for two main guns. Bring treads.',
+    mass: 30,
+  },
   blowoutPanels: {
     id: 'blowoutPanels',
     kind: 'panels',
@@ -165,4 +188,58 @@ export const ADDONS: Record<AddonId, AddonDef> = {
     exposure: { frame: 2, module: 1.5 },
     blast: { radius: 36, damage: 50 },
   },
+  // The bigger trailers (user's request, Nov 2026): a bay is 15 units of bed, so each is that much
+  // longer, heavier, and tougher than the one before.
+  heavyTrailer: {
+    id: 'heavyTrailer',
+    kind: 'trailer',
+    name: 'Heavy trailer',
+    short: 'Trailer',
+    blurb: 'Towed: three module bays; soaks fire from behind.',
+    mass: 45,
+    hp: 95,
+    armor: 80,
+    length: 49,
+    width: 26,
+    towBar: 6,
+    maxSwing: 50,
+    bays: [
+      { x: 14.5, y: 0 },
+      { x: -0.5, y: 0 },
+      { x: -15.5, y: 0 },
+    ],
+    exposure: { frame: 2, module: 1.5 },
+    blast: { radius: 40, damage: 60 },
+  },
+  superTrailer: {
+    id: 'superTrailer',
+    kind: 'trailer',
+    name: 'Super-heavy trailer',
+    short: 'Trailer',
+    blurb: 'Towed: four module bays, as long as the hull.',
+    mass: 60,
+    hp: 120,
+    armor: 100,
+    length: 64,
+    width: 26,
+    towBar: 6,
+    maxSwing: 50,
+    bays: [
+      { x: 22, y: 0 },
+      { x: 7, y: 0 },
+      { x: -8, y: 0 },
+      { x: -23, y: 0 },
+    ],
+    exposure: { frame: 2, module: 1.5 },
+    blast: { radius: 44, damage: 70 },
+  },
 };
+
+/** The trailer among these add-ons (a Behemoth tows one at most), or null. */
+export function trailerOf(addons: readonly AddonId[]): TrailerAddon | null {
+  for (const id of addons) {
+    const def = ADDONS[id];
+    if (def.kind === 'trailer') return def;
+  }
+  return null;
+}

@@ -77,14 +77,14 @@ Parsed in `src/config.ts`. A practice run (any of `seed`, `immobilize`, `addons`
 | `?difficulty=easy\|normal\|hard` | The run's difficulty (§9 "Difficulty"); a practice run without it is Normal |
 | `?sectors=N` | The run's length in sectors, 1 to 5 (§9 "Run length and the run setup"); `?map=5&sectors=5` opens the last sector's map |
 | `?exit=N` | Extraction line N meters out; keeps the title and the save (for a quick trip to the depot) |
-| `?addons=all` or `?addons=a,b` | Start with add-ons (sponsons get an autocannon and a rotary gun; `dorsalRing` a heavy cannon; `coax` a flak cannon) |
-| `?trailer=missilePod,ammoBunker` | Start with a trailer; `-` = empty bay |
+| `?addons=all` or `?addons=a,b` | Start with add-ons (sponsons get an autocannon and a rotary gun; `dorsalRing` and `twinTurret` a heavy cannon; `coax` a flak cannon). `all` lists all three trailers; the Behemoth tows the first (the two-bay one) |
+| `?trailer=missilePod,ammoBunker` | Start with a trailer; `-` = empty bay. It's the smallest trailer with a bay for everything listed: three modules tow the heavy trailer, four the super-heavy one (`?addons=heavyTrailer` alone tows one empty) |
 | `?weapons=turret:heavyLaser,prow:plasmaThrower` | Weapon per slot id (`slot:weapon` pairs) |
 | `?shells=turret:ap,dorsalRing:canister` | Main-gun shell per slot id (`he`, `ap`, `canister`) |
 | `?cookoff=N` | Magazine destroyed N s into the battle (it cooks off) |
 | `?grades=reactor:3,sensors:2` | Core component grades (`component:gen`, gen 2 or 3) |
-| `?mods=turret.traverse:3,armor.front.plate:2` | Mod levels (`part.track:level`; the track follows the last dot; `armor.front` is both front halves, `treads.load` the Load mod) |
-| `?depot=N` | Opens the depot after N battles won, with 1000 salvage (Gen 3 grades show from N = 2) |
+| `?mods=turret.traverse:3,armor.front.plate:2` | Mod levels (`part.track:level`; the track follows the last dot; `armor.front` is both front halves, `treads.load` the Load mod, `outerTreads.load` the outboard set's, `fireControl.channel:1` the Auto link) |
+| `?depot=N` | Opens the depot after N battles won, with 1000 salvage. Its stock is drawn for sector ⌈N/2⌉ (§10 "A weapon of every size, and generations by sector"): Gen 3 parts show from N = 3, and `?depot=9` is sector 5's stock |
 | `?biome=arctic` | Every battle in that biome, whatever the sector (`temperate`, `arctic`, `industrial`, `desert`, `wasteland`) |
 | `?approach=pass` | Every battle on that approach (`plain`, `forest`, `urban`, `river`, `pass`; `none` = the biome's own mix) |
 | `?look=autumn` | Every battle's look (§3 "Ground looks"; `spring`, `summer`, `autumn`, `deepSnow`, `windswept`, `thaw`, `cinders`, `rust`, `chemical`, `paleSand`, `redSand`, `hamada`, `ash`, `rustDust`, `toxic`); one its biome lacks is ignored. Cosmetic: doesn't make a practice run |
@@ -184,9 +184,17 @@ Sideways acceleration is jerk-limited, and the Behemoth eases to a stop at the f
 `M2` · `initial` · `playtest: pending` · SPEC §5.3
 Weapon and add-on mass against tread capacity scales speed, acceleration, and agility. The depot shows load with install previews, and the HUD shows an OVERLOAD label.
 - `WeaponDef.mass` (tons), `ChassisDef.massCapacity` (Class II 280; the starting loadout is 245), `MASS` in tuning.ts.
-- `sim/behemoth.ts`: `massScale(mass, capacity)` (+15% empty, 1.0 at capacity, −2% per 1% over, floor 0.4), `loadMass` (wrecked weapons count), `massCapacity` (= working tread sets), `mobilityScale` = tread × mass, used by `speedLimits`, accel, and `lateralLimit` (also the deflect clamp in collision.ts).
+- `sim/behemoth.ts`: `massScale(mass, capacity)` (+15% empty, 1.0 at capacity, then a curve down toward a floor of 0.4: the next entry), `loadMass` (wrecked weapons count), `massCapacity` (= working tread sets), `mobilityScale` = tread × mass, used by `speedLimits`, accel, and `lateralLimit` (also the deflect clamp in collision.ts).
 - Chassis speeds mean "at rated capacity", so **tests compare against `speedLimits(b)`, not `chassis.speed`**. `createBehemoth` and `restoreBehemoth` start at the Behemoth's own cruise.
 - Depot: `loadOf(snapshot, swap?)`; the "For sale" row shows `Load m/cap t  Cruise n` (amber when over), install/remove labels carry the mass change, and hovering previews `before>after`. HUD: the speed bar scales to the unloaded top speed.
+
+### Overload eases to a floor
+`M4` · `uncommitted` · `playtest: pending` · SPEC §5.3, §15 "Heavy refits", §16 Q42
+User request (Nov 24, 2026): "overload speed should not go to zero linearly, but a number higher than that (configurable) which is the minimum speed no matter how overloaded you are". There already was a floor (`MASS.floor` 0.4), but the fall to it was a straight line at 2% of speed per 1% of overload, cut off flat at 30% over. It's now a curve: the same slope just past capacity, easing as the load grows, and settling toward the floor without reaching it.
+- `massScale` (sim/behemoth.ts): over capacity, `floor + (1 − floor) × exp(−overload × (ratio − 1) / (1 − floor))`. With `MASS.overload` 2 and `MASS.floor` 0.4: 10% over keeps 83% (was 80%), 20% over 71% (60%), 30% over 62% (40%), 60% over 48% (40%), double the capacity 42% (40%). Both knobs are live in the dev console (Tweaks → `MASS`).
+- It still multiplies with tread wear (`DEGRADE.treadSpeedFloor` 0.5), so a badly overloaded hull on worn treads can be at about a fifth of its rated speed.
+- Tests: `tests/sim/behemoth.test.ts` "mass and tread capacity" (the slope at capacity, each further 10% costing less, never under the floor).
+- **Gotcha:** this makes moderate overloads cheaper than they were (my reading of the request; SPEC §16 Q42). For the old straight line, restore `Math.max(MASS.floor, 1 - MASS.overload * (ratio - 1))`.
 
 ### Camera-follow frame
 `M0` · `initial` · `playtest: pending` · SPEC §4.2
@@ -458,7 +466,8 @@ User request (Nov 23). A controller in the browser's standard layout plays the w
 ### Swarm missile pod
 `M3` · `341df36` · `playtest: pending` · SPEC §6, §15 "New weapons (M3)"
 User request (Nov 23, 2026): a missile pod that attacks many units on screen at once, its small missiles each tracking a different target when there are enough. An M missile (Space): 8 missiles 0.06 s apart, each to its own unit in view, nearest the lock first, shared out in turn; a missile whose target dies turns onto the nearest unit in view.
-- Content: `swarmPod` (50 t, 12 salvos, reload 6; 9 damage, blast 8, speed 200, turn 6.5, spread 0.9, ×1.3 infantry, ×0.45 heavy), `MissileSpec.swarm`, `DEPOT_WEAPONS` (150, rearm 4 a salvo), `SWARM.retarget` (250) in tuning.ts.
+- **Nov 24, 2026** (`uncommitted`, `playtest: pending`; user request: "nearly no recharge time before they can be fired again"): `reload` 6 → **0.4** (counted from the last missile of a salvo, which takes 0.48 s). Ammo is unchanged, so 12 salvos last about 11 s held down, and on Auto the pod spends them as fast as targets turn up. Test: `tests/sim/heavyRefits.test.ts` "the swarm pod".
+- Content: `swarmPod` (50 t, 12 salvos, reload 0.4; 9 damage, blast 8, speed 200, turn 6.5, spread 0.9, ×1.3 infantry, ×0.45 heavy), `MissileSpec.swarm`, `DEPOT_WEAPONS` (150, rearm 4 a salvo), `SWARM.retarget` (250) in tuning.ts.
 - Sim (weapons.ts): `swarmTargets(w, x, y, n)` (alive, not hidden or sealed, on screen; sorted by distance), `stepMissiles` fills `salvo.targets` at launch and gives missile *i* `targets[i % n]`, else the lock's unit, else the nearest to the lock point now. In flight, `steerMissile` (projectiles.ts) retargets a swarm missile whose target died (`swarmRetarget`).
 - Render: `swarmMissile` texture (4×2), `wpn_swarmPod` mount, cutaway as a missile box. `updateLockMark` in the battle scene now keeps a pool of `lock` brackets (`lockMarks`), one on every unit a swarm salvo would go for (or is going for).
 - **Limits:** the autopilot rarely fires it (`BOT.missileThreat`). Swarm missiles are as easy for point defense as the rack's (no enemy PD yet anyway).
@@ -468,7 +477,8 @@ User request (Nov 23, 2026): a missile pod that attacks many units on screen at 
 User request (Nov 23, 2026): an EMP pulse that disables nearby vehicles for a short time. An M energy weapon, Auto (group 4) by default: a pulse from the mount that stuns every vehicle within 130 (to its body; 110 until Nov 24) for 3.5 s (heavy ×0.6), and fries enemy missiles in reach. Troops on foot are untouched; no damage. **Since Nov 24 it also kills mines: the next entry.**
 - Content: `empEmitter` (40 t, power 30, reload 9), `PulseSpec` (kind `pulse`: `radius`, `stun`, `stunVs`), `DEPOT_WEAPONS` (140), `EMP` in tuning.ts (`autoMin` 2, `renew` 0.5).
 - Sim: `sim/emp.ts`: `empable` (alive, not `foot`), `stun` (max of the old and new stun; zeroes velocity; clears every gun's `windup`, `salvoLeft`, `zone`), `pulseWorth` (Auto: `autoMin` working vehicles in reach, any bomb truck, or an enemy missile), `firePulse` (`fire` + `emp` events). `stepPulse` in weapons.ts (Auto or a held trigger). `Enemy.stunned`: `stepEnemies` counts it down and skips moving and firing while it lasts (it can still be sighted, and the hull can still run it down).
-- Render/audio: `Effects.empRing` (expanding ring and flash) and a small shake; `Effects.arc` crackles off stunned units (`FireView`); `wpn_empEmitter` mount, cutaway dish; `emp` sound (falling whine, thump, crackle). No muzzle flash.
+- **Nov 24, 2026** (`uncommitted`, `playtest: pending`; user request: "emp ground effect visual should be more noticable"): `Effects.empRing` redrawn (§12 "EMP pulse on the ground").
+- Render/audio: `Effects.empRing` and a shake; `Effects.arc` crackles off stunned units (`FireView`); `wpn_empEmitter` mount, cutaway dish; `emp` sound (falling whine, thump, crackle). No muzzle flash.
 - **Gotcha:** `shotSpec` and `roundSpec` throw for `pulse`; `magazineLoad` reads `'damage' in spec`.
 - **Limits:** it can't fire while lasers keep the capacitor under 30 (the HUD row reads `NO PWR`); a stunned unit just stops (a hovercraft doesn't drift); a field battery's marked zone stays up after its volley is cut off (as when the battery dies).
 
@@ -481,6 +491,14 @@ User requests (Nov 24, 2026): "emp should disable mines" and "the range on the e
 - Tests: `tests/sim/newWeapons.test.ts` "EMP emitter" (mines in reach die, swept or not, one out of reach stays, the treads roll over a dead one unhurt; Auto holds for a mine off to the side and far ahead, then fires within `mineAhead`; a flung mine in reach by where it is in the air).
 - **Gotcha:** the emitter starts a battle on its reload, and on Auto a pulse spent on a mine isn't there for the vehicles that turn up in the next 9 s (and the other way round). Checked in a staged battle: a minefield nine tiles deep cost a stock hull two mines after the first pulse cleared the near three rows.
 - **Limits:** no sound of its own for a mine dying (the pulse's own plays). The autopilot doesn't know a pulse will clear its path: it still steers round swept mines. Not run through the bench. The Behemoth's own jettisoned trailer (`w.mines`) is untouched by design.
+
+### Titan cannon
+`M4` · `uncommitted` · `playtest: pending` · SPEC §6, §6.2, §15 "Heavy refits", §16 Q42
+User request (Nov 24, 2026): "a weapon upgrade to the heavy cannon, that's the same type but bigger (still an L)". An L main gun with the heavy cannon's four shells, each about half again as big, firing a little slower and weighing as much as the howitzer. The name is mine.
+- Content: `titanCannon` (150 t, reload 2, muzzle 34) and its shells in content/weapons.ts: `TITAN_HE` (60 over a 24 blast, tile 110, reach 34–360), `TITAN_AP` (85, speed 760, range 470, penetration 0.6), `TITAN_CANISTER` (14 × 7, range 140), `TITAN_INCENDIARY` (30 over 26, burns 6/s for 4 s). `DEPOT_WEAPONS.titanCannon` (250, weight 2, `gen: 2`). Sound: the cannon's at size 1.1 (`WEAPON_SOUNDS`); heat 0.3 a shot.
+- Render: `bh_barrel_titan` (32 × 8: a thick tube, a fume extractor, a slotted brake) in `TURRET_BARREL`; the depot profile draws its barrel 6 thick.
+- Tests: `tests/sim/heavyRefits.test.ts` "the titan cannon" (every shell bigger than the heavy cannon's, sustained HE ahead too; installs on the turret only; fires the shell chosen).
+- **Limits:** it shares the cannon's report (louder) and its shell art.
 
 ### Flamethrower
 `M3` · `341df36`, stream and fuel `dfa7791` · `playtest: pending` · SPEC §6, §6.3, §15 "New weapons (M3)"
@@ -1250,13 +1268,40 @@ When the salvage left can't cover a full tread (any set) or armor repair, it pat
 `M2` · `initial` · `playtest: pending` · SPEC §5.6, §8.2, §15 "Component upgrades (M2)", §16 Q15
 Core components come in Gen 1/2/3: a higher grade, found in the depot's stock, replaces the part (whole; the old one sells back) and is better but heavier. Parts take leveled mods (harden, traverse, plate, cap bank, load; up to 3, an action a level), always on offer. Run save v8.
 - **Nov 22, 2026** (`7dfa568`, `playtest: pending`; user requests): a treads **Load** track (`TRACKS.load`: +8% capacity a level, 3 t; `DEPOT_TRACKS.load` 40/60/90; `PartKind` `treads`, which also takes Harden; `fitChassis` multiplies `massCapacity` by it), and **one Plate for both front halves**: `armorPart(arc)` files both under `armor.front`, `armorArcsOf(part)`, `ARMOR_PARTS` (content/upgrades.ts); `partMax`/`scaleHp` (sim/depot.ts) cover every arc of a part; the depot's armor panel shows the two halves on one Plate button. Save v13. Tests in `tests/sim/upgrades.test.ts`.
-- Content: `content/upgrades.ts` (`GRADES` multipliers per core component and gen, `TRACKS` with `on: PartKind[]`, `Upgrades {grades, mods}`, `NO_UPGRADES`, `armorPart(arc)` = `armor.<arc>`, `gradeName`); prices in `DEPOT_GRADES` (with `minBattle`: Gen 3 from the second depot) and `DEPOT_TRACKS` (per level) in content/depot.ts; `DEPOT.gradeStock`, `DEPOT.maxModLevel` in tuning.ts. New optional chassis fields set only by grades and mods: `sensorReach`, `fireControl.spread`, `magazine.cookOff`, `HardpointSlotDef.traverse`.
+- Content: `content/upgrades.ts` (`GRADES` multipliers per core component and gen, `TRACKS` with `on: PartKind[]`, `Upgrades {grades, mods}`, `NO_UPGRADES`, `armorPart(arc)` = `armor.<arc>`, `gradeName`); prices in `DEPOT_GRADES` (how early each grade shows is the sector's odds now, not `minBattle`: "A weapon of every size, and generations by sector" below) and `DEPOT_TRACKS` (per level) in content/depot.ts; `DEPOT.gradeStock`, `DEPOT.maxModLevel` in tuning.ts. New optional chassis fields set only by grades and mods: `sensorReach`, `fireControl.spread`, `magazine.cookOff`, `HardpointSlotDef.traverse`.
 - Sim: `sim/upgrades.ts` `fitChassis(base, upgrades)` returns the chassis with everything applied (returns `base` itself with no upgrades); `upgradeMass`, `modLevel`, `modScale`, `CORE_COMPONENTS`. `createBehemoth(..., upgrades)` builds from the fitted chassis and keeps `b.upgrades`; `loadMass` adds `upgradeMass`; `autoReach(b)` (sensor damage × grade reach) replaces `sensorRangeScale` for auto weapons; `fireControlSpread` and `cookOff` apply their grade; `mountTraverse` applies `slot.traverse`. A ring's traverse mod is filed under its main slot id and speeds the `TurretDef`.
 - **Gotcha:** `b.chassis` is the *fitted* chassis. In depot and render code use `fittedChassis(s)` (sim/depot.ts), not `CHASSIS[s.chassis]`, for any maximum or rating; `CHASSIS[...]` is still right for geometry and for which add-ons fit.
 - Snapshot: `BehemothSnapshot.grades` / `.mods`; `DepotState.grades: DepotGradeItem[]` (own RNG stream `0x9e4d`, so the other stock is unchanged). Depot: actions `installGrade` (reason `Gen N fitted` for a grade at or below) and `mod` (`Doesn't apply`, `Maxed`, `Fixed weapon`); `tracksOf(s, part)` / `partKind`; `coreMax`; resale of a core part = its grade's price + its mods (`modsSpent`); a mount add-on resells and drops its slot's mods. A mod keeps the part's share of integrity (`partMax`/`scaleHp`).
 - UI: stock rows (`Gen 2 reactor  +15t  upgrade`); a grade panel with before>after stats (`coreStats`) and a Replace button; core panels show `Gen N`, their stats, mod buttons, and "Replace with" grades for sale; hardpoint panels a mod row (half-width `modButton`s, short reasons via `SHORT_REASON`); the armor panel a Plate button per zone. The cutaway draws a glow pip per grade over Gen 1 on core parts and frames the part a selected grade replaces.
 - Practice: `?grades=reactor:3,fireControl:2`, `?mods=turret.traverse:3,armor.frontLeft.plate:2`, and `?depot=N` (opens the depot after N battles with 1000 salvage).
-- **Limits:** add-ons, the trailer, and modules take no mods (SPEC §16 Q15); weapon tiers (SPEC §6) are M4.
+- **Limits:** the plow, the panels, the trailer, and modules take no mods (SPEC §16 Q15; outboard treads do since Nov 24, below); weapon tiers (SPEC §6) are M4.
+
+### A weapon of every size, and generations by sector
+`M4` · `uncommitted` · `playtest: pending` · SPEC §8.2 "Generations", §5.6, §15 "Heavy refits", §16 Q42
+User requests (Nov 24, 2026): "at each depot, you should have at least one option for a weapon of each slot type. right now you might go to a depot and have no Ls" and "generations of things offered should increase gradually as you move to later sectors". Every depot's 4–5 weapons now include at least one S, one M, and one L, listed biggest first; and what a depot offers (weapons, add-ons, modules, core grades) is weighted by the sector it's in, so better kit is rare or absent early and common late.
+- **Stock** (`openDepot` in sim/depot.ts, now `openDepot(run, s, key, sector = 0)`): one weapon of each size is drawn first (`HARDPOINT_SIZES` in content/chassis.ts: L, M, S), from the ones the Behemoth doesn't already carry when there is one (`onBoard`), then the rest of the 4–5 from what's left; then sorted by size. `enterMapNode` and the map's depot preview pass `pos.sector`.
+- **Generations:** `gen?: Gen` on `DepotWeapon`, `DepotAddon`, `DepotModule` (content/depot.ts; missing = 1); a core grade's is its own. `DEPOT.genOdds` (tuning.ts): a row per sector (the last serves every later one) of multipliers on the stock weight of Gen 1, 2, 3 goods: `[1, 0.4, 0]`, `[1, 0.8, 0.3]`, `[0.9, 1, 0.6]`, `[0.7, 1, 0.9]`, `[0.5, 1, 1.2]`. `genOdds(sector, gen)` reads it; an item with odds 0 isn't in the draw. Gen 2: `titanCannon`, `heavyLaser`, `railgun`, `arcProjector`, `ballisticMissile`, `twinTurret`, `heavyTrailer`, `missileErector`. Gen 3: `superTrailer`. `DepotGrade.minBattle` is gone, and Gen 3 grades' weights went up to Gen 2's (the odds do that job now).
+- Measured (2000 depots a sector, stock hull): Gen 3 share of the core parts for sale 0 / 29 / 41 / 50 / 57% by sector; Gen 2 weapons 16 / 21 / 23 / 25 / 28% of the weapons; the titan cannon in 17 / 22 / 25 / 27 / 29% of depots; a four-bay trailer in 0 / 6 / 12 / 20 / 28%; a twin turret in 7 / 9 / 12 / 14 / 17%; 1.2 to 1.5 L guns a depot.
+- Tests: `tests/sim/heavyRefits.test.ts` "a weapon of every size at every depot", "generations by sector".
+- **Gotcha:** the weapons for sale now depend on what the Behemoth carries (the sure pick of each size avoids it), so the map's preview of a depot one step away matches what the depot sells only because the loadout can't change in between; they still don't depend on its add-ons. Every seeded depot's stock changed with this.
+- **Gotcha:** a practice depot (`?depot=N`) is drawn for sector ⌈N/2⌉, though its header still reads Sector 1.
+- **Limits:** the For sale list doesn't show an item's generation. By sector number, so a 1-sector run never sees Gen 3 (SPEC §16 Q42).
+
+### Outboard tread upgrades and the Auto link
+`M4` · `uncommitted` · `playtest: pending` · SPEC §5.6, §5.2, §15 "Heavy refits", §16 Q42
+User requests (Nov 24, 2026): "the outboard treads should have upgrades just like the main treads" and "auto targeting should be upgradable to 3 autos, but be expensive". The outboard set takes **Harden** and **Load** like the treads (click it in the depot), and the treads' grade (Gen 2/3) is now every set's. Fire control takes a new one-level upgrade, the **Auto link**: +1 Auto channel for 240 salvage, always on offer (2 → 3 on a stock hull).
+- **Tread add-ons:** `fitAddon(def, upgrades)` (sim/upgrades.ts) returns a tread add-on with the treads' grade and its own mods applied to `hp` and `capacity` (mods filed under the add-on's id, `outerTreads`); `createBehemoth` stores the fitted def in `AddonState.def`, so `treadSets` and everything else read upgraded numbers. Depot (sim/depot.ts): `addonDef(s, id)` is the fitted def (use it for an add-on's maximum, not `ADDONS[id]`); `partKind` gives a tread add-on `'treads'`; `partMax`/`scaleHp` cover add-ons (a Harden level keeps its share of integrity); `installGrade` on the treads rescales each outboard set to the share it had (the main set arrives whole); `removeAddon` drops its mods and `addonResale` pays for them.
+- **Auto link:** `TRACKS.channel` (content/upgrades.ts: `on: ['fireControl']`, `per: 1` channel, 4 t, `max: 1`), `DEPOT_TRACKS.channel` `[240]`; `TrackDef.max` and `trackMax(track, fallback)` cap a track below `DEPOT.maxModLevel` (the depot's `Maxed`, the `n/max` on its button, the save check, `?mods=`). New `PartKind` `'fireControl'` (it still takes Harden). `fitChassis` adds the level to `fireControl.channels`, on top of the grade's.
+- UI (DepotScene): the add-on panel for a tread set has the mod row; a treads grade's panel adds the outboard set's capacity change (`out treads 140>182t`); the fire-control panel shows `Auto link 0/1  240`.
+- Tests: `tests/sim/heavyRefits.test.ts` "outboard treads take the upgrades the main treads take", "the Auto link: a third weapon on Auto, at a price".
+- **Gotcha:** the link is a mod on the fire control, so it's sold back (65%) with the part when a better fire control replaces it, and has to be bought again.
+- **Limits:** the profile shows no grade pips on the outboard belt. The link stacks with a Gen 3 fire control to 5 channels (SPEC §16 Q42).
+
+### Ram plow in the depot profile
+`M4` · `uncommitted` · `playtest: pending` · SPEC §8.2, §15 "Heavy refits"
+User report (Nov 24, 2026): "the tank profile image for upgrades at the depot isn't showing the plow properly". It was drawn as a thin sliver along the glacis in the hull's own grey, under the sensors and the prow gun. It's now a dozer blade standing ahead of the nose (a lip over the prow, a hollow face, a toe leaning into the ground) on two push arms, lit, riveted, and outlined by its integrity.
+- render/cutaway.ts: `Layout.plow` is `{ blade, arms, box }`; the blade is filled `steelHi`, the arms `steelMid` over an outline. The cutaway's origin moved 6 px left to make room ahead of the nose (`DepotScene.cut.x` = 8 + `cutawayRear`; `Layout.trailer.rear` 54).
+- Checked headless: `?seed=5&depot=2&addons=ramPlow`.
 
 ---
 
@@ -1304,6 +1349,28 @@ A frame (armor, mass) with 2 module bays; modules install like weapons. It's a p
 - Jettisoned/wrecked trailers drop out of the snapshot. Depot: `installModule`/`removeModule`, `bayPart`, trailer armor in `repairArmor`, bunker rearm per load; `fits` refuses pod slots.
 - Render: `render/trailerView.ts`, `TR` + `tr_*` textures, `trailerPartAt` + trailer components in `ComponentFx`, HUD schematic trailer box + readout + LOST/RELOAD/DROPPED, cutaway trailer at negative x (`cutawayRear`).
 - **Limits:** salvage motes home on the hull's center, so with a trailer they fly over it.
+
+### Bigger trailers
+`M4` · `uncommitted` · `playtest: pending` · SPEC §5.5, §15 "Heavy refits", §16 Q42
+User request (Nov 24, 2026): "we need larger trailers with 3 or 4 slots". Two more trailers: the **heavy trailer** (3 bays) and the **super-heavy trailer** (4 bays, as long as the hull). They're add-ons of their own; a Behemoth tows one, and buying a bigger one over the one in tow swaps it in with its modules.
+- Content: `ADDONS.heavyTrailer` (45 t, frame 95, armor 80, 49 long, blast 40/60) and `ADDONS.superTrailer` (60 t, 120, 100, 64 long, 44/70), bays 15 apart; `trailerOf(addons)` (content/addons.ts: the trailer among some add-ons); a hitch for each in `CHASSIS.class2.addonMounts`; `DEPOT_ADDONS` 220 (`gen: 2`) and 300 (`gen: 3`).
+- Sim: nothing names `ADDONS.trailer` any more: `hardpointSlots`, `hitchPoint`, `createBehemoth` (which keeps the first trailer listed), the save check (two trailers refused), the attract mode's loadouts (`demo.ts` tows any one), `mapEvents.ts`. `bayName(index, count)`: Front, Mid, Rear; or Front, Bay 2, Bay 3, Rear. In battle the frame's component id is still `'trailer'` whatever its size (events, the HUD, `statusFx`); the camera's focus already followed the trailer's length (`frameFocus`).
+- Depot: `trailerDef(s)` (the one in tow). `installAddon` with a trailer in tow: refused unless it has more bays (`No bigger`); priced net of the old frame's resale; the add-on is replaced in place, armor and frame arrive whole, bays keep their modules (pods keep their hardpoints `bay0`…). `openDepot` never offers a trailer no bigger than the one in tow, and stocks modules when any trailer is in tow or for sale. The panel says "Swap in the heavy trailer" and that the modules move across.
+- Render: `trailerArt(def)` (placeholder.ts) names a bed and a tread sheet per trailer (`tr_body_<id>`, `tr_tread_<id>`, sized to its length, with a `_stub` for the wreck decal: `TrailerView.wreckKey`); the depot profile lays out any number of bays (`trailerLayout` in cutaway.ts: slimmer bays and a shorter tow bar for three and four, so it stays on screen); the HUD schematic's bays share the body (`bayBox`).
+- Tests: `tests/sim/heavyRefits.test.ts` "bigger trailers".
+- **Gotcha:** an add-on's id is no longer enough to tell there's a trailer: use `ADDONS[id].kind === 'trailer'`, `trailerOf`, or `trailerDef(s)`.
+- **Limits:** at four bays the profile's modules are 13 px wide (the drone bay's two drones touch). A full four-bay trailer weighs about 80 t on the treads; nothing stops one being hung on a stock hull. The trailer still ignores terrain (TODO "Known bugs"), which shows more on one 64 long.
+
+### Twin turret
+`M4` · `uncommitted` · `playtest: pending` · SPEC §5.2, §5.5, §15 "Heavy refits", §16 Q42
+User request (Nov 24, 2026): "an option to replace the main turret with a twin mount turret, to be two L weapons". An add-on (220 salvage, 30 t, Gen 2): the main turret rebuilt wider with a second L slot on the main ring. The two guns sit either side of the centerline and turn together; on one trigger they ripple (§5 "Ripple fire").
+- Content: `ADDONS.twinTurret` (a `mount`), `addonMounts.twinTurret`: its slot `twinTurret` (L, ring `main`, at hull [4, 5], 60 integrity) and **`moves`** (new on `AddonMount`): `turret` to [4, −5] and `coax` to [11, 0]. `hardpointSlots` applies every fitted add-on's `moves`, so a moved slot is a copy with the new mount.
+- Sim: nothing else new. Its slot is on a ring without being the ring's own, so it's a `coax` to the upgrades (Harden only; the ring's Traverse stays on `turret`), and it's never Auto. Each gun fires along the ring's facing from its own muzzle, so shells land about 5 either side of the cursor.
+- Render: `BehemothView` (compositor.ts) draws a barrel for every L slot on a ring (`Ring.barrels`: its own recoil, heat, and stub), at the slot's offset from the pivot, under `bh_turret_twin` (24 × 24) when a ring has two; the turret chars only when every gun on it is wrecked. HUD schematic: the two share the turret's box (`TWIN_BOX`). Depot profile: the second gun on the turret's roof (`slots.twinTurret`), and a dorsal ring stands 10 px taller to clear it (`twinLift`).
+- Practice: `?addons=twinTurret` (a heavy cannon in the second mount; `&weapons=twinTurret:titanCannon,turret:titanCannon` for two titans).
+- Tests: `tests/sim/heavyRefits.test.ts` "the twin turret".
+- **Gotcha:** `h.slot` for a moved slot is not the object in `chassis.hardpoints`: compare slot ids, never identity.
+- **Limits:** the top-down twin turret is the main one's shape scaled up (no art of its own), and the two barrels are hard to tell apart at a glance when the guns match. No traverse penalty for the extra gun.
 
 ### Drone bay
 `M2` · `initial` · `playtest: pending` · SPEC §5.1, §15 "Drone bay (M2)"
@@ -1400,6 +1467,13 @@ User request (Nov 23, 2026): the fire effects were horrible (a few square partic
 - **Gotcha:** flames rise up the *screen* (the field knows nothing of the sim's axes); `FlameLayer.at` is the only place sim coordinates turn into field ones.
 - **Gotcha:** `Effects` methods that take sim coordinates must call the layer before they convert `x, y` to view coordinates (`detonation`'s delayed blasts convert back).
 - **Limits:** no wind (flames and smoke don't lean with a storm); the smoke the sim counts is per tile while the drawn smoke rolls up the screen about a tile past it; fire doesn't crackle; the title's attract mode shares all of it.
+
+### EMP pulse on the ground
+`M4` · `uncommitted` · `playtest: pending` · SPEC §6 "EMP emitter", §15 "Heavy refits"
+User request (Nov 24, 2026): "emp ground effect visual should be more noticable" (it was one thin ring and a faint flash, gone in 0.4 s). Now: a cyan wash floods the whole reach on the ground, under the units, and fades over 0.8 s; a thick white wavefront rolls out with two echoes behind it; ten forks of lightning crawl out along the ground; sparks jump along the front as it passes; and the edge of its reach is left as a broken glowing ring for most of a second, so where it got to is plain. The camera shake is 160 ms at 2 px (was 120 at 1).
+- `Effects.empRing` (render/effects.ts) and `EMP_FX` beside it (`sweep` 420 ms, `linger` 800 ms, `forks` 10, `groundDepth` 2.2: over decals and plasma pools, under units). Additive blending; the pulse itself (reach, stun, mines) is unchanged.
+- Checked headless in a staged battle (the effect fired from the page at 150 ms and 520 ms).
+- **Limits:** the wash is drawn over terrain as a flat disc (it doesn't stop at walls). Not looked at by night or in a storm.
 
 ### Mouse cursor outside battle
 `M2` · `initial` · `playtest: n/a`

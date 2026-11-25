@@ -1,4 +1,4 @@
-import { ADDONS, type AddonDef, type AddonId, type TrailerAddon } from '../content/addons';
+import { ADDONS, trailerOf, type AddonDef, type AddonId, type TrailerAddon } from '../content/addons';
 import { ARMOR_ARCS, type ArmorArc, type ChassisDef, type CoreComponent, type HardpointSlotDef, type TurretDef } from '../content/chassis';
 import { moduleLoads, TRAILER_MODULES, type ModuleDef, type ModuleId } from '../content/trailer';
 import { NO_UPGRADES, type Upgrades } from '../content/upgrades';
@@ -8,7 +8,7 @@ import type { SimEvent } from './events';
 import { approach, boxBounds, clamp, easeToward, orientedBox, rotateToward, wrapAngle, type Box, type Rect } from './math';
 import type { Rng } from './rng';
 import type { Underfoot } from './terrain';
-import { fitChassis, upgradeMass } from './upgrades';
+import { fitAddon, fitChassis, upgradeMass } from './upgrades';
 
 /**
  * The Behemoth: movement, turret, and the component damage model (SPEC §5.1).
@@ -228,9 +228,14 @@ export function bayIndex(id: ComponentId): number | null {
   return m ? Number(m[1]) : null;
 }
 
-/** What a trailer bay is called: the front one, the rear one (then by number). */
-export function bayName(index: number): string {
-  return index === 0 ? 'Front bay' : index === 1 ? 'Rear bay' : `Bay ${index + 1}`;
+/**
+ * What a trailer bay is called, front first, on a trailer of `count` bays: the front one, the rear
+ * one, and what's between ("Mid bay"; on a four-bay trailer, "Bay 2" and "Bay 3").
+ */
+export function bayName(index: number, count = 2): string {
+  if (index === 0) return 'Front bay';
+  if (index === count - 1) return 'Rear bay';
+  return count === 3 ? 'Mid bay' : `Bay ${index + 1}`;
 }
 
 /** The hardpoint a pod module adds in trailer bay `index`: its built-in weapon fires all round. */
@@ -238,7 +243,7 @@ function podSlot(trailer: TrailerAddon, index: number, def: ModuleDef): Hardpoin
   const at = trailer.bays[index]!;
   return {
     id: bayId(index),
-    name: bayName(index),
+    name: bayName(index, trailer.bays.length),
     size: 'M',
     position: 'trailer',
     hp: def.hp,
@@ -249,20 +254,24 @@ function podSlot(trailer: TrailerAddon, index: number, def: ModuleDef): Hardpoin
 }
 
 /**
- * The hardpoint slots a chassis has with these add-ons: its own, then each mount's (sponsons, dorsal ring), then the
- * trailer's pods (for the modules in `bays`). Add-ons the chassis can't take are ignored.
+ * The hardpoint slots a chassis has with these add-ons: its own, then each mount's (sponsons, the
+ * dorsal ring, a twin turret's second gun), then the trailer's pods (for the modules in `bays`).
+ * A slot an add-on moves (`AddonMount.moves`) sits where that add-on puts it. Add-ons the chassis
+ * can't take are ignored.
  */
 export function hardpointSlots(chassis: ChassisDef, addons: readonly AddonId[], bays: readonly (ModuleId | null)[] = []): HardpointSlotDef[] {
-  const extra = addons.flatMap((id) => chassis.addonMounts[id]?.hardpoint ?? []);
-  const trailer = ADDONS.trailer;
-  const pods =
-    addons.includes('trailer') && chassis.addonMounts.trailer && trailer.kind === 'trailer'
-      ? bays.slice(0, trailer.bays.length).flatMap((id, i) => {
-          const def = id ? TRAILER_MODULES[id] : undefined;
-          return def?.kind === 'pod' ? [podSlot(trailer, i, def)] : [];
-        })
-      : [];
-  return [...chassis.hardpoints, ...extra, ...pods];
+  const fitted = addons.filter((id) => chassis.addonMounts[id]);
+  const extra = fitted.flatMap((id) => chassis.addonMounts[id]?.hardpoint ?? []);
+  const trailer = trailerOf(fitted);
+  const pods = trailer
+    ? bays.slice(0, trailer.bays.length).flatMap((id, i) => {
+        const def = id ? TRAILER_MODULES[id] : undefined;
+        return def?.kind === 'pod' ? [podSlot(trailer, i, def)] : [];
+      })
+    : [];
+  const moves: Record<string, { x: number; y: number }> = Object.assign({}, ...fitted.map((id) => chassis.addonMounts[id]?.moves ?? {}));
+  const placed = (slot: HardpointSlotDef) => (moves[slot.id] ? { ...slot, mount: moves[slot.id]! } : slot);
+  return [...chassis.hardpoints.map(placed), ...extra.map(placed), ...pods];
 }
 
 /** The turret rings a chassis has with these add-ons: its own, then each add-on's. */
@@ -289,7 +298,9 @@ export function createBehemoth(
 ): BehemothState {
   const chassis = fitChassis(base, upgrades);
   const a = chassis.armor;
-  const fitted = addons.filter((id, i) => chassis.addonMounts[id] && addons.indexOf(id) === i);
+  // One of each, and one trailer at most (the first listed).
+  const towed = trailerOf(addons.filter((id) => chassis.addonMounts[id]))?.id;
+  const fitted = addons.filter((id, i) => chassis.addonMounts[id] && addons.indexOf(id) === i && (ADDONS[id].kind !== 'trailer' || id === towed));
   const podWeapon = (id: string) => {
     const i = bayIndex(id);
     const m = i === null ? null : bays[i];
@@ -321,7 +332,8 @@ export function createBehemoth(
       };
     }),
     addons: fitted.map((id) => {
-      const def = ADDONS[id];
+      // A tread set's own upgrades are already in its def, as the chassis' are in `chassis`.
+      const def = fitAddon(ADDONS[id], upgrades);
       return { def, integrity: def.kind === 'mount' ? null : full(def.hp) };
     }),
     trailer: null,
@@ -380,7 +392,7 @@ export function hitched(b: BehemothState): TrailerState | null {
 
 /** World position of the tow hitch on the hull's rear. */
 export function hitchPoint(b: BehemothState): { x: number; y: number } {
-  const h = b.chassis.addonMounts.trailer?.hitch ?? { x: -b.chassis.length / 2, y: 0 };
+  const h = (b.trailer && b.chassis.addonMounts[b.trailer.def.id]?.hitch) ?? { x: -b.chassis.length / 2, y: 0 };
   const c = Math.cos(b.heading);
   const s = Math.sin(b.heading);
   return { x: b.x + h.x * c - h.y * s, y: b.y + h.x * s + h.y * c };
@@ -498,12 +510,17 @@ export function treadSpeedScale(integrity: number): number {
 
 /**
  * How much of its rated speed a Behemoth keeps under a load (SPEC §5.3): a little more than all of
- * it below capacity, falling gently as mass is added, then steeply once over capacity.
+ * it below capacity, falling gently as mass is added, then steeply once over capacity, on a curve
+ * that levels out at `MASS.floor`: the minimum, however overloaded it is.
  */
 export function massScale(mass: number, capacity: number): number {
   const ratio = capacity > 0 ? Math.max(0, mass) / capacity : Infinity;
   if (ratio <= 1) return 1 + MASS.underload * (1 - ratio);
-  return Math.max(MASS.floor, 1 - MASS.overload * (ratio - 1));
+  // Over capacity it falls away at `MASS.overload` per unit of overload at first, then ever more
+  // gently, settling toward the floor instead of running down a straight line to it.
+  const span = 1 - MASS.floor;
+  if (span <= 0) return MASS.floor;
+  return MASS.floor + span * Math.exp((-MASS.overload * (ratio - 1)) / span);
 }
 
 /**

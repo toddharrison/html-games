@@ -322,7 +322,7 @@ describe('the trailer at the depot', () => {
   it('modules are only stocked when there is a trailer to put them in, or one for sale', () => {
     for (let battle = 1; battle < 30; battle++) {
       const bare = openDepot({ seed: 4, battle }, newRun(4).behemoth);
-      expect(bare.modules.length > 0).toBe(bare.addons.some((a) => a.addon === 'trailer'));
+      expect(bare.modules.length > 0).toBe(bare.addons.some((a) => ADDONS[a.addon].kind === 'trailer'));
       const withTrailer = openDepot({ seed: 4, battle }, newRun(4, 'class2', ['trailer']).behemoth);
       expect(withTrailer.modules.length).toBeGreaterThanOrEqual(DEPOT.moduleStock[0]);
       expect(withTrailer.modules.length).toBeLessThanOrEqual(DEPOT.moduleStock[1]);

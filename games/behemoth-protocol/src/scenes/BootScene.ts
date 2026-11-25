@@ -23,7 +23,7 @@ import { ADDONS, type AddonId } from '../content/addons';
 import { ARMOR_ARCS } from '../content/chassis';
 import { DEPOT } from '../content/tuning';
 import { TRAILER_MODULES, type ModuleId } from '../content/trailer';
-import { GRADES, TRACKS, type Upgrades } from '../content/upgrades';
+import { GRADES, trackMax, TRACKS, type TrackId, type Upgrades } from '../content/upgrades';
 import { SHELL_TYPES, shellsOf, WEAPONS, type ShellType, type WeaponId } from '../content/weapons';
 import { applySavedMute } from '../audio/mute';
 import { generatePlaceholderArt } from '../render/placeholder';
@@ -55,12 +55,16 @@ export class BootScene extends Phaser.Scene {
     }
     if (PRACTICE) {
       // Practice mounts come with a gun each: an autocannon left, a rotary gun right, a heavy
-      // cannon on the dorsal ring, and a flak cannon on the coax.
-      const addons = addonsFromUrl().filter((id): id is AddonId => id in ADDONS);
+      // cannon on the dorsal ring and in a twin turret's second mount, and a flak cannon on the coax.
+      let addons = addonsFromUrl().filter((id): id is AddonId => id in ADDONS);
       const bays = trailerFromUrl()?.map((id) => (id !== null && id in TRAILER_MODULES ? (id as ModuleId) : null)) ?? [];
-      if (trailerFromUrl() && !addons.includes('trailer')) addons.push('trailer');
+      // `?trailer=` tows the smallest trailer with a bay for everything listed (two, three, or four).
+      if (trailerFromUrl()) {
+        const sized: AddonId = bays.length > 3 ? 'superTrailer' : bays.length > 2 ? 'heavyTrailer' : 'trailer';
+        addons = [...addons.filter((id) => ADDONS[id].kind !== 'trailer'), sized];
+      }
       const weapons = Object.fromEntries(Object.entries(weaponsFromUrl()).filter(([, id]) => id in WEAPONS)) as Record<string, WeaponId>;
-      const guns: Record<string, WeaponId> = { sponsonL: 'autocannon', sponsonR: 'rotaryGun', dorsalRing: 'heavyCannon', coax: 'flakCannon', ...weapons };
+      const guns: Record<string, WeaponId> = { sponsonL: 'autocannon', sponsonR: 'rotaryGun', dorsalRing: 'heavyCannon', twinTurret: 'heavyCannon', coax: 'flakCannon', ...weapons };
       const seed = seedFromUrl() ?? randomSeed();
       let run: RunState = newRun(seed, 'class2', addons, guns, bays, upgradesFromUrl(), directiveFromUrl(), difficultyFromUrl() ?? DEFAULT_DIFFICULTY, sectorsFromUrl());
       const summary = summaryFromUrl();
@@ -117,7 +121,11 @@ export class BootScene extends Phaser.Scene {
       // Straight into the run's opening battle (the map comes after it).
       run = enterMapNode(run, reachable(run.map, null)[0]!);
       const depot = depotFromUrl();
-      if (depot !== null) run = { ...run, battle: depot, next: 'depot', salvage: PRACTICE_DEPOT_SALVAGE, depot: openDepot({ seed: run.seed, battle: depot }, run.behemoth) };
+      // Two battles to a sector, for what the depot stocks (generations rise with the sector).
+      if (depot !== null) {
+        const sector = Math.floor((depot - 1) / 2);
+        run = { ...run, battle: depot, next: 'depot', salvage: PRACTICE_DEPOT_SALVAGE, depot: openDepot({ seed: run.seed, battle: depot }, run.behemoth, depot, sector) };
+      }
       for (const [slot, shell] of Object.entries(shellsFromUrl())) {
         const h = run.behemoth.hardpoints.find((hp) => hp.slot === slot);
         if (h?.weapon && shell in SHELL_TYPES && shellsOf(WEAPONS[h.weapon]).includes(shell as ShellType)) h.shell = shell as ShellType;
@@ -158,8 +166,9 @@ function upgradesFromUrl(): Upgrades {
     const dot = key.lastIndexOf('.');
     const part = key.slice(0, dot);
     const track = key.slice(dot + 1);
-    const n = Math.min(DEPOT.maxModLevel, Math.floor(Number(level)));
-    if (dot > 0 && track in TRACKS && n > 0) u.mods[part] = { ...u.mods[part], [track]: n };
+    if (dot <= 0 || !(track in TRACKS)) continue;
+    const n = Math.min(trackMax(track as TrackId, DEPOT.maxModLevel), Math.floor(Number(level)));
+    if (n > 0) u.mods[part] = { ...u.mods[part], [track]: n };
   }
   return u;
 }

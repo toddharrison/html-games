@@ -6,7 +6,7 @@ import { ADDONS, type AddonDef } from '../content/addons';
 import { ARC_NAMES, CHASSIS, type ChassisDef, type CoreComponent, type HardpointSlotDef } from '../content/chassis';
 import { DEPOT_ADDONS, DEPOT_GRADES, DEPOT_MODULES, DEPOT_WEAPONS } from '../content/depot';
 import { moduleLoads, TRAILER_MODULES, type ModuleDef } from '../content/trailer';
-import { ARMOR_PARTS, armorArcsOf, GRADES, gradeName, TRACKS, type TrackId } from '../content/upgrades';
+import { ARMOR_PARTS, armorArcsOf, GRADES, gradeName, trackMax, TRACKS, type TrackId } from '../content/upgrades';
 import { BINDINGS, defaultBinding, SHELL_TYPES, shellsOf, WEAPONS, withShell, type Binding, type WeaponDef } from '../content/weapons';
 import { cutawayRear, cutawaySize, drawCutaway, integrityColor, onHull, type CutawayPart } from '../render/cutaway';
 import { CHAR_W, charsIn, clipText, firstFit, fitRow, LINE_H, wrapParts } from '../render/textLayout';
@@ -14,6 +14,7 @@ import { below, updateText, uiText, type TextStyle } from '../render/uiText';
 import { hex, PAL } from '../render/palette';
 import { allowedBindings, bayIndex, bayName, defaultBindingFor, usesChannel } from '../sim/behemoth';
 import {
+  addonDef,
   ammoMissing,
   applyAction,
   armorMissing,
@@ -29,6 +30,7 @@ import {
   onBoard,
   slotsOf,
   tracksOf,
+  trailerDef,
   type DepotAction,
 } from '../sim/depot';
 import { currentBiome, leaveDepot, type BehemothSnapshot, type RunState } from '../sim/run';
@@ -99,8 +101,8 @@ export class DepotScene extends Phaser.Scene {
   /** The For sale list's area, where the mouse wheel scrolls it. */
   private stockArea = { x: 0, y: 0, w: 0, h: 0 };
   private wheel = new WheelRows();
-  /** The cutaway's origin: room behind the hull for a trailer, and above for the header. */
-  private readonly cut = { x: 12 + cutawayRear('class2'), y: 30 };
+  /** The cutaway's origin: room behind the hull for a trailer (and ahead of it for a plow), and above for the header. */
+  private readonly cut = { x: 8 + cutawayRear('class2'), y: 30 };
   /** The panel right of the cutaway: as wide as it was drawn for, or what the screen leaves it. */
   private readonly panel = { x: 362, w: Math.min(202, RESOLUTION.width - 362 - 12) };
 
@@ -203,7 +205,7 @@ export class DepotScene extends Phaser.Scene {
     checkpoint(this.ctx);
     // After an install the stock item is gone; follow it onto the Behemoth.
     if (action.kind === 'install') this.selection = { kind: 'part', id: action.slot };
-    if (action.kind === 'installAddon') this.selection = { kind: 'part', id: next.behemoth.addons.at(-1)!.id };
+    if (action.kind === 'installAddon') this.selection = { kind: 'part', id: next.depot!.addons[action.stock]!.addon };
     if (action.kind === 'installModule') this.selection = { kind: 'part', id: `bay${action.bay}` };
     if (action.kind === 'installGrade') this.selection = { kind: 'part', id: this.run.depot!.grades[action.stock]!.component };
     if (action.kind === 'removeAddon') this.selection = null;
@@ -517,10 +519,13 @@ export class DepotScene extends Phaser.Scene {
     if (sel.kind === 'addon') {
       const item = run.depot?.addons[sel.index];
       if (!item) return;
-      const def = ADDONS[item.addon];
+      const def = addonDef(s, item.addon);
       y = this.addonInfo(x, y, def, `${DEPOT_ADDONS[item.addon]?.price ?? 0} salvage`);
       y += 4;
-      this.actionButton(x, y, w, `Bolt on the ${def.name.toLowerCase()}`, { kind: 'installAddon', stock: sel.index });
+      // A bigger trailer takes over from the one in tow.
+      const towed = def.kind === 'trailer' ? trailerDef(s) : null;
+      if (towed) y = this.para(x, y, `Replaces the ${towed.name.toLowerCase()}: its modules move across, and the old frame sells back.`, PAL.hudDim, 4);
+      this.actionButton(x, y, w, towed ? `Swap in the ${def.name.toLowerCase()}` : `Bolt on the ${def.name.toLowerCase()}`, { kind: 'installAddon', stock: sel.index });
       return;
     }
 
@@ -540,7 +545,10 @@ export class DepotScene extends Phaser.Scene {
         y,
         w,
         'Install in',
-        bays.map((bay, i) => ({ label: bay ? `${bayName(i)} (replaces ${TRAILER_MODULES[bay.module].short})` : `${bayName(i)} (empty)`, action: { kind: 'installModule', stock: sel.index, bay: i } })),
+        bays.map((bay, i) => {
+          const name = bayName(i, bays.length);
+          return { label: bay ? `${name} (replaces ${TRAILER_MODULES[bay.module].short})` : `${name} (empty)`, action: { kind: 'installModule', stock: sel.index, bay: i } };
+        }),
       );
       return;
     }
@@ -554,7 +562,10 @@ export class DepotScene extends Phaser.Scene {
       y = this.para(x, y, g.blurb, PAL.hudText);
       y = this.figures(x, y, [`Core component, +${g.mass} t over Gen 1`, `${DEPOT_GRADES[item.component][item.gen].price} salvage`], 2, '   ');
       const after = fittedChassis({ ...s, grades: { ...s.grades, [item.component]: item.gen }, mods: { ...s.mods, [item.component]: {} } });
-      y = this.figures(x, y, coreStats(c, after, item.component), 6);
+      // The treads' grade is every set's: an outboard set's capacity changes with it.
+      const sets = item.component === 'treads' ? s.addons.map((a) => [addonDef(s, a.id), addonDef({ ...s, grades: { ...s.grades, treads: item.gen } }, a.id)] as const) : [];
+      const outboard = sets.flatMap(([now, next]) => (now.kind === 'treads' && next.kind === 'treads' ? [`${now.short.toLowerCase()} ${now.capacity}>${next.capacity}t`] : []));
+      y = this.figures(x, y, [...coreStats(c, after, item.component), ...outboard], 6);
       const fitted = s.grades[item.component] ?? 1;
       const mods = s.mods[item.component] && Object.keys(s.mods[item.component]!).length > 0 ? ' and its upgrades' : '';
       y = this.para(x, y, `Arrives whole. The ${gradeName(fitted, name)}${mods} sells back.`, PAL.hudDim, 6);
@@ -604,8 +615,8 @@ export class DepotScene extends Phaser.Scene {
         this.modButton(x + 86, y + ((arcs.length - 1) * 8) / 2, w - 86, part, 'plate');
         y += 13 + (arcs.length - 1) * 8;
       }
-      const tdef = ADDONS.trailer;
-      if (s.trailer && tdef.kind === 'trailer') {
+      const tdef = trailerDef(s);
+      if (s.trailer && tdef) {
         const f = s.trailer.armor / tdef.armor;
         this.text(x, y, 'trailer', PAL.hudDim);
         this.text(x + 80, y, `${Math.round(f * 100)}%`, integrityColor(f), { align: 'right' });
@@ -642,7 +653,7 @@ export class DepotScene extends Phaser.Scene {
 
     const addon = s.addons.find((a) => a.id === id);
     if (addon && ADDONS[addon.id].kind !== 'mount') {
-      const def = ADDONS[addon.id];
+      const def = addonDef(s, addon.id);
       const d = damageOf(s, id)!;
       y = this.para(x, y, def.name, PAL.hudText, 2, { scale: 2 });
       y = this.addonInfo(x, y, def, null, false);
@@ -656,6 +667,8 @@ export class DepotScene extends Phaser.Scene {
       }
       y += 4;
       y = this.actionButton(x, y, w, `Repair ${def.kind === 'trailer' ? 'frame' : def.name.toLowerCase()}`, { kind: 'repair', component: id });
+      // A tread set takes the upgrades the main treads take.
+      y = this.modRow(x, y, w, id);
       const scraps = def.kind === 'trailer' && s.trailer?.bays.some((b) => b) ? ' (and modules)' : '';
       this.actionButton(x, y, w, `Remove ${def.name.toLowerCase()}${scraps}`, { kind: 'removeAddon', addon: addon.id });
       return;
@@ -741,7 +754,7 @@ export class DepotScene extends Phaser.Scene {
     const action: DepotAction = { kind: 'mod', part, track };
     const q = quote(this.run, action);
     const level = this.run.behemoth.mods[part]?.[track] ?? 0;
-    const label = `${TRACKS[track].name} ${level}/${DEPOT.maxModLevel}`;
+    const label = `${TRACKS[track].name} ${level}/${trackMax(track, DEPOT.maxModLevel)}`;
     const right = q.ok ? String(q.salvage) : q.reason;
     const preview = q.ok ? applyAction(this.run, action).behemoth : undefined;
     this.button(x, y, w, label, right, q.ok, () => this.act(action), preview);
@@ -818,7 +831,7 @@ export class DepotScene extends Phaser.Scene {
     const s = this.run.behemoth;
     const id = `bay${bay}`;
     const part = bayPart(s, id);
-    y = this.para(x, y, bayName(bay), PAL.hudText, 2, { scale: 2 });
+    y = this.para(x, y, bayName(bay, s.trailer?.bays.length), PAL.hudText, 2, { scale: 2 });
     if (part) {
       const def = TRAILER_MODULES[part.module];
       y = this.moduleInfo(x, y, def, null);

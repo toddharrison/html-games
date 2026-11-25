@@ -15,6 +15,13 @@ type Emitter = Phaser.GameObjects.Particles.ParticleEmitter;
 
 const FIRE_RAMP = [0xffffff, 0xfff0b0, 0xffb347, 0xe0602a, 0x8a2e1c, 0x2a2220];
 
+/**
+ * The EMP pulse's look (`empRing`): milliseconds for the front to cross its reach, and for the
+ * wash and the glowing edge to fade after it; forks of ground lightning; and the depth of what
+ * lies on the ground (over decals and pools, under the units).
+ */
+const EMP_FX = { sweep: 420, linger: 800, forks: 10, groundDepth: 2.2 };
+
 export class Effects implements StatusEmitter {
   private readonly fire: Emitter;
   private readonly smoke: Emitter;
@@ -465,13 +472,83 @@ export class Effects implements StatusEmitter {
     this.arcs.explode(2 + Math.floor(Math.random() * 3), x, y);
   }
 
-  /** An EMP pulse rolling out from (x, y) to `radius`: a fast ring and a pale flash. */
+  /**
+   * An EMP pulse rolling out over the ground from (x, y) to `radius` (user's call, Nov 2026: the
+   * old thin ring was easy to miss). A charged wash floods the whole reach under the units, a
+   * bright wavefront rolls out with two echoes behind it, forks of lightning crawl out along the
+   * ground, sparks jump along the front as it passes, and the edge of its reach is left glowing
+   * for a moment, so where it got to is plain.
+   */
   empRing(x: number, y: number, radius: number): void {
-    [x, y] = [viewX(x, y), viewY(x)];
-    const ring = this.scene.add.circle(x, y, radius).setStrokeStyle(2, hex(PAL.glow), 0.9).setDepth(7.5).setScale(0.1);
-    const flash = this.scene.add.circle(x, y, radius, hex(PAL.glowHot), 0.18).setDepth(7.4).setBlendMode(Phaser.BlendModes.ADD).setScale(0.1);
-    this.scene.tweens.add({ targets: ring, scale: 1, alpha: 0, duration: 380, ease: 'quad.out', onComplete: () => ring.destroy() });
-    this.scene.tweens.add({ targets: flash, scale: 1, alpha: 0, duration: 260, ease: 'quad.out', onComplete: () => flash.destroy() });
+    const [cx, cy] = [viewX(x, y), viewY(x)];
+    const { scene } = this;
+    const ADD = Phaser.BlendModes.ADD;
+    const { sweep, linger } = EMP_FX;
+
+    // The wash: on the ground, under the units, spreading with the front and fading after it.
+    const wash = scene.add.circle(cx, cy, radius, hex(PAL.glow), 0.36).setDepth(EMP_FX.groundDepth).setBlendMode(ADD).setScale(0.05);
+    scene.tweens.add({ targets: wash, scale: 1, duration: sweep, ease: 'quad.out' });
+    scene.tweens.add({ targets: wash, alpha: 0, duration: linger, delay: sweep * 0.6, ease: 'quad.in', onComplete: () => wash.destroy() });
+
+    // The wavefront, and two echoes following it out.
+    for (const [delay, width, color, alpha] of [[0, 5, PAL.white, 1], [70, 3, PAL.glow, 0.95], [150, 2, PAL.glowDim, 0.85]] as const) {
+      const ring = scene.add.circle(cx, cy, radius).setStrokeStyle(width, hex(color), alpha).setDepth(7.5).setScale(0.05).setVisible(false);
+      scene.tweens.add({ targets: ring, scale: 1, alpha: 0, duration: sweep, delay, ease: 'quad.out', onStart: () => ring.setVisible(true), onComplete: () => ring.destroy() });
+    }
+    // The discharge at the emitter.
+    const flash = scene.add.circle(cx, cy, radius * 0.3, hex(PAL.glowHot), 0.75).setDepth(7.4).setBlendMode(ADD).setScale(0.3);
+    scene.tweens.add({ targets: flash, scale: 1.5, alpha: 0, duration: 260, ease: 'quad.out', onComplete: () => flash.destroy() });
+
+    // Forks of lightning crawling out along the ground, redrawn as they reach farther.
+    const forks = scene.add.graphics().setDepth(EMP_FX.groundDepth + 0.1).setBlendMode(ADD);
+    const base = Math.random() * Math.PI * 2;
+    const drawForks = (reach: number) => {
+      forks.clear();
+      for (let i = 0; i < EMP_FX.forks; i++) {
+        const a = base + ((i + (Math.random() - 0.5) * 0.5) / EMP_FX.forks) * Math.PI * 2;
+        const end = radius * reach * (0.75 + 0.25 * Math.random());
+        const path: [number, number][] = [];
+        for (let r = 6; r <= end; r += 9) {
+          const jag = (Math.random() - 0.5) * 9;
+          path.push([cx + Math.cos(a) * r - Math.sin(a) * jag, cy + Math.sin(a) * r + Math.cos(a) * jag]);
+        }
+        if (path.length < 2) continue;
+        for (const [width, color, alpha] of [[3, PAL.glowDim, 0.7], [1, PAL.white, 1]] as const) {
+          forks.lineStyle(width, hex(color), alpha);
+          forks.beginPath();
+          forks.moveTo(path[0]![0], path[0]![1]);
+          for (const [px, py] of path.slice(1)) forks.lineTo(px, py);
+          forks.strokePath();
+        }
+      }
+    };
+    [0.4, 0.7, 1, 1].forEach((reach, i) => scene.time.delayedCall((i * sweep) / 4, () => forks.active && drawForks(reach)));
+    scene.tweens.add({ targets: forks, alpha: 0, duration: 240, delay: sweep, ease: 'quad.in', onComplete: () => forks.destroy() });
+
+    // Sparks jumping along the front as it passes.
+    for (const f of [0.35, 0.7, 1]) {
+      scene.time.delayedCall(sweep * f * 0.8, () => {
+        const r = radius * f;
+        const n = Math.max(6, Math.round(r / 5));
+        for (let k = 0; k < n; k++) {
+          const a = Math.random() * Math.PI * 2;
+          this.arcs.explode(2, cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+        }
+      });
+    }
+
+    // Its reach, left glowing on the ground: a broken ring that flickers out.
+    const edge = scene.add.graphics().setDepth(EMP_FX.groundDepth + 0.05).setBlendMode(ADD).setAlpha(0);
+    const dashes = Math.max(12, Math.round(radius / 4));
+    edge.lineStyle(2, hex(PAL.glow), 0.9);
+    for (let i = 0; i < dashes; i++) {
+      const a0 = (i / dashes) * Math.PI * 2;
+      edge.beginPath();
+      edge.arc(cx, cy, radius, a0, a0 + (Math.PI * 2 * 0.6) / dashes);
+      edge.strokePath();
+    }
+    scene.tweens.add({ targets: edge, alpha: 1, duration: 60, delay: sweep * 0.8 });
+    scene.tweens.add({ targets: edge, alpha: 0, duration: linger, delay: sweep * 0.8 + 120, ease: 'bounce.in', onComplete: () => edge.destroy() });
   }
 
   /** A badly damaged part pouring black smoke. */

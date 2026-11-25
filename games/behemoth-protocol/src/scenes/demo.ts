@@ -2,7 +2,7 @@ import { APPROACH_IDS, type ApproachId } from '../content/approaches';
 import { BIOME_IDS, type BiomeId } from '../content/biomes';
 import type { BattleModeId } from '../content/modes';
 import type { ConditionId } from '../content/conditions';
-import { ADDONS, type AddonId } from '../content/addons';
+import { ADDONS, trailerOf, type AddonId } from '../content/addons';
 import { DEPOT_ADDONS, DEPOT_MODULES, DEPOT_WEAPONS } from '../content/depot';
 import type { ModuleId } from '../content/trailer';
 import { WEAPONS, type WeaponId } from '../content/weapons';
@@ -103,12 +103,15 @@ export function demoClip(i: number, seed: number): DemoClip {
 export function demoLoadout(seed: number): DemoLoadout {
   const rng = new Rng(hashSeed(seed, 0xd10a));
   const pick = <T>(xs: readonly T[]): T => xs[rng.int(0, xs.length - 1)]!;
-  const trailer = ADDONS.trailer;
-  const bayCount = trailer.kind === 'trailer' ? trailer.bays.length : 0;
   for (let i = 0; i < DEMO.tries; i++) {
-    const addons = (Object.keys(DEPOT_ADDONS) as AddonId[]).filter(() => rng.chance(DEMO.addonChance));
+    // One trailer at most: of the ones drawn, one at random.
+    const drawn = (Object.keys(DEPOT_ADDONS) as AddonId[]).filter(() => rng.chance(DEMO.addonChance));
+    const trailers = drawn.filter((id) => ADDONS[id].kind === 'trailer');
+    const towed = trailers.length > 0 ? pick(trailers) : null;
+    const addons = drawn.filter((id) => ADDONS[id].kind !== 'trailer' || id === towed);
     const modules = Object.keys(DEPOT_MODULES) as ModuleId[];
-    const bays = addons.includes('trailer') ? Array.from({ length: bayCount }, () => (rng.chance(DEMO.bayChance) ? pick(modules) : null)) : [];
+    const bayCount = trailerOf(addons)?.bays.length ?? 0;
+    const bays = Array.from({ length: bayCount }, () => (rng.chance(DEMO.bayChance) ? pick(modules) : null));
     const bare = newRun(seed, 'class2', addons, {}, bays).behemoth;
     // The hull's own slots, big ones first, and what each could take.
     const slots = slotsOf(bare)

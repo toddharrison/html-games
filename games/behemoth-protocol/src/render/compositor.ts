@@ -35,19 +35,29 @@ interface Mount {
   onRing: boolean;
 }
 
-/** A turret ring's sprites: the turret, its main gun's barrel, and the barrel's heat glow. */
+/** A main gun's barrel out of a turret, and its heat glow. */
+interface Barrel {
+  /** The hardpoint slot it's the gun of. */
+  slot: string;
+  img: Phaser.GameObjects.Image;
+  heat: Phaser.GameObjects.Image;
+  /** Barrel texture (its stub is `<key>_stub`). */
+  key: string;
+  /** Where its root sits along the rig at rest (recoil pulls it back from here). */
+  x: number;
+  recoil: number;
+}
+
+/**
+ * A turret ring's sprites: the turret and a barrel per main gun on it (the ring's own slot, and a
+ * twin turret's second gun).
+ */
 interface Ring {
   rig: Phaser.GameObjects.Container;
   turret: Phaser.GameObjects.Image;
-  barrel: Phaser.GameObjects.Image;
-  barrelHeat: Phaser.GameObjects.Image;
-  /** The ring's main slot. */
-  slot: string;
+  barrels: Barrel[];
   /** Turret texture (its stub is `<key>_stub`). */
   key: string;
-  /** Barrel texture for the main slot's gun; null = no gun there. */
-  barrelKey: string | null;
-  recoil: number;
 }
 
 const SHAKE_SECONDS = 0.12;
@@ -147,23 +157,30 @@ export class BehemothView {
     this.plowPlate = this.plow ? plateOf([this.plow], null, 'x') : null;
     this.glow = scene.add.image(-BH.hull.w / 2 + 9.5, 0, 'bh_glow').setBlendMode(Phaser.BlendModes.ADD);
     this.rings = b.turrets.map((t) => {
-      const gun = b.hardpoints.find((h) => h.slot.id === t.def.slot)?.weapon;
-      const barrelKey = gun ? (TURRET_BARREL[gun.id]?.key ?? 'bh_barrel') : null;
-      const key = barrelKey ?? 'bh_barrel';
-      const barrel = scene.add.image(BH.barrelRoot, 0, key).setOrigin(0, 0.5).setVisible(barrelKey !== null);
-      const barrelHeat = scene.add.image(BH.barrelRoot, 0, `${key}_heat`).setOrigin(0, 0.5).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
-      const turretKey = TURRET_ART[t.def.id] ?? 'bh_turret';
+      // Every L slot on the ring holds a main gun, drawn as a barrel out of the turret from where
+      // the slot sits (a twin turret's two lie either side of the centerline).
+      const guns = b.hardpoints.filter((h) => h.slot.ring === t.def.id && h.slot.size === 'L');
+      const barrels: Barrel[] = guns.flatMap((h) => {
+        if (!h.weapon) return [];
+        const key = TURRET_BARREL[h.weapon.id]?.key ?? 'bh_barrel';
+        const x = BH.barrelRoot + h.slot.mount.x - t.def.pivot.x;
+        const y = h.slot.mount.y - t.def.pivot.y;
+        const img = scene.add.image(x, y, key).setOrigin(0, 0.5);
+        const heat = scene.add.image(x, y, `${key}_heat`).setOrigin(0, 0.5).setBlendMode(Phaser.BlendModes.ADD).setVisible(false);
+        return [{ slot: h.slot.id, img, heat, key, x, recoil: 0 }];
+      });
+      const turretKey = guns.length > 1 ? 'bh_turret_twin' : (TURRET_ART[t.def.id] ?? 'bh_turret');
       const turret = scene.add.image(0, 0, turretKey);
-      const rig = scene.add.container(t.def.pivot.x, t.def.pivot.y, [barrel, barrelHeat, turret]);
-      return { rig, turret, barrel, barrelHeat, slot: t.def.slot, key: turretKey, barrelKey, recoil: 0 };
+      const rig = scene.add.container(t.def.pivot.x, t.def.pivot.y, [...barrels.flatMap((g) => [g.img, g.heat]), turret]);
+      return { rig, turret, barrels, key: turretKey };
     });
     // Sponson housings sit under whatever their slot carries (or nothing). Turret rings need none.
     const housings = b.hardpoints
-      .filter((h) => h.slot.ring === undefined && b.chassis.addonMounts[h.slot.id as keyof typeof b.chassis.addonMounts]?.hardpoint === h.slot)
+      .filter((h) => h.slot.ring === undefined && b.chassis.addonMounts[h.slot.id as keyof typeof b.chassis.addonMounts]?.hardpoint?.id === h.slot.id)
       .map((h) => scene.add.image(h.slot.mount.x, h.slot.mount.y, 'bh_sponson'));
     b.hardpoints.forEach((h, index) => {
-      // A ring's main gun is its barrel; pods are drawn with the trailer.
-      if (!h.weapon || h.slot.position === 'trailer' || b.turrets.some((t) => t.def.slot === h.slot.id)) return;
+      // A turret's main guns are its barrels; pods are drawn with the trailer.
+      if (!h.weapon || h.slot.position === 'trailer' || (h.slot.ring !== undefined && h.slot.size === 'L')) return;
       // Other ring slots (coax) sit on the turret, placed relative to its pivot.
       const ringIndex = b.turrets.findIndex((t) => t.def.id === h.slot.ring);
       const pivot = ringIndex >= 0 ? b.turrets[ringIndex]!.def.pivot : { x: 0, y: 0 };
@@ -202,8 +219,7 @@ export class BehemothView {
 
   /** A player weapon fired from `slot`: a turret's main gun recoils, and the barrel heats up. */
   onFire(slot: string, weapon: WeaponId): void {
-    const ring = this.rings.find((r) => r.slot === slot);
-    if (ring) ring.recoil = 1;
+    for (const r of this.rings) for (const g of r.barrels) if (g.slot === slot) g.recoil = 1;
     this.heat.onFire(slot, weapon);
   }
 
@@ -239,18 +255,22 @@ export class BehemothView {
     this.heat.step(dt);
 
     // Destroyed weapons are charred stubs; working ones glow with heat under sustained fire.
-    // A ring with nothing in its main slot shows a whole turret and no barrel.
+    // A ring with no gun on it shows a whole turret and no barrel; the turret chars once every
+    // gun it carries is wrecked.
     for (const [i, r] of this.rings.entries()) {
       r.rig.rotation = rings[i] ?? 0;
-      const h = b.hardpoints.find((hp) => hp.slot.id === r.slot);
-      const dead = r.barrelKey !== null && h !== undefined && h.integrity.hp <= 0;
-      retexture(r.turret, dead ? `${r.key}_stub` : r.key);
-      if (r.barrelKey) retexture(r.barrel, dead ? `${r.barrelKey}_stub` : r.barrelKey);
-      showHeat(r.barrelHeat, dead || r.barrelKey === null ? 0 : this.heat.get(r.slot));
-      // Barrel recoil: snaps back, eases forward.
-      r.recoil = Math.max(0, r.recoil - dt / 0.4);
-      r.barrel.x = BH.barrelRoot - 5 * r.recoil * r.recoil;
-      r.barrelHeat.x = r.barrel.x;
+      let wrecked = r.barrels.length > 0;
+      for (const g of r.barrels) {
+        const dead = (b.hardpoints.find((hp) => hp.slot.id === g.slot)?.integrity.hp ?? 0) <= 0;
+        wrecked &&= dead;
+        retexture(g.img, dead ? `${g.key}_stub` : g.key);
+        showHeat(g.heat, dead ? 0 : this.heat.get(g.slot));
+        // Barrel recoil: snaps back, eases forward.
+        g.recoil = Math.max(0, g.recoil - dt / 0.4);
+        g.img.x = g.x - 5 * g.recoil * g.recoil;
+        g.heat.x = g.img.x;
+      }
+      retexture(r.turret, wrecked ? `${r.key}_stub` : r.key);
     }
     if (this.plow) retexture(this.plow, (addonOf(b, 'ramPlow')?.integrity?.hp ?? 0) > 0 ? 'bh_plow' : 'bh_plow_stub');
     const panelsOn = (addonOf(b, 'blowoutPanels')?.integrity?.hp ?? 0) > 0;
@@ -344,7 +364,7 @@ export class BehemothView {
     const ph: HardpointState = { ...h, angle: mounts[i] ?? h.angle };
     const p = mountPosition(posed, ph);
     const angle = mountWorldAngle(posed, ph);
-    const barrel = h.slot.id === ringSlot(b, h) ? TURRET_BARREL[h.weapon.id] : undefined;
+    const barrel = h.slot.ring !== undefined ? TURRET_BARREL[h.weapon.id] : undefined;
     const len = barrel ? BH.barrelRoot + barrel.w : h.weapon.muzzle;
     return { x: p.x + Math.cos(angle) * len, y: p.y + Math.sin(angle) * len, angle };
   }
@@ -391,9 +411,4 @@ export class TrackMarks {
     img.setPosition(viewX(x, y), viewY(x)).setRotation(viewAngle(rotation));
     this.next = (this.next + 1) % this.capacity;
   }
-}
-
-/** The slot a hardpoint's ring draws its barrel for (the ring's main slot); null off a ring. */
-function ringSlot(b: BehemothState, h: HardpointState): string | null {
-  return b.turrets.find((t) => t.def.id === h.slot.ring)?.def.slot ?? null;
 }

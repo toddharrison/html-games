@@ -1,3 +1,4 @@
+import type { AddonDef } from '../content/addons';
 import { ARMOR_ARCS, type AddonMount, type ChassisDef, type CoreComponent, type HardpointSlotDef, type TurretDef } from '../content/chassis';
 import { armorPart, GRADES, TRACKS, type TrackId, type Upgrades } from '../content/upgrades';
 
@@ -68,7 +69,7 @@ export function fitChassis(base: ChassisDef, u: Upgrades): ChassisDef {
     sensorReach: (base.sensorReach ?? 1) * (s?.reach ?? 1),
     fireControl: {
       hp: hp('fireControl', base.fireControl.hp),
-      channels: base.fireControl.channels + (f?.channels ?? 0),
+      channels: base.fireControl.channels + (f?.channels ?? 0) + modLevel(u, 'fireControl', 'channel') * TRACKS.channel.per,
       spread: (base.fireControl.spread ?? 1) * (f?.spread ?? 1),
     },
     magazine: { ...base.magazine, hp: hp('magazine', base.magazine.hp), cookOff: (base.magazine.cookOff ?? 1) * (m?.cookOff ?? 1) },
@@ -85,4 +86,18 @@ export function fitChassis(base: ChassisDef, u: Upgrades): ChassisDef {
     hardpoints: base.hardpoints.map(slot),
     addonMounts: Object.fromEntries(Object.entries(base.addonMounts).map(([id, def]) => [id, def && mount(def)])),
   };
+}
+
+/**
+ * An add-on with the upgrades applied, like `fitChassis` for the hull: an add-on tread set takes
+ * the treads' grade (every set runs the same gear) and its own Harden and Load mods, filed under
+ * its add-on id. Any other add-on, or one with nothing applied, is returned as it is.
+ */
+export function fitAddon(def: AddonDef, u: Upgrades): AddonDef {
+  if (def.kind !== 'treads') return def;
+  const gen = u.grades.treads;
+  const g = gen ? GRADES.treads[gen] : null;
+  const hp = Math.round(def.hp * (g?.hp ?? 1) * modScale(u, def.id, 'harden'));
+  const capacity = Math.round(def.capacity * (g?.capacity ?? 1) * modScale(u, def.id, 'load'));
+  return hp === def.hp && capacity === def.capacity ? def : { ...def, hp, capacity };
 }

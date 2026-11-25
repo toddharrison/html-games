@@ -20,6 +20,8 @@ export const ARC_NAMES: Record<ArmorArc, string> = { frontLeft: 'front-left', fr
 export type CoreComponent = 'treads' | 'sensors' | 'reactor' | 'fireControl' | 'magazine';
 
 export type HardpointSize = 'S' | 'M' | 'L';
+/** Every hardpoint size, biggest first (the order the depot lists weapons in). */
+export const HARDPOINT_SIZES: readonly HardpointSize[] = ['L', 'M', 'S'];
 /** Where a hardpoint sits on the hull; decides its firing arc (SPEC §5.2). */
 export type MountPosition = 'turret' | 'front' | 'left' | 'right' | 'rear' | 'trailer';
 
@@ -79,6 +81,11 @@ export interface AddonMount {
   hardpoint?: HardpointSlotDef;
   /** The turret ring it adds (its slot comes in `hardpoint`). */
   turret?: TurretDef;
+  /**
+   * Slots already on the hull that it moves, by slot id, to a new mount point (the twin turret
+   * shifts the main gun off the centerline to make room for the second).
+   */
+  moves?: Record<string, { x: number; y: number }>;
   /** Units it widens the footprint by on each side (outboard tread pods). */
   widen?: number;
   /** Trailer: the tow hitch in hull space (on the rear). */
@@ -249,10 +256,19 @@ export const CHASSIS: Record<ChassisId, ChassisDef> = {
         hardpoint: slot('coax', 'Coaxial mount', 'M', 'turret', 30, { frontLeft: 1, frontRight: 1, left: 0.5, right: 0.5, rear: 0.5 }, [10, 5], [0, 180], 'main'),
         anchors: [{ x: 10, y: 5 }],
       },
+      // The main turret rebuilt wider: a second L mount on the main ring. The two guns sit either
+      // side of the centerline (the main gun moves over), and a coax goes between them.
+      twinTurret: {
+        hardpoint: slot('twinTurret', 'Turret, 2nd gun', 'L', 'turret', 60, { frontLeft: 2, frontRight: 2, left: 1.5, right: 1.5, rear: 1 }, [4, 5], [0, 180], 'main'),
+        moves: { turret: { x: 4, y: -5 }, coax: { x: 11, y: 0 } },
+        anchors: [{ x: 4, y: 5 }],
+      },
       // Hinged plates in the deck over the magazine.
       blowoutPanels: { anchors: [{ x: -8, y: -8 }, { x: -8, y: 8 }] },
-      // The trailer's own parts are placed in trailer space (`TrailerAddon.bays`); the anchor is the hitch.
+      // A trailer's own parts are placed in trailer space (`TrailerAddon.bays`); the anchor is the hitch.
       trailer: { hitch: { x: -32, y: 0 }, anchors: [{ x: -32, y: 0 }] },
+      heavyTrailer: { hitch: { x: -32, y: 0 }, anchors: [{ x: -32, y: 0 }] },
+      superTrailer: { hitch: { x: -32, y: 0 }, anchors: [{ x: -32, y: 0 }] },
     },
   },
 };

@@ -37,6 +37,7 @@ export function armorStage(frac: number): number {
 /** Heat each shot adds (1 = glowing bright orange). Weapons not listed don't glow. */
 export const HEAT_PER_SHOT: Partial<Record<WeaponId, number>> = {
   heavyCannon: 0.22,
+  titanCannon: 0.3,
   siegeHowitzer: 0.3,
   autocannon: 0.045,
   rotaryGun: 0.012,

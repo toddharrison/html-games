@@ -2,7 +2,7 @@ import Phaser from 'phaser';
 import type { BehemothState, TrailerState } from '../sim/behemoth';
 import type { Mine } from '../sim/entities';
 import { pose, type Interp, type Pose } from './interp';
-import { BH, TR } from './placeholder';
+import { BH, TR, trailerArt } from './placeholder';
 import { viewAngle, viewX, viewY } from './viewTransform';
 
 const FLASH_SECONDS = 0.06;
@@ -31,8 +31,9 @@ export class TrailerView {
   private lastHeading = 0;
 
   constructor(scene: Phaser.Scene, t: TrailerState) {
-    this.treads = [-1, 1].map((side) => scene.add.sprite(0, side * TR.treadOffset, 'tr_tread', 0).setFlipY(side > 0));
-    this.body = scene.add.image(0, 0, 'tr_body');
+    const art = trailerArt(t.def);
+    this.treads = [-1, 1].map((side) => scene.add.sprite(0, side * TR.treadOffset, art.tread, 0).setFlipY(side > 0));
+    this.body = scene.add.image(0, 0, art.body);
     this.bar = scene.add.image(t.def.length / 2 + TR.bar.w / 2 - 1, 0, 'tr_bar');
     this.modules = t.bays.map((bay, i) => {
       const at = t.def.bays[i]!;
@@ -119,5 +120,10 @@ export class TrailerView {
   /** The heading it was last drawn at (sim radians), for the wreck decal. */
   get heading(): number {
     return this.lastHeading;
+  }
+
+  /** The burnt-out bed's texture, for the wreck decal. */
+  get wreckKey(): string {
+    return `${this.body.texture.key.replace(/_stub$/, '')}_stub`;
   }
 }

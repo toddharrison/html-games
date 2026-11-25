@@ -10,7 +10,7 @@ import { DOCTRINES } from '../content/doctrines';
 import { ENEMIES } from '../content/enemies';
 import { MAP_EVENTS, type MapEventId } from '../content/mapEvents';
 import { DEPOT } from '../content/tuning';
-import { GRADES, TRACKS } from '../content/upgrades';
+import { GRADES, trackMax, TRACKS, type TrackId } from '../content/upgrades';
 import { TRAILER_MODULES } from '../content/trailer';
 import { BINDINGS, SHELL_TYPES, WEAPONS } from '../content/weapons';
 import { callsignFor, RUN_NEXT, type RunState } from '../sim/run';
@@ -335,7 +335,9 @@ function isRun(v: unknown): v is RunState {
   if (!addons.every((a) => isObject(a) && typeof a['id'] === 'string' && a['id'] in ADDONS && (a['hp'] === null || isNum(a['hp'])))) return false;
   // A trailer exactly when its add-on is fitted.
   const trailer = b['trailer'];
-  const hasTrailer = addons.some((a) => isObject(a) && a['id'] === 'trailer');
+  const trailers = addons.filter((a) => isObject(a) && ADDONS[a['id'] as keyof typeof ADDONS].kind === 'trailer').length;
+  if (trailers > 1) return false;
+  const hasTrailer = trailers === 1;
   if (trailer === null ? hasTrailer : !(hasTrailer && isTrailer(trailer))) return false;
   const hps = b['hardpoints'];
   if (!Array.isArray(hps)) return false;
@@ -419,7 +421,9 @@ function isUpgrades(grades: unknown, mods: unknown): boolean {
   return Object.values(mods).every(
     (tracks) =>
       isObject(tracks) &&
-      Object.entries(tracks).every(([t, level]) => t in TRACKS && Number.isInteger(level) && (level as number) >= 0 && (level as number) <= DEPOT.maxModLevel),
+      Object.entries(tracks).every(
+        ([t, level]) => t in TRACKS && Number.isInteger(level) && (level as number) >= 0 && (level as number) <= trackMax(t as TrackId, DEPOT.maxModLevel),
+      ),
   );
 }
 

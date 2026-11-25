@@ -4,7 +4,7 @@ import type { ArmorArc, ChassisId, CoreComponent } from '../content/chassis';
 import { TRAILER_MODULES, type ModuleDef } from '../content/trailer';
 import { WEAPONS, type WeaponDef } from '../content/weapons';
 import { bayIndex } from '../sim/behemoth';
-import { fittedChassis } from '../sim/depot';
+import { addonDef, fittedChassis, trailerDef } from '../sim/depot';
 import { CORE_COMPONENTS } from '../sim/upgrades';
 import type { BehemothSnapshot } from '../sim/run';
 import { hex, PAL } from './palette';
@@ -57,13 +57,36 @@ interface Layout {
   /** Outboard treads: a second belt in front of the first, covering its lower part. */
   outerTreads: Box;
   outerWheels: number[];
-  /** Ram plow: the blade's outline, and its clickable box. */
-  plow: { points: [number, number][]; box: Box };
   /**
-   * The trailer, behind the hull (to the left, at negative x): its bed, belt and wheels, a box per
-   * bay on the bed, and the tow bar to the hitch.
+   * Ram plow: a blade standing ahead of the nose from over the prow down to the ground (its
+   * outline), the push arms that carry it (each a line from the hull to the blade), and its
+   * clickable box.
    */
-  trailer: { bed: Box; treads: Box; wheels: number[]; bays: Box[]; bar: [number, number, number, number] };
+  plow: { blade: [number, number][]; arms: [number, number, number, number][]; box: Box };
+  /** How far a dorsal ring is raised when a twin turret's second gun sits over the main one. */
+  twinLift: number;
+  /**
+   * The trailer, behind the hull (to the left, at negative x): where its bed, belt, and bays sit
+   * (`trailerLayout` lays them out for however many bays it has), and how far behind the origin
+   * the standard trailer reaches.
+   */
+  trailer: { bedY: number; bedH: number; treadY: number; treadH: number; bayY: number; bayH: number; hitchX: number; barY: number; rear: number };
+}
+
+/** A trailer of `n` bays laid out behind the hull: its bed, belt and wheels, a box per bay (front first), and the tow bar. */
+function trailerLayout(T: Layout['trailer'], n: number): { bed: Box; treads: Box; wheels: number[]; bays: Box[]; bar: [number, number, number, number] } {
+  // A longer trailer sits closer behind the hull, on slimmer bays, so it still fits on the screen.
+  const front = n > 2 ? 8 : -2;
+  const bayW = n > 3 ? 13 : n > 2 ? 17 : 20;
+  const gap = n > 3 ? 1 : n > 2 ? 2 : 3;
+  const bedW = n * bayW + (n - 1) * gap + 5;
+  const bed = { x: front - bedW, y: T.bedY, w: bedW, h: T.bedH };
+  const treads = { x: bed.x - 2, y: T.treadY, w: bedW + 4, h: T.treadH };
+  // Road wheels evenly along the belt, about 14 apart.
+  const count = Math.max(2, Math.round((treads.w - 24) / 14) + 1);
+  const wheels = Array.from({ length: count }, (_, i) => Math.round(treads.x + 12 + (i * (treads.w - 24)) / (count - 1)));
+  const bays = Array.from({ length: n }, (_, i) => ({ x: front - 3 - bayW - i * (bayW + gap), y: T.bayY, w: bayW, h: T.bayH }));
+  return { bed, treads, wheels, bays, bar: [front, T.barY, T.hitchX, T.barY] };
 }
 
 /** Cutaway geometry per chassis (local game pixels). */
@@ -109,36 +132,41 @@ const LAYOUTS: Record<ChassisId, Layout> = {
       dorsalRing: { x: 50, y: 30, w: 44, h: 18, deck: 54 },
       // On the turret's near cheek, its barrel under the main gun's.
       coax: { x: 148, y: 60, w: 16, h: 8 },
+      // A twin turret's second gun: its housing on the turret's roof, its barrel over the first's.
+      twinTurret: { x: 118, y: 38, w: 50, h: 10 },
     },
     outerTreads: { x: 34, y: 138, w: 224, h: 26 },
     outerWheels: [58, 98, 138, 178, 218, 240],
+    // A dozer blade ahead of the nose, curved like a C: a lip over the prow, a hollow face, and a
+    // toe leaning into the ground, on a pair of push arms from the hull and the tread frame.
     plow: {
-      points: [
-        [198, 64],
-        [282, 108],
-        [284, 130],
-        [270, 130],
-        [270, 114],
-        [196, 72],
+      blade: [
+        [287, 90],
+        [291, 92],
+        [286, 106],
+        [285, 124],
+        [287, 142],
+        [292, 154],
+        [292, 158],
+        [284, 158],
+        [280, 142],
+        [279, 122],
+        [281, 104],
       ],
-      box: { x: 252, y: 94, w: 32, h: 36 },
-    },
-    trailer: {
-      bed: { x: -54, y: 110, w: 48, h: 16 },
-      treads: { x: -56, y: 128, w: 52, h: 22 },
-      wheels: [-44, -30, -16],
-      bays: [
-        { x: -29, y: 88, w: 20, h: 21 },
-        { x: -52, y: 88, w: 20, h: 21 },
+      arms: [
+        [262, 118, 282, 112],
+        [266, 136, 283, 146],
       ],
-      bar: [-6, 120, 20, 120],
+      box: { x: 278, y: 89, w: 16, h: 70 },
     },
+    twinLift: 10,
+    trailer: { bedY: 110, bedH: 16, treadY: 128, treadH: 22, bayY: 88, bayH: 21, hitchX: 20, barY: 120, rear: 54 },
   },
 };
 
-/** How far the cutaway reaches behind its origin (for the trailer), so the scene can leave room. */
+/** How far the cutaway reaches behind its origin (for the standard trailer), so the scene can leave room. */
 export function cutawayRear(chassis: ChassisId): number {
-  return -Math.min(LAYOUTS[chassis].trailer.treads.x, LAYOUTS[chassis].trailer.bed.x);
+  return LAYOUTS[chassis].trailer.rear;
 }
 
 export function integrityColor(frac: number): string {
@@ -186,10 +214,10 @@ export function drawCutaway(
 
   // The trailer behind: tow bar, belt, the bed (its outline is the frame's integrity, the rear
   // plate the trailer's armor), and its modules on top.
-  const tdef = ADDONS.trailer;
-  const trailer = has('trailer');
-  if (trailer && s.trailer && tdef.kind === 'trailer') {
-    const T = L.trailer;
+  const tdef = trailerDef(s);
+  const trailer = tdef && has(tdef.id);
+  if (trailer && s.trailer && tdef) {
+    const T = trailerLayout(L.trailer, tdef.bays.length);
     const [bx0, by0, bx1, by1] = T.bar;
     line(bx0, by0, bx1, by1, PAL.steelDark, 3);
     line(bx0, by0 - 1, bx1, by1 - 1, PAL.steelMid, 1);
@@ -214,11 +242,12 @@ export function drawCutaway(
       if (opts.fits?.has(id)) frame({ x: box.x - 2, y: box.y - 2, w: box.w + 4, h: box.h + 4 }, PAL.amber, 1);
       parts.push({ id, box });
     });
-    parts.push({ id: 'trailer', box: { x: T.treads.x, y: T.bed.y, w: T.treads.w, h: T.treads.y + T.treads.h - T.bed.y } });
+    parts.push({ id: tdef.id, box: { x: T.treads.x, y: T.bed.y, w: T.treads.w, h: T.treads.y + T.treads.h - T.bed.y } });
   }
+  // An add-on's own part: its integrity over its maximum as fitted (a tread set's upgrades included).
   const plateFrac = (id: AddonId) => {
     const a = has(id);
-    const def = ADDONS[id];
+    const def = addonDef(s, id);
     return a && a.hp !== null && def.kind !== 'mount' ? a.hp / def.hp : 0;
   };
 
@@ -238,13 +267,27 @@ export function drawCutaway(
     for (const [x0, y0, x1, y1] of L.armor[arc]) line(x0, y0, x1, y1, color, far ? 2 : 3);
   }
 
-  // The ram plow over the nose. Add-ons go first in the list, so they're picked over the parts
-  // they cover.
+  // The ram plow: a blade standing ahead of the nose on its push arms, its face lit and riveted,
+  // outlined by its integrity. Add-ons go first in the list, so they're picked over the parts they
+  // cover.
   if (has('ramPlow')) {
     const f = plateFrac('ramPlow');
-    const pts = L.plow.points.map(([x, y]) => ({ x: ox + x, y: oy + y })) as Phaser.Math.Vector2[];
-    g.fillStyle(hex(f > 0 ? PAL.steelMid : PAL.ash)).fillPoints(pts, true);
+    for (const [x0, y0, x1, y1] of L.plow.arms) {
+      line(x0, y0, x1, y1, PAL.outline, 5);
+      line(x0, y0, x1, y1, f > 0 ? PAL.steelMid : PAL.ash, 3);
+    }
+    const pts = L.plow.blade.map(([x, y]) => ({ x: ox + x, y: oy + y })) as Phaser.Math.Vector2[];
+    g.fillStyle(hex(f > 0 ? PAL.steelHi : PAL.ash)).fillPoints(pts, true);
     g.lineStyle(2, hex(integrityColor(f)), 1).strokePoints(pts, true);
+    if (f > 0) {
+      // A row of rivets down the blade's spine, halfway between its back and its face.
+      const half = L.plow.blade.length >> 1;
+      for (let i = 1; i < half - 1; i++) {
+        const [fx, fy] = L.plow.blade[i]!;
+        const [bx, by] = L.plow.blade[L.plow.blade.length - i]!;
+        rect({ x: Math.round((fx + bx) / 2) - 1, y: Math.round((fy + by) / 2) - 1, w: 2, h: 2 }, PAL.steelDark);
+      }
+    }
     parts.push({ id: 'ramPlow', box: L.plow.box });
   }
   if (has('outerTreads')) parts.push({ id: 'outerTreads', box: L.outerTreads });
@@ -308,9 +351,12 @@ export function drawCutaway(
   // Hardpoints: mount, weapon, and a frame colored by integrity (dashed when empty). Add-on mounts
   // are picked first: the coax sits on the turret.
   const builtIn: CutawayPart[] = [];
+  const twin = has('twinTurret') !== undefined;
   for (const h of s.hardpoints) {
-    const box = L.slots[h.slot];
-    if (!box) continue;
+    const at = L.slots[h.slot];
+    if (!at) continue;
+    // With a second gun on the main turret's roof, a dorsal ring stands taller to fire over it.
+    const box = twin && h.slot === 'dorsalRing' ? { ...at, y: at.y - L.twinLift } : at;
     const slot = c.hardpoints.find((sl) => sl.id === h.slot) ?? c.addonMounts[h.slot as AddonId]?.hardpoint;
     if (!slot) continue;
     const weapon = h.weapon ? WEAPONS[h.weapon] : null;
@@ -403,7 +449,7 @@ function drawWeapon(g: Phaser.GameObjects.Graphics, weapon: WeaponDef, x: number
     return;
   }
   const len = weapon.role === 'main' ? (lobbed ? 46 : 84) : weapon.role === 'auto' ? 10 : 18;
-  const thick = weapon.role === 'main' ? (lobbed ? 7 : 4) : weapon.id === 'rotaryGun' ? 4 : 3;
+  const thick = weapon.role === 'main' ? (lobbed ? 7 : weapon.id === 'titanCannon' ? 6 : 4) : weapon.id === 'rotaryGun' ? 4 : 3;
   if (lobbed && weapon.role !== 'main') {
     // Mortar: a stubby tube angled up.
     g.lineStyle(thick + 1, hex(PAL.steelHi), 1).lineBetween(x + w / 2, y + 4, x + w - 1, y - 6);

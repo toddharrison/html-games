@@ -24,16 +24,26 @@ export const MOVEMENT = {
 
 /**
  * Mass against tread capacity (SPEC §5.3). Speeds, acceleration, and lateral speed scale with the
- * load ratio (installed mass ÷ capacity): gently up to capacity, steeply beyond it.
+ * load ratio (installed mass ÷ capacity): gently up to capacity, steeply beyond it, easing off
+ * toward a floor it never goes below (`massScale` in sim/behemoth.ts).
  */
 export const MASS = {
   /** Speed gained per unit of spare capacity: an empty Behemoth is 15% faster than at its rating. */
   underload: 0.15,
-  /** Speed lost per unit of overload: 10% over capacity = 20% slower. */
+  /**
+   * How fast speed falls just past capacity, per unit of overload (2 = the first few percent over
+   * cost about twice that in speed). The fall is a curve, not a line (user's call, Nov 2026): each
+   * further ton costs less than the one before, and the speed settles toward `floor` instead of
+   * heading for zero. With 2 and a floor of 0.4: 10% over is 17% slower, 30% over 38%, 60% over
+   * 52%, and nothing is ever more than 60% slower.
+   */
   overload: 2,
   /** Share of a trailer's mass (frame and modules) the treads feel: it rolls on its own. */
   towed: 0.5,
-  /** However overloaded, it keeps at least this share of its rated speeds. */
+  /**
+   * The minimum: however overloaded, it keeps more than this share of its rated speeds (tread wear
+   * still multiplies it, `DEGRADE.treadSpeedFloor`).
+   */
   floor: 0.4,
 };
 
@@ -1060,7 +1070,7 @@ export const SECTOR_MAP = {
  */
 export const DEPOT = {
   actions: 5,
-  /** Weapons for sale per depot (inclusive range). */
+  /** Weapons for sale per depot (inclusive range); always at least one of each hardpoint size (`openDepot`). */
   stock: [4, 5] as const,
   /** Add-ons for sale per depot (inclusive range), besides the weapons. */
   addonStock: [1, 2] as const,
@@ -1068,6 +1078,19 @@ export const DEPOT = {
   moduleStock: [1, 2] as const,
   /** Higher-grade core components for sale per depot (inclusive range; SPEC §5.6). */
   gradeStock: [0, 2] as const,
+  /**
+   * What a depot stocks by how far the run has got (user's call, Nov 2026: generations offered
+   * rise gradually over the sectors): a row per sector (the last row serves every later one), each
+   * the multiplier on the stock weight of Gen 1, Gen 2, and Gen 3 goods (`gen` in content/depot.ts;
+   * a core component's grade is its generation). 0 = never offered there.
+   */
+  genOdds: [
+    [1, 0.4, 0],
+    [1, 0.8, 0.3],
+    [0.9, 1, 0.6],
+    [0.7, 1, 0.9],
+    [0.5, 1, 1.2],
+  ] as const,
   /** Levels a mod track goes up to. */
   maxModLevel: 3,
   /** Repair price: a flat fee, plus salvage per integrity point restored. */

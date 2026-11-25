@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { ADDONS, type TrailerAddon } from '../content/addons';
 import type { EnemyId } from '../content/enemies';
 import { Rng } from '../sim/rng';
 import { canvasTexture, type Painter } from './painter';
@@ -29,6 +30,8 @@ export const BH = {
   turret: { w: 22, h: 18 },
   /** The dorsal ring's turret (add-on): the same shape, smaller. */
   turretDorsal: { w: 18, h: 14 },
+  /** The twin turret (add-on): the main turret rebuilt wide enough for two guns side by side. */
+  turretTwin: { w: 24, h: 24 },
   barrel: { w: 26, h: 6 },
   /** Lateral offset of each tread's center from the hull centerline. */
   treadOffset: 14.5,
@@ -46,8 +49,9 @@ export const BH = {
  * tow (+x forward, like the hull); the tread pods sit either side of it.
  */
 export const TR = {
-  body: { w: 30, h: 18 },
-  tread: { w: 32, h: 5 },
+  /** How wide the bed and a tread pod are across the tow; their lengths follow the trailer's (`trailerArt`). */
+  body: { h: 18 },
+  tread: { h: 5 },
   /** Lateral offset of each tread pod's center from the trailer's centerline. */
   treadOffset: 10.5,
   /** Tow bar, from the trailer's front to the hitch. */
@@ -55,6 +59,14 @@ export const TR = {
   /** A module in its bay, seen from above. */
   module: { w: 11, h: 12 },
 };
+
+/** A trailer's own textures, sized to its length: the bed (with a `_stub` for its wreck) and a tread pod's sheet. */
+export function trailerArt(def: TrailerAddon): { body: string; tread: string; bodyW: number; treadW: number } {
+  return { body: `tr_body_${def.id}`, tread: `tr_tread_${def.id}`, bodyW: def.length - 4, treadW: def.length - 2 };
+}
+
+/** Every trailer a Behemoth can tow. */
+const TRAILERS = Object.values(ADDONS).filter((a): a is TrailerAddon => a.kind === 'trailer');
 
 /** Repair drone texture size (square, per frame). */
 export const DRONE = { size: 9 };
@@ -235,6 +247,28 @@ function makeBehemoth(scene: Phaser.Scene): void {
     });
   drawTurret('bh_turret', turret.w, turret.h);
   drawTurret('bh_turret_dorsal', BH.turretDorsal.w, BH.turretDorsal.h);
+  drawTurret('bh_turret_twin', BH.turretTwin.w, BH.turretTwin.h);
+
+  // Titan cannon: the heavy cannon's barrel grown thick, with a fume extractor amidships,
+  // reinforcing bands, and a slotted muzzle brake.
+  canvasTexture(scene, 'bh_barrel_titan', 32, 8, (p) => {
+    p.rect(0, 1, 28, 6, PAL.outline);
+    p.rect(0, 2, 27, 4, PAL.steelMid);
+    p.rect(0, 2, 27, 1, PAL.steelHi);
+    p.rect(0, 5, 27, 1, PAL.steelDark);
+    for (const x of [5, 21]) {
+      p.rect(x, 1, 2, 6, PAL.outline);
+      p.rect(x, 2, 1, 4, PAL.steelHi);
+    }
+    p.rect(11, 0, 7, 8, PAL.outline);
+    p.rect(12, 1, 5, 6, PAL.steel);
+    p.rect(12, 1, 5, 1, PAL.steelHi);
+    p.rect(26, 0, 6, 8, PAL.outline);
+    p.rect(27, 1, 4, 6, PAL.steelDark);
+    p.rect(28, 1, 1, 6, PAL.outline);
+    p.px(30, 3, PAL.glowDim);
+    p.px(30, 4, PAL.glowDim);
+  });
 
   // Heavy laser: a slim focusing tube with cooling fins and a glowing lens at the tip.
   canvasTexture(scene, 'bh_barrel_laser', 28, 6, (p) => {
@@ -354,6 +388,7 @@ export const TURRET_ART: Partial<Record<string, string>> = { main: 'bh_turret', 
  */
 export const TURRET_BARREL: Partial<Record<string, { key: string; w: number; h: number; stub: number; heatFrom: number }>> = {
   heavyCannon: { key: 'bh_barrel', w: BH.barrel.w, h: BH.barrel.h, stub: BH.barrelStub, heatFrom: BH.barrelHeatFrom },
+  titanCannon: { key: 'bh_barrel_titan', w: 32, h: 8, stub: 14, heatFrom: 8 },
   siegeHowitzer: { key: 'bh_barrel_howitzer', w: 22, h: 8, stub: 10, heatFrom: 8 },
   heavyLaser: { key: 'bh_barrel_laser', w: 28, h: 6, stub: 12, heatFrom: 12 },
   railgun: { key: 'bh_barrel_rail', w: 30, h: 7, stub: 12, heatFrom: 14 },
@@ -379,28 +414,32 @@ function roundCorners(p: Painter, w: number, h: number): void {
 }
 
 function makeTrailer(scene: Phaser.Scene): void {
-  makeTreadSheet(scene, 'tr_tread', TR.tread.w, TR.tread.h, BH.tread.frames);
+  for (const def of TRAILERS) {
+    const art = trailerArt(def);
+    makeTreadSheet(scene, art.tread, art.treadW, TR.tread.h, BH.tread.frames);
 
-  // Body: a flat armored bed lit like the hull (upper half brighter), with a coupling at the
-  // front and rib seams between the bays.
-  canvasTexture(scene, 'tr_body', TR.body.w, TR.body.h, (p) => {
-    const { w, h } = TR.body;
-    const cy = h / 2;
-    p.rect(0, 0, w, h, PAL.outline);
-    p.rect(1, 1, w - 2, cy - 1, PAL.steelMid);
-    p.rect(1, cy, w - 2, h - cy - 1, PAL.steel);
-    p.rect(1, 1, w - 2, 1, PAL.steelHi);
-    p.rect(1, h - 2, w - 2, 1, PAL.steelDark);
-    // Front coupling plate and the rear bumper.
-    p.rect(w - 3, 3, 2, h - 6, PAL.steelDark);
-    p.rect(w - 3, 3, 1, h - 6, PAL.steelHi);
-    p.rect(1, 2, 2, h - 4, PAL.steelDark);
-    for (const x of [8, 15, 22]) {
-      p.rect(x, 2, 1, h - 4, PAL.steelDark);
-      p.px(x + 1, 2, PAL.steelHi);
-    }
-    roundCorners(p, w, h);
-  });
+    // Body: a flat armored bed lit like the hull (upper half brighter), with a coupling at the
+    // front and rib seams along it. A longer trailer is the same bed stretched.
+    canvasTexture(scene, art.body, art.bodyW, TR.body.h, (p) => {
+      const w = art.bodyW;
+      const h = TR.body.h;
+      const cy = h / 2;
+      p.rect(0, 0, w, h, PAL.outline);
+      p.rect(1, 1, w - 2, cy - 1, PAL.steelMid);
+      p.rect(1, cy, w - 2, h - cy - 1, PAL.steel);
+      p.rect(1, 1, w - 2, 1, PAL.steelHi);
+      p.rect(1, h - 2, w - 2, 1, PAL.steelDark);
+      // Front coupling plate and the rear bumper.
+      p.rect(w - 3, 3, 2, h - 6, PAL.steelDark);
+      p.rect(w - 3, 3, 1, h - 6, PAL.steelHi);
+      p.rect(1, 2, 2, h - 4, PAL.steelDark);
+      for (let x = 8; x < w - 6; x += 7) {
+        p.rect(x, 2, 1, h - 4, PAL.steelDark);
+        p.px(x + 1, 2, PAL.steelHi);
+      }
+      roundCorners(p, w, h);
+    });
+  }
 
   // Tow bar: an A-frame from the front of the bed to the hitch.
   canvasTexture(scene, 'tr_bar', TR.bar.w, TR.bar.h, (p) => {
@@ -833,6 +872,7 @@ function makeStatusArt(scene: Phaser.Scene): void {
   // Destroyed weapons: charred stubs. Barrels glow with heat.
   makeStub(scene, 'bh_turret', 11);
   makeStub(scene, 'bh_turret_dorsal', 19);
+  makeStub(scene, 'bh_turret_twin', 57);
   makeStub(scene, 'bh_plow', 50, Infinity, 0.2);
   // Trailer: wrecked modules, and the burnt-out bed left where it blew (a decal).
   makeStub(scene, 'tr_missilePod', 51, Infinity, 0.15);
@@ -840,7 +880,7 @@ function makeStatusArt(scene: Phaser.Scene): void {
   makeStub(scene, 'tr_missileErector', 56, Infinity, 0.2);
   makeStub(scene, 'tr_auxGenerator', 53, Infinity, 0.15);
   makeStub(scene, 'tr_droneBay', 55, Infinity, 0.15);
-  makeStub(scene, 'tr_body', 54, Infinity, 0.3);
+  for (const def of TRAILERS) makeStub(scene, trailerArt(def).body, 54, Infinity, 0.3);
   Object.values(TURRET_BARREL).forEach((barrel, i) => {
     makeStub(scene, barrel!.key, 12 + i, barrel!.stub);
     makeHeatMask(scene, barrel!.key, barrel!.w, barrel!.heatFrom);

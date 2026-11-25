@@ -163,17 +163,28 @@ describe('mass and tread capacity', () => {
   it('is exactly the rated speed at capacity, gently faster below, steeply slower above', () => {
     expect(massScale(280, 280)).toBe(1);
     expect(massScale(0, 280)).toBeCloseTo(1 + MASS.underload, 9);
-    // Below capacity: adding 10% of the rating costs 1.5%; above it, the same costs 20%.
+    // Below capacity: adding 10% of the rating costs 1.5%. Just past it, a ton costs `overload` times its share.
     expect(massScale(196, 280) - massScale(224, 280)).toBeCloseTo(MASS.underload * 0.1, 9);
-    expect(massScale(280, 280) - massScale(308, 280)).toBeCloseTo(MASS.overload * 0.1, 9);
+    expect((massScale(280, 280) - massScale(280.28, 280)) / 0.001).toBeCloseTo(MASS.overload, 2);
     let prev = Infinity;
     for (let m = 0; m <= 600; m += 20) {
       const k = massScale(m, 280);
       expect(k).toBeLessThanOrEqual(prev);
-      expect(k).toBeGreaterThanOrEqual(MASS.floor);
+      expect(k).toBeGreaterThan(MASS.floor);
       prev = k;
     }
-    expect(massScale(10_000, 280)).toBe(MASS.floor);
+  });
+
+  it('over capacity the speed eases down to a floor instead of running to zero', () => {
+    // A curve, not a line: each further 10% of overload costs less than the one before.
+    const drops = [1.0, 1.1, 1.2, 1.3, 1.4, 1.5].map((r) => massScale(280 * r, 280));
+    for (let i = 2; i < drops.length; i++) expect(drops[i - 1]! - drops[i]!).toBeLessThan(drops[i - 2]! - drops[i - 1]!);
+    // 30% over, where a straight line at the same slope would already be on the floor, it's well above it.
+    expect(massScale(364, 280)).toBeGreaterThan(MASS.floor + 0.15);
+    // However overloaded, never below the floor (and never zero).
+    expect(massScale(10_000, 280)).toBeCloseTo(MASS.floor, 6);
+    expect(massScale(10_000, 280)).toBeGreaterThanOrEqual(MASS.floor);
+    expect(massScale(1, 0)).toBe(MASS.floor);
   });
 
   it('the starting loadout fits within the tread capacity', () => {

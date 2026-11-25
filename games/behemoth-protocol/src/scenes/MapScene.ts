@@ -462,7 +462,7 @@ export class MapScene extends Phaser.Scene {
       y += 4;
       if (near && !done) {
         // Weapons are drawn on a stream of their own, so this is what the depot will sell.
-        const stock = openDepot(this.run, this.run.behemoth, depotKey(pos)).stock;
+        const stock = openDepot(this.run, this.run.behemoth, depotKey(pos), pos.sector).stock;
         t('Weapons for sale', PAL.hudDim);
         for (const item of stock) t(WEAPONS[item.weapon].name, PAL.hudText, 4);
       } else if (!done) t('Stock unknown at this range', PAL.hudDim);

@@ -53,22 +53,25 @@ export const GRADES: Record<CoreComponent, Record<UpgradeGen, GradeDef>> = {
     2: { mass: 8, hp: 1.5, cookOff: 0.7, blurb: 'Armored racks: tougher, and a softer cook-off.' },
     3: { mass: 16, hp: 2, cookOff: 0.45, blurb: 'Compartmented: most of a cook-off is contained.' },
   },
+  // The treads' grade is the running gear of every tread set: outboard pods get the same
+  // multipliers on their own integrity and capacity (user's call, Nov 2026).
   treads: {
-    2: { mass: 10, hp: 1.2, capacity: 1.15, blurb: 'Wider links: tougher, and carry more.' },
-    3: { mass: 20, hp: 1.4, capacity: 1.3, blurb: 'Heavy running gear for a heavy machine.' },
+    2: { mass: 10, hp: 1.2, capacity: 1.15, blurb: 'Wider links on every tread set: tougher, carry more.' },
+    3: { mass: 20, hp: 1.4, capacity: 1.3, blurb: 'Heavy running gear for a heavy machine, every set.' },
   },
 };
 
 /** Mod tracks. */
-export type TrackId = 'harden' | 'traverse' | 'plate' | 'capacitor' | 'load';
+export type TrackId = 'harden' | 'traverse' | 'plate' | 'capacitor' | 'load' | 'channel';
 
 /**
- * The kinds of part a mod can go on: the reactor, the treads, any other core component, a turret
- * ring's main slot (the ring itself), any other slot on a ring (a coax: no traverse of its own), a
- * hull mount that turns on its own, and an armor zone. Trailer pods and add-ons' own parts take none
- * (yet).
+ * The kinds of part a mod can go on: the reactor, a tread set (the chassis' own, or an add-on set
+ * like the outboard pods), fire control, any other core component, a turret ring's main slot (the
+ * ring itself), any other slot on a ring (a coax or a twin turret's second gun: no traverse of its
+ * own), a hull mount that turns on its own, and an armor zone. Trailer pods and the other add-ons'
+ * own parts take none (yet).
  */
-export type PartKind = 'reactor' | 'treads' | 'core' | 'ring' | 'coax' | 'mount' | 'armor';
+export type PartKind = 'reactor' | 'treads' | 'fireControl' | 'core' | 'ring' | 'coax' | 'mount' | 'armor';
 
 export interface TrackDef {
   name: string;
@@ -76,22 +79,33 @@ export interface TrackDef {
   on: readonly PartKind[];
   /** What one level does, for the depot. */
   blurb: string;
-  /** Added to the stat's multiplier per level (+20% = 0.2). */
+  /** Added to the stat's multiplier per level (+20% = 0.2); for `channel`, channels added per level. */
   per: number;
   /** Tons per level. */
   mass: number;
+  /** Levels it goes up to; missing = `DEPOT.maxModLevel`. */
+  max?: number;
 }
 
 /** In the order the depot lists them. */
 export const TRACKS: Record<TrackId, TrackDef> = {
-  harden: { name: 'Harden', on: ['reactor', 'treads', 'core', 'ring', 'coax', 'mount'], blurb: '+20% integrity', per: 0.2, mass: 2 },
+  harden: { name: 'Harden', on: ['reactor', 'treads', 'fireControl', 'core', 'ring', 'coax', 'mount'], blurb: '+20% integrity', per: 0.2, mass: 2 },
   traverse: { name: 'Traverse', on: ['ring', 'mount'], blurb: '+25% traverse', per: 0.25, mass: 1 },
   plate: { name: 'Plate', on: ['armor'], blurb: '+20% armor', per: 0.2, mass: 4 },
   capacitor: { name: 'Cap bank', on: ['reactor'], blurb: '+20% capacitor', per: 0.2, mass: 3 },
   // Carry more without a second tread set: three levels add +24% (67 t on a Class II), well short
   // of outboard treads' +140 t (user's call, Nov 2026).
   load: { name: 'Load', on: ['treads'], blurb: '+8% load capacity', per: 0.08, mass: 3 },
+  // A third weapon on Auto without waiting for a better fire control to turn up: always on offer,
+  // one level, and dear (user's call, Nov 2026: "upgradable to 3 autos, but be expensive"). It's
+  // on top of whatever the fire control's grade gives.
+  channel: { name: 'Auto link', on: ['fireControl'], blurb: '+1 Auto channel', per: 1, mass: 4, max: 1 },
 };
+
+/** Levels a track goes up to: its own cap, or `fallback` (`DEPOT.maxModLevel`). */
+export function trackMax(track: TrackId, fallback: number): number {
+  return TRACKS[track].max ?? fallback;
+}
 
 /** Grades fitted per core component (missing = Gen 1). */
 export type Grades = Partial<Record<CoreComponent, UpgradeGen>>;

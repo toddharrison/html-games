@@ -335,7 +335,7 @@ export function enterMapNode(run: RunState, pos: MapPos): RunState {
   const moved = { ...run, at: pos, path: [...run.path, pos], next: node.kind };
   if (node.kind === 'battle') return { ...moved, depot: null };
   if (node.kind === 'event') return { ...moved, depot: null, lastEvent: null };
-  const depot = openDepot(run, run.behemoth, depotKey(pos));
+  const depot = openDepot(run, run.behemoth, depotKey(pos), pos.sector);
   return { ...moved, cache: 0, depot: { ...depot, actions: depot.actions + run.cache, total: depot.total + run.cache } };
 }
 

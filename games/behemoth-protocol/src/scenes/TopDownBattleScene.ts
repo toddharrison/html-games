@@ -875,7 +875,7 @@ export class TopDownBattleScene extends Phaser.Scene {
           break;
         case 'emp':
           this.fx.empRing(ev.x, ev.y, ev.radius);
-          this.shake(120, 1);
+          this.shake(160, 2);
           break;
         case 'mineFried':
           // Its fuze burnt out: a crackle, and the dead lid left lying (under the treads' marks).
@@ -965,7 +965,7 @@ export class TopDownBattleScene extends Phaser.Scene {
         case 'trailerBlast': {
           const view = this.trailerView;
           // The burnt-out bed stays where it went up, in a ring of scorch.
-          this.units.addDecal('tr_body_stub', ev.x, ev.y, view?.heading ?? 0, 2);
+          if (view) this.units.addDecal(view.wreckKey, ev.x, ev.y, view.heading, 2);
           view?.onGone();
           this.fx.bigExplosion(ev.x, ev.y);
           for (let i = 0; i < 24; i++) {

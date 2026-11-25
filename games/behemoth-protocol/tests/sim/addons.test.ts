@@ -295,14 +295,17 @@ describe('add-ons at the depot', () => {
       expect(openDepot({ seed: 9, battle })).toEqual(d);
     }
     const fitted = newRun(9, 'class2', ['ramPlow', 'outerTreads', 'sponsonL', 'dorsalRing', 'coax', 'blowoutPanels', 'trailer']).behemoth;
-    for (let battle = 1; battle < 20; battle++) {
-      expect(openDepot({ seed: 9, battle }, fitted).addons.map((a) => a.addon)).toEqual(['sponsonR']);
+    // What's left to offer: the other sponson, the twin turret, and a trailer bigger than the one in tow.
+    const seen = new Set<string>();
+    for (let battle = 1; battle < 40; battle++) {
+      for (const a of openDepot({ seed: 9, battle }, fitted).addons) seen.add(a.addon);
     }
+    expect([...seen].sort()).toEqual(['heavyTrailer', 'sponsonR', 'twinTurret']);
   });
 
   it('the weapons on sale do not depend on the add-ons', () => {
     const fitted = newRun(9, 'class2', ['ramPlow']).behemoth;
-    expect(openDepot({ seed: 9, battle: 3 }, fitted).stock).toEqual(openDepot({ seed: 9, battle: 3 }).stock);
+    expect(openDepot({ seed: 9, battle: 3 }, fitted).stock).toEqual(openDepot({ seed: 9, battle: 3 }, newRun(9).behemoth).stock);
   });
 
   it('bolting on a sponson costs an action; it arrives empty and takes an M weapon', () => {

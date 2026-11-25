@@ -109,6 +109,7 @@ export const HOLDS: ReadonlySet<string> = new Set<HoldId>(['beam', 'scrape', 'bu
 /** Every weapon's report. A Record, so a new weapon doesn't compile until it has one. */
 export const WEAPON_SOUNDS: Record<WeaponId, { sound: SoundId | HoldId; size: number }> = {
   heavyCannon: { sound: 'cannon', size: 0.8 },
+  titanCannon: { sound: 'cannon', size: 1.1 },
   siegeHowitzer: { sound: 'howitzer', size: 1 },
   autocannon: { sound: 'autocannon', size: 0.6 },
   rotaryGun: { sound: 'rotary', size: 0.5 },

@@ -209,6 +209,7 @@ export type RoundSpec = ProjectileSpec | BeamSpec | FlameSpec | RailSpec | ArcSp
 
 export type WeaponId =
   | 'heavyCannon'
+  | 'titanCannon'
   | 'siegeHowitzer'
   | 'autocannon'
   | 'rotaryGun'
@@ -402,6 +403,54 @@ const CANNON_INCENDIARY: ShellSpec = {
   vs: { infantry: 1.4, heavy: 0.4 },
 };
 
+/**
+ * The titan cannon's shells (SPEC §6.2): the heavy cannon's four, about half again as big, a little
+ * slower out of the barrel (HE and incendiary) and reaching farther. Numbers are provisional.
+ */
+const TITAN_HE: ShellSpec = {
+  kind: 'shell',
+  speed: 360,
+  damage: 60,
+  blastRadius: 24,
+  tileDamage: 110,
+  minRange: 34,
+  maxRange: 360,
+  spread: 0.01,
+  vs: { infantry: 0.6 },
+};
+const TITAN_AP: BulletSpec = {
+  kind: 'bullet',
+  speed: 760,
+  damage: 85,
+  tileDamage: 30,
+  range: 470,
+  spread: 0.004,
+  vs: { infantry: 0.4, heavy: 1.5 },
+  penetration: 0.6,
+};
+const TITAN_CANISTER: BulletSpec = {
+  kind: 'bullet',
+  speed: 420,
+  damage: 7,
+  tileDamage: 6,
+  range: 140,
+  spread: 0.22,
+  pellets: 14,
+  vs: { infantry: 2, light: 0.6, heavy: 0.15 },
+};
+const TITAN_INCENDIARY: ShellSpec = {
+  kind: 'shell',
+  speed: 360,
+  damage: 30,
+  blastRadius: 26,
+  tileDamage: 18,
+  minRange: 34,
+  maxRange: 360,
+  spread: 0.01,
+  incendiary: { dps: 6, duration: 4 },
+  vs: { infantry: 1.4, heavy: 0.4 },
+};
+
 /** The siege howitzer's shells (SPEC §6.2). Numbers are provisional. */
 const HOWITZER_HE: ShellSpec = {
   kind: 'shell',
@@ -468,6 +517,23 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     traverseDegPerSec: 0,
     projectile: CANNON_HE,
     shells: { he: CANNON_HE, ap: CANNON_AP, canister: CANNON_CANISTER, incendiary: CANNON_INCENDIARY },
+  },
+  // The heavy cannon's big brother (user's request, Nov 2026): the same gun and shells, bigger. It
+  // hits about half again as hard, a little less often, and weighs as much as the howitzer.
+  titanCannon: {
+    id: 'titanCannon',
+    size: 'L',
+    mass: 150,
+    name: 'Titan cannon',
+    short: 'Titan',
+    blurb: 'The heavy cannon, bigger: the same four shells, half again the punch.',
+    role: 'main',
+    category: 'ballistic',
+    reload: 2,
+    muzzle: 34,
+    traverseDegPerSec: 0,
+    projectile: TITAN_HE,
+    shells: { he: TITAN_HE, ap: TITAN_AP, canister: TITAN_CANISTER, incendiary: TITAN_INCENDIARY },
   },
   autocannon: {
     id: 'autocannon',
@@ -781,7 +847,9 @@ export const WEAPONS: Record<WeaponId, WeaponDef> = {
     blurb: 'Eight small missiles, each to its own target.',
     role: 'missile',
     category: 'munitions',
-    reload: 6,
+    // Next to no wait between salvos (user's call, Nov 2026; it was 6 s): the pod is ready again as
+    // soon as the last missile is away, so its ammo is what holds it back.
+    reload: 0.4,
     muzzle: 2,
     traverseDegPerSec: 0,
     ammo: 12,

@@ -6,6 +6,8 @@ import type { ActionDef, ItemActionDef } from './actionKit.ts';
 import { CAMP_ACTIONS } from './camp.ts';
 import { FIRE_ACTIONS, FIRE_ITEM_ACTIONS } from './fire.ts';
 import { MATERIAL_ACTIONS } from './materials.ts';
+import { HUNT_ACTIONS, HUNT_ITEM_ACTIONS } from './hunting.ts';
+import { HAZARD_ITEM_ACTIONS } from './hazards.ts';
 
-export const SYSTEM_ACTIONS: ActionDef[] = [...FIRE_ACTIONS, ...MATERIAL_ACTIONS, ...CAMP_ACTIONS];
-export const SYSTEM_ITEM_ACTIONS: ItemActionDef[] = [...FIRE_ITEM_ACTIONS];
+export const SYSTEM_ACTIONS: ActionDef[] = [...HUNT_ACTIONS, ...FIRE_ACTIONS, ...MATERIAL_ACTIONS, ...CAMP_ACTIONS];
+export const SYSTEM_ITEM_ACTIONS: ItemActionDef[] = [...FIRE_ITEM_ACTIONS, ...HUNT_ITEM_ACTIONS, ...HAZARD_ITEM_ACTIONS];

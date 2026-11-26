@@ -18,6 +18,7 @@ import {
   SEASON_COOLING,
   SLEEP_DRAIN,
   SLEEP_GAIN,
+  SUN_WARMTH,
   WARM_GAIN,
   WET_CHILL,
 } from '../content/balance.ts';
@@ -116,7 +117,7 @@ export function bodyMinute(s: GameState, w: World, ctx: MinuteContext, events: S
   const sl = asleep ? SLEEP_DRAIN : 1;
   const here = idx(p.x, p.y);
   const shelter = shelterAt(s, w, p.x, p.y);
-  const weather = weatherHere(s);
+  const weather = weatherHere(s, w);
 
   // Water and food.
   v.hydration = clamp(v.hydration - DRAIN.hydration * ex * sl * (weather.hot ? 1.3 : 1));
@@ -137,6 +138,7 @@ export function bodyMinute(s: GameState, w: World, ctx: MinuteContext, events: S
   } else {
     v.warmth = clamp(v.warmth + (feel - COMFORT) * WARM_GAIN);
   }
+  if (weather.hot && shelter.rain < 0.5) v.warmth = clamp(v.warmth + SUN_WARMTH);
   if (fire > 0) v.warmth = clamp(v.warmth + FIRE_WARMTH * fire);
 
   // Drying out: by a fire, in the sun, or slowly anywhere out of the rain.

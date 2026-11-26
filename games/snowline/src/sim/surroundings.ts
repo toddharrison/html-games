@@ -5,7 +5,7 @@ import { FIRE_LIGHT } from '../content/balance.ts';
 import { T } from '../content/terrain.ts';
 import type { Fire, GameState } from './state.ts';
 import { idx, type World } from './world.ts';
-import { weatherNow } from './weatherHooks.ts';
+import { weatherNow } from './weather.ts';
 
 export interface Shelter {
   /** 0–1 ratings (SPEC 7.6). */
@@ -87,6 +87,6 @@ export interface WeatherHere {
   hot: boolean;
 }
 
-export function weatherHere(s: GameState): WeatherHere {
-  return weatherNow(s);
+export function weatherHere(s: GameState, w?: World): WeatherHere {
+  return weatherNow(s, w);
 }

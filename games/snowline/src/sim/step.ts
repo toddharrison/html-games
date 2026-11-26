@@ -16,7 +16,12 @@ import { lightsOf, shelterAt } from './surroundings.ts';
 import { startCraft } from './craft.ts';
 import { reflect } from './insight.ts';
 import { remember } from './memory.ts';
-import { clock, sightRadius } from './time.ts';
+import { clock } from './time.ts';
+import { sightOf } from './sight.ts';
+import { stepHazards } from './hazards.ts';
+import { animalAt } from './animals.ts';
+import { addCondition } from './body.ts';
+import { ANIMAL_TEXT } from '../content/animalText.ts';
 import { idx, inBounds, passable, stepTicks, type World } from './world.ts';
 
 const DX = [0, 1, 0, -1] as const;
@@ -168,7 +173,13 @@ function movePlayer(state: GameState, world: World, events: SimEvent[]): boolean
   const nx = p.x + DX[dir];
   const ny = p.y + DY[dir];
   if (!canEnter(state, world, nx, ny)) {
-    if (!p.bumped) events.push({ type: 'bump', x: nx, y: ny });
+    if (!p.bumped) {
+      events.push({ type: 'bump', x: nx, y: ny });
+      if (animalAt(state, nx, ny)?.kind === 'porcupine' && !state.conditions.some((c) => c.id === 'quills')) {
+        addCondition(state, 'quills', 60);
+        say(state, ANIMAL_TEXT.quills(who(state.protagonist)), events);
+      }
+    }
     p.bumped = true;
     return false;
   }
@@ -188,6 +199,8 @@ function movePlayer(state: GameState, world: World, events: SimEvent[]): boolean
   if (t === T.shallows) p.wet = 100;
   else if (t === T.stream || t === T.gravel) p.wet = Math.max(p.wet, 60);
   events.push({ type: 'step', x: nx, y: ny, terrain: t });
+  state.memory['last-step'] = state.tick;
+  stepHazards(state, world, to, events);
   reveal(state);
   visitViewpoints(state, world, events);
   return true;
@@ -216,7 +229,7 @@ function visitViewpoints(state: GameState, world: World, events: SimEvent[]): vo
 /** Mark explored what the survivor can see now: their sight, and any firelit ground they can see into. */
 export function reveal(state: GameState): void {
   const p = state.player;
-  const r = sightRadius(state.tick);
+  const r = sightOf(state);
   markCircle(state, p.x, p.y, r);
   for (const l of lightsOf(state)) {
     const reach = r + l.radius;
@@ -247,7 +260,7 @@ export function isExplored(state: GameState, i: number): boolean {
 
 /** The lights on the map and the survivor's own sight, for the renderer's darkness (SPEC 12.1). */
 export function sightCircles(state: GameState): { x: number; y: number; r: number; fire: boolean }[] {
-  const out = [{ x: state.player.x, y: state.player.y, r: sightRadius(state.tick), fire: false }];
+  const out = [{ x: state.player.x, y: state.player.y, r: sightOf(state), fire: false }];
   for (const l of lightsOf(state)) out.push({ x: l.x, y: l.y, r: l.radius, fire: true });
   return out;
 }

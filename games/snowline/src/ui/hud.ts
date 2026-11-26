@@ -6,6 +6,8 @@ import { CONDITIONS } from '../content/conditions.ts';
 import { partOfDay } from '../content/text.ts';
 import type { GameState } from '../sim/state.ts';
 import { clock, formatClock } from '../sim/time.ts';
+import { WEATHER } from '../content/weather.ts';
+import { weatherAt } from '../sim/weather.ts';
 import { h } from './dom.ts';
 
 const VITALS: [keyof GameState['vitals'], string, string][] = [
@@ -54,7 +56,9 @@ export class Hud {
     const c = clock(s.tick);
     const watch = s.inventory.some((i) => i.k === 'watch');
     const sleeping = s.sleep ? (s.sleep.awake ? ' · resting' : ' · asleep') : '';
-    const text = `Day ${c.day} · ${watch ? formatClock(c) : partOfDay(c.minute)}${sleeping}`;
+    const wid = weatherAt(s);
+    const sky = wid === 'clear' ? '' : ` · ${WEATHER[wid].name}`;
+    const text = `Day ${c.day} · ${watch ? formatClock(c) : partOfDay(c.minute)}${sky}${sleeping}`;
     if (text !== this.when.textContent) this.when.textContent = text;
 
     const v = s.vitals;

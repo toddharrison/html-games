@@ -1,6 +1,7 @@
 // The GameState type (SPEC 11.3, rule 7): plain, JSON-serialisable data with no class instances or
 // functions. With the world (rebuilt from the seed), it is everything the simulation knows.
 
+import type { AnimalKind } from '../content/animals.ts';
 import type { ConditionId } from '../content/conditions.ts';
 import type { SkillId } from '../content/protagonists.ts';
 import type { Protagonist } from './protagonist.ts';
@@ -69,6 +70,30 @@ export interface Fire {
   signal: boolean;
 }
 
+/** An animal (SPEC 9). `t` counts ticks to its next step; `mode` is what it's doing; `gone` counts down a hunted one's return. */
+export interface Animal {
+  id: number;
+  kind: AnimalKind;
+  x: number;
+  y: number;
+  /** Its home. */
+  hx: number;
+  hy: number;
+  mode: 'wander' | 'flee' | 'warn' | 'leave' | 'stalk' | 'gone';
+  t: number;
+  timer: number;
+  /** Where it is heading (jays), or -1. */
+  tx: number;
+  ty: number;
+  /** The survivor's distance walked when it began to warn (did they move?). */
+  mark: number;
+  /** What a pack rat is carrying home. */
+  carry?: Item;
+  /** The herd's bull (elk). */
+  bull: boolean;
+  gone: number;
+}
+
 /** A camp improvement (SPEC 7.6) on a tile; a cache holds items. */
 export interface Build {
   kind: string;
@@ -118,7 +143,7 @@ export interface LogEntry {
 /** Something due to happen later: a taste's effect, an illness showing. */
 export interface Pending {
   t: number;
-  kind: 'taste' | 'eat' | 'water-ill' | 'wood';
+  kind: 'taste' | 'eat' | 'water-ill' | 'wood' | 'sign';
   d: number;
 }
 
@@ -153,6 +178,9 @@ export interface GameState {
   memory: Record<string, number>;
   /** A lightning-struck snag still smouldering, and until when (SPEC 8.3, captured fire). */
   smoulder: { x: number; y: number; until: number } | null;
+  /** The run's weather, fixed at the start (SPEC 6.5): an index into weather.ts's ALL for each 3-hour period. */
+  weather: { f: number[]; severeDay: number };
+  animals: Animal[];
   /** What each dealt thing is in this valley (SPEC 6.6). Re-dealt from the seed on load. */
   rules: Rules;
   /**
@@ -209,4 +237,7 @@ export type SimEvent =
   | { type: 'discovery'; key: string }
   | { type: 'sleep' }
   | { type: 'wake' }
-  | { type: 'over'; kind: 'death' | 'rescue' };
+  | { type: 'over'; kind: 'death' | 'rescue' }
+  | { type: 'weather'; id: string }
+  | { type: 'lightning' }
+  | { type: 'animal'; kind: string; what: string };

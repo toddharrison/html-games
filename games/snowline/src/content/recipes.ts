@@ -70,7 +70,7 @@ export interface BuildDef {
   inputs: Ingredient[];
   minutes: number;
   /** Built where: 'here' (the camp spot), 'fire' (the faced fire), 'tree' (the faced tree), 'open' (faced open ground). */
-  at: 'here' | 'fire' | 'tree' | 'open';
+  at: 'here' | 'fire' | 'tree' | 'open' | 'water';
 }
 
 export const BUILDS: readonly BuildDef[] = [
@@ -80,6 +80,7 @@ export const BUILDS: readonly BuildDef[] = [
   { id: 'reflector', label: 'Ring the fire with reflector stones', inputs: [{ k: 'stone', n: 3 }], minutes: 30, at: 'fire' },
   { id: 'woodpile', label: 'Build a covered woodpile', inputs: [{ k: 'stick', n: 4 }, { k: 'bark', n: 2 }], minutes: 45, at: 'here' },
   { id: 'cache', label: 'Rig a hanging food cache', technique: 'cache', inputs: [{ k: 'cord', n: 2 }], minutes: 40, at: 'tree' },
+  { id: 'weir', label: 'Build a fish weir of stones', technique: 'weir', inputs: [{ k: 'stone', n: 6 }], minutes: 120, at: 'water' },
   { id: 'signal', label: 'Build a signal fire pile', technique: 'signal', inputs: [{ k: 'firewood', n: 6 }, { k: 'boughs', n: 4 }], minutes: 60, at: 'open' },
 ];
 

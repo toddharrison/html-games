@@ -15,7 +15,7 @@ import type { GameState, SimEvent } from '../src/sim/state.ts';
 import { step } from '../src/sim/step.ts';
 import { idx, type World } from '../src/sim/world.ts';
 import { runTo } from '../src/tools/runner.ts';
-import { flatWorld } from './sample.ts';
+import { calm, flatWorld } from './sample.ts';
 
 const MIN = 10;
 const FRONT = idx(128, 129);
@@ -28,6 +28,7 @@ function setup(opts: { edit?: (w: World) => void; rules?: (r: Rules) => void; wh
   opts.rules?.(rules);
   const state = newGame('flat', { ...candidate('flat', 0), background: 'city', trait: 'restless', tool: 'hatchet', pockets: [], ...opts.who }, world, rules);
   state.vitals = { health: 100, hydration: 100, nutrition: 100, rest: 100, warmth: 100, morale: 60 };
+  calm(state);
   return { state, world };
 }
 

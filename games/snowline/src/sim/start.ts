@@ -3,8 +3,10 @@
 
 import type { GameState } from './state.ts';
 import type { World } from './world.ts';
+import { makeForecast } from './weather.ts';
+import { spawnAnimals } from './animals.ts';
 
 export function startSystems(s: GameState, w: World): void {
-  void s;
-  void w;
+  s.weather = makeForecast(s.rng.weather);
+  spawnAnimals(s, w);
 }

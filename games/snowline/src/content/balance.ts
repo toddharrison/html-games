@@ -75,7 +75,9 @@ export const NIGHT_POOLING = 2;
 export const COMFORT = 15;
 /** Warmth lost per minute per degree below comfort, and gained per degree above (slowly). */
 export const COLD_LOSS = 0.0045;
-export const WARM_GAIN = 0.01;
+export const WARM_GAIN = 0.02;
+/** Extra warmth per minute in clear midday sun. */
+export const SUN_WARMTH = 0.05;
 /** Warmth from a fire within its reach, per minute. */
 export const FIRE_WARMTH = 0.35;
 /** Being wet, or out in the wind, multiplies the loss. */

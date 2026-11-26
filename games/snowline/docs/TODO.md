@@ -4,8 +4,8 @@ Open work and the hand-off between sessions. See CLAUDE.md for how to maintain i
 
 ## Hand-off notes
 - **Overnight run (2026-11-25/26), at the user's request:** build M2 through M6 one after another on branch `snowline/spec`, a commit per milestone, questions captured in SPEC §13.2 with a simple option taken, renders left in `renders/` for the user to look at. Don't touch `games/behemoth-protocol/`.
-- **Done:** M0+M1 (`27fbb89`), M2 (`12a039f`; FEATURES.md §10–13), M3 (this commit; §14–16).
-- **Next step:** M4 (living world), below.
+- **Done:** M0+M1 (`27fbb89`), M2 (`12a039f`; FEATURES.md §10–13), M3 (`fa5ba50`; §14–16), M4 (this commit; §17–21).
+- **Next step:** M5 (arc and ending), below.
 
 ## Playtest queue
 Built but not yet seen by the user. Check each one off by setting its FEATURES.md entry to `playtest: approved`, then remove it here.
@@ -17,10 +17,11 @@ Built but not yet seen by the user. Check each one off by setting its FEATURES.m
 - [ ] **The valley's shape:** `npm run inspect -- first-light <seeds>` (`renders/inspect/`). Is 256×256 right? Is the default seed a good first valley?
 - [ ] **Drawn sprites:** the survivor (three hair styles, walking, asleep), trees, rocks, berries, the wreckage. Keep drawing in code, or plan for an artist (SPEC §12.1, M6)?
 - [ ] **Fire and camp (M3):** strike the outcrops by the overhang, carry the one that sparks, gather tinder and sticks, light a fire facing open ground; cook crayfish; lay a bough bed. Then the bow drill (debug `give cord`, `give stick`, `give firewood <wood>`; needs the *bow-drill* technique: a Scout knows it). Is the first fire a moment? Are the odds and times right? `npm run tour` shows the craft menu, the fire's options, and a camp.
+- [ ] **The living world (M4):** weather (`renders/weather-rain/`, `-storm/`, `-fog/`; seeds `wx-2`, `wx-9`, `wx-91` at 16:00 on day 1), animals (hares by the lake on any seed; the bear and elk: debug *reveal map*, the map shows territories), a dangerous animal's warning and what turns it (*reveal rules* shows the deal; try facing, shouting, a fire, or backing off), jays at the safe berries, fishing at the stream mouth, snares, mosquitoes at dusk by the water, sound (wind, water, rain, fire, insects at night). Is the weather's pace right? Do the animals feel alive without crowding?
 - [ ] **Title and notice:** `TEXT.inDevelopment`, the tagline, and `package.json`'s `description`.
 
-## M4: Living world (next)
-Goal (SPEC §14): weather and its signs, temperature, snowline, animals and their dealt tempers, fishing, hunting, illness and injury, remedies, traits, ambient sound.
+## M5: Arc and ending (next)
+Goal (SPEC §14): search aircraft, severe storm and rockslide, wreckage climb, all three rescues, title and summary screens, bot-driven balance pass, including what learning a valley costs.
 
 ## Later milestones
-- M5 Arc and ending · M6 Polish (SPEC §14).
+- M6 Polish (SPEC §14).

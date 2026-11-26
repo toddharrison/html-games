@@ -3,6 +3,7 @@
 import { MAP_SIZE } from '../src/content/balance.ts';
 import { T } from '../src/content/terrain.ts';
 import { DEFAULT_SEED } from '../src/sim/newGame.ts';
+import type { GameState } from '../src/sim/state.ts';
 import type { World } from '../src/sim/world.ts';
 
 /** The world generation sample in `npm test` (SPEC 11.4): about 25 seeds, the default among them. */
@@ -44,4 +45,10 @@ export function flatWorld(): World {
     waterCauseSites: [],
     landmarks: [],
   };
+}
+
+/** Pin a run's weather to overcast and clear the valley of animals, so a test measures one thing. */
+export function calm(s: GameState): void {
+  s.weather.f = s.weather.f.map(() => 1);
+  s.animals = [];
 }

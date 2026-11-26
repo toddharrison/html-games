@@ -27,7 +27,7 @@ import { ListMenu } from '../ui/menu.ts';
 import { selectScreen } from '../ui/select.ts';
 import { summaryScreen } from '../ui/summary.ts';
 import { randomSeed, titleScreen } from '../ui/title.ts';
-import { playEvents } from './audio.ts';
+import { Sound, playEvents } from './audio.ts';
 import { Input, type Action } from './input.ts';
 import { download, parseReplay, toReplay } from './replay.ts';
 import { deleteRun, loadRun, migrate, parseSave, restore, saveRun, toRecord, type SaveRecord } from './saves.ts';
@@ -59,6 +59,7 @@ export class App {
   private camera = { x: 0, y: 0 };
   private taskLabel = '';
   private overShown = false;
+  readonly sound = new Sound();
 
   constructor(root: HTMLElement, params: URLSearchParams) {
     this.params = params;
@@ -85,6 +86,9 @@ export class App {
       this.hover = { x, y };
     });
     this.canvas.addEventListener('mouseleave', () => (this.hover = null));
+    const wakeSound = () => this.sound.start();
+    addEventListener('keydown', wakeSound);
+    addEventListener('pointerdown', wakeSound);
     this.fit();
   }
 
@@ -219,12 +223,14 @@ export class App {
   }
 
   private onEvents(events: SimEvent[]): void {
-    playEvents(events);
+    playEvents(events, this.sound);
     for (const e of events) {
       if (e.type === 'viewpoint') {
         this.hud.say([e.index === 0 ? TEXT.viewpointKnoll : e.index === 1 ? TEXT.viewpointWreck : TEXT.viewpoint]);
       } else if (e.type === 'sleep') {
         this.autosave();
+      } else if (e.type === 'lightning') {
+        this.renderer.lightning(performance.now());
       } else if (e.type === 'over') {
         void deleteRun();
       }
@@ -240,6 +246,7 @@ export class App {
     this.camera = this.renderer.draw(st, alpha, now, this.debug && !this.debug.el.hidden ? this.hover : null);
     this.hud.update(st, this.taskLabel);
     this.debug?.update(s, this.hover, now);
+    this.sound.update(this.modal === null || this.modal === 'menu' ? st : null, s.world, this.loop.speed);
     if (st.over && !this.overShown && this.modal === null) {
       this.overShown = true;
       setTimeout(() => this.showSummary(), 2500);
@@ -438,6 +445,10 @@ export class App {
           h('button', { onclick: () => this.setModal(null), autofocus: true }, 'Carry on'),
           h('button', { onclick: () => void saveRun(s.state).then(() => this.showTitle()) }, 'Save and leave'),
           h('button', { onclick: () => download(`snowline-save-${s.seed}-day${clock(s.state.tick).day}.json`, JSON.stringify(toRecord(s.state))) }, 'Save to a file'),
+          h('button', { onclick: (e: Event) => {
+            this.sound.setMuted(!this.sound.muted);
+            (e.target as HTMLButtonElement).textContent = this.sound.muted ? 'Sound: off' : 'Sound: on';
+          } }, this.sound.muted ? 'Sound: off' : 'Sound: on'),
         ),
         h('p', { class: 'keys' }, 'The game saves itself whenever you sleep. Death is final.'),
       ),

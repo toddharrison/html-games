@@ -8,6 +8,8 @@ import type { Fire, GameState } from '../sim/state.ts';
 import { burning } from '../sim/surroundings.ts';
 import { sightCircles } from '../sim/step.ts';
 import { clock, daylight } from '../sim/time.ts';
+import { WEATHER } from '../content/weather.ts';
+import { snowBand, weatherAt, weatherNow } from '../sim/weather.ts';
 import { idx, type World } from '../sim/world.ts';
 import { gradeAt } from './grade.ts';
 import { PALETTE } from './palette.ts';
@@ -41,6 +43,15 @@ export class Renderer {
   private readonly tmp = offscreen();
   private readonly mask = offscreen();
   private world: World | null = null;
+  private readonly lastX = new Map<number, number>();
+  private readonly facingLeft = new Map<number, boolean>();
+  /** When the last lightning flashed (ms), and whether flashes are toned down (SPEC 12.4). */
+  private flashAt = -1e9;
+  reduceFlashes = false;
+
+  lightning(now: number): void {
+    this.flashAt = now;
+  }
   /** Hill shading per tile: light on slopes facing north-west, shadow on the others. */
   private shade = new Float32Array(0);
 
@@ -93,6 +104,7 @@ export class Renderer {
     const x1 = Math.min(world.size - 1, x0 + Math.ceil(SCREEN_W / TILE));
     const y1 = Math.min(world.size - 1, y0 + Math.ceil(SCREEN_H / TILE));
     const shimmer = Math.floor(timeMs / 450);
+    const snow = snowBand(state.tick);
 
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
@@ -105,6 +117,10 @@ export class Renderer {
         const s = this.shade[i]!;
         if (s > 0.01 || s < -0.01) {
           g.fillStyle = s > 0 ? `rgba(255,250,235,${s})` : `rgba(10,12,20,${-s})`;
+          g.fillRect(dx, dy, TILE, TILE);
+        }
+        if (world.band[i]! >= snow && !TERRAIN[t]!.water && t !== T.cliff && t !== T.headwall) {
+          g.fillStyle = 'rgba(236,240,236,0.72)';
           g.fillRect(dx, dy, TILE, TILE);
         }
         if (world.flags[i]! & FLAG.trail && !TERRAIN[t]!.water) {
@@ -158,6 +174,16 @@ export class Renderer {
           g.fillStyle = `rgba(200,200,195,${0.5 * (1 - age)})`;
           g.fillRect(sx + 6 + Math.round(Math.sin(age * 5 + k) * 2), sy + 2 - Math.round(age * 30), 3, 3);
         }
+      }
+      for (const a of state.animals) {
+        if (a.y !== ty || a.x < x0 || a.x > x1 || a.mode === 'gone') continue;
+        const near = Math.max(Math.abs(a.x - state.player.x), Math.abs(a.y - state.player.y));
+        if (a.kind === 'grouse' && a.mode !== 'flee' && near > 2) continue;
+        const last = this.lastX.get(a.id) ?? a.x;
+        if (last !== a.x) this.facingLeft.set(a.id, a.x < last);
+        this.lastX.set(a.id, a.x);
+        const bob = a.mode === 'flee' || a.mode === 'leave' ? Math.floor(timeMs / 120 + a.id) % 2 : 0;
+        g.drawImage(this.atlas.animal(a.kind, this.facingLeft.get(a.id) ?? false), a.x * TILE - cam.x, a.y * TILE - cam.y - bob);
       }
       for (const st of state.stashes) {
         if (st.y === ty && st.x >= x0 && st.x <= x1) g.drawImage(this.atlas.sprite('stash'), st.x * TILE - cam.x, st.y * TILE - cam.y);
@@ -244,6 +270,8 @@ export class Renderer {
     g.fillRect(0, 0, SCREEN_W, SCREEN_H);
     g.globalCompositeOperation = 'source-over';
 
+    this.weather(state, cam, timeMs);
+
     const flicker = (k: number) => 1 + (rh(k, Math.floor(timeMs / 90), 11) - 0.5) * 0.06;
     const centre = (x: number, y: number) => [x * TILE + TILE / 2 - cam.x, y * TILE + TILE / 2 - cam.y] as const;
     const dark = (1 - daylight(state.tick) / 100) * NIGHT_DARKNESS;
@@ -302,5 +330,50 @@ export class Renderer {
     }
     m.globalCompositeOperation = 'source-over';
     g.drawImage(this.mask.c, 0, 0);
+    this.flash(timeMs);
+  }
+
+  /** Lightning lights everything for a moment (toned down if the setting asks). */
+  private flash(timeMs: number): void {
+    const age = timeMs - this.flashAt;
+    if (age > 220) return;
+    const g = this.g;
+    const strength = (this.reduceFlashes ? 0.12 : 0.55) * (1 - age / 220);
+    g.fillStyle = `rgba(235,240,255,${strength})`;
+    g.fillRect(0, 0, SCREEN_W, SCREEN_H);
+  }
+
+  /** Rain, snow, fog, and cloud over the graded scene (SPEC 12.1: weather you can feel). */
+  private weather(state: GameState, cam: Camera, timeMs: number): void {
+    const g = this.g;
+    const id = weatherAt(state);
+    const def = WEATHER[id];
+    const here = this.world ? weatherNow(state, this.world) : null;
+    if (def.gloom > 0) {
+      g.globalCompositeOperation = 'multiply';
+      const v = Math.round(255 * (1 - def.gloom * 0.45));
+      g.fillStyle = `rgb(${v},${v},${Math.min(255, v + 8)})`;
+      g.fillRect(0, 0, SCREEN_W, SCREEN_H);
+      g.globalCompositeOperation = 'source-over';
+    }
+    if (def.fog > 0) {
+      g.fillStyle = `rgba(196,202,206,${def.fog * 0.55})`;
+      g.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    }
+    if (def.wet) {
+      const n = id === 'drizzle' ? 60 : id === 'rain' ? 140 : 220;
+      const snowing = here?.snow ?? false;
+      const t = timeMs / (snowing ? 2600 : 420);
+      const slant = Math.round(def.wind * 6);
+      g.fillStyle = snowing ? 'rgba(240,244,248,0.85)' : 'rgba(190,205,220,0.45)';
+      for (let k = 0; k < n; k++) {
+        const fx = rh(k, 1, 77) * (SCREEN_W + 40) - 20;
+        const fy = (rh(k, 2, 77) + t + k * 0.013) % 1;
+        const x = Math.round(fx + fy * slant * 8 - ((cam.x * 0.2) % SCREEN_W) * 0) % SCREEN_W;
+        const y = Math.round(fy * (SCREEN_H + 20)) - 10;
+        if (snowing) g.fillRect((x + Math.round(Math.sin(t * 6 + k) * 3) + SCREEN_W) % SCREEN_W, y, 2, 2);
+        else g.fillRect((x + SCREEN_W) % SCREEN_W, y, 1, id === 'drizzle' ? 3 : 6);
+      }
+    }
   }
 }

@@ -6,6 +6,7 @@ import { BAND_NAMES, FEATURES, FLAG, TERRAIN } from '../content/terrain.ts';
 import { describeRules } from '../sim/rules.ts';
 import { STREAMS } from '../sim/rng.ts';
 import { clock, daylight, formatClock, sightRadius } from '../sim/time.ts';
+import { snowBand, weatherAt } from '../sim/weather.ts';
 import { idx, inBounds, type World } from '../sim/world.ts';
 import type { Session } from '../platform/session.ts';
 import type { Vitals } from '../sim/state.ts';
@@ -121,7 +122,11 @@ export class DebugPanel {
       `at ${p.x},${p.y} facing ${'NESW'[p.facing]} · step ${p.stepLeft}/${p.stepTotal}`,
       `here: ${tileInfo(w, p.x, p.y)}`,
       hover ? `mouse ${hover.x},${hover.y}: ${tileInfo(w, hover.x, hover.y)}` : 'mouse: off the view',
-      `viewpoints ${st.viewpoints.filter(Boolean).length}/${st.viewpoints.length} · fires ${st.fires.length} · animals: none yet`,
+      `viewpoints ${st.viewpoints.filter(Boolean).length}/${st.viewpoints.length} · fires ${st.fires.length} · weather ${weatherAt(st)} · severe storm day ${st.weather.severeDay} · snowline band ${snowBand(st.tick)}`,
+      `animals near: ${st.animals
+        .filter((a) => a.mode !== 'gone' && Math.max(Math.abs(a.x - p.x), Math.abs(a.y - p.y)) <= 14)
+        .map((a) => `${a.kind}@${a.x},${a.y} ${a.mode}`)
+        .join(', ') || 'none'}`,
       `streams: ${STREAMS.filter((n) => n in st.rng)
         .map((n) => `${n} ${st.rng[n].n}`)
         .join(', ')}`,

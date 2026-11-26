@@ -6,7 +6,7 @@ import { PLANTS } from '../content/decks.ts';
 import { F, T, TERRAIN } from '../content/terrain.ts';
 import type { Protagonist } from '../sim/protagonist.ts';
 import { PALETTE, TERRAIN_COLOR, rgb, type PaletteKey } from './palette.ts';
-import { SPRITES, paint, personSprite } from './sprites.ts';
+import { ANIMAL_SPRITES, SPRITES, paint, personSprite } from './sprites.ts';
 
 export const VARIANTS = 4;
 const S = 16;
@@ -293,6 +293,8 @@ export interface Atlas {
   person(who: Protagonist, dir: number, frame: number): HTMLCanvasElement;
   /** A named sprite from SPRITES (the stash bundle, ...). */
   sprite(name: string): HTMLCanvasElement;
+  /** An animal, facing left or right. */
+  animal(kind: string, mirror: boolean): HTMLCanvasElement;
 }
 
 export function buildAtlas(): Atlas {
@@ -312,7 +314,19 @@ export function buildAtlas(): Atlas {
   const features = new Map<string, HTMLCanvasElement>();
   const people = new Map<string, HTMLCanvasElement>();
   const named = new Map<string, HTMLCanvasElement>();
+  const beasts = new Map<string, HTMLCanvasElement>();
   return {
+    animal(kind, mirror) {
+      const key = `${kind}:${mirror}`;
+      let c = beasts.get(key);
+      if (!c) {
+        c = makeCanvas(S, S);
+        const def = ANIMAL_SPRITES[kind];
+        if (def) paint(c.getContext('2d')!, def, 0, 0, {}, mirror);
+        beasts.set(key, c);
+      }
+      return c;
+    },
     sprite(name) {
       let c = named.get(name);
       if (!c) {

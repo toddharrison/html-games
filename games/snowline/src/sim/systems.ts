@@ -4,7 +4,12 @@
 
 import type { Command, GameState, SimEvent } from './state.ts';
 import type { World } from './world.ts';
-import { fireMinute } from './fire.ts';
+import { fireMinute, strikeSnag } from './fire.ts';
+import { rainOn, weatherMinute, weatherNow } from './weather.ts';
+import { animalAt, animalsTick, blocks } from './animals.ts';
+import { hazardsMinute } from './hazards.ts';
+import { trapsHour } from './hunting.ts';
+import { sightOf } from './sight.ts';
 
 type Hook = (s: GameState, w: World, events: SimEvent[]) => void;
 
@@ -12,11 +17,16 @@ const TICK: Hook[] = [];
 const MINUTE: Hook[] = [];
 
 export function tickHooks(s: GameState, w: World, events: SimEvent[]): void {
+  animalsTick(s, w, events, sightOf(s));
   for (const h of TICK) h(s, w, events);
 }
 
 export function minuteHooks(s: GameState, w: World, events: SimEvent[]): void {
-  fireMinute(s, w, events, 0, () => false);
+  const wind = weatherNow(s, w).wind;
+  fireMinute(s, w, events, wind, (f) => rainOn(s, w, f));
+  weatherMinute(s, w, events, () => strikeSnag(s, w, events));
+  hazardsMinute(s, w, events);
+  if (s.tick % 600 === 0) trapsHour(s, w, events);
   for (const h of MINUTE) h(s, w, events);
 }
 
@@ -34,7 +44,9 @@ export function commandHooks(s: GameState, w: World, cmd: Command, events: SimEv
  */
 export function blockedBySystems(s: GameState, w: World, x: number, y: number): boolean | null {
   void w;
-  // A fire is not walked through.
+  // A fire is not walked through, nor a big animal.
   if (s.fires.some((f) => f.x === x && f.y === y)) return true;
+  const a = animalAt(s, x, y);
+  if (a && blocks(a)) return true;
   return null;
 }

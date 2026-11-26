@@ -56,6 +56,7 @@ function buildTile(s: GameState, w: World, b: BuildDef): number {
   if (b.at === 'fire') return fireAt(s, front) && !s.builds.some((x) => x.kind === 'reflector' && x.x === fx && x.y === fy) ? front : -1;
   if (b.at === 'tree') return (w.feature[front] === F.conifer || w.feature[front] === F.aspen) && !s.builds.some((x) => x.x === fx && x.y === fy) ? front : -1;
   const t = w.terrain[front]!;
+  if (b.at === 'water') return (t === T.shallows || t === T.stream || t === T.gravel) && !s.builds.some((x) => x.x === fx && x.y === fy) ? front : -1;
   const open = TERRAIN[t]!.passable && !TERRAIN[t]!.water && w.feature[front] === F.none && !fireAt(s, front) && !s.builds.some((x) => x.x === fx && x.y === fy);
   return open ? front : -1;
 }
@@ -74,7 +75,7 @@ export function craftOptions(s: GameState, w: World): CraftOption[] {
   for (const b of BUILDS) {
     if (b.technique && !knowsTechnique(s, b.technique)) continue;
     let missing = missingInputs(s, b.inputs);
-    if (buildTile(s, w, b) < 0) missing = [missing, b.at === 'here' ? 'a spot without one' : b.at === 'fire' ? 'to face a fire' : b.at === 'tree' ? 'to face a tree' : 'to face open ground'].filter(Boolean).join(', ');
+    if (buildTile(s, w, b) < 0) missing = [missing, b.at === 'here' ? 'a spot without one' : b.at === 'fire' ? 'to face a fire' : b.at === 'tree' ? 'to face a tree' : b.at === 'water' ? 'to face shallow water' : 'to face open ground'].filter(Boolean).join(', ');
     out.push({ recipe: `build:${b.id}`, label: b.label, minutes: Math.round(b.minutes * clumsyFactor(s)), missing });
   }
   return out;
@@ -104,7 +105,7 @@ export function finishCraft(s: GameState, w: World, recipe: string, tile: number
     const b = BUILDS.find((x) => `build:${x.id}` === recipe);
     if (!b || missingInputs(s, b.inputs) || buildTile(s, w, b) !== tile) return;
     for (const i of b.inputs) take(s, i.k, i.n, i.d);
-    s.builds.push({ kind: b.id, x: tile % 256, y: Math.floor(tile / 256), ...(b.id === 'cache' ? { items: [] } : {}) });
+    s.builds.push({ kind: b.id, x: tile % 256, y: Math.floor(tile / 256), ...(b.id === 'cache' || b.id === 'weir' ? { items: [] } : {}) });
     s.builds.sort((a, c) => a.y - c.y || a.x - c.x || (a.kind < c.kind ? -1 : 1));
     practise(s, 'crafting', 2);
     say(s, CRAFT_MSG.built(wh, b.label.replace(/^\w+ an? /i, '').toLowerCase()), events);

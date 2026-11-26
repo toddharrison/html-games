@@ -75,7 +75,7 @@ export function taste(s: GameState, slot: number, events: SimEvent[]): void {
 
 /** Deliver what's due: a taste's answer, a meal's full effect, an illness from old water. */
 export function resolvePending(s: GameState, events: SimEvent[]): void {
-  const due = s.pending.filter((p) => p.t <= s.tick && p.kind !== 'wood');
+  const due = s.pending.filter((p) => p.t <= s.tick && (p.kind === 'taste' || p.kind === 'eat' || p.kind === 'water-ill'));
   if (!due.length) return;
   s.pending = s.pending.filter((p) => !due.includes(p));
   const w = who(s.protagonist);

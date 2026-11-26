@@ -51,6 +51,8 @@ export function newGame(seed: string, protagonist: Protagonist, world: World, ru
     builds: [],
     memory: {},
     smoulder: null,
+    weather: { f: [], severeDay: 0 },
+    animals: [],
     rules,
     known: { facts: [], techniques: ['sharpen', ...(bg?.mods.techniques ?? [])].sort(), seen: [] },
     task: null,

@@ -15,7 +15,7 @@ import { step } from '../src/sim/step.ts';
 import { idx, type World } from '../src/sim/world.ts';
 import { restore, toRecord } from '../src/platform/saves.ts';
 import { runTo, stateHash } from '../src/tools/runner.ts';
-import { flatWorld } from './sample.ts';
+import { calm, flatWorld } from './sample.ts';
 
 const MIN = 10;
 const DAY = 14400;
@@ -30,6 +30,7 @@ function setup(edit?: (w: World) => void, rulesEdit?: (r: Rules) => void, p: Par
   const rules = dealRules('flat');
   rulesEdit?.(rules);
   const state = newGame('flat', who(p), world, rules);
+  calm(state);
   return { state, world };
 }
 

@@ -9,6 +9,7 @@ import { itemDef } from '../content/items.ts';
 import { who } from '../content/messages.ts';
 import { type ActionDef, deplete, ready } from './actionKit.ts';
 import { steelTool } from './fire.ts';
+import { toolSlip } from './hazards.ts';
 import { give } from './inventory.ts';
 import { lookName, see } from './knowledge.ts';
 import { say } from './log.ts';
@@ -77,6 +78,7 @@ export const MATERIAL_ACTIONS: ActionDef[] = [
       say(s, CRAFT_MSG.cut(who(s.protagonist), got, `pieces of ${lookName('wood', d)}`, itemDef(steelTool(s)!).name), ev);
       practise(s, 'crafting', 0.5);
       deplete(s, t, 8);
+      toolSlip(s, ev);
     },
   },
   {

@@ -30,6 +30,11 @@ Useful greps: `grep -n "playtest: pending" docs/FEATURES.md`, `grep -n "uncommit
 14. [Fire](#14-fire)
 15. [Materials, crafting, and camp](#15-materials-crafting-and-camp)
 16. [Insights](#16-insights)
+17. [Weather](#17-weather)
+18. [Animals](#18-animals)
+19. [Hunting and fishing](#19-hunting-and-fishing)
+20. [Illness, injury, remedies, traits](#20-illness-injury-remedies-traits)
+21. [Ambient sound](#21-ambient-sound)
 
 ## 1. Project and dev tools
 
@@ -177,7 +182,7 @@ Placed in order, each on a random tile meeting its rule, claiming room round its
 ### Event hooks
 `M0` · `27fbb89` · `playtest: n/a` · SPEC §12.3
 
-Every sim event goes through `playEvents` (`src/platform/audio.ts`), which is silent for now; ambient loops come in M4, effects and music in M6.
+Every sim event goes through `playEvents` (`src/platform/audio.ts`) to the app's `Sound`; see §21.
 
 ## 10. The body
 
@@ -277,7 +282,7 @@ R offers: rest an hour (awake), sleep three hours, sleep until first light, slee
 ## 14. Fire
 
 ### Three routes to fire
-`M3` · `uncommitted` · `playtest: pending` · SPEC §8.3, §6.6
+`M3` · `fa5ba50` · `playtest: pending` · SPEC §8.3, §6.6
 
 `src/sim/fire.ts`. Facing open ground with tinder and kindling (2 sticks or a piece of firewood), E offers each way the survivor can light it:
 - **Sparks:** strike any outcrop (or a carried stone) with the steel tool first (`strike`): the dealt spark-stone throws sparks (known, and the *sparks* technique by accident), others flake to an edge, crumble, or do nothing (all known). Then *Light a fire with sparks* needs a known spark-stone carried. The multi-tool throws poor sparks (`TOOL_WORK.sparks`).
@@ -287,7 +292,7 @@ R offers: rest an hour (awake), sleep three hours, sleep until first light, slee
 - The tinder used decides the odds (`TINDER_CATCH`: catches, slow, fails) plus firecraft skill and the *tinder-nest* technique. A fire that catches makes the tinder known; a tinder that fails twice becomes known (or suspected) as failing.
 
 ### A fire's life, cooking, boiling
-`M3` · `uncommitted` · `playtest: pending` · SPEC §8.3, §7.3, §7.5
+`M3` · `fa5ba50` · `playtest: pending` · SPEC §8.3, §7.3, §7.5
 
 `GameState.fires`: fuel (minutes), then coals for 45 minutes, then out. Sticks add 12 minutes, firewood by its dealt kind (`WOOD_BURN`: long-burning 120, smoky 60 with smoke, quick 30), green boughs make thick smoke. Wood put on a fire teaches what it is about 40 minutes later (`woodLesson`; drill wood burns "plain", suspected). *Bank the fire* (technique) keeps coals 9 hours with no light; any fuel revives coals. *Wrap embers in bark* (technique) carries fire elsewhere. A fire lights 6 tiles, warms within 3 (4 with reflector stones), and blocks the tile.
 - Beside a burning fire: *Cook* turns raw food into cooked (crayfish, mussels, fish, meat); *Smoke* (technique) makes meat and fish keep 20 days; *Boil* a pot of water, or a bark vessel of water with hot stones (technique, needs a stone). Vessels are filled at water (*Fill*); unboiled water carries its source's risk (`waterRisk` in food.ts); boiled water is always safe.
@@ -296,13 +301,13 @@ R offers: rest an hour (awake), sleep three hours, sleep until first light, slee
 ## 15. Materials, crafting, and camp
 
 ### Materials
-`M3` · `uncommitted` · `playtest: pending` · SPEC §8.2, §6.6
+`M3` · `fa5ba50` · `playtest: pending` · SPEC §8.2, §6.6
 
 `src/sim/materials.ts`. Firewood: cut from conifers (resinous wood), aspens (white-barked), stunted trees (grey twisted) with the steel tool; broken from deadfall (red-barked); gathered as driftwood on sand (pale soft). Green boughs and bark (conifer, aspen), plant fibre (reeds, marsh, high meadow). The five dealt tinders: dry grass (meadows), shredded inner bark (aspen, needs steel), hanging grey lichen (trees above the valley floor), seed fluff (reeds), punk wood (deadfall). Wood and tinder rows appear in the notes when gathered (`WOOD_SOURCE`, `TINDER_SOURCE` in `src/content/recipes.ts`).
 - **Tools differ** (`TOOL_WORK`): the hatchet cuts wood fastest and is clumsy at fine work; the knife is the reverse and best with fibre; the multi-tool is middling at everything and poor at sparks.
 
 ### Crafting and camp improvements
-`M3` · `uncommitted` · `playtest: pending` · SPEC §8.2, §7.6
+`M3` · `fa5ba50` · `playtest: pending` · SPEC §8.2, §7.6
 
 C lists what the survivor knows how to make (`craftOptions` in `src/sim/craft.ts`), greyed with what's missing. Recipes (`RECIPES`): cord (fibre), sharpened stick (known from the start), fish spear, fire-hardened spear (at a fire), bow drill, bark vessel, basket (+4 slots), and, for M4, snares, bow, arrows, splint, warm layers. Some fail at low crafting skill, spoiling the materials. Builds (`BUILDS`): lean-to (shelter anywhere), bough bed, woven wall and door (technique), reflector stones round a faced fire, covered woodpile, hanging cache on a faced tree (technique; hang and take down food, `src/sim/camp.ts`), signal fire pile (technique; lit in M5).
 - Shelter (`shelterAt` in `src/sim/surroundings.ts`): the overhang floor (rain 0.8, wind 0.25), a lean-to (rain 0.6), a wall (+wind, +security, +insulation), a bed (insulation, and sleep quality). Sleep quality (`sleepQuality`) reads them; the light sleeper needs security.
@@ -311,6 +316,77 @@ C lists what the survivor knows how to make (`craftOptions` in `src/sim/craft.ts
 ## 16. Insights
 
 ### Techniques and reflection
-`M3` · `uncommitted` · `playtest: pending` · SPEC §8.1
+`M3` · `fa5ba50` · `playtest: pending` · SPEC §8.1
 
 `src/content/insights.ts` lists 22 techniques with their journal text. They come by accident (sparks from striking stone; carrying embers from the snag), by background (Scout: cord and the bow drill; everyone knows how to sharpen a stick), or by **reflection**: waking from 3 hours' sleep or more, the first technique that's ripe (`RIPE` in `src/sim/insight.ts`: e.g. holding fibre ripens cord; two failed fires ripen the tinder nest; a night by a fire ripens banking) comes to mind with a 55% chance (Reader 82%). `GameState.memory` keeps the counts these read (`src/sim/memory.ts`). The journal's Skills page lists what's been worked out.
+
+## 17. Weather
+
+### The forecast, temperature, rain, and the snowline
+`M4` · `uncommitted` · `playtest: pending` · SPEC §6.5
+
+`makeForecast` (`src/sim/weather.ts`) draws the whole run's weather at the start from the `weather` stream: a state every 3 hours (`GameState.weather.f`, 90 days), from transition odds (`TRANSITIONS` in `src/content/weather.ts`) adjusted so mornings clear, afternoons build to thunderstorms, fog gathers before dawn, and rain grows week by week. The severe storm takes four periods on an afternoon in days 18–30 (`severeDay`; its effects are M5). The forecast never reads the player.
+- Each state (`WEATHER`) changes the air by day and night, adds wind (worse higher up), wets (rain soaks the survivor outside the overhang or a lean-to, and drowns an uncovered fire), fogs (sight shrinks: `sightOf` in `src/sim/sight.ts`), and darkens the sky. Clear midday sun warms (`SUN_WARMTH`).
+- **Snowline** (`snowBand`): from day 30 rain falls as snow in the alpine band, and the line drops a band every 10 days, reaching the lake on day 60; snow lies drawn over those bands. The run ends in winter on day 72 (`WINTER_DAY` in `src/sim/hazards.ts`) if nothing else has.
+- Lightning in thunderstorms flashes the screen (toned down by a setting), rumbles, and now and then sets the split snag smouldering (captured fire, §14).
+- The HUD names the weather; the log notes each change.
+
+### Weather signs
+`M4` · `uncommitted` · `playtest: pending` · SPEC §6.5, §6.6
+
+Every 3 hours while the survivor is awake (5:00–22:00), each sign may show as a log line (`WEATHER_TEXT.sign`): a sign the deal says foretells shows 70% of the time when rain or a storm is coming within 9 hours, else 4%; a noise sign 10%. Each sign shown is judged 12 hours later against the forecast (`judgeSign`): after 2 judgements a suspicion, after 4 consistent ones it's known (foretells or noise). The tally is in `GameState.memory` (`sign-hit:i`, `sign-miss:i`).
+
+## 18. Animals
+
+### The valley's animals
+`M4` · `uncommitted` · `playtest: pending` · SPEC §9
+
+`src/content/animals.ts` (kinds, counts, speeds, active hours, senses, ranges) and `src/sim/animals.ts`. At the start (`spawnAnimals`): 10 grouse, 12 hares, 8 marmots, 6 jays, 3 pack rats, 2 porcupines, a black bear, 6 elk (one bull), a cougar, 4 mountain goats, each near its ground and territory. Every tick each animal counts down to its next step, in ID order (`animalsTick`), and decides: wander its range, rest outside its hours, run from the survivor (prey), or its own business:
+- **Grouse** hide until flushed or the hunter is close; **marmots** whistle and scatter everything nearby; **hares** run at dawn and dusk.
+- **Jays** fly to the patches of safe plants and eat (seen within 7 tiles, that's a suspicion the plant is safe), and steal food left lying out.
+- **Pack rats** at night carry small things off to the midden, where they can be found again (not from the hoard itself). **Porcupines** gnaw wooden tools left out, and walking into one leaves quills.
+- **Goats** on the cliffs: standing still and watching them shows where the scree routes run (marked on the map).
+- Hunted animals come back after 5–9 days.
+- Big animals and porcupines block the way. Drawn as 2-frame sprites (`ANIMAL_SPRITES`), facing the way they last moved.
+
+### Dealt tempers: bear, elk in the rut, cougar
+`M4` · `uncommitted` · `playtest: pending` · SPEC §9, §6.6
+
+Too close (by the dealt boldness: shy 2, wary 3, bold 5 tiles; a shy one may simply leave), a dangerous animal **warns** with its dealt warning, for about a minute. Then it backs off if it was met with its dealt deterrent: **face** (stood still, facing it, not a step taken), **noise** (*Shout and wave your arms*, offered while one warns), or **fire** (a burning fire within 3 tiles). Backing well away always works. Otherwise it attacks: a wound and a blow, never instant death unless the survivor is already failing. The bull elk is dangerous only in the rut (days 20–45); other elk run. The cougar only follows at dusk when the survivor is weak, alone, and far from fire, then closes in. The bear raids food left out within its reach.
+- Learning: a warning seen gives boldness and warning (suspected); being turned by the deterrent makes it known. Watching from 6–12 tiles, standing still 20 minutes in daylight, gives the first part safely.
+
+## 19. Hunting and fishing
+
+### Hunting, snares, dressing game
+`M4` · `uncommitted` · `playtest: pending` · SPEC §7.4, §9
+
+`src/sim/hunting.ts`. With a spear, *Throw the spear at the hare* (within 3 tiles) or with a bow and arrows *Shoot* (6): one try, its chance from distance, hunting skill, a fire-hardened point, and whether the animal is already running. A kill is a `game` item; *Skin and gut* (a steel tool) gives meat and a hide, or for a grouse meat and feathers; the log says what was done plainly. Snares (recipe, technique) set on the faced tile catch hares that range near at night (`trapsHour`); *Take the hare from the snare*.
+
+### Fishing and the trout run
+`M4` · `uncommitted` · `playtest: pending` · SPEC §7.4
+
+Fish aren't animals but a density per water tile (`fishHere`): spawning gravel best, then streams, then lake shallows; the trout run (days 25–40) doubles the near stream and the gravel. *Spear fish* (20 minutes) is poor until the survivor learns to aim low, which four misses teach (failure). *Fish with the line* (from the wreckage) is better. *Watch the fish* at gravel or a stream ripens the weir; a weir of stones (technique) fills by itself, up to three fish.
+
+## 20. Illness, injury, remedies, traits
+
+### Injuries and illness
+`M4` · `uncommitted` · `playtest: pending` · SPEC §7.7
+
+`src/sim/hazards.ts`: mosquitoes at dawn and dusk near water below the forest's top, before day 45, unless there's smoke close by (bites); sunburn high up in clear midday sun; exhaustion with rest nearly gone; falls on talus, scree, boulders, and snow, much likelier in the dark or exhausted (sprain; with glasses, they may break: sight −3); a blade slipping when cutting wood exhausted (wound); an animal's attack (wound). A wound left uncleaned for 12 hours turns to infection (55%); *Clean the wound with the boiled water* prevents it; the first-aid kit (M5) treats wounds, infection, and sprains. A splint (recipe) treats a sprain. *Pull out the quills*.
+
+### Remedies
+`M4` · `uncommitted` · `playtest: pending` · SPEC §7.7, §6.6
+
+A herb can be tried three ways when there's a complaint: *Chew* for the stomach, *Press on the wound*, *Rub on against insects* (always offered). The right one works (the deal: one each), and becomes known; the irritant stings and nauseates (known); the others do nothing (suspected "not for …", known "nothing" after two). The insects stay away from the insect herb growing wild: standing beside a patch at dusk shows it.
+
+### Traits
+`M4` · `uncommitted` · `playtest: pending` · SPEC §4.2
+
+All seven now act: light sleeper and afraid of the dark (M2, via sleep and morale), weak stomach (M2), picky eater (M2), wears glasses (broken in a fall or an attack: sight −3 by day), poor swimmer (slips in streams and shallows: soaked, chilled, shaken), restless (a day with under 30 tiles walked costs morale at midnight).
+
+## 21. Ambient sound
+
+### Ambient loops
+`M4` · `uncommitted` · `playtest: pending` · SPEC §12.3
+
+`Sound` (`src/platform/audio.ts`) synthesizes everything with WebAudio from a noise buffer and oscillators, so no audio files ship: wind (stronger with the weather and higher up), water near the lake and streams (loudest by a waterfall), rain, a fire's hiss and crackle, night insects (summer, low down, dry nights), an elk's bugle at dusk in the rut, and thunder after lightning. Loops fade to silence in menus, while asleep at high speed, and when the run is over. It starts on the first key or click (browsers require it). The pause menu toggles sound (`snowline/muted` in settings). Effects for events come in M6 (`src/platform/effects.ts`).

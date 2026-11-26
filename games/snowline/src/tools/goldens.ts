@@ -48,11 +48,13 @@ export const GOLDENS: Golden[] = [
       [2, 9000, 500],
     ]).concat([
       { t: 50, c: 'debug-give', k: 'cattail-root', d: -1, n: 2 },
-      { t: 60, c: 'use', action: 'eat', slot: 2 },
+      { t: 60, c: 'use', action: 'eat', slot: 3 },
+      { t: 70, c: 'debug-give', k: 'stick', d: -1, n: 3 },
+      { t: 200, c: 'craft', recipe: 'sharp-stick' },
       { t: 3000, c: 'sleep', minutes: 120, awake: false },
     ]).sort((a, b) => a.t - b.t),
     worldHash: 'd6594447',
-    stateHash: '2e6c9ca5',
+    stateHash: '962ecb27',
   },
   {
     // Another valley: a debug fire after dark, a walk through the night, and a teleport back to the start.
@@ -75,7 +77,7 @@ export const GOLDENS: Golden[] = [
       ...walk([[3, 12000, 800]]),
     ],
     worldHash: 'e2894d56',
-    stateHash: 'ef2bb661',
+    stateHash: '3b50d8db',
   },
 ];
 

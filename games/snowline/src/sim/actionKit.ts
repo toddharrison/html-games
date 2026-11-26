@@ -11,6 +11,7 @@ import { say } from './log.ts';
 import { nextRange } from './rng.ts';
 import { level } from './skills.ts';
 import type { Dir, GameState, SimEvent } from './state.ts';
+import { lightsOf } from './surroundings.ts';
 import { clock, daylight } from './time.ts';
 import { idx, inBounds, type World } from './world.ts';
 
@@ -55,7 +56,7 @@ export function frontTile(s: GameState): number {
 export function canSee(s: GameState): boolean {
   if (daylight(s.tick) >= 20) return true;
   const p = s.player;
-  return s.lights.some((l) => (l.x - p.x) * (l.x - p.x) + (l.y - p.y) * (l.y - p.y) <= l.radius * l.radius);
+  return lightsOf(s).some((l) => (l.x - p.x) * (l.x - p.x) + (l.y - p.y) * (l.y - p.y) <= l.radius * l.radius);
 }
 
 export function day(s: GameState): number {
@@ -89,6 +90,9 @@ export function gather(s: GameState, k: string, n: number, events: SimEvent[], d
     say(s, MSG.found(w, got, noun ?? itemName(s, { k, n: got, d })), events);
     events.push({ type: 'pickup' });
   }
-  if (got < n) say(s, MSG.full(w), events);
+  if (got < n) {
+    say(s, MSG.full(w), events);
+    s.memory.full = (s.memory.full ?? 0) + 1;
+  }
   return got;
 }

@@ -27,6 +27,9 @@ Useful greps: `grep -n "playtest: pending" docs/FEATURES.md`, `grep -n "uncommit
 11. [Food, water, and learning the valley](#11-food-water-and-learning-the-valley)
 12. [Actions and inventory](#12-actions-and-inventory)
 13. [Saves and run codes](#13-saves-and-run-codes)
+14. [Fire](#14-fire)
+15. [Materials, crafting, and camp](#15-materials-crafting-and-camp)
+16. [Insights](#16-insights)
 
 ## 1. Project and dev tools
 
@@ -179,7 +182,7 @@ Every sim event goes through `playEvents` (`src/platform/audio.ts`), which is si
 ## 10. The body
 
 ### Vitals, morale, and death
-`M2` · `uncommitted` · `playtest: pending` · SPEC §7.1, §5.4
+`M2` · `12a039f` · `playtest: pending` · SPEC §7.1, §5.4
 
 `bodyMinute` (`src/sim/body.ts`) runs every game minute: hydration and nutrition drain (faster walking or working, `EXERTION`; slower asleep), rest drains awake and comes back asleep (`sleepQuality`: shelter, warmth, the light-sleeper trait), warmth follows the air temperature, and health falls while a vital is empty or a condition harms it, and recovers slowly when all is well. Morale drifts toward a target from the situation (fire, food, dark, illness, the afraid-of-the-dark trait). At health 0 the run ends (`GameState.over`, with a cause for the summary).
 - Numbers: `DRAIN`, `EMPTY_HARM`, `HEAL_RATE`, `SLEEP_GAIN` and friends in `src/content/balance.ts`. With no intake, hydration empties in 2 days and kills about a day later; nutrition lasts about 5 days.
@@ -188,14 +191,14 @@ Every sim event goes through `playEvents` (`src/platform/audio.ts`), which is si
 - **Gotcha:** `surroundings.ts` is where shelter, fire warmth, and the weather plug in; later systems fill it in.
 
 ### Conditions
-`M2` · `uncommitted` · `playtest: pending` · SPEC §7.7
+`M2` · `12a039f` · `playtest: pending` · SPEC §7.7
 
 `src/content/conditions.ts` defines every illness and injury (rates per minute at severity 100, how long it lasts, how resting heals it, an HUD word and shape). `addCondition`, `treat`, `slowFactor`, `clumsyFactor` in `src/sim/body.ts`. M2 uses nausea (from a taste), food poisoning, deadly poisoning, and waterborne illness; the rest arrive with their causes in M4.
 
 ## 11. Food, water, and learning the valley
 
 ### Dealt plants: picking, tasting, eating, watching
-`M2` · `uncommitted` · `playtest: pending` · SPEC §6.6, §7.4
+`M2` · `12a039f` · `playtest: pending` · SPEC §6.6, §7.4
 
 Plant patches are picked by the handful (`pick`, in season only: `SEASONS` in balance.ts; berries end on day 30), and a picked tile is bare for days (`GameState.regrow`; drawn faded). With a handful (`plant` item, `d` = plant index):
 - **Taste** (`taste` in `src/sim/food.ts`): an answer an hour later. Nourishing and poor both feel fine (suspected *safe*); sickening brings nausea and is known; deadly numbs the tongue and is known. Nothing dies of a taste.
@@ -204,29 +207,29 @@ Plant patches are picked by the handful (`pick`, in season only: `SEASONS` in ba
 - What's learned is a `Fact` in `GameState.known` (`src/sim/knowledge.ts`: `learn`, `see`, `fact`, `thingName`). A known fact is never downgraded.
 
 ### Floor foods, raw food, spoilage
-`M2` · `uncommitted` · `playtest: pending` · SPEC §7.4, §7.5
+`M2` · `12a039f` · `playtest: pending` · SPEC §7.4, §7.5
 
 Cattail roots dug from reeds, crayfish and mussels felt for in the shallows (soaking the survivor), rose hips from wild rose (day 10 on), pine nuts from conifers (day 14 on). Every tile regrows after a few days (`REGROW_DAYS`). Raw shellfish risk food poisoning (`rawRisk`; cooking arrives in M3). Food carries the tick it was gathered and spoils (`spoil`, hourly, carried or on the ground); the inventory shows *fresh*, *eat soon*, *going off*. The pocket candy bar and granola bar never spoil.
 
 ### Water and the foul source
-`M2` · `uncommitted` · `playtest: pending` · SPEC §7.3, §6.6
+`M2` · `12a039f` · `playtest: pending` · SPEC §7.3, §6.6
 
 `drinkAt` (`src/sim/food.ts`): each drink rolls for waterborne illness on the `health` stream: lake 3.5%, streams 1.2%, high water 0.3%, and the dealt foul source 7× that. The illness shows 2–5 days later (`GameState.pending`), lasts about a week, and when it starts the survivor suspects the source they drank from most in the days before. Looking at the beaver dam or carcass on the foul source makes it known. `GameState.drinks` remembers recent drinks.
 
 ### Starting valley facts
-`M2` · `uncommitted` · `playtest: pending` · SPEC §6.6 (protagonists)
+`M2` · `12a039f` · `playtest: pending` · SPEC §6.6 (protagonists)
 
 `startingFact` in `src/sim/newGame.ts`: Scout knows the bow-drill wood, Angler the foul water, Hunter's kid one animal's temper, Farm kid one plant, Runner one stone, Reader one remedy (drawn from the `events` stream); City kid nothing. Said in the log on day 1.
 
 ### The valley notes
-`M2` · `uncommitted` · `playtest: pending` · SPEC §6.6
+`M2` · `12a039f` · `playtest: pending` · SPEC §6.6
 
 The journal's first page (`src/ui/journal.ts`): for each kind of dealt thing, the outcomes its deck can hold with their possible counts, highlighted when some are found and struck through when all are; then a row for each thing come across, *unknown*, *suspected?* (italic), or known, with how it was learned. It reads only `GameState.known`.
 
 ## 12. Actions and inventory
 
 ### Actions on the faced tile
-`M2` · `uncommitted` · `playtest: pending` · SPEC §5.2, §12.4
+`M2` · `12a039f` · `playtest: pending` · SPEC §5.2, §12.4
 
 E (or Space) offers what can be done to the faced tile and the survivor's own (`availableActions` in `src/sim/actions.ts`); one option runs at once, several open a numbered menu. Each action is a definition (`ActionDef` in `src/sim/actionKit.ts`): an offer (label or null), minutes, a skill, whether it needs light, and what it does. Commands carry the action and tile; the sim checks again before starting. An action is a `GameState.task` that ticks down; moving cancels it; Esc cancels it. Times stretch with conditions, low morale, and hunger (`clumsyFactor`) and shrink with skill (`speedAt`).
 - M2 actions: drink, pick, watch, pick herbs, dig cattail, feel the shallows, rose hips, pine nuts, gather sticks, pick up, look at the dam or carcass, search the wreck.
@@ -234,39 +237,80 @@ E (or Space) offers what can be done to the faced tile and the survivor's own (`
 - Extra hooks for later systems: `src/sim/systems.ts` (per tick, per minute, commands, tiles a system opens or blocks) and `src/sim/start.ts` (setup at the start of a run).
 
 ### Inventory, items, and skills
-`M2` · `uncommitted` · `playtest: pending` · SPEC §7.8, §8.4
+`M2` · `12a039f` · `playtest: pending` · SPEC §7.8, §8.4
 
 `src/content/items.ts` lists every item (including those for later milestones). `src/sim/inventory.ts`: 8 slots and a carrying weight of 12 (a basket adds 4 slots and 8 weight); stacks merge by kind and data; `drop` makes a stash on the ground (drawn as a bundle), and *pick up* takes it back. I lists what's carried; 1–9 open an item's uses (eat, taste, put down). Skills (`src/sim/skills.ts`) rise with use, levels 0–5, backgrounds start at level 1 in theirs; City kid learns 1.3× faster.
 
 ### Sleep and rest
-`M2` · `uncommitted` · `playtest: pending` · SPEC §7.1, §5.1
+`M2` · `12a039f` · `playtest: pending` · SPEC §7.1, §5.1
 
 R offers: rest an hour (awake), sleep three hours, sleep until first light, sleep until the sun is up. Time runs 90× faster while asleep, by running ticks (`SLEEP_SPEED` in `src/platform/app.ts`), with the screen dimmed. E, Enter, R, or Esc wakes; moving ends a rest. Sleeping autosaves.
 
 ## 13. Saves and run codes
 
 ### Saves
-`M2` · `uncommitted` · `playtest: pending` · SPEC §5.4, §11.6
+`M2` · `12a039f` · `playtest: pending` · SPEC §5.4, §11.6
 
 `src/platform/saves.ts`: one slot in IndexedDB (database `snowline`, store `runs`), saved on sleep, when the tab is hidden, and from the pause menu (*Save and leave*). The title offers *Carry on* when one exists. Death deletes it (permadeath). *Save to a file* exports it; *Load a saved file* on the title imports one. A save is the GameState without the deal and the map (`toRecord`, `restore`); `migrate` refuses a save from another schema (`SCHEMA` in `src/sim/newGame.ts`, now 2).
 - **Gotcha:** the save is the whole state, not the differences from a fresh world that SPEC §11.6 describes (Q19). It's about 40 KB, mostly the explored bitset.
 
 ### Run codes and the summary
-`M2` · `uncommitted` · `playtest: pending` · SPEC §4.3, §5.4
+`M2` · `12a039f` · `playtest: pending` · SPEC §4.3, §5.4
 
 `src/sim/runCode.ts`: `SL1.` plus the seed and protagonist as base64url JSON. The summary screen (`src/ui/summary.ts`) shows how the run ended, days survived, facts and techniques learned, the run code, and offers a new valley, the same valley again from day 1, or the title. The title's seed box takes a run code too.
 
 ### Protagonist selection
-`M2` · `uncommitted` · `playtest: pending` · SPEC §4.1
+`M2` · `12a039f` · `playtest: pending` · SPEC §4.1
 
 `src/ui/select.ts`: three candidates for the seed (background, trait, tool, pockets), *Three others* for the next three, or *Choose for myself* (name, boy or girl, age, background, trait, tool). `?seed=` in the URL still starts straight in with candidate 0.
 
 ### Drawn sprites
-`M2` · `uncommitted` · `playtest: pending` · SPEC §12.1
+`M2` · `12a039f` · `playtest: pending` · SPEC §12.1
 
 `src/render/sprites.ts`: sprites as 16×16 grids of palette colours, one character per pixel, with a legend each: conifer, stunted tree, aspen, snag, boulder, wild rose, berry bush (tinted per plant), deadfall, the crash, the tail, and a stash bundle. The survivor is built from recoloured layers (skin, hair, clothes, trousers) in three facings (west mirrors east), two walking frames, three hair styles, and asleep. Terrain is still painted in code (flat colour and glyph, `src/render/tiles.ts`), as are the remaining features.
 
 ### Tour script
-`M2` · `uncommitted` · `playtest: n/a` · SPEC §11.4
+`M2` · `12a039f` · `playtest: n/a` · SPEC §11.4
 
 `npm run tour`: `scripts/tour.mjs` plays through the screens in headless Chromium (title, selection, play, the action menu, inventory, tasting, the journal pages, rest, sleep, pause, death and the summary) and saves a screenshot of each to `renders/tour/`. Fails on any page error.
+
+## 14. Fire
+
+### Three routes to fire
+`M3` · `uncommitted` · `playtest: pending` · SPEC §8.3, §6.6
+
+`src/sim/fire.ts`. Facing open ground with tinder and kindling (2 sticks or a piece of firewood), E offers each way the survivor can light it:
+- **Sparks:** strike any outcrop (or a carried stone) with the steel tool first (`strike`): the dealt spark-stone throws sparks (known, and the *sparks* technique by accident), others flake to an edge, crumble, or do nothing (all known). Then *Light a fire with sparks* needs a known spark-stone carried. The multi-tool throws poor sparks (`TOOL_WORK.sparks`).
+- **Captured fire:** `strikeSnag` makes the lightning-split snag smoulder for 6 hours (the weather calls it, M4); with bark, *Take embers from the smouldering snag* gives embers in bark (and the *carry-embers* technique), which die after 4 hours.
+- **Bow drill:** made from 2 sticks, cord, and a piece of firewood (whose wood it keeps); works only if that wood is the dealt drill wood. A wrong one "only smoked" (the wood becomes *not for the drill*, suspected then known). Tiring.
+- Matches (from the wreckage, M5) nearly always work.
+- The tinder used decides the odds (`TINDER_CATCH`: catches, slow, fails) plus firecraft skill and the *tinder-nest* technique. A fire that catches makes the tinder known; a tinder that fails twice becomes known (or suspected) as failing.
+
+### A fire's life, cooking, boiling
+`M3` · `uncommitted` · `playtest: pending` · SPEC §8.3, §7.3, §7.5
+
+`GameState.fires`: fuel (minutes), then coals for 45 minutes, then out. Sticks add 12 minutes, firewood by its dealt kind (`WOOD_BURN`: long-burning 120, smoky 60 with smoke, quick 30), green boughs make thick smoke. Wood put on a fire teaches what it is about 40 minutes later (`woodLesson`; drill wood burns "plain", suspected). *Bank the fire* (technique) keeps coals 9 hours with no light; any fuel revives coals. *Wrap embers in bark* (technique) carries fire elsewhere. A fire lights 6 tiles, warms within 3 (4 with reflector stones), and blocks the tile.
+- Beside a burning fire: *Cook* turns raw food into cooked (crayfish, mussels, fish, meat); *Smoke* (technique) makes meat and fish keep 20 days; *Boil* a pot of water, or a bark vessel of water with hot stones (technique, needs a stone). Vessels are filled at water (*Fill*); unboiled water carries its source's risk (`waterRisk` in food.ts); boiled water is always safe.
+- Rendering: the stone ring, flames by fuel, smoke when smoky, glowing coals, a banked mound; the smouldering snag glows and smokes.
+
+## 15. Materials, crafting, and camp
+
+### Materials
+`M3` · `uncommitted` · `playtest: pending` · SPEC §8.2, §6.6
+
+`src/sim/materials.ts`. Firewood: cut from conifers (resinous wood), aspens (white-barked), stunted trees (grey twisted) with the steel tool; broken from deadfall (red-barked); gathered as driftwood on sand (pale soft). Green boughs and bark (conifer, aspen), plant fibre (reeds, marsh, high meadow). The five dealt tinders: dry grass (meadows), shredded inner bark (aspen, needs steel), hanging grey lichen (trees above the valley floor), seed fluff (reeds), punk wood (deadfall). Wood and tinder rows appear in the notes when gathered (`WOOD_SOURCE`, `TINDER_SOURCE` in `src/content/recipes.ts`).
+- **Tools differ** (`TOOL_WORK`): the hatchet cuts wood fastest and is clumsy at fine work; the knife is the reverse and best with fibre; the multi-tool is middling at everything and poor at sparks.
+
+### Crafting and camp improvements
+`M3` · `uncommitted` · `playtest: pending` · SPEC §8.2, §7.6
+
+C lists what the survivor knows how to make (`craftOptions` in `src/sim/craft.ts`), greyed with what's missing. Recipes (`RECIPES`): cord (fibre), sharpened stick (known from the start), fish spear, fire-hardened spear (at a fire), bow drill, bark vessel, basket (+4 slots), and, for M4, snares, bow, arrows, splint, warm layers. Some fail at low crafting skill, spoiling the materials. Builds (`BUILDS`): lean-to (shelter anywhere), bough bed, woven wall and door (technique), reflector stones round a faced fire, covered woodpile, hanging cache on a faced tree (technique; hang and take down food, `src/sim/camp.ts`), signal fire pile (technique; lit in M5).
+- Shelter (`shelterAt` in `src/sim/surroundings.ts`): the overhang floor (rain 0.8, wind 0.25), a lean-to (rain 0.6), a wall (+wind, +security, +insulation), a bed (insulation, and sleep quality). Sleep quality (`sleepQuality`) reads them; the light sleeper needs security.
+- **Gotcha:** improvements belong to the camp tile, not to tiles of their own (Q28).
+
+## 16. Insights
+
+### Techniques and reflection
+`M3` · `uncommitted` · `playtest: pending` · SPEC §8.1
+
+`src/content/insights.ts` lists 22 techniques with their journal text. They come by accident (sparks from striking stone; carrying embers from the snag), by background (Scout: cord and the bow drill; everyone knows how to sharpen a stick), or by **reflection**: waking from 3 hours' sleep or more, the first technique that's ripe (`RIPE` in `src/sim/insight.ts`: e.g. holding fibre ripens cord; two failed fires ripen the tinder nest; a night by a fire ripens banking) comes to mind with a 55% chance (Reader 82%). `GameState.memory` keeps the counts these read (`src/sim/memory.ts`). The journal's Skills page lists what's been worked out.

@@ -54,7 +54,7 @@ try {
   await consoleCmd('give plant 3 2');
   await consoleCmd('give crayfish -1 2');
   await hideDebug();
-  await sleep(200);
+  await sleep(600);
   await b.key('KeyI');
   await shot('inventory');
   await b.key('Escape');
@@ -89,6 +89,28 @@ try {
   await b.key('Escape');
   await shot('pause');
   await b.key('Escape');
+  // Camp and fire (M3).
+  await consoleCmd('give boughs -1 4');
+  await consoleCmd('give stick -1 8');
+  await consoleCmd('give firewood 2 3');
+  await hideDebug();
+  await sleep(600);
+  await b.key('KeyC');
+  await shot('craft');
+  await b.evaluate("[...document.querySelectorAll('.menu-list li')].find((l) => l.textContent.includes('bough bed')).click()");
+  await speed(16);
+  await sleep(1500);
+  await speed(1);
+  await b.evaluate("[...document.querySelectorAll('.debug button')].find((x) => x.textContent === 'test fire here').click()");
+  await hideDebug();
+  await b.key('KeyE');
+  await shot('fire-menu');
+  await b.key('Escape');
+  await speed(64);
+  await sleep(2500);
+  await speed(1);
+  await hideDebug();
+  await shot('camp');
   await consoleCmd('set hydration 0');
   await consoleCmd('set health 0.5');
   await hideDebug();

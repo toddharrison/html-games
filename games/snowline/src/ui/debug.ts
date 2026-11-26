@@ -121,7 +121,7 @@ export class DebugPanel {
       `at ${p.x},${p.y} facing ${'NESW'[p.facing]} · step ${p.stepLeft}/${p.stepTotal}`,
       `here: ${tileInfo(w, p.x, p.y)}`,
       hover ? `mouse ${hover.x},${hover.y}: ${tileInfo(w, hover.x, hover.y)}` : 'mouse: off the view',
-      `viewpoints ${st.viewpoints.filter(Boolean).length}/${st.viewpoints.length} · lights ${st.lights.length} · animals: none yet`,
+      `viewpoints ${st.viewpoints.filter(Boolean).length}/${st.viewpoints.length} · fires ${st.fires.length} · animals: none yet`,
       `streams: ${STREAMS.filter((n) => n in st.rng)
         .map((n) => `${n} ${st.rng[n].n}`)
         .join(', ')}`,

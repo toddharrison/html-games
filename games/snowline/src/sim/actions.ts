@@ -30,6 +30,8 @@ import { practise, speedAt } from './skills.ts';
 import type { GameState, SimEvent } from './state.ts';
 import { idx, type World } from './world.ts';
 import { SYSTEM_ACTIONS, SYSTEM_ITEM_ACTIONS } from './systemActions.ts';
+import { finishCraft } from './craft.ts';
+import { remember } from './memory.ts';
 
 export type { ActionOption } from './actionKit.ts';
 export { frontTile } from './actionKit.ts';
@@ -144,6 +146,7 @@ export const ACTIONS: ActionDef[] = [
       if (!ready(s, t)) return say(s, MSG.nothingLeft(), ev);
       const crayfish = nextRange(s.rng['skill-checks'], 0, 1) === 0;
       gather(s, crayfish ? 'crayfish' : 'mussels', yieldRoll(s, 1, 3, 'foraging'), ev);
+      remember(s, 'shallows');
       practise(s, 'foraging', 1);
       deplete(s, t, REGROW_DAYS.shallows);
     },
@@ -310,7 +313,9 @@ export function workTask(s: GameState, w: World, events: SimEvent[]): void {
   task.left--;
   if (task.left > 0) return;
   s.task = null;
-  if (task.action.startsWith('item:')) {
+  if (task.action.startsWith('craft:')) {
+    finishCraft(s, w, task.action.slice(6), task.tile, events);
+  } else if (task.action.startsWith('item:')) {
     const a = ITEM_ACTIONS.find((x) => x.id === task.action.slice(5));
     if (a && a.offer(s, w, task.slot)) a.done(s, w, task.slot, events);
   } else {

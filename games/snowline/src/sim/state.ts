@@ -56,11 +56,25 @@ export interface Condition {
   until: number;
 }
 
-/** A light source. Fires arrive in M3; for now only the debug console makes one. */
-export interface Light {
+/** A fire (SPEC 8.3): minutes of fuel left, then minutes the coals stay hot; banked coals keep all night. */
+export interface Fire {
   x: number;
   y: number;
-  radius: number;
+  fuel: number;
+  coals: number;
+  banked: boolean;
+  /** Minutes of thick smoke left (green boughs, smoky wood): what search aircraft see. */
+  smoke: number;
+  /** Built as a signal fire on open high ground (SPEC 10). */
+  signal: boolean;
+}
+
+/** A camp improvement (SPEC 7.6) on a tile; a cache holds items. */
+export interface Build {
+  kind: string;
+  x: number;
+  y: number;
+  items?: Item[];
 }
 
 /**
@@ -104,7 +118,7 @@ export interface LogEntry {
 /** Something due to happen later: a taste's effect, an illness showing. */
 export interface Pending {
   t: number;
-  kind: 'taste' | 'eat' | 'water-ill';
+  kind: 'taste' | 'eat' | 'water-ill' | 'wood';
   d: number;
 }
 
@@ -133,7 +147,12 @@ export interface GameState {
   explored: number[];
   /** Which of the world's viewpoints have been reached, by index. */
   viewpoints: boolean[];
-  lights: Light[];
+  fires: Fire[];
+  builds: Build[];
+  /** Counts of things that have happened, for reflection and insights (SPEC 8.1). Looked up, never iterated. */
+  memory: Record<string, number>;
+  /** A lightning-struck snag still smouldering, and until when (SPEC 8.3, captured fire). */
+  smoulder: { x: number; y: number; until: number } | null;
   /** What each dealt thing is in this valley (SPEC 6.6). Re-dealt from the seed on load. */
   rules: Rules;
   /**
@@ -143,7 +162,7 @@ export interface GameState {
   known: { facts: Fact[]; techniques: string[]; seen: string[] };
   task: Task | null;
   /** Asleep (or resting awake) until a tick. */
-  sleep: { until: number; awake: boolean } | null;
+  sleep: { until: number; awake: boolean; from: number } | null;
   stashes: Stash[];
   /** Tile index -> the tick its food or wood comes back. Looked up, never iterated. */
   regrow: Record<string, number>;

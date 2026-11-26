@@ -4,6 +4,7 @@
 
 import type { Command, GameState, SimEvent } from './state.ts';
 import type { World } from './world.ts';
+import { fireMinute } from './fire.ts';
 
 type Hook = (s: GameState, w: World, events: SimEvent[]) => void;
 
@@ -15,6 +16,7 @@ export function tickHooks(s: GameState, w: World, events: SimEvent[]): void {
 }
 
 export function minuteHooks(s: GameState, w: World, events: SimEvent[]): void {
+  fireMinute(s, w, events, 0, () => false);
   for (const h of MINUTE) h(s, w, events);
 }
 
@@ -31,9 +33,8 @@ export function commandHooks(s: GameState, w: World, cmd: Command, events: SimEv
  * rockslide's gap after the storm), true blocks one; null leaves the map's answer.
  */
 export function blockedBySystems(s: GameState, w: World, x: number, y: number): boolean | null {
-  void s;
   void w;
-  void x;
-  void y;
+  // A fire is not walked through.
+  if (s.fires.some((f) => f.x === x && f.y === y)) return true;
   return null;
 }

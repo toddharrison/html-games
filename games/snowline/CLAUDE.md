@@ -9,7 +9,7 @@ This game is one workspace in the html-games monorepo. The repo-wide rules (layo
 - Decisions are logged in SPEC §13.1; open questions are in §13.2 (new ones take the next number, from Q19). When a design decision is made in conversation, update the spec, not only this file.
 
 ## Status
-- **M0–M2 are built** (Nov 2026; M3 onward in progress, see TODO.md), awaiting the user's review and playtest. See [docs/TODO.md](docs/TODO.md) for what's open and [docs/FEATURES.md](docs/FEATURES.md) for what's built.
+- **M0–M3 are built** (Nov 2026; M3 onward in progress, see TODO.md), awaiting the user's review and playtest. See [docs/TODO.md](docs/TODO.md) for what's open and [docs/FEATURES.md](docs/FEATURES.md) for what's built.
 - Versions: TypeScript 7, Vite 8, Vitest 5, fast-check 4, no runtime dependencies, no game framework (SPEC §11.1).
 
 ## Rules that are easy to break

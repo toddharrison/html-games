@@ -115,7 +115,7 @@ describe('sight and the map', () => {
     run(state, world, [{ t: toMidnight - 5, c: 'debug-fire' }], toMidnight);
     const circles = sightCircles(state);
     expect(circles[0]!.r).toBe(2);
-    expect(circles[1]).toMatchObject({ x: 128, y: 128, fire: true, r: 6 });
+    expect(circles[1]).toMatchObject({ x: 128, y: 129, fire: true, r: 6 });
   });
 
   it('announces the hour', () => {

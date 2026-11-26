@@ -4,7 +4,8 @@
 
 import { SCREEN_H, SCREEN_W, TILE } from '../content/balance.ts';
 import { F, FLAG, T, TERRAIN } from '../content/terrain.ts';
-import type { GameState } from '../sim/state.ts';
+import type { Fire, GameState } from '../sim/state.ts';
+import { burning } from '../sim/surroundings.ts';
 import { sightCircles } from '../sim/step.ts';
 import { clock, daylight } from '../sim/time.ts';
 import { idx, type World } from '../sim/world.ts';
@@ -137,10 +138,31 @@ export class Renderer {
         g.drawImage(this.atlas.feature(f, world.data[i]!), tx * TILE - cam.x, ty * TILE - cam.y);
         g.globalAlpha = 1;
       }
+      for (const bd of state.builds) {
+        if (bd.y !== ty || bd.x < x0 || bd.x > x1) continue;
+        const bx = bd.x * TILE - cam.x;
+        const by = bd.y * TILE - cam.y;
+        if (bd.kind === 'reflector') {
+          g.fillStyle = PALETTE.fog;
+          for (const [sx, sy] of [[0, 4], [0, 9], [14, 4], [14, 9], [4, 0], [10, 0]] as const) g.fillRect(bx + sx, by + sy, 2, 2);
+        } else g.drawImage(this.atlas.sprite(bd.kind), bx, by);
+      }
+      const sm = state.smoulder;
+      if (sm && sm.y === ty) {
+        const sx = sm.x * TILE - cam.x;
+        const sy = sm.y * TILE - cam.y;
+        g.fillStyle = rh(2, Math.floor(timeMs / 200), 9) < 0.5 ? PALETTE.ember : PALETTE.fire;
+        g.fillRect(sx + 7, sy + 4, 2, 2);
+        for (let k = 0; k < 4; k++) {
+          const age = (timeMs / 1100 + k / 4) % 1;
+          g.fillStyle = `rgba(200,200,195,${0.5 * (1 - age)})`;
+          g.fillRect(sx + 6 + Math.round(Math.sin(age * 5 + k) * 2), sy + 2 - Math.round(age * 30), 3, 3);
+        }
+      }
       for (const st of state.stashes) {
         if (st.y === ty && st.x >= x0 && st.x <= x1) g.drawImage(this.atlas.sprite('stash'), st.x * TILE - cam.x, st.y * TILE - cam.y);
       }
-      for (const l of state.lights) if (l.y === ty) this.drawFire(l.x * TILE - cam.x, l.y * TILE - cam.y, timeMs);
+      for (const f of state.fires) if (f.y === ty) this.drawFire(f, f.x * TILE - cam.x, f.y * TILE - cam.y, timeMs);
       if (ty === prow) this.drawSurvivor(state, cam);
     }
     if (prow > y1) this.drawSurvivor(state, cam);
@@ -163,18 +185,37 @@ export class Renderer {
     this.g.drawImage(sprite, Math.round(cam.px * TILE) - cam.x, Math.round(cam.py * TILE) - cam.y);
   }
 
-  private drawFire(x: number, y: number, timeMs: number): void {
+  private drawFire(fire: Fire, x: number, y: number, timeMs: number): void {
     const g = this.g;
     const f = Math.floor(timeMs / 120);
-    g.fillStyle = PALETTE.bark;
-    g.fillRect(x + 3, y + 12, 10, 2);
-    for (let k = 0; k < 5; k++) {
-      const h = 3 + Math.floor(rh(k, f, 3) * 6);
-      g.fillStyle = k % 2 ? PALETTE.fire : PALETTE.ember;
-      g.fillRect(x + 4 + k * 2, y + 12 - h, 2, h);
+    // The ring of stones, and the ash.
+    g.fillStyle = PALETTE.stone;
+    for (const [sx, sy] of [[2, 12], [5, 14], [9, 14], [12, 12], [2, 9], [12, 9]] as const) g.fillRect(x + sx, y + sy, 2, 2);
+    g.fillStyle = fire.banked ? PALETTE.fog : PALETTE.bark;
+    g.fillRect(x + 4, y + 11, 8, 3);
+    if (burning(fire)) {
+      const tall = Math.min(1, fire.fuel / 40) * 0.6 + 0.4;
+      for (let k = 0; k < 4; k++) {
+        const h = Math.round((3 + Math.floor(rh(k, f, 3) * 6)) * tall);
+        g.fillStyle = k % 2 ? PALETTE.fire : PALETTE.ember;
+        g.fillRect(x + 4 + k * 2, y + 11 - h, 2, h);
+      }
+      g.fillStyle = PALETTE.cream;
+      g.fillRect(x + 7, y + 9, 2, 2);
+      // Smoke drifts up from a smoky fire: what an aircraft would see.
+      if (fire.smoke > 0) {
+        for (let k = 0; k < 6; k++) {
+          const age = ((timeMs / 900 + k / 6) % 1);
+          g.fillStyle = `rgba(220,220,215,${0.55 * (1 - age)})`;
+          g.fillRect(x + 6 + Math.round(Math.sin(age * 6 + k) * 3), y + 6 - Math.round(age * 40), 4, 3);
+        }
+      }
+    } else if (fire.coals > 0 || fire.banked) {
+      g.fillStyle = fire.banked ? '#8a3a22' : PALETTE.ember;
+      g.fillRect(x + 6, y + 12, 1, 1);
+      g.fillRect(x + 9, y + 12, 1, 1);
+      if (!fire.banked && rh(1, f, 5) < 0.5) g.fillRect(x + 7, y + 11, 2, 1);
     }
-    g.fillStyle = PALETTE.cream;
-    g.fillRect(x + 7, y + 9, 2, 2);
   }
 
   /** The grade, firelight, and darkness, over the finished scene. */

@@ -29,7 +29,7 @@ export interface BackgroundDef {
 }
 
 export const BACKGROUNDS: readonly BackgroundDef[] = [
-  { id: 'scout', name: 'Scout', blurb: 'Knows a little firecraft, and how to twist cord.', mods: { skills: { firecraft: 1 }, techniques: ['cord'], fact: 'wood' } },
+  { id: 'scout', name: 'Scout', blurb: 'Knows a little firecraft: cord, and the bow drill.', mods: { skills: { firecraft: 1 }, techniques: ['cord', 'bow-drill'], fact: 'wood' } },
   { id: 'angler', name: 'Angler', blurb: 'Has fished every summer they can remember.', mods: { skills: { fishing: 1 }, fact: 'water' } },
   { id: 'hunter', name: "Hunter's kid", blurb: 'Grew up tracking. Animals notice them later.', mods: { skills: { hunting: 1 }, fact: 'temper' } },
   { id: 'farm', name: 'Farm kid', blurb: 'Good with tools; heavy work costs less rest.', mods: { skills: { crafting: 1 }, heavyWorkRest: 0.8, fact: 'plant' } },

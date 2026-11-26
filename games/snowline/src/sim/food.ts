@@ -75,9 +75,9 @@ export function taste(s: GameState, slot: number, events: SimEvent[]): void {
 
 /** Deliver what's due: a taste's answer, a meal's full effect, an illness from old water. */
 export function resolvePending(s: GameState, events: SimEvent[]): void {
-  const due = s.pending.filter((p) => p.t <= s.tick);
+  const due = s.pending.filter((p) => p.t <= s.tick && p.kind !== 'wood');
   if (!due.length) return;
-  s.pending = s.pending.filter((p) => p.t > s.tick);
+  s.pending = s.pending.filter((p) => !due.includes(p));
   const w = who(s.protagonist);
   for (const p of due) {
     if (p.kind === 'taste') {
@@ -159,7 +159,14 @@ export function drinkAt(s: GameState, w: World, tile: number, events: SimEvent[]
   if (src >= 0) see(s, 'water', src);
   s.drinks.push({ w: src, t: s.tick });
   if (s.drinks.length > 60) s.drinks.splice(0, s.drinks.length - 60);
-  const high = body === WATER.tarn || w.band[tile]! >= BAND.subalpine;
+  waterRisk(s, w, body, w.band[tile]! >= BAND.subalpine);
+}
+
+/** Roll for waterborne illness from one drink of untreated water from a water body (SPEC 7.3). */
+export function waterRisk(s: GameState, w: World, body: number, highUp: boolean): void {
+  void w;
+  const src = sourceOf(body);
+  const high = body === WATER.tarn || highUp;
   let risk = high ? WATER_RISK.high : body === WATER.lake ? WATER_RISK.lake : WATER_RISK.stream;
   if (src >= 0 && s.rules.water[src] === 'foul') risk *= FOUL_RISK;
   const alreadyIll = s.pending.some((p) => p.kind === 'water-ill') || s.conditions.some((c) => c.id === 'waterborne');
@@ -181,6 +188,7 @@ export function spoil(s: GameState, events: SimEvent[]): void {
     if (!bad(it)) continue;
     say(s, MSG.spoiled(w, itemName(s, it)), events);
     s.inventory.splice(i, 1);
+    s.memory.spoiled = (s.memory.spoiled ?? 0) + 1;
   }
   for (const st of s.stashes) st.items = st.items.filter((it) => !bad(it));
   s.stashes = s.stashes.filter((st) => st.items.length);

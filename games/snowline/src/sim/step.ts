@@ -1,7 +1,7 @@
 // One simulation tick (SPEC 5): step(state, world, commands) -> events. It mutates `state` in place and
 // reads nothing but its arguments.
 
-import { FIRE_LIGHT, TICKS_PER_MINUTE, VIEWPOINT_REACH, VIEWPOINT_REVEAL } from '../content/balance.ts';
+import { TICKS_PER_MINUTE, VIEWPOINT_REACH, VIEWPOINT_REVEAL } from '../content/balance.ts';
 import { ITEMS, itemDef } from '../content/items.ts';
 import { MSG, who } from '../content/messages.ts';
 import { T } from '../content/terrain.ts';
@@ -12,6 +12,10 @@ import { carryLimit, give, load } from './inventory.ts';
 import { say } from './log.ts';
 import type { Command, Dir, GameState, SimEvent } from './state.ts';
 import { blockedBySystems, commandHooks, minuteHooks, tickHooks } from './systems.ts';
+import { lightsOf, shelterAt } from './surroundings.ts';
+import { startCraft } from './craft.ts';
+import { reflect } from './insight.ts';
+import { remember } from './memory.ts';
 import { clock, sightRadius } from './time.ts';
 import { idx, inBounds, passable, stepTicks, type World } from './world.ts';
 
@@ -43,12 +47,12 @@ function minute(s: GameState, w: World, events: SimEvent[]): void {
   const c = clock(s.tick);
   const wh = who(s.protagonist);
   if (s.sleep) {
-    if (s.tick >= s.sleep.until) wake(s, MSG.wake(wh), events);
-    else if (!s.sleep.awake && s.vitals.hydration < 6) wake(s, MSG.wakeThirst(wh), events);
-    else if (!s.sleep.awake && s.vitals.warmth < 8) wake(s, MSG.wakeCold(wh), events);
+    if (s.tick >= s.sleep.until) wake(s, w, MSG.wake(wh), events);
+    else if (!s.sleep.awake && s.vitals.hydration < 6) wake(s, w, MSG.wakeThirst(wh), events);
+    else if (!s.sleep.awake && s.vitals.warmth < 8) wake(s, w, MSG.wakeCold(wh), events);
   } else if (s.vitals.rest <= 0) {
     s.task = null;
-    s.sleep = { until: s.tick + 240 * TICKS_PER_MINUTE, awake: false };
+    s.sleep = { until: s.tick + 240 * TICKS_PER_MINUTE, awake: false, from: s.tick };
     say(s, MSG.collapse(wh), events);
     events.push({ type: 'sleep' });
   }
@@ -71,10 +75,15 @@ function warnings(s: GameState, events: SimEvent[]): void {
   else if (v.rest < 15) say(s, MSG.tired(w), events);
 }
 
-export function wake(s: GameState, text: string, events: SimEvent[]): void {
+export function wake(s: GameState, w: World, text: string, events: SimEvent[]): void {
+  const slept = s.sleep && !s.sleep.awake ? s.tick - s.sleep.from : 0;
   s.sleep = null;
   say(s, text, events);
   events.push({ type: 'wake' });
+  if (slept >= 180 * TICKS_PER_MINUTE) {
+    if (shelterAt(s, w, s.player.x, s.player.y).rain > 0.5) remember(s, 'slept-sheltered');
+    reflect(s, events);
+  }
 }
 
 function apply(state: GameState, world: World, cmd: Command, events: SimEvent[]): void {
@@ -98,14 +107,17 @@ function apply(state: GameState, world: World, cmd: Command, events: SimEvent[])
       break;
     case 'sleep':
       if (state.task || state.sleep) break;
-      state.sleep = { until: state.tick + Math.max(1, Math.round(cmd.minutes)) * TICKS_PER_MINUTE, awake: cmd.awake };
+      state.sleep = { until: state.tick + Math.max(1, Math.round(cmd.minutes)) * TICKS_PER_MINUTE, awake: cmd.awake, from: state.tick };
       p.intent = -1;
       p.queued = -1;
       say(state, cmd.awake ? MSG.rest(who(state.protagonist)) : MSG.sleep(who(state.protagonist)), events);
       events.push({ type: 'sleep' });
       break;
     case 'wake':
-      if (state.sleep) wake(state, MSG.wake(who(state.protagonist)), events);
+      if (state.sleep) wake(state, world, MSG.wake(who(state.protagonist)), events);
+      break;
+    case 'craft':
+      startCraft(state, world, cmd.recipe, events);
       break;
     case 'cancel':
       state.task = null;
@@ -119,13 +131,19 @@ function apply(state: GameState, world: World, cmd: Command, events: SimEvent[])
       events.push({ type: 'teleport' });
       reveal(state);
       break;
-    case 'debug-fire':
-      if (!state.lights.some((l) => l.x === p.x && l.y === p.y)) {
-        state.lights.push({ x: p.x, y: p.y, radius: FIRE_LIGHT });
-        events.push({ type: 'fire-lit', x: p.x, y: p.y });
+    case 'debug-fire': {
+      // On the faced tile if it's open ground, else where the survivor stands.
+      const fx = p.x + DX[p.facing];
+      const fy = p.y + DY[p.facing];
+      const [x, y] = passable(world, fx, fy) && !state.fires.some((f) => f.x === fx && f.y === fy) ? [fx, fy] : [p.x, p.y];
+      if (!state.fires.some((f) => f.x === x && f.y === y)) {
+        state.fires.push({ x, y, fuel: 720, coals: 0, banked: false, smoke: 0, signal: false });
+        state.fires.sort((a, b) => a.y - b.y || a.x - b.x);
+        events.push({ type: 'fire-lit', x, y });
         reveal(state);
       }
       break;
+    }
     case 'debug-give':
       if (cmd.k in ITEMS) give(state, cmd.k, cmd.n, cmd.d >= 0 ? cmd.d : undefined, itemDef(cmd.k).food ? state.tick : undefined);
       break;
@@ -200,7 +218,7 @@ export function reveal(state: GameState): void {
   const p = state.player;
   const r = sightRadius(state.tick);
   markCircle(state, p.x, p.y, r);
-  for (const l of state.lights) {
+  for (const l of lightsOf(state)) {
     const reach = r + l.radius;
     const dx = l.x - p.x;
     const dy = l.y - p.y;
@@ -230,6 +248,6 @@ export function isExplored(state: GameState, i: number): boolean {
 /** The lights on the map and the survivor's own sight, for the renderer's darkness (SPEC 12.1). */
 export function sightCircles(state: GameState): { x: number; y: number; r: number; fire: boolean }[] {
   const out = [{ x: state.player.x, y: state.player.y, r: sightRadius(state.tick), fire: false }];
-  for (const l of state.lights) out.push({ x: l.x, y: l.y, r: l.radius, fire: true });
+  for (const l of lightsOf(state)) out.push({ x: l.x, y: l.y, r: l.radius, fire: true });
   return out;
 }

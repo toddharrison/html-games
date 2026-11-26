@@ -347,7 +347,7 @@ User request (Nov 24, 2026): "spotted mines should pulse a warning ring (same co
 Trivial and light obstacles are crushed. Medium and heavy ones are plowed through, with a speed dip plus front armor/tread damage reduced by ram gear (`RAM` in tuning.ts).
 
 ### Trailer crush
-`M4` · `uncommitted` · `playtest: pending` · SPEC §4.2, §5.5, §15 "Trailer crush", §16 Q44
+`M4` · `9079ac0` · `playtest: pending` · SPEC §4.2, §5.5, §15 "Trailer crush", §16 Q44
 User request (Nov 25, 2026): "vehicles and buildings that collide with the trailer should be crushed just like if they collide with the behemoth". The trailer in tow crushes the tiles it covers and the units that touch it, as the hull does, and pays for it itself.
 - `sim/collision.ts`: the hull's crush loop is now `crushUnder(w, box, dt, by)`, run for the hull (`resolveBehemothCollisions`) and for the trailer's turned box (`resolveTrailerCollisions`, called from `stepWorld` right after `stepTrailer` has placed the trailer for the step). `by: Rammer` is who meets the obstacle: `pay(cls, x, y)` (the hull's `applyObstacle`, or `trailerObstacle`) and `gear` (the ram rating behind `ramBig`'s damage: the hull's, or 0 for the trailer).
 - **What it costs** (`trailerObstacle`): the class's `armorDamage + treadDamage` × impact speed (`b.vx` / cruise), with no ram gear, as wear on the trailer (`wearTrailer` in `sim/trailer.ts`: `hitTrailer` without the `trailerHit` event; armor first, then the frame or a module by exposure), and the class's full `speedDip` off the hull's speed. Light: 1.4 and 4%; medium: 8 and 20%; heavy: 22 and 40%, at cruise. A frame worn to zero cooks off on the next step (`stepTrailer`). Nothing when `b.invulnerable`.

@@ -38,6 +38,7 @@ Useful greps: `grep -n "playtest: pending" docs/FEATURES.md`, `grep -n "uncommit
 22. [The arc and rescue](#22-the-arc-and-rescue)
 23. [The bot and balance](#23-the-bot-and-balance)
 24. [Polish](#24-polish)
+25. [Seeing and touching (M7 slice)](#25-seeing-and-touching-m7-slice)
 
 ## 1. Project and dev tools
 
@@ -156,7 +157,7 @@ Placed in order, each on a random tile meeting its rule, claiming room round its
 ### Placeholder tiles and sprites
 `M1` · `27fbb89` · `playtest: pending` · SPEC §12.1
 
-`src/render/tiles.ts` draws everything in code from the 32-colour base palette (`src/render/palette.ts`): each terrain is a flat colour with a simple glyph in 4 variants; features and the survivor (layered from the protagonist's looks, four facings, two walk frames) are small shapes. Hill shading lightens slopes facing north-west. Game trails show as worn patches.
+**Ground and trees are now drawn by the M7 beauty pass (§25); the terrain atlas here is no longer used for the ground.** `src/render/tiles.ts` draws everything in code from the 32-colour base palette (`src/render/palette.ts`): each terrain is a flat colour with a simple glyph in 4 variants; features and the survivor (layered from the protagonist's looks, four facings, two walk frames) are small shapes. Hill shading lightens slopes facing north-west. Game trails show as worn patches.
 - **Gotcha:** wild rose (`F.bush`, a fixed floor food) is drawn sparse and pale so it doesn't look like the dealt berry bushes.
 
 ### Camera, grade, darkness, firelight
@@ -175,7 +176,7 @@ Placed in order, each on a random tile meeting its rule, claiming room round its
 `M0`/`M1` · `27fbb89` · `playtest: pending` · SPEC §11.1, §6.4, §12.1
 
 - Title (`src/ui/title.ts`): the name, tagline, the in-development notice, *First valley* (the default seed), *A new valley* (a random seed), a seed box (remembered in `localStorage` as `snowline/lastSeed`), controls, the version stamp, and the single-file download.
-- HUD (`src/ui/hud.ts`): `Day N · afternoon` in a corner (the clock if the survivor has a watch); the six vitals as marks with four pips, coloured and pulsing as they run low; words for what the survivor feels (wet, cold, thirsty, a condition's word and shape); the task in progress with a bar; the last few log lines, fading. Exact numbers are in the journal's Body page.
+- HUD (`src/ui/hud.ts`): `Day N · afternoon` in a corner (the clock if the survivor has a watch); the six vitals as an icon over four drawn segments on a dark backing (sized up 2026-11-26 after the playtest: they and the log were too small), coloured and pulsing as they run low; words for what the survivor feels (wet, cold, thirsty, a condition's word and shape); the task in progress with a bar; the last few log lines, fading. Exact numbers are in the journal's Body page.
 - Map (M, `src/ui/mapScreen.ts`, `src/render/mapSketch.ts`): the explored valley as a pencil sketch on paper, the survivor, and viewpoints stood on.
 - Pause (Esc): carry on, or leave the valley (nothing is saved yet).
 - All game text is in `src/content/text.ts`. The opening implies the pilot's death without showing it.
@@ -306,7 +307,7 @@ R offers: rest an hour (awake), sleep three hours, sleep until first light, slee
 ### Materials
 `M3` · `fa5ba50` · `playtest: pending` · SPEC §8.2, §6.6
 
-`src/sim/materials.ts`. Firewood: cut from conifers (resinous wood), aspens (white-barked), stunted trees (grey twisted) with the steel tool; broken from deadfall (red-barked); gathered as driftwood on sand (pale soft). Green boughs and bark (conifer, aspen), plant fibre (reeds, marsh, high meadow). The five dealt tinders: dry grass (meadows), shredded inner bark (aspen, needs steel), hanging grey lichen (trees above the valley floor), seed fluff (reeds), punk wood (deadfall). Wood and tinder rows appear in the notes when gathered (`WOOD_SOURCE`, `TINDER_SOURCE` in `src/content/recipes.ts`).
+`src/sim/materials.ts`. **Since M7, everything gathered by hand comes from loose things on the ground (§25): sticks, driftwood, plant fibre, dry grass, seed fluff, plain stones, pine cones, feathers; the ground-type actions (*Gather sticks*, *Pull dry grass*, *Gather driftwood*, *Pull plant fibre*, *Gather seed fluff*, *Gather pine nuts*) are gone.** What stays here is work on a tree, log, or outcrop: firewood cut from conifers (resinous wood), aspens (white-barked), stunted trees (grey twisted) with the steel tool; broken from deadfall (red-barked). Green boughs and bark (conifer, aspen). Tinders from features: shredded inner bark (aspen, needs steel), hanging grey lichen (trees above the valley floor), punk wood (deadfall). Wood and tinder rows appear in the notes when gathered (`WOOD_SOURCE`, `TINDER_SOURCE` in `src/content/recipes.ts`).
 - **Tools differ** (`TOOL_WORK`): the hatchet cuts wood fastest and is clumsy at fine work; the knife is the reverse and best with fibre; the multi-tool is middling at everything and poor at sparks.
 
 ### Crafting and camp improvements
@@ -368,7 +369,7 @@ Too close (by the dealt boldness: shy 2, wary 3, bold 5 tiles; a shy one may sim
 ### Fishing and the trout run
 `M4` · `28dfbbf` · `playtest: pending` · SPEC §7.4
 
-Fish aren't animals but a density per water tile (`fishHere`): spawning gravel best, then streams, then lake shallows; the trout run (days 25–40) doubles the near stream and the gravel. *Spear fish* (20 minutes) is poor until the survivor learns to aim low, which four misses teach (failure). *Fish with the line* (from the wreckage) is better. *Watch the fish* at gravel or a stream ripens the weir; a weir of stones (technique) fills by itself, up to three fish.
+**Since M7 trout are fish in the water (§25); spearing and watching changed there.** A density per water tile (`fishHere`, now in `src/sim/fish.ts`): spawning gravel best, then streams, then lake shallows; the trout run (days 25–40) doubles the near stream and the gravel. It places the fish, and the line and the weir still use it directly. *Fish with the line* (from the wreckage) is better. Watching ripens the weir; a weir of stones (technique) fills by itself, up to three fish.
 
 ## 20. Illness, injury, remedies, traits
 
@@ -457,3 +458,40 @@ Every feature is now a drawn sprite (`src/render/sprites.ts`): outcrops (tinted 
 `M6` · `8d45bb1` · `playtest: n/a` · SPEC §3
 
 `tests/originality.test.ts` fails the build if a name or coined term from the novel or the board game (or the novel's title, capitalised) appears in the game's source, data, `index.html`, or `package.json`. `docs/ORIGINALITY.md` sets out what was taken and what wasn't, for the review by someone qualified that SPEC §3 asks for before release.
+
+## 25. Seeing and touching (M7 slice)
+
+### Loose things on the ground
+`M7` · `uncommitted` · `playtest: pending` · SPEC §6.7, §8.2
+
+`World.loose` (one byte per tile, ids in `src/content/loose.ts`) is generated by `scatterLoose` (`src/sim/worldgen/loose.ts`), the last stage, after the trails: position-hashed from the ground and features around a tile, never the deal, only on open passable ground with no feature. Kinds and what they give: twigs and a fallen branch (sticks; a branch also a piece of the nearest tree's wood), loose stones (plain stone, no `d`) and chips under an outcrop (that outcrop's dealt stone), a tuft of dry grass, cattail fluff, driftwood and a driftwood log (beside the lake), fibrous stalks, pine cones (in season only), a feather, and tracks of hare, elk, bear, and cougar (in each animal's territory: soft ground and trails; firm ground rarely). `src/sim/loose.ts`: `looseAt` (what's there now: regrowth is `regrow['l<tile>']`, a fire covers it, cones only in season), `looseData` (the dealt index from the nearest tree or outcrop), `looseName`, and the actions *Pick up …* (`gather-loose`) and *Look at the prints* (`look-tracks`: the text, a temper row in the notes for a dangerous animal, a discovery the first time).
+- **Tuning:** chances per tile in `CHANCE` (`worldgen/loose.ts`); regrowth days and minutes per kind in `LOOSE`. On first-light: ~2,100 twigs, ~650 branches, ~790 stone piles, ~560 grass tufts, ~50 fluff, ~60 driftwood, ~50 stalks, ~1,000 cone spots, ~100 feathers, ~70 sets of tracks; 12 things within 6 tiles of the start.
+- **Gotcha:** `worldHash` now includes `loose`, and `tests/rules.test.ts` checks the deal leaves it alone.
+- **Gotcha:** the bot gathers through `gatherNear`/`goAdjacentTo` on `looseAt` (`src/tools/bot.ts`).
+
+### Click to walk and act
+`M7` · `uncommitted` · `playtest: pending` · SPEC §5.2, §12.4
+
+A `goto` command (`x, y, onto, action, at`) starts a `Route` on `PlayerState.route`: `findRoute` (`src/sim/route.ts`, A* on the four-way grid, costed by `stepTicks`, ties by tile, at most `ROUTE_LIMIT` tiles opened) finds a way to the tile beside the target (or onto it). The step follows it when no direction is held; a blocked step finds the way again (3 tries). On arrival the survivor faces the target and starts the action on it (`at: 'front'`) or on their own tile (`'here'`). A direction key, Esc, or `cancel` drops the route; no way there says so in the log. `actionsAt` (`src/sim/reach.ts`) asks every action's own offer as if the survivor stood beside the tile and faced it (`standFor`), so a click never offers what the keyboard couldn't. In the browser (`src/platform/app.ts`, `src/ui/look.ts`): hovering names what's under the mouse (only explored tiles; animals and trout only when seen) beside the cursor, with what a click does; the cursor is a hand, an eye (watching), or a crosshair (walk); corner marks pulse on a tile that can be acted on. Left-click does the obvious thing (`OBVIOUS` order in `look.ts`), else opens the menu; right-click opens a small menu at the cursor (`.panel.context`) with every option and *Walk here*.
+- **Gotcha:** a stale menu is safe: the sim checks the offer again on arrival (`startAction`).
+- **Gotcha:** the tour (`scripts/tour.mjs`) now waits a moment after *test fire here*: the meadow no longer offers anything, which used to hide that race.
+
+### Trout in the water
+`M7` · `uncommitted` · `playtest: pending` · SPEC §7.4, §9
+
+`GameState.fish` (`src/sim/fish.ts`): up to 9 trout kept within 12 tiles of the survivor (dropped beyond 18), placed by `fishMinute` in proportion to `fishHere` over the water in reach (never within 3 tiles of the survivor), from the new `fish` random stream. Each holds near its home tile, drifts now and then, darts away (`spook`) when a step starts within 2 tiles (55% at 1, 20% at 2), and drifts back. *Spear the trout* (2 min) needs a fish on the faced tile: 20% (60% knowing to aim low) plus skill, ×0.4 if it's startled; a miss startles the fish near it, and four misses teach to aim low as before. *Watch the trout* (15 min, from where the survivor stands, a trout within 4 tiles): three watches teach to aim low without a miss, with a different line each time. The renderer eases each fish between tiles (`fishAt`), flicks the tail, and draws rings where trout rise at dusk.
+
+### Wreckage on the shore, and noticing
+`M7` · `uncommitted` · `playtest: pending` · SPEC §6.7
+
+`src/sim/notice.ts`, words in `src/content/discoveries.ts`. Three pieces of the plane wash up as stashes at set times (`DEBRIS`: cable → 3 cord at +5 h, a bag of peanuts (new food item) at +19 h, a scrap of bright aluminium (new item; flashes at aircraft like the mirror) at +49 h) on shore tiles beside the lake within 14 tiles of the crash (30 if the shore is short), chosen by hash of the seed. Each minute in daylight, a piece not yet noticed within 6 tiles is noticed (a line, a discovery, a little morale, a `notice` event); so is each landmark (`LANDMARK_NOTICE`) the first time. Stashes are drawn as what's in them when there's a drawing (`LooseArt.item`: cable, peanuts, glinting aluminium).
+- **Gotcha:** state is in `memory`: `debris-<id>` is 0 (not yet), 1 (lying there), 2 (noticed or gone); `debris-<id>-at` is its tile; `noticed-<k>` per landmark.
+
+### The beauty pass
+`M7` · `uncommitted` · `playtest: pending` · SPEC §6.8, §12.1
+
+- **Ground** (`src/render/ground.ts`): drawn pixel by pixel in 16×16-tile chunks, built when first seen (and one more each frame round the view, `warm`), 28 kept. Each pixel's owner is its tile's ground or a neighbour's that spreads 2–8 px over the edge (`PRIO`, ragged by noise; rounded corners from diagonals). Colour drifts between each ground's two moods by a large noise field (`mood`) and brightness by a small one; texture per pixel (grass strokes, reed stalks, needles, ripples). Water darkens with depth (`depth`, steps from land), has wind lines and swells, foam on the shore and darker wet ground beside it. Trails are worn lines joining trail tiles; snow lies in patches. Then drawn-only detail in sizes per tile (`decorate`): grass clumps, flower drifts, ferns in lush hollows, moss, rocks from pebbles to boulders on scree and talus, lichen, alpine flowers.
+- **Trees and rocks** (`src/render/flora.ts`): conifers in five sizes (sapling to giant, up to 32 px tall), aspens in three, stunted trees, boulders in two, outcrops as crags in their stone's colours, the overhang as dark crag, deadfall as a log. Tree size comes from how many trees stand round it, height, and the hash (`treeSize`). Tall trees rise into the rows above; the canopy fades when the survivor is behind it; tree tops sway with the wind.
+- **Loose things** (`src/render/looseArt.ts`): drawn in code in 3 variants each, with a soft dark outline so they read over the ground detail (which has none); tracks are faint on purpose.
+- **Light and air** (`src/render/renderer.ts`): shadows for trees, rocks, things, animals, and the survivor, cast away from the sun and long at dawn and dusk, merged in one layer; cloud shadows drifting on fair days; mist on the valley floor near water at dawn; waterfall foam falling; corner marks for the mouse.
+- **Gotcha:** frame time is steady at 60 fps in headless Chromium; the first frame in a new area builds a chunk or two (a few ms each).

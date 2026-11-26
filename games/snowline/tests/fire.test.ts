@@ -14,6 +14,7 @@ import { dealRules, type Rules } from '../src/sim/rules.ts';
 import type { GameState, SimEvent } from '../src/sim/state.ts';
 import { step } from '../src/sim/step.ts';
 import { idx, type World } from '../src/sim/world.ts';
+import { L } from '../src/content/loose.ts';
 import { runTo } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
 
@@ -206,11 +207,11 @@ describe('a fire burning', () => {
 
 describe('the tool chain (SPEC 8.2)', () => {
   it('fibre, cord, a sharp stick, a spear, and a fire-hardened spear', () => {
-    const { state, world } = setup({ edit: (w) => (w.terrain[FRONT] = T.reeds) });
+    const { state, world } = setup({ edit: (w) => ((w.terrain[FRONT] = T.reeds), (w.loose[FRONT] = L.stalks)) });
     state.skills.crafting = 200;
     state.known.techniques.push('cord', 'spear', 'fire-harden');
-    act(state, world, 'fibre', FRONT);
-    expect(count(state, 'fibre')).toBe(3);
+    act(state, world, 'gather-loose', FRONT);
+    expect(count(state, 'fibre')).toBeGreaterThanOrEqual(3);
     craft(state, world, 'cord');
     expect(count(state, 'cord')).toBe(1);
     give(state, 'stick', 1);

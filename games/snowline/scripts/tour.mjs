@@ -95,7 +95,6 @@ try {
   // Camp and fire (M3).
   await consoleCmd('give boughs -1 4');
   await consoleCmd('give stick -1 8');
-  await consoleCmd('give firewood 2 3');
   await hideDebug();
   await sleep(600);
   await b.key('KeyC');
@@ -104,8 +103,12 @@ try {
   await speed(16);
   await sleep(1500);
   await speed(1);
+  // The bed used the boughs, which frees a place for firewood (the fire then offers more than one thing).
+  await consoleCmd('give firewood 2 3');
   await b.evaluate("[...document.querySelectorAll('.debug button')].find((x) => x.textContent === 'test fire here').click()");
   await hideDebug();
+  // Let a tick pass so the fire exists before E asks what can be done to it.
+  await sleep(300);
   await b.key('KeyE');
   await shot('fire-menu');
   await b.key('Escape');

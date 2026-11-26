@@ -78,6 +78,8 @@ describe('the deal and the terrain are separate', () => {
     expect(Buffer.from(b.elev).equals(Buffer.from(a.elev))).toBe(true);
     expect(Buffer.from(b.band).equals(Buffer.from(a.band))).toBe(true);
     expect(Buffer.from(b.flags).equals(Buffer.from(a.flags))).toBe(true);
+    // What lies loose on the ground (SPEC 6.7) is placed without the deal too.
+    expect(Buffer.from(b.loose).equals(Buffer.from(a.loose))).toBe(true);
     // Features sit in the same places; only the water cause (dealt) and the labels may differ.
     const cause = (f: number) => f === F.beaverDam || f === F.carcass;
     for (let i = 0; i < a.feature.length; i++) {

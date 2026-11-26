@@ -71,5 +71,6 @@ export function worldHash(world: World): string {
     data: world.data,
     water: world.water,
     flags: world.flags,
+    loose: world.loose,
   });
 }

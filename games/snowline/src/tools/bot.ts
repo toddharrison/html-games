@@ -23,6 +23,8 @@ import { clock } from '../sim/time.ts';
 import { WEATHER } from '../content/weather.ts';
 import { weatherAt } from '../sim/weather.ts';
 import { idx, type World } from '../sim/world.ts';
+import { L } from '../content/loose.ts';
+import { looseAt } from '../sim/loose.ts';
 import { startScenario } from './runner.ts';
 
 const DX = [0, 1, 0, -1] as const;
@@ -267,7 +269,7 @@ export class Bot {
       }
       const t = w.terrain[i];
       const cold = s.vitals.warmth < 55 || s.player.wet > 50;
-      return (t === T.reeds && !cold) || (t === T.shallows && !cold) || (f === F.bush && day >= 10) || (f === F.conifer && day >= 14);
+      return (t === T.reeds && !cold) || (t === T.shallows && !cold) || (f === F.bush && day >= 10) || looseAt(s, w, i) === L.cones;
     };
     const action = (i: number) => {
       const f = w.feature[i];
@@ -275,7 +277,7 @@ export class Bot {
       if (w.terrain[i] === T.reeds) return 'dig-cattail';
       if (w.terrain[i] === T.shallows) return 'feel-shallows';
       if (f === F.bush) return 'rose-hips';
-      return 'pine-nuts';
+      return 'gather-loose';
     };
     const here = idx(s.player.x, s.player.y);
     if (target(here) && TERRAIN[w.terrain[here]!]!.passable) {
@@ -315,19 +317,32 @@ export class Bot {
     if (goodTinder < 3) {
       const opts = availableActions(s, w).filter((o) => o.action.startsWith('tinder-') && (s.regrow[o.tile] ?? 0) <= s.tick);
       for (const o of opts) {
-        const tinderIndex = { 'tinder-grass': 0, 'tinder-bark': 1, 'tinder-lichen': 2, 'tinder-fluff': 3, 'tinder-punk': 4 }[o.action]!;
+        const tinderIndex = { 'tinder-bark': 1, 'tinder-lichen': 2, 'tinder-punk': 4 }[o.action]!;
         if (fact(s, 'tinder', tinderIndex)?.value !== 'fails') return this.act(o.action, o.tile);
       }
-      return this.goAdjacentTo('tinder', (i) => (w.terrain[i] === T.meadow || w.terrain[i] === T.reeds) && (s.regrow[i] ?? 0) <= s.tick && fact(s, 'tinder', w.terrain[i] === T.meadow ? 0 : 3)?.value !== 'fails', 8000);
+      const okTinder = (i: number) => {
+        const l = looseAt(s, w, i);
+        const d = l === L.grass ? 0 : l === L.fluff ? 3 : -1;
+        return d >= 0 && fact(s, 'tinder', d)?.value !== 'fails';
+      };
+      const near = this.gatherNear(okTinder);
+      if (near) return near;
+      return this.goAdjacentTo('tinder', okTinder, 8000);
     }
     if (count(s, 'stick') < 2) {
-      const sticks = this.act('sticks', frontTile(s));
-      if (sticks) return sticks;
+      const twigs = (i: number) => looseAt(s, w, i) === L.twigs || looseAt(s, w, i) === L.branch;
+      const near = this.gatherNear(twigs);
+      if (near) return near;
+      const go = this.goAdjacentTo('sticks', twigs, 6000);
+      if (go) return go;
     }
     if (count(s, 'firewood') < 5) {
-      const opts = availableActions(s, w).filter((o) => (o.action === 'deadfall-wood' || o.action === 'cut-wood' || o.action === 'driftwood') && (s.regrow[o.tile] ?? 0) <= s.tick);
+      const drift = (i: number) => looseAt(s, w, i) === L.driftwood || looseAt(s, w, i) === L.driftlog || looseAt(s, w, i) === L.branch;
+      const near = this.gatherNear(drift);
+      if (near) return near;
+      const opts = availableActions(s, w).filter((o) => (o.action === 'deadfall-wood' || o.action === 'cut-wood') && (s.regrow[o.tile] ?? 0) <= s.tick);
       if (opts.length) return this.act(opts[0]!.action, opts[0]!.tile);
-      const wood = this.goAdjacentTo('wood', (i) => (w.feature[i] === F.log || w.feature[i] === F.conifer || w.feature[i] === F.aspen) && (s.regrow[i] ?? 0) <= s.tick, 8000);
+      const wood = this.goAdjacentTo('wood', (i) => ((w.feature[i] === F.log || w.feature[i] === F.conifer || w.feature[i] === F.aspen) && (s.regrow[i] ?? 0) <= s.tick) || drift(i), 8000);
       if (wood) return wood;
     }
     return null;
@@ -377,6 +392,13 @@ export class Bot {
     if (idx(s.player.x, s.player.y) !== camp) return this.go('camp', (i) => i === camp, 65536);
     const bed = craftOptions(s, w).find((o) => o.recipe === 'build:bed');
     return bed && !bed.missing ? [{ c: 'craft', recipe: 'build:bed' }] : null;
+  }
+
+  /** Pick up a loose thing meeting `test` on the faced tile or this one, if there is one. */
+  private gatherNear(test: (i: number) => boolean): Body[] | null {
+    const s = this.s;
+    for (const t of [frontTile(s), idx(s.player.x, s.player.y)]) if (t >= 0 && test(t)) return this.act('gather-loose', t);
+    return null;
   }
 
   // ---- Movement helpers ----

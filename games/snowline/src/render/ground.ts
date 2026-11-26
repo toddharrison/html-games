@@ -1,0 +1,533 @@
+// The ground (SPEC 6.8, 12.1, the beauty pass): every pixel of terrain drawn from the world, in chunks of
+// 16×16 tiles that are built when first seen and cached. Ground types overlap each other along ragged
+// edges, water darkens with depth and has a foam line at the shore, colour drifts across the map with
+// smooth noise fields, and small things that are only drawn (grass clumps, flowers, ferns, pebbles,
+// rocks of several sizes) are scattered by position hash and noise. All of it is the renderer's own: the
+// same for a seed and a tile every time, and never read by the simulation.
+
+import { BAND, F, FLAG, T, TERRAIN } from '../content/terrain.ts';
+import { perlin } from '../sim/worldgen/noise.ts';
+import { idx, type World } from '../sim/world.ts';
+import { PALETTE, TERRAIN_COLOR, rgb } from './palette.ts';
+import { rh } from './tiles.ts';
+
+const TILE = 16;
+const CHUNK = 16;
+const CPX = CHUNK * TILE;
+const SIZE = 256;
+const MAX_CHUNKS = 28;
+
+type RGB = [number, number, number];
+
+/** Which ground type draws over which along an edge: higher over lower. Cliffs and the overhang floor don't spread. */
+const PRIO: number[] = [];
+PRIO[T.headwall] = -1;
+PRIO[T.cliff] = -1;
+PRIO[T.waterfall] = -1;
+PRIO[T.shelter] = -1;
+PRIO[T.deep] = 0;
+PRIO[T.shallows] = 1;
+PRIO[T.stream] = 2;
+PRIO[T.gravel] = 3;
+PRIO[T.marsh] = 4;
+PRIO[T.reeds] = 5;
+PRIO[T.sand] = 6;
+PRIO[T.meadow] = 7;
+PRIO[T.highMeadow] = 8;
+PRIO[T.scrub] = 9;
+PRIO[T.forest] = 10;
+PRIO[T.boulders] = 11;
+PRIO[T.talus] = 12;
+PRIO[T.scree] = 13;
+PRIO[T.rock] = 14;
+PRIO[T.snow] = 15;
+
+const C = (hex: string): RGB => rgb(hex);
+const BASE: RGB[] = TERRAIN_COLOR.map((k) => C(PALETTE[k]));
+// Each ground's two moods, which the large noise field moves between (lush/dry, mossy/needled, ...).
+const MOOD: Partial<Record<number, [RGB, RGB]>> = {
+  [T.meadow]: [C('#6f9049'), C('#8c9152')],
+  [T.highMeadow]: [C('#879f57'), C('#a3a067')],
+  [T.forest]: [C('#34502f'), C('#3d4331')],
+  [T.scrub]: [C('#66724a'), C('#7a7656')],
+  [T.reeds]: [C('#748646'), C('#8f8a4c')],
+  [T.marsh]: [C('#4b5b37'), C('#55583c')],
+  [T.sand]: [C('#c9b98b'), C('#b9a77a')],
+  [T.talus]: [C('#8e8a7f'), C('#7c7a72')],
+  [T.rock]: [C('#7a776d'), C('#6c6e6a')],
+  [T.boulders]: [C('#78776c'), C('#6e6c62')],
+};
+const SHALLOW = C('#55888c');
+const DEEP = C('#2b5163');
+const STREAM = C('#3a6a74');
+const FOAM = C('#a9c6bf');
+const SNOW = C('#e9ece6');
+const PATH = C('#7d6c52');
+const WET: RGB = [52, 50, 40];
+
+function lerp(a: RGB, b: RGB, t: number): RGB {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
+const isWater = (t: number) => TERRAIN[t]!.water;
+
+export class Ground {
+  private readonly w: World;
+  private readonly seed: number;
+  private readonly chunks = new Map<string, HTMLCanvasElement>();
+  /** Per tile: distance to land (water depth), hill shade, the large mood field, the small brightness field. */
+  private readonly depth: Float32Array;
+  private readonly shade: Float32Array;
+  private readonly mood: Float32Array;
+  private readonly bright: Float32Array;
+
+  constructor(world: World, seed: number) {
+    this.w = world;
+    this.seed = seed;
+    const n = SIZE * SIZE;
+    this.depth = new Float32Array(n);
+    this.shade = new Float32Array(n);
+    this.mood = new Float32Array(n);
+    this.bright = new Float32Array(n);
+    // Water depth: steps from the nearest dry tile, by a breadth-first walk.
+    const q: number[] = [];
+    for (let i = 0; i < n; i++) {
+      if (!isWater(world.terrain[i]!)) {
+        this.depth[i] = 0;
+        q.push(i);
+      } else this.depth[i] = 99;
+    }
+    for (let h = 0; h < q.length; h++) {
+      const i = q[h]!;
+      const x = i % SIZE;
+      const y = (i - x) / SIZE;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+        const j = idx(nx, ny);
+        if (this.depth[j]! > this.depth[i]! + 1) {
+          this.depth[j] = this.depth[i]! + 1;
+          q.push(j);
+        }
+      }
+    }
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        const i = idx(x, y);
+        const d = x > 0 && y > 0 ? world.elev[i]! - world.elev[idx(x - 1, y - 1)]! : 0;
+        this.shade[i] = Math.max(-0.18, Math.min(0.18, d * 0.045));
+        this.mood[i] = Math.max(0, Math.min(1, 0.5 + perlin(seed + 11, x / 11, y / 11) * 0.9 + perlin(seed + 12, x / 4, y / 4) * 0.35));
+        this.bright[i] = perlin(seed + 13, x / 5, y / 5) * 0.09 + perlin(seed + 14, x / 2.2, y / 2.2) * 0.03;
+      }
+    }
+  }
+
+  /** Draw the ground under a view whose top-left is (camX, camY) in world pixels. */
+  draw(g: CanvasRenderingContext2D, camX: number, camY: number, width: number, height: number, snow: number): void {
+    const cx0 = Math.floor(camX / CPX);
+    const cy0 = Math.floor(camY / CPX);
+    const cx1 = Math.floor((camX + width - 1) / CPX);
+    const cy1 = Math.floor((camY + height - 1) / CPX);
+    for (let cy = cy0; cy <= cy1; cy++) {
+      for (let cx = cx0; cx <= cx1; cx++) {
+        const c = this.chunk(cx, cy, snow);
+        g.drawImage(c, cx * CPX - camX, cy * CPX - camY);
+      }
+    }
+  }
+
+  /** Build the chunks around a point ahead of time (a spare moment), so walking never waits on one. */
+  warm(camX: number, camY: number, width: number, height: number, snow: number): void {
+    const cx = Math.floor((camX + width / 2) / CPX);
+    const cy = Math.floor((camY + height / 2) / CPX);
+    for (const [dx, dy] of [[0, 0], [1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]] as const) {
+      const key = `${cx + dx},${cy + dy},${snow}`;
+      if (!this.chunks.has(key) && cx + dx >= 0 && cy + dy >= 0 && cx + dx < SIZE / CHUNK && cy + dy < SIZE / CHUNK) {
+        this.chunk(cx + dx, cy + dy, snow);
+        return;
+      }
+    }
+  }
+
+  private chunk(cx: number, cy: number, snow: number): HTMLCanvasElement {
+    const key = `${cx},${cy},${snow}`;
+    let c = this.chunks.get(key);
+    if (c) {
+      this.chunks.delete(key);
+      this.chunks.set(key, c);
+      return c;
+    }
+    c = document.createElement('canvas');
+    c.width = CPX;
+    c.height = CPX;
+    const g = c.getContext('2d')!;
+    this.paint(g, cx * CHUNK, cy * CHUNK, snow);
+    this.chunks.set(key, c);
+    if (this.chunks.size > MAX_CHUNKS) this.chunks.delete(this.chunks.keys().next().value!);
+    return c;
+  }
+
+  private terrainAt(x: number, y: number): number {
+    if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) return T.headwall;
+    return this.w.terrain[idx(x, y)]!;
+  }
+
+  /** How far the ground of a neighbour spreads over an edge, 2–8 px, smooth along the edge. */
+  private edgeDepth(wx: number, wy: number): number {
+    return 2 + Math.round((perlin(this.seed + 21, wx / 5, wy / 5) + 0.7) * 3.4 + perlin(this.seed + 22, wx / 2, wy / 2) * 1.2);
+  }
+
+  /** Which ground owns world pixel (wx, wy): its own tile's, or a neighbour's that spreads over the edge. */
+  private owner(wx: number, wy: number): number {
+    const tx = Math.floor(wx / TILE);
+    const ty = Math.floor(wy / TILE);
+    const own = this.terrainAt(tx, ty);
+    const lx = wx - tx * TILE;
+    const ly = wy - ty * TILE;
+    let best = own;
+    let bp = PRIO[own]!;
+    const consider = (n: number, inside: boolean) => {
+      if (!inside) return;
+      const p = PRIO[n]!;
+      if (p > bp || (p === bp && p >= 0 && n > best)) {
+        best = n;
+        bp = p;
+      }
+    };
+    if (bp < 0) return own;
+    const up = this.terrainAt(tx, ty - 1);
+    const down = this.terrainAt(tx, ty + 1);
+    const left = this.terrainAt(tx - 1, ty);
+    const right = this.terrainAt(tx + 1, ty);
+    consider(up, ly < this.edgeDepth(wx, ty * TILE));
+    consider(down, TILE - 1 - ly < this.edgeDepth(wx, (ty + 1) * TILE));
+    consider(left, lx < this.edgeDepth(tx * TILE, wy));
+    consider(right, TILE - 1 - lx < this.edgeDepth((tx + 1) * TILE, wy));
+    // Corners: a diagonal neighbour spreads a rounded blob where both sides between are lower.
+    const corner = (dx: number, dy: number, cxp: number, cyp: number) => {
+      const n = this.terrainAt(tx + dx, ty + dy);
+      const p = PRIO[n]!;
+      if (p <= PRIO[own]!) return;
+      const r = 2 + Math.floor(rh(tx * 2 + dx, ty * 2 + dy, 41) * 4);
+      const ddx = lx - cxp;
+      const ddy = ly - cyp;
+      consider(n, ddx * ddx + ddy * ddy < r * r);
+    };
+    corner(-1, -1, -0.5, -0.5);
+    corner(1, -1, TILE - 0.5, -0.5);
+    corner(-1, 1, -0.5, TILE - 0.5);
+    corner(1, 1, TILE - 0.5, TILE - 0.5);
+    return best;
+  }
+
+  /** A per-tile field read smoothly at a pixel (bilinear between tile centres). */
+  private field(f: Float32Array, wx: number, wy: number): number {
+    const fx = wx / TILE - 0.5;
+    const fy = wy / TILE - 0.5;
+    const x0 = Math.max(0, Math.min(SIZE - 1, Math.floor(fx)));
+    const y0 = Math.max(0, Math.min(SIZE - 1, Math.floor(fy)));
+    const x1 = Math.min(SIZE - 1, x0 + 1);
+    const y1 = Math.min(SIZE - 1, y0 + 1);
+    const u = Math.max(0, Math.min(1, fx - x0));
+    const v = Math.max(0, Math.min(1, fy - y0));
+    const a = f[idx(x0, y0)]! + (f[idx(x1, y0)]! - f[idx(x0, y0)]!) * u;
+    const b = f[idx(x0, y1)]! + (f[idx(x1, y1)]! - f[idx(x0, y1)]!) * u;
+    return a + (b - a) * v;
+  }
+
+  private paint(g: CanvasRenderingContext2D, tx0: number, ty0: number, snow: number): void {
+    // Who owns each pixel, with a 2 px margin so the shore can look across a chunk's edge.
+    const M = 2;
+    const W = CPX + 2 * M;
+    const own = new Uint8Array(W * W);
+    const px0 = tx0 * TILE - M;
+    const py0 = ty0 * TILE - M;
+    for (let y = 0; y < W; y++) for (let x = 0; x < W; x++) own[y * W + x] = this.owner(px0 + x, py0 + y);
+    const img = g.createImageData(CPX, CPX);
+    const d = img.data;
+    const seed = this.seed;
+    for (let y = 0; y < CPX; y++) {
+      for (let x = 0; x < CPX; x++) {
+        const wx = tx0 * TILE + x;
+        const wy = ty0 * TILE + y;
+        const k = (y + M) * W + (x + M);
+        const t = own[k]!;
+        const tile = idx(Math.floor(wx / TILE), Math.floor(wy / TILE));
+        const water = isWater(t);
+        // How close the nearest pixel of the other kind (water or land) is, up to 2.
+        let near = 99;
+        for (let r = 1; r <= 2 && near === 99; r++) {
+          if (isWater(own[k - r]!) !== water || isWater(own[k + r]!) !== water || isWater(own[k - r * W]!) !== water || isWater(own[k + r * W]!) !== water) near = r;
+        }
+        let c = this.colour(t, wx, wy, tile, seed);
+        if (water && near === 1) c = lerp(c, FOAM, 0.75);
+        else if (water && near === 2) c = lerp(c, FOAM, 0.25);
+        else if (!water && near <= 2 && t !== T.cliff && t !== T.headwall) c = lerp(c, WET, near === 1 ? 0.28 : 0.14);
+        // Trails: a worn line joining the trail tiles.
+        if (!water && this.w.flags[tile]! & FLAG.trail) {
+          const lx = wx % TILE - 7.5;
+          const ly = wy % TILE - 7.5;
+          const tx = Math.floor(wx / TILE);
+          const ty = Math.floor(wy / TILE);
+          const tr = (dx: number, dy: number) => (this.w.flags[idx(tx + dx, ty + dy)] ?? 0) & FLAG.trail;
+          let dist = Math.hypot(lx, ly);
+          if (tr(1, 0) && lx > 0) dist = Math.min(dist, Math.abs(ly));
+          if (tr(-1, 0) && lx < 0) dist = Math.min(dist, Math.abs(ly));
+          if (tr(0, 1) && ly > 0) dist = Math.min(dist, Math.abs(lx));
+          if (tr(0, -1) && ly < 0) dist = Math.min(dist, Math.abs(lx));
+          const wob = perlin(seed + 31, wx / 3, wy / 3) * 1.5;
+          if (dist + wob < 2.2) c = lerp(c, PATH, 0.45 + rh(wx, wy, 33) * 0.15);
+        }
+        // Snow lying where the snowline has come down to.
+        if (this.w.band[tile]! >= snow && !water && t !== T.cliff && t !== T.headwall) {
+          const patch = 0.6 + perlin(seed + 35, wx / 9, wy / 9) * 0.6;
+          c = lerp(c, SNOW, Math.max(0, Math.min(0.92, patch)));
+        }
+        const s = 1 + this.field(this.shade, wx, wy);
+        const o = (y * CPX + x) * 4;
+        d[o] = Math.max(0, Math.min(255, c[0] * s));
+        d[o + 1] = Math.max(0, Math.min(255, c[1] * s));
+        d[o + 2] = Math.max(0, Math.min(255, c[2] * s));
+        d[o + 3] = 255;
+      }
+    }
+    g.putImageData(img, 0, 0);
+    for (let ty = ty0; ty < ty0 + CHUNK; ty++) {
+      for (let tx = tx0; tx < tx0 + CHUNK; tx++) {
+        const tile = idx(tx, ty);
+        if (this.w.band[tile]! >= snow) continue;
+        decorate(g, this.w, tx, ty, (tx - tx0) * TILE, (ty - ty0) * TILE, this.mood[tile]!, seed);
+      }
+    }
+  }
+
+  /** The colour of ground `t` at a world pixel, before shore, trail, snow, and shade. */
+  private colour(t: number, wx: number, wy: number, tile: number, seed: number): RGB {
+    const h = rh(wx, wy, 3);
+    const mottle = perlin(seed + 41, wx / 6, wy / 6) * 0.07;
+    const bright = 1 + this.field(this.bright, wx, wy) + mottle;
+    let c: RGB;
+    if (t === T.shallows || t === T.deep) {
+      const dep = Math.min(1, Math.max(0, (this.field(this.depth, wx, wy) - 0.6) / 5));
+      c = lerp(SHALLOW, DEEP, dep * dep * (3 - 2 * dep));
+      // Wind lines on open water: short pale dashes, and slow swells of darker and lighter.
+      const swell = perlin(seed + 47, wx / 14, wy / 7) * 0.08;
+      c = [c[0] * (1 + swell), c[1] * (1 + swell), c[2] * (1 + swell)];
+      if (rh(Math.floor(wx / 4), wy, 49) < 0.012) c = lerp(c, SHALLOW, 0.6);
+    } else if (t === T.stream || t === T.gravel) {
+      c = STREAM;
+      // Ripples across the current, and stones showing through on the gravel.
+      if (rh(wx, Math.floor(wy / 2), 5) < 0.04) c = lerp(c, FOAM, 0.45);
+      if (t === T.gravel && h < 0.22) c = lerp(c, C(h < 0.1 ? '#9c8c62' : '#6f706a'), 0.55);
+    } else if (t === T.waterfall) {
+      c = lerp(FOAM, SNOW, rh(wx, 0, 7) * 0.6);
+    } else {
+      const m = MOOD[t];
+      c = m ? lerp(m[0], m[1], this.mood[tile]!) : BASE[t]!;
+      switch (t) {
+        case T.meadow:
+        case T.highMeadow: {
+          // Grass: short vertical strokes, light and dark.
+          const blade = rh(wx, Math.floor(wy / 3), 9);
+          if (blade < 0.12) c = lerp(c, C('#a9b86a'), 0.35);
+          else if (blade > 0.9) c = lerp(c, C('#3f5a2c'), 0.35);
+          break;
+        }
+        case T.forest:
+          if (h < 0.06) c = lerp(c, C('#5a4634'), 0.6);
+          else if (h > 0.93) c = lerp(c, C('#4f6a3a'), 0.5);
+          break;
+        case T.reeds: {
+          const stalk = rh(wx, Math.floor(wy / 5), 11);
+          if (stalk < 0.16) c = lerp(c, C('#a3a560'), 0.5);
+          else if (stalk > 0.9) c = lerp(c, C('#3e4a2a'), 0.4);
+          break;
+        }
+        case T.sand:
+          if (h < 0.08) c = lerp(c, C('#9c8c62'), 0.5);
+          else if ((wy + Math.floor(perlin(seed + 43, wx / 10, wy / 10) * 6)) % 7 === 0) c = lerp(c, C('#ad9d70'), 0.35);
+          break;
+        case T.marsh:
+          if (perlin(seed + 45, wx / 5, wy / 5) > 0.32) c = lerp(c, C('#35505a'), 0.55);
+          break;
+        case T.cliff:
+        case T.headwall: {
+          const col = rh(wx, 0, 13);
+          if (col < 0.2) c = lerp(c, C('#2a2f38'), 0.4);
+          else if (col > 0.85) c = lerp(c, C('#8f979a'), 0.25);
+          const ty = Math.floor(wy / TILE);
+          const tx = Math.floor(wx / TILE);
+          const ly = wy - ty * TILE;
+          const below = this.terrainAt(tx, ty + 1);
+          if (below !== T.cliff && below !== T.headwall && ly > 12) c = lerp(c, C('#14161a'), (ly - 11) * 0.15);
+          const above = this.terrainAt(tx, ty - 1);
+          if (above !== T.cliff && above !== T.headwall && ly < 2) c = lerp(c, C('#c4c9c4'), 0.25);
+          break;
+        }
+        case T.talus:
+        case T.scree:
+        case T.boulders:
+          if (h < 0.1) c = lerp(c, C('#c4c9c4'), 0.35);
+          else if (h > 0.88) c = lerp(c, C('#3b4350'), 0.35);
+          break;
+        case T.rock:
+          if (h < 0.03) c = lerp(c, C('#b5864a'), 0.4);
+          else if (h > 0.97) c = lerp(c, C('#8f9a6a'), 0.4);
+          break;
+        case T.shelter:
+          if (h < 0.1) c = lerp(c, C('#3b4350'), 0.4);
+          break;
+      }
+    }
+    return [c[0] * bright, c[1] * bright, c[2] * bright];
+  }
+}
+
+// ---- Ground detail: drawn only, in sizes (SPEC 6.8) ----
+
+function dot(g: CanvasRenderingContext2D, x: number, y: number, c: string, w = 1, h = 1): void {
+  g.fillStyle = c;
+  g.fillRect(x, y, w, h);
+}
+
+const FLOWERS = ['#e7e2cf', '#e4c24e', '#9b7fb8', '#c9604a', '#7fa0c9'];
+
+function grassClump(g: CanvasRenderingContext2D, x: number, y: number, size: number, dark: string, light: string): void {
+  const n = 2 + size * 2;
+  for (let k = 0; k < n; k++) {
+    const bx = x + k - Math.floor(n / 2);
+    const h = 2 + size + ((k * 7) % 3);
+    const lean = k < n / 2 ? -1 : k > n / 2 ? 1 : 0;
+    dot(g, bx, y - h + 1, k % 2 ? light : dark, 1, h - 1);
+    dot(g, bx + lean, y - h, k % 2 ? light : dark);
+  }
+}
+
+function rock(g: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, body: string, lit: string, dark: string): void {
+  dot(g, x + 1, y + h, 'rgba(0,0,0,0.25)', w, 1);
+  dot(g, x, y + 1, body, w, h - 1);
+  dot(g, x + 1, y, body, w - 2, 1);
+  dot(g, x + 1, y + 1, lit, Math.max(1, w - 3), 1);
+  dot(g, x + w - 1, y + 2, dark, 1, Math.max(1, h - 2));
+  dot(g, x + 1, y + h - 1, dark, w - 1, 1);
+}
+
+function fern(g: CanvasRenderingContext2D, x: number, y: number, size: number): void {
+  const c = '#4f7a3e';
+  const d = '#2f4a28';
+  const len = 3 + size * 2;
+  for (const dir of [-1, 1]) {
+    for (let k = 0; k < len; k++) {
+      dot(g, x + dir * k, y - Math.floor(k / 2) - (k > len - 2 ? 1 : 0), k % 2 ? c : d);
+      if (k % 2 === 0 && k > 0) dot(g, x + dir * k, y - Math.floor(k / 2) + 1, c);
+    }
+  }
+  dot(g, x, y - len + 1, d, 1, len - 1);
+}
+
+/** Scatter a tile's drawn detail: what, how big, and how much, from its ground, hash, and the mood field. */
+function decorate(g: CanvasRenderingContext2D, w: World, tx: number, ty: number, ox: number, oy: number, mood: number, seed: number): void {
+  const t = w.terrain[idx(tx, ty)]!;
+  const f = w.feature[idx(tx, ty)]!;
+  const blocked = f !== F.none && f !== F.plant && f !== F.herb;
+  const r = (k: number) => rh(tx, ty, 60 + k);
+  const at = (k: number) => [ox + 2 + Math.floor(r(k) * 12), oy + 3 + Math.floor(r(k + 50) * 12)] as const;
+  const flowerField = perlin(seed + 51, tx / 6, ty / 6);
+  switch (t) {
+    case T.meadow:
+    case T.highMeadow: {
+      const clumps = (r(1) < 0.55 ? 1 : 0) + (r(2) < 0.25 ? 1 : 0);
+      for (let k = 0; k < clumps; k++) {
+        const [x, y] = at(3 + k);
+        grassClump(g, x, y, r(5 + k) < 0.2 ? 2 : r(5 + k) < 0.6 ? 1 : 0, '#4e6a35', mood < 0.5 ? '#8fae5a' : '#a3a862');
+      }
+      // Flowers come in drifts, where the flower field is high.
+      if (flowerField > 0.12 || (t === T.highMeadow && flowerField > -0.05)) {
+        const col = FLOWERS[Math.floor((perlin(seed + 52, tx / 9, ty / 9) + 0.7) * 3.5) % FLOWERS.length]!;
+        const n = 1 + Math.floor(r(7) * 4);
+        for (let k = 0; k < n; k++) {
+          const [x, y] = at(8 + k);
+          dot(g, x, y + 1, '#3f5a2c');
+          dot(g, x, y, col);
+          if (r(20 + k) < 0.3) dot(g, x + 1, y, col);
+        }
+      }
+      if (!blocked && r(9) < 0.06) {
+        const [x, y] = at(10);
+        rock(g, x, y, 3, 3, '#8b877b', '#b9b6aa', '#5f5d56');
+      }
+      break;
+    }
+    case T.forest: {
+      // Ferns grow in damp hollows: where the mood field is lush.
+      if (!blocked && r(1) < 0.12 + (1 - mood) * 0.3) {
+        const [x, y] = at(2);
+        fern(g, x, y, r(3) < 0.3 ? 2 : r(3) < 0.7 ? 1 : 0);
+      }
+      if (r(4) < 0.35) {
+        const [x, y] = at(5);
+        dot(g, x, y, 'rgba(70,100,55,0.55)', 3 + Math.floor(r(6) * 3), 2);
+      }
+      if (!blocked && r(7) < 0.07) {
+        const [x, y] = at(8);
+        rock(g, x, y, 4, 3, '#6f706a', '#9a9a92', '#3b4350');
+      }
+      break;
+    }
+    case T.scrub: {
+      if (r(1) < 0.6) {
+        const [x, y] = at(2);
+        const s = r(3) < 0.3 ? 2 : 1;
+        dot(g, x - s, y - s, '#4f5a38', 2 * s + 2, s + 1);
+        dot(g, x - s + 1, y - s - 1, '#66724a', 2 * s, 1);
+      }
+      break;
+    }
+    case T.sand: {
+      for (let k = 0; k < 3; k++) {
+        if (r(k) < 0.35) {
+          const [x, y] = at(4 + k);
+          dot(g, x, y, r(9 + k) < 0.5 ? '#8f8a7d' : '#d8cba3', 1 + (r(12 + k) < 0.3 ? 1 : 0), 1);
+        }
+      }
+      break;
+    }
+    case T.marsh: {
+      if (r(1) < 0.5) {
+        const [x, y] = at(2);
+        grassClump(g, x, y, 1, '#3e4a2a', '#7d8748');
+      }
+      break;
+    }
+    case T.talus:
+    case T.scree:
+    case T.boulders: {
+      const n = t === T.boulders ? 2 : 3;
+      for (let k = 0; k < n; k++) {
+        if (r(k) > 0.7) continue;
+        const [x, y] = at(4 + k);
+        const big = t === T.boulders ? r(10 + k) < 0.45 : r(10 + k) < 0.15;
+        const sw = big ? 6 + Math.floor(r(14 + k) * 3) : 2 + Math.floor(r(14 + k) * 3);
+        rock(g, Math.min(x, ox + TILE - sw - 1), Math.min(y, oy + TILE - 5), sw, big ? 5 : 2 + Math.floor(sw / 2), '#8f8b80', '#c4c3b8', '#56544d');
+      }
+      break;
+    }
+    case T.rock: {
+      if (r(1) < 0.5) {
+        const [x, y] = at(2);
+        dot(g, x, y, '#5a5850', 1 + Math.floor(r(3) * 4), 1);
+        dot(g, x + 2, y + 1, '#5a5850', 1, 1 + Math.floor(r(4) * 2));
+      }
+      if (r(5) < 0.25) {
+        const [x, y] = at(6);
+        dot(g, x, y, r(7) < 0.5 ? '#b5864a' : '#97a06a', 2, 1);
+      }
+      break;
+    }
+  }
+  if (w.band[idx(tx, ty)] === BAND.alpine && (t === T.highMeadow || t === T.rock) && r(30) < 0.3) {
+    const [x, y] = at(31);
+    dot(g, x, y, '#e7e2cf');
+  }
+}

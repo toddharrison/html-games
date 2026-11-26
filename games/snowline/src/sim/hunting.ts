@@ -22,16 +22,9 @@ import { level, practise } from './skills.ts';
 import type { Animal, GameState, SimEvent } from './state.ts';
 import { clock } from './time.ts';
 import { idx, type World } from './world.ts';
+import { FISH_REACH, fishHere, fishOn, spookFish } from './fish.ts';
 
-/** How many fish a water tile holds, 0–1 (SPEC 7.4): the spawning gravel best, the run doubling the stream. */
-export function fishHere(s: GameState, w: World, tile: number): number {
-  const t = w.terrain[tile]!;
-  const day = clock(s.tick).day;
-  const run = day >= TROUT_RUN[0] && day <= TROUT_RUN[1];
-  let d = t === T.gravel ? 0.5 : t === T.stream ? 0.32 : t === T.shallows ? (w.water[tile] === WATER.tarn ? 0.1 : 0.22) : 0;
-  if (run && (t === T.gravel || (t === T.stream && w.water[tile] === WATER.streamA))) d *= 2;
-  return Math.min(0.95, d);
-}
+export { fishHere } from './fish.ts';
 
 const fishable = (w: World, t: number) => {
   const tt = w.terrain[t]!;
@@ -110,22 +103,29 @@ export const HUNT_ACTIONS: ActionDef[] = [
   },
   {
     id: 'spear-fish',
-    offer: (s, w, t) => (t === frontTile(s) && fishable(w, t) && spear(s) ? 'Spear fish' : null),
-    minutes: 20,
+    offer: (s, w, t) => (t === frontTile(s) && fishable(w, t) && spear(s) && fishOn(s, t) ? 'Spear the trout' : null),
+    minutes: 2,
     skill: 'fishing',
     needsLight: true,
-    done: (s, w, t, ev) => {
+    done: (s, _w, t, ev) => {
       const wh = who(s.protagonist);
-      let p = fishHere(s, w, t) * (knowsTechnique(s, 'aim-low') ? 1.5 : 0.5) + 0.05 * level(s, 'fishing');
+      const fish = fishOn(s, t);
+      s.player.wet = Math.max(s.player.wet, 40);
+      if (!fish) return say(s, ANIMAL_TEXT.fishGone(wh), ev);
+      // A trout is lower than it looks (SPEC 8.1): until the survivor knows it, most throws go over.
+      let p = (knowsTechnique(s, 'aim-low') ? 0.6 : 0.2) + 0.05 * level(s, 'fishing');
       if (has(s, 'hard-spear')) p += 0.05;
+      if (fish.spook > 0) p *= 0.4;
       practise(s, 'fishing', 1.5);
-      s.player.wet = Math.max(s.player.wet, 50);
       if (chance(s.rng['skill-checks'], Math.min(0.85, p))) {
+        s.fish = s.fish.filter((f) => f !== fish);
         give(s, 'fish', 1, undefined, s.tick);
         say(s, ANIMAL_TEXT.fishHit(wh), ev);
+        ev.push({ type: 'fish', what: 'caught' });
         return;
       }
       say(s, ANIMAL_TEXT.fishMiss(wh), ev);
+      spookFish(s, fish.x, fish.y, 3, 0.9);
       // Failure teaches (SPEC 8.1): after enough misses, the realisation.
       if (remember(s, 'fish-miss') >= 4) learnTechnique(s, 'aim-low', technique('aim-low').learned, ev);
     },
@@ -145,12 +145,17 @@ export const HUNT_ACTIONS: ActionDef[] = [
   },
   {
     id: 'watch-fish',
-    offer: (s, w, t) => (t === frontTile(s) && (w.terrain[t] === T.gravel || w.terrain[t] === T.stream) && canSee(s) ? 'Watch the fish' : null),
-    minutes: 20,
-    done: (s, w, t, ev) => {
+    // Watched from where the survivor stands (SPEC 7.4): any trout in sight close by.
+    offer: (s, _w, t) => (t === idx(s.player.x, s.player.y) && canSee(s) && s.fish.some((f) => cheb(f.x, f.y, s.player.x, s.player.y) <= 4) ? 'Watch the trout' : null),
+    minutes: 15,
+    done: (s, w, _t, ev) => {
       const day = clock(s.tick).day;
-      say(s, ANIMAL_TEXT.watchFish(day >= TROUT_RUN[0] && day <= TROUT_RUN[1] && w.water[t] === WATER.streamA), ev);
-      remember(s, 'watched-fish');
+      const near = s.fish.find((f) => cheb(f.x, f.y, s.player.x, s.player.y) <= FISH_REACH);
+      const run = day >= TROUT_RUN[0] && day <= TROUT_RUN[1] && !!near && w.water[idx(near.x, near.y)] === WATER.streamA;
+      const n = remember(s, 'watched-fish');
+      say(s, ANIMAL_TEXT.watchFish(run, n), ev);
+      // Watching long enough shows what missing would have taught: the fish is lower than it looks.
+      if (n >= 3) learnTechnique(s, 'aim-low', technique('aim-low').learned, ev);
     },
   },
   {

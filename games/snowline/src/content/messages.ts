@@ -57,6 +57,7 @@ export const MSG = {
   rawIll: (w: Who) => `${w.Their} stomach rebelled. It had been raw.`,
   found: (w: Who, n: number, thing: string) => `${w.name} found ${plural(n, thing)}.`,
   nothingLeft: () => `There was nothing more here for now.`,
+  noWay: () => `There was no way through to there.`,
   outOfSeason: (thing: string) => `There were no ${thing} to be had at this time of year.`,
   watchSafe: (thing: string) => `Jays dropped down and ate the ${thing}.`,
   watchUnsafe: (thing: string) => `Birds came and went, and left the ${thing} alone.`,

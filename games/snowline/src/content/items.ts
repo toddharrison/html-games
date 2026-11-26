@@ -93,6 +93,9 @@ export const ITEMS: Record<string, ItemDef> = {
   'first-aid': { name: 'first-aid kit', weight: 0.5, stack: 1 },
   'ration-pack': { name: 'packaged food', weight: 0.3, stack: 6, food: { nutrition: 25, hydration: 2, spoils: 0 } },
   beacon: { name: 'emergency beacon', weight: 1.5, stack: 1 },
+  // Washed up on the shore in the first days (SPEC 6.7).
+  peanuts: { name: 'peanuts', weight: 0.1, stack: 6, small: true, food: { nutrition: 9, hydration: 0, spoils: 0 } },
+  'metal-scrap': { name: 'scrap of bright aluminium', weight: 0.3, stack: 1 },
 };
 
 /** Inventory slots in pockets and hands, and what a basket or pack adds (SPEC 7.8). */

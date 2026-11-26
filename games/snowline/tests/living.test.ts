@@ -240,6 +240,8 @@ describe('hunting and fishing (SPEC 7.4)', () => {
     give(state, 'spear', 1);
     let fish = 0;
     for (let k = 0; k < 20; k++) {
+      // A trout holding on the faced gravel, calm (SPEC 7.4).
+      state.fish = [{ id: k + 1, x: 128, y: 129, hx: 128, hy: 129, t: 1e9, spook: 0 }];
       act(state, world, 'spear-fish', FRONT);
       fish = count(state, 'fish');
       state.vitals.rest = state.vitals.hydration = state.vitals.nutrition = state.vitals.warmth = 100;

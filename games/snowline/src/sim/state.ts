@@ -30,6 +30,35 @@ export interface PlayerState {
   bumped: boolean;
   /** How wet the clothes are, 0–100. */
   wet: number;
+  /** Where a click sent the survivor (SPEC 5.2), or null. */
+  route: Route | null;
+}
+
+/**
+ * A walk to somewhere and what to do there (SPEC 5.2). `path` is what is left to walk. On arrival the
+ * survivor faces (tx, ty) and starts `action` on it (`at: 'front'`) or on their own tile (`'here'`).
+ * `onto` walks onto (tx, ty) rather than beside it.
+ */
+export interface Route {
+  path: Dir[];
+  tx: number;
+  ty: number;
+  onto: boolean;
+  action: string | null;
+  at: 'front' | 'here';
+  /** Times the path has been found again after something blocked it. */
+  tries: number;
+}
+
+/** A trout in the water (SPEC 7.4). It holds near `hx, hy`; `spook` counts the darting moves left. */
+export interface Fish {
+  id: number;
+  x: number;
+  y: number;
+  hx: number;
+  hy: number;
+  t: number;
+  spook: number;
 }
 
 /** The five vitals and morale, each 0–100 (SPEC 7.1). */
@@ -182,6 +211,9 @@ export interface GameState {
   /** The run's weather, fixed at the start (SPEC 6.5): an index into weather.ts's ALL for each 3-hour period. */
   weather: { f: number[]; severeDay: number };
   animals: Animal[];
+  /** The trout near the survivor (SPEC 7.4); kept only within reach of them, and the next id. */
+  fish: Fish[];
+  nextFish: number;
   /** The run's arc: flights, the storm and slide, the wreckage, rescue (sim/arc.ts). */
   arc: Arc;
   /** What each dealt thing is in this valley (SPEC 6.6). Re-dealt from the seed on load. */
@@ -218,6 +250,7 @@ export type Command =
   | { t: number; c: 'sleep'; minutes: number; awake: boolean }
   | { t: number; c: 'wake' }
   | { t: number; c: 'cancel' }
+  | { t: number; c: 'goto'; x: number; y: number; onto: boolean; action: string | null; at: 'front' | 'here' }
   | { t: number; c: 'debug-teleport'; x: number; y: number }
   | { t: number; c: 'debug-fire' }
   | { t: number; c: 'debug-give'; k: string; d: number; n: number }
@@ -248,4 +281,6 @@ export type SimEvent =
   | { type: 'aircraft' }
   | { type: 'storm' }
   | { type: 'slide' }
-  | { type: 'snow'; band: number };
+  | { type: 'snow'; band: number }
+  | { type: 'notice'; x: number; y: number }
+  | { type: 'fish'; what: 'spooked' | 'caught' };

@@ -21,7 +21,7 @@ import { startSystems } from './start.ts';
 export const DEFAULT_SEED = 'first-light';
 
 /** The save format. Bump it when GameState changes shape (SPEC 11.6). */
-export const SCHEMA = 2;
+export const SCHEMA = 3;
 
 /** Deal the rules and generate the valley for a seed. Slow (a few hundred ms): do it once per seed. */
 export function buildValley(seed: string): { rules: Rules; world: World } {
@@ -39,7 +39,7 @@ export function newGame(seed: string, protagonist: Protagonist, world: World, ru
     protagonist,
     tick: 0,
     rng: makeStreams(seed),
-    player: { x, y, facing: 2, fromX: x, fromY: y, stepLeft: 0, stepTotal: 0, intent: -1, queued: -1, bumped: false, wet: 0 },
+    player: { x, y, facing: 2, fromX: x, fromY: y, stepLeft: 0, stepTotal: 0, intent: -1, queued: -1, bumped: false, wet: 0, route: null },
     // Shaken, a little thirsty, and it has been a while since breakfast.
     vitals: { health: 92, hydration: 70, nutrition: 72, rest: 68, warmth: 80, morale: 42 },
     conditions: [],
@@ -53,6 +53,8 @@ export function newGame(seed: string, protagonist: Protagonist, world: World, ru
     smoulder: null,
     weather: { f: [], severeDay: 0 },
     animals: [],
+    fish: [],
+    nextFish: 1,
     arc: { flights: [], stormHit: false, slide: false, searched: false, rescueAt: -1, rescueBy: '', felled: {} },
     rules,
     known: { facts: [], techniques: ['sharpen', ...(bg?.mods.techniques ?? [])].sort(), seen: [] },

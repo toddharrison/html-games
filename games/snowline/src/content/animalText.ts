@@ -35,7 +35,15 @@ export const ANIMAL_TEXT = {
   fishMiss: (w: Who) => `${w.name} stabbed at a fish and came up with nothing.`,
   fishHit: (w: Who) => `${w.name} speared a trout.`,
   fishLine: (w: Who, n: number) => (n ? `${w.name} caught ${n === 1 ? 'a trout' : `${n} trout`} on the line.` : `Nothing bit.`),
-  watchFish: (run: boolean) => (run ? 'The stream was thick with trout, nosing upstream over the gravel. The run had come.' : 'Trout hung in the current, turning away from shadows. They always came back to the same places.'),
+  fishGone: (w: Who) => `The trout had gone before ${w.they} could throw.`,
+  watchFish: (run: boolean, n: number) =>
+    run
+      ? 'The stream was thick with trout, nosing upstream over the gravel. The run had come.'
+      : n <= 1
+        ? 'Trout hung in the current, turning away from shadows. They always came back to the same places.'
+        : n === 2
+          ? 'A trout darted at something and was back in its place before the ripple faded. They held still, facing upstream, and let the water bring the food.'
+          : 'Bending close, the fish seemed to slide when the head moved. It was not quite where it looked to be. It was lower, nearer the stones.',
   weirTake: (w: Who, n: number) => `${w.name} took ${n === 1 ? 'a trout' : `${n} trout`} from the weir.`,
   snareSet: (w: Who) => `${w.name} set a snare on the run.`,
   snareCaught: () => 'Something was caught in the snare.',

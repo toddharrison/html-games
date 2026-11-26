@@ -219,7 +219,7 @@ button:focus-visible,
   position: absolute;
   left: 0.7em;
   top: 0.5em;
-  font-size: 0.75em;
+  font-size: 0.95em;
   color: rgba(230, 225, 210, 0.75);
   text-shadow: 0 0 0.4em rgba(0, 0, 0, 0.8);
   letter-spacing: 0.05em;
@@ -599,10 +599,13 @@ button:focus-visible,
 .hud .vitals {
   position: absolute;
   right: 0.7em;
-  top: 0.45em;
+  top: 0.5em;
   display: flex;
-  gap: 0.7em;
-  font-size: 0.7em;
+  gap: 0.6em;
+  padding: 0.3em 0.5em 0.35em;
+  background: rgba(16, 18, 22, 0.45);
+  border-radius: 0.2em;
+  font-size: 1em;
   text-shadow: 0 0 0.4em rgba(0, 0, 0, 0.9);
 }
 
@@ -614,9 +617,28 @@ button:focus-visible,
   color: rgba(230, 225, 210, 0.8);
 }
 
+.hud .vital .icon {
+  font-size: 0.95em;
+  margin-bottom: 0.2em;
+}
+
+/* Four segments per vital (SPEC Q24), drawn as blocks. */
 .hud .vital .pips {
-  font-size: 0.55em;
-  letter-spacing: -0.05em;
+  display: flex;
+  gap: 0.1em;
+}
+
+.hud .vital .pips i {
+  display: block;
+  width: 0.42em;
+  height: 0.5em;
+  border: 1px solid currentColor;
+  opacity: 0.55;
+}
+
+.hud .vital .pips i.on {
+  background: currentColor;
+  opacity: 1;
 }
 
 .hud .vital.fair {
@@ -640,9 +662,9 @@ button:focus-visible,
 
 .hud .feel {
   position: absolute;
-  right: 0.7em;
-  top: 2.2em;
-  font-size: 0.65em;
+  right: 0.8em;
+  top: 3.3em;
+  font-size: 0.9em;
   font-style: italic;
   color: #d9c9a4;
   text-shadow: 0 0 0.4em rgba(0, 0, 0, 0.9);
@@ -653,7 +675,7 @@ button:focus-visible,
   left: 50%;
   bottom: 3.8em;
   transform: translateX(-50%);
-  font-size: 0.7em;
+  font-size: 0.9em;
   text-align: center;
   opacity: 0;
   transition: opacity 0.3s;
@@ -682,8 +704,9 @@ button:focus-visible,
   position: absolute;
   left: 0.7em;
   bottom: 0.5em;
-  width: 55%;
-  font-size: 0.68em;
+  width: 60%;
+  font-size: 0.92em;
+  line-height: 1.25;
   text-shadow: 0 0 0.4em rgba(0, 0, 0, 1);
 }
 
@@ -712,4 +735,72 @@ button:focus-visible,
   color: var(--paper);
   border: 1px solid var(--line);
   flex: 1;
+}
+
+/* ---- M7: the mouse (SPEC 12.4) ---- */
+
+.view[data-cursor='hand'] {
+  cursor: pointer;
+}
+
+.view[data-cursor='eye'] {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='24' height='24'><path d='M2 12 Q12 3 22 12 Q12 21 2 12 Z' fill='%23ddd6bf' stroke='%2314161a' stroke-width='1.5'/><circle cx='12' cy='12' r='3.5' fill='%2314161a'/></svg>") 12 12, help;
+}
+
+.view[data-cursor='walk'] {
+  cursor: crosshair;
+}
+
+/* The name of what's under the mouse, beside it. */
+.tip {
+  position: absolute;
+  pointer-events: none;
+  max-width: 18em;
+  padding: 0.15em 0.5em 0.2em;
+  background: rgba(16, 18, 22, 0.78);
+  border-left: 2px solid rgba(232, 163, 61, 0.7);
+  font-size: 0.85em;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+.tip[hidden] {
+  display: none;
+}
+
+.tip .do {
+  color: var(--dim);
+  font-size: 0.85em;
+}
+
+.tip .do:empty {
+  display: none;
+}
+
+/* A menu at the cursor: the scene stays in view. */
+.overlay.ctx {
+  background: transparent;
+  display: block;
+}
+
+.panel.context {
+  position: absolute;
+  min-width: 0;
+  max-width: 22em;
+  padding: 0.4em 0.7em;
+  font-size: 0.85em;
+}
+
+.panel.context h2 {
+  font-size: 0.9em;
+  color: var(--dim);
+  margin-bottom: 0.3em;
+}
+
+.panel.context .menu-list {
+  min-width: 12em;
+}
+
+.panel.context .keys {
+  display: none;
 }

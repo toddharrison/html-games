@@ -3,7 +3,7 @@
 // shifts another's results. A stream's state is plain data, so it can be saved and compared.
 
 /** The named streams. Each one is seeded from the world seed and its own name. */
-export const STREAMS = ['worldgen', 'rules', 'protagonist', 'weather', 'animals', 'skill-checks', 'health', 'events'] as const;
+export const STREAMS = ['worldgen', 'rules', 'protagonist', 'weather', 'animals', 'skill-checks', 'health', 'events', 'fish'] as const;
 export type StreamName = (typeof STREAMS)[number];
 
 /** One stream: sfc32's four words, and how many numbers it has handed out (the debug overlay shows it). */

@@ -44,6 +44,7 @@ export function flatWorld(): World {
     midden: p,
     waterCauseSites: [],
     landmarks: [],
+    loose: new Uint8Array(n),
   };
 }
 

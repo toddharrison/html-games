@@ -4,12 +4,18 @@ A browser survival RPG: a teenager is the only survivor of a small-plane crash i
 
 This game is one workspace in the html-games monorepo. The repo-wide rules (layout, commands, deploy, commit workflow, versions) are in the root [CLAUDE.md](../../CLAUDE.md). **Paths in this file and in this game's docs are relative to `games/snowline/`.** Public build: https://toddharrison.github.io/html-games/snowline/
 
+## Starting a session (read little, in this order)
+1. **[docs/TODO.md](docs/TODO.md)**, the hand-off notes at the top: what's in progress and the exact next step.
+2. **Only the spec sections the task needs.** [docs/SPEC.md](docs/SPEC.md) is a one-screen index; the spec itself is one file per section in [docs/spec/](docs/spec/), with a "read it when" column. Don't read the whole spec.
+3. **Only the [docs/FEATURES.md](docs/FEATURES.md) entries for the systems you touch** (its Contents list is at the top): code pointers, tuning, and gotchas.
+4. Then the code. The rules below are the ones that are easy to break; you don't need to reread SPEC 11 for them.
+
 ## Source of truth
-- **[docs/SPEC.md](docs/SPEC.md)** is the design spec. [README.md](README.md) is a short public summary; if they disagree, the spec wins. Update the README when a spec change affects its summary.
-- Decisions are logged in SPEC §13.1; open questions are in §13.2 (new ones take the next number, from Q19). When a design decision is made in conversation, update the spec, not only this file.
+- **The spec ([docs/SPEC.md](docs/SPEC.md) and [docs/spec/](docs/spec/))** is the design. [README.md](README.md) is a short public summary; if they disagree, the spec wins. Update the README when a spec change affects its summary.
+- A design decision made in conversation goes into the section file it changes and a dated row in `docs/spec/13-decisions.md`. Open questions are in `docs/spec/13-questions.md` (the next one is Q46). Keep each spec file about one thing (the index says how).
 
 ## Status
-- **M0–M6 are built** (every milestone in SPEC §14) (Nov 2026; M3 onward in progress, see TODO.md), awaiting the user's review and playtest. See [docs/TODO.md](docs/TODO.md) for what's open and [docs/FEATURES.md](docs/FEATURES.md) for what's built.
+- **M0–M6 are built** and were playtested once (2026-11-26). **M7, "seeing and touching" (SPEC 14), is in progress, slice first:** see [docs/TODO.md](docs/TODO.md).
 - Versions: TypeScript 7, Vite 8, Vitest 5, fast-check 4, no runtime dependencies, no game framework (SPEC §11.1).
 - **Originality is tested:** `tests/originality.test.ts` fails on banned names and terms (SPEC §3); add any you find to its list. The pre-release review notes are in `docs/ORIGINALITY.md`.
 

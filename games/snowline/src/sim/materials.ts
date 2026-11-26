@@ -2,7 +2,7 @@
 // tinders, bark, green boughs, and plant fibre. Cutting needs the steel tool; each tool is quicker at
 // some work than others (SPEC 7.2).
 
-import { BAND, F, T } from '../content/terrain.ts';
+import { BAND, F } from '../content/terrain.ts';
 import { CRAFT_MSG } from '../content/fireText.ts';
 import { TINDER_SOURCE, TOOL_WORK, WOOD_SOURCE, type Work } from '../content/recipes.ts';
 import { itemDef } from '../content/items.ts';
@@ -92,17 +92,6 @@ export const MATERIAL_ACTIONS: ActionDef[] = [
     },
   },
   {
-    id: 'driftwood',
-    offer: (_s, w, t) => (w.terrain[t] === T.sand ? `Gather driftwood (${lookName('wood', WOOD_SOURCE.driftwood)})` : null),
-    minutes: 20,
-    needsLight: true,
-    done: (s, _w, t, ev) => {
-      if (!ready(s, t)) return say(s, 'There was nothing more here for now.', ev);
-      collect(s, 'firewood', nextRange(s.rng['skill-checks'], 1, 2), WOOD_SOURCE.driftwood, 'wood', ev, `pieces of ${lookName('wood', WOOD_SOURCE.driftwood)}`);
-      deplete(s, t, 5);
-    },
-  },
-  {
     id: 'boughs',
     offer: (s, w, t) => (w.feature[t] === F.conifer && steelTool(s) ? 'Cut green boughs' : null),
     minutes: (s) => 15 * toolTime(s, 'wood'),
@@ -118,14 +107,6 @@ export const MATERIAL_ACTIONS: ActionDef[] = [
       deplete(s, t, 12);
     },
   },
-  {
-    id: 'fibre',
-    offer: (_s, w, t) => (w.terrain[t] === T.reeds || w.terrain[t] === T.marsh || w.terrain[t] === T.highMeadow ? 'Pull plant fibre' : null),
-    minutes: (s) => 15 * toolTime(s, 'fibre'),
-    needsLight: true,
-    done: (s, _w, _t, ev) => void collect(s, 'fibre', 3, undefined, null, ev, 'handfuls of fibre'),
-  },
-  tinderAction('tinder-grass', `Pull ${lookName('tinder', TINDER_SOURCE.grass)}`, TINDER_SOURCE.grass, (_s, w, t) => w.terrain[t] === T.meadow || w.terrain[t] === T.highMeadow, 2),
   tinderAction('tinder-bark', `Shred ${lookName('tinder', TINDER_SOURCE.innerBark)}`, TINDER_SOURCE.innerBark, (s, w, t) => w.feature[t] === F.aspen && steelTool(s) !== null, 6),
   tinderAction(
     'tinder-lichen',
@@ -134,6 +115,5 @@ export const MATERIAL_ACTIONS: ActionDef[] = [
     (_s, w, t) => (w.feature[t] === F.stunted || w.feature[t] === F.conifer) && w.band[t]! >= BAND.montane,
     6,
   ),
-  tinderAction('tinder-fluff', `Gather ${lookName('tinder', TINDER_SOURCE.seedFluff)}`, TINDER_SOURCE.seedFluff, (_s, w, t) => w.terrain[t] === T.reeds, 4),
   tinderAction('tinder-punk', `Pick out ${lookName('tinder', TINDER_SOURCE.punk)}`, TINDER_SOURCE.punk, (_s, w, t) => w.feature[t] === F.log, 8),
 ];

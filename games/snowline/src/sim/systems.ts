@@ -12,6 +12,8 @@ import { trapsHour } from './hunting.ts';
 import { sightOf } from './sight.ts';
 import { arcMinute, arcOpens } from './arc.ts';
 import { idx } from './world.ts';
+import { fishMinute, fishTick } from './fish.ts';
+import { noticeMinute } from './notice.ts';
 
 type Hook = (s: GameState, w: World, events: SimEvent[]) => void;
 
@@ -20,6 +22,7 @@ const MINUTE: Hook[] = [];
 
 export function tickHooks(s: GameState, w: World, events: SimEvent[]): void {
   animalsTick(s, w, events, sightOf(s));
+  fishTick(s, w, events);
   for (const h of TICK) h(s, w, events);
 }
 
@@ -30,6 +33,8 @@ export function minuteHooks(s: GameState, w: World, events: SimEvent[]): void {
   hazardsMinute(s, w, events);
   arcMinute(s, w, events);
   if (s.tick % 600 === 0) trapsHour(s, w, events);
+  fishMinute(s, w);
+  noticeMinute(s, w, events);
   for (const h of MINUTE) h(s, w, events);
 }
 

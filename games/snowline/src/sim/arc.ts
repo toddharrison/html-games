@@ -239,7 +239,7 @@ export const ARC_ACTIONS: ActionDef[] = [
   },
   {
     id: 'flash-mirror',
-    offer: (s, _w, t) => (t === idx(s.player.x, s.player.y) && has(s, 'mirror') && flightNow(s) && daylight(s.tick) > 50 ? 'Flash the mirror at the aircraft' : null),
+    offer: (s, _w, t) => (t === idx(s.player.x, s.player.y) && (has(s, 'mirror') || has(s, 'metal-scrap')) && flightNow(s) && daylight(s.tick) > 50 ? (has(s, 'mirror') ? 'Flash the mirror at the aircraft' : 'Flash the aluminium at the aircraft') : null),
     minutes: 2,
     done: (s, _w, _t, ev) => {
       s.memory['mirror-at'] = s.tick;

@@ -9,6 +9,7 @@ import { type Gen, newGen, pt } from './gen.ts';
 import { placeSetPieces } from './setpieces.ts';
 import { carveStreams, cutBands, raiseCliffs, shapeBasin } from './shape.ts';
 import { chooseStart, sealWreck } from './wreck.ts';
+import { scatterLoose } from './loose.ts';
 
 /** Tries before giving up. A valley that needs more than a couple is a sign the pipeline needs work. */
 export const MAX_ATTEMPTS = 40;
@@ -82,5 +83,6 @@ function toWorld(seed: string, g: Gen, attempts: number, failures: string[]): Wo
     midden: pt(g.midden),
     waterCauseSites: g.waterCauseSites.map(pt),
     landmarks: g.landmarks,
+    loose: scatterLoose(g),
   };
 }

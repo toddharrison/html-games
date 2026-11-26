@@ -27,7 +27,7 @@ The full design is in **[docs/SPEC.md](docs/SPEC.md)**.
 ## Status
 Playable from start to rescue; awaiting review before release. Choose a survivor and keep them alive in a generated valley: find water, forage, taste carefully, make fire, build a camp, and fill in your notes on what this valley's plants, stone, wood, and water do. Weather turns, animals go about their business, and winter comes down the mountain. Get out by signal fire when the search aircraft pass, or climb to the beacon in the tail wreckage once the great storm's rockslide opens a way. The game is at https://toddharrison.github.io/html-games/snowline/ once it is published, and also as a single HTML file you can download and open from disk.
 
-Controls: WASD or the arrow keys to walk (Shift to turn on the spot), E to act on what you face, I for what you carry, 1–9 to use it, C to make things, J for the journal, R to rest, M for the map, Esc to pause.
+Controls: click something to walk to it and do the obvious thing (right-click for every choice); or WASD or the arrow keys to walk (Shift to turn on the spot), E to act on what you face, I for what you carry, 1–9 to use it, C to make things, J for the journal, R to rest, M for the map, Esc to pause.
 
 ## Tech
 TypeScript and Vite, drawn on a canvas with no game framework. It runs entirely in the browser: static files, no server, no network use while you play. The same seed and the same keys always play out the same way, on any machine.

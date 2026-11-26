@@ -23,6 +23,7 @@ import { animalAt } from './animals.ts';
 import { addCondition } from './body.ts';
 import { ANIMAL_TEXT } from '../content/animalText.ts';
 import { idx, inBounds, passable, stepTicks, type World } from './world.ts';
+import { findRoute } from './route.ts';
 
 const DX = [0, 1, 0, -1] as const;
 const DY = [-1, 0, 1, 0] as const;
@@ -101,6 +102,7 @@ function apply(state: GameState, world: World, cmd: Command, events: SimEvent[])
       if (state.sleep && !state.sleep.awake) break;
       if (state.sleep) state.sleep = null;
       if (state.task) state.task = null;
+      p.route = null;
       p.intent = cmd.dir;
       p.queued = cmd.dir;
       break;
@@ -134,6 +136,10 @@ function apply(state: GameState, world: World, cmd: Command, events: SimEvent[])
       break;
     case 'cancel':
       state.task = null;
+      p.route = null;
+      break;
+    case 'goto':
+      startRoute(state, world, cmd, events);
       break;
     case 'debug-teleport':
       if (!passable(world, cmd.x, cmd.y)) break;
@@ -173,8 +179,9 @@ function movePlayer(state: GameState, world: World, events: SimEvent[]): boolean
   if (p.stepLeft > 0) p.stepLeft--;
   if (p.stepLeft > 0) return true;
   if (state.sleep || state.task) return false;
-  const dir: Dir | -1 = p.queued >= 0 ? p.queued : p.intent;
+  let dir: Dir | -1 = p.queued >= 0 ? p.queued : p.intent;
   p.queued = -1;
+  if (dir === -1 && p.route) dir = nextOnRoute(state, world, events);
   if (dir === -1) return false;
   if (dir !== p.facing) p.bumped = false;
   p.facing = dir;
@@ -212,6 +219,86 @@ function movePlayer(state: GameState, world: World, events: SimEvent[]): boolean
   reveal(state);
   visitViewpoints(state, world, events);
   return true;
+}
+
+// ---- Walking somewhere (SPEC 5.2) ----
+
+type Goto = Extract<Command, { c: 'goto' }>;
+
+/** Is (x, y) where a route to (tx, ty) ends: on it, or beside it (four-way) if not walking onto it. */
+function routeGoal(tx: number, ty: number, onto: boolean): (x: number, y: number) => boolean {
+  return onto ? (x, y) => x === tx && y === ty : (x, y) => Math.abs(x - tx) + Math.abs(y - ty) === 1;
+}
+
+function planRoute(state: GameState, world: World, tx: number, ty: number, onto: boolean): Dir[] | null {
+  const p = state.player;
+  return findRoute(
+    p.x,
+    p.y,
+    tx,
+    ty,
+    routeGoal(tx, ty, onto),
+    (x, y) => canEnter(state, world, x, y),
+    (from, to) => stepTicks(world, from, to),
+  );
+}
+
+function startRoute(state: GameState, world: World, cmd: Goto, events: SimEvent[]): void {
+  const p = state.player;
+  if (state.over || (state.sleep && !state.sleep.awake) || !inBounds(cmd.x, cmd.y)) return;
+  if (state.sleep) state.sleep = null;
+  state.task = null;
+  p.intent = -1;
+  p.queued = -1;
+  // Already there, or doing it where they stand.
+  const here = cmd.x === p.x && cmd.y === p.y;
+  const path = here && (cmd.onto || cmd.at === 'here') ? [] : planRoute(state, world, cmd.x, cmd.y, cmd.onto);
+  if (!path) {
+    p.route = null;
+    say(state, MSG.noWay(), events);
+    return;
+  }
+  p.route = { path, tx: cmd.x, ty: cmd.y, onto: cmd.onto, action: cmd.action, at: cmd.at, tries: 0 };
+  if (path.length === 0 && p.stepLeft === 0) arrive(state, world, events);
+}
+
+/** The next step of the route, or -1 once there (starting what was asked). Finds the way again if blocked. */
+function nextOnRoute(state: GameState, world: World, events: SimEvent[]): Dir | -1 {
+  const p = state.player;
+  const r = p.route!;
+  if (r.path.length === 0) {
+    arrive(state, world, events);
+    return -1;
+  }
+  const d = r.path[0]!;
+  if (!canEnter(state, world, p.x + DX[d], p.y + DY[d])) {
+    const again = r.tries < 3 ? planRoute(state, world, r.tx, r.ty, r.onto) : null;
+    if (!again || again.length === 0) {
+      p.route = null;
+      if (again) arrive(state, world, events);
+      return -1;
+    }
+    r.path = again;
+    r.tries++;
+  }
+  return r.path.shift()!;
+}
+
+function arrive(state: GameState, world: World, events: SimEvent[]): void {
+  const p = state.player;
+  const r = p.route;
+  p.route = null;
+  if (!r) return;
+  const dx = r.tx - p.x;
+  const dy = r.ty - p.y;
+  if (Math.abs(dx) + Math.abs(dy) === 1) {
+    const dir: Dir = dx === 1 ? 1 : dx === -1 ? 3 : dy === 1 ? 2 : 0;
+    if (dir !== p.facing) p.bumped = false;
+    p.facing = dir;
+  }
+  if (!r.action) return;
+  const tile = r.at === 'here' ? idx(p.x, p.y) : idx(r.tx, r.ty);
+  startAction(state, world, r.action, tile, events);
 }
 
 /** Can the survivor step onto this tile: the map allows it, and nothing built or fallen blocks it. */

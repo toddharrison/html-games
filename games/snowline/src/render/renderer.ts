@@ -3,7 +3,7 @@
 // never writes to it; its own randomness (shimmer, flicker) never feeds back (SPEC 11.3, rule 3).
 
 import { SCREEN_H, SCREEN_W, TILE } from '../content/balance.ts';
-import { F, FLAG, T, TERRAIN } from '../content/terrain.ts';
+import { F, T, TERRAIN } from '../content/terrain.ts';
 import type { Fire, GameState } from '../sim/state.ts';
 import { burning } from '../sim/surroundings.ts';
 import { sightCircles } from '../sim/step.ts';
@@ -15,7 +15,23 @@ import { FLIGHT_MINUTES } from '../content/arc.ts';
 import { idx, type World } from '../sim/world.ts';
 import { gradeAt } from './grade.ts';
 import { PALETTE } from './palette.ts';
-import { VARIANTS, buildAtlas, rh, type Atlas } from './tiles.ts';
+import { buildAtlas, rh, type Atlas } from './tiles.ts';
+import { Ground } from './ground.ts';
+import { aspen, boulder, conifer, crag, log, stunted, type Tall } from './flora.ts';
+import { LooseArt } from './looseArt.ts';
+import { L, isTracks } from '../content/loose.ts';
+import { looseAt, looseData } from '../sim/loose.ts';
+import { hashString } from '../sim/rng.ts';
+import { perlin } from '../sim/worldgen/noise.ts';
+
+/** Each dealt stone's look in an outcrop: body and mark (content/decks.ts STONES order). */
+const STONE_LOOK: [string, string][] = [
+  ['#2e323c', '#5d6a96'],
+  ['#6f736f', '#a9aea8'],
+  ['#8a4a32', '#c4552b'],
+  ['#8f8f88', '#e9ece6'],
+  ['#77746b', '#3b3a33'],
+];
 
 /** How much of the darkness the survivor's own sight lifts, with no light: a dim, colourless circle. */
 const OWN_SIGHT_LIFT = 0.62;
@@ -41,21 +57,33 @@ function offscreen(): { c: HTMLCanvasElement; g: CanvasRenderingContext2D } {
 export class Renderer {
   private readonly g: CanvasRenderingContext2D;
   private readonly atlas: Atlas = buildAtlas();
+  private readonly looseArt = new LooseArt();
   private readonly color = offscreen();
   private readonly tmp = offscreen();
   private readonly mask = offscreen();
+  private readonly shadowLayer = offscreen();
   private world: World | null = null;
+  private ground: Ground | null = null;
   private readonly lastX = new Map<number, number>();
   private readonly facingLeft = new Map<number, boolean>();
   /** When the last lightning flashed (ms), and whether flashes are toned down (SPEC 12.4). */
   private flashAt = -1e9;
   reduceFlashes = false;
+  /** Per tile: a tree's size (0 sapling to 4 giant), and low ground near water where dawn mist lies. */
+  private treeSize = new Uint8Array(0);
+  private lowland = new Uint8Array(0);
+  /** Where each fish is drawn (world pixels), easing toward its tile; rings where trout rise at dusk. */
+  private readonly fishAt = new Map<number, { x: number; y: number; left: boolean }>();
+  private rings: { x: number; y: number; t: number }[] = [];
+  private lastFrame = 0;
+  private readonly trees = new Map<string, Tall>();
+  private readonly boulders = new Map<string, HTMLCanvasElement>();
+  private clouds: HTMLCanvasElement | null = null;
+  private mistBlob: HTMLCanvasElement | null = null;
 
   lightning(now: number): void {
     this.flashAt = now;
   }
-  /** Hill shading per tile: light on slopes facing north-west, shadow on the others. */
-  private shade = new Float32Array(0);
 
   readonly canvas: HTMLCanvasElement;
 
@@ -67,15 +95,39 @@ export class Renderer {
 
   setWorld(world: World): void {
     this.world = world;
+    this.ground = new Ground(world, hashString(`${world.genSeed}/look`)[0]);
     const n = world.size;
-    this.shade = new Float32Array(n * n);
-    for (let y = 1; y < n; y++) {
-      for (let x = 1; x < n; x++) {
+    this.treeSize = new Uint8Array(n * n);
+    this.lowland = new Uint8Array(n * n);
+    const isTree = (i: number) => {
+      const f = world.feature[i];
+      return f === F.conifer || f === F.aspen || f === F.stunted;
+    };
+    for (let y = 1; y < n - 1; y++) {
+      for (let x = 1; x < n - 1; x++) {
         const i = idx(x, y);
-        const d = world.elev[i]! - world.elev[idx(x - 1, y - 1)]!;
-        this.shade[i] = Math.max(-0.2, Math.min(0.2, d * 0.05));
+        if (isTree(i)) {
+          // Trees grow bigger in the heart of a stand, and smaller up high; the hash varies the rest.
+          let near = 0;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && isTree(idx(x + dx, y + dy))) near++;
+          let size = near >= 4 ? 3 : 2;
+          const r = rh(x, y, 71);
+          if (r < 0.2) size++;
+          else if (r > 0.86) size--;
+          if (r > 0.95) size = 0;
+          if (world.band[i]! >= 2) size--;
+          if (world.feature[i] === F.aspen) size = Math.min(2, size);
+          this.treeSize[i] = Math.max(0, Math.min(4, size));
+        }
+        if (world.band[i] === 0) {
+          let wet = false;
+          for (let dy = -3; dy <= 3 && !wet; dy++) for (let dx = -3; dx <= 3 && !wet; dx++) if (TERRAIN[world.terrain[idx(x + dx, y + dy)] ?? 0]?.water) wet = true;
+          this.lowland[i] = wet || world.terrain[i] === T.marsh || world.terrain[i] === T.reeds ? 1 : 0;
+        }
       }
     }
+    this.fishAt.clear();
+    this.rings = [];
   }
 
   /** Where the camera is for this frame. `alpha` is how far into the next tick we are (0–1). */
@@ -91,11 +143,66 @@ export class Renderer {
     return { x, y, px, py };
   }
 
-  draw(state: GameState, alpha: number, timeMs: number, hover?: { x: number; y: number } | null): Camera {
+  private tree(kind: number, size: number, v: number): Tall {
+    const key = `${kind}:${size}:${v}`;
+    let t = this.trees.get(key);
+    if (!t) {
+      t = kind === F.aspen ? aspen(size, v) : kind === F.stunted ? stunted(v) : conifer(size, v);
+      this.trees.set(key, t);
+    }
+    return t;
+  }
+
+  private boulder(size: number, v: number): HTMLCanvasElement {
+    const key = `${size}:${v}`;
+    let b = this.boulders.get(key);
+    if (!b) {
+      b = boulder(size, v);
+      this.boulders.set(key, b);
+    }
+    return b;
+  }
+
+  private cragArt(stone: number, v: number): HTMLCanvasElement {
+    const key = `crag:${stone}:${v}`;
+    let b = this.boulders.get(key);
+    if (!b) {
+      const [body, mark] = stone < 0 ? ['#5f666c', '#3b4350'] : (STONE_LOOK[stone] ?? STONE_LOOK[1]!);
+      b = crag(body, mark, v);
+      this.boulders.set(key, b);
+    }
+    return b;
+  }
+
+  private logArt(v: number): HTMLCanvasElement {
+    const key = `log:${v}`;
+    let b = this.boulders.get(key);
+    if (!b) {
+      b = log(v);
+      this.boulders.set(key, b);
+    }
+    return b;
+  }
+
+  /** The sun's direction and the length of shadows (SPEC 12.1: long at dawn and dusk), or null at night. */
+  private sun(state: GameState): { dx: number; len: number; alpha: number } | null {
+    const m = clock(state.tick).minute;
+    if (m < 330 || m > 1230) return null;
+    const t = (m - 330) / 900;
+    const dx = t * 2 - 1;
+    const gloom = WEATHER[weatherAt(state)].gloom;
+    const alpha = Math.min(1, daylight(state.tick) / 60) * (1 - gloom * 1.1) * 0.3;
+    if (alpha <= 0.02) return null;
+    return { dx, len: 0.35 + 1.4 * Math.abs(dx) ** 1.6, alpha };
+  }
+
+  draw(state: GameState, alpha: number, timeMs: number, hover?: { x: number; y: number } | null, mark?: { x: number; y: number } | null): Camera {
     const world = this.world;
     const g = this.g;
     const cam = this.camera(state, alpha);
-    if (!world) return cam;
+    if (!world || !this.ground) return cam;
+    const dt = Math.min(0.1, Math.max(0, (timeMs - this.lastFrame) / 1000));
+    this.lastFrame = timeMs;
     g.globalCompositeOperation = 'source-over';
     g.globalAlpha = 1;
     g.fillStyle = PALETTE.ink;
@@ -105,70 +212,121 @@ export class Renderer {
     const y0 = Math.floor(cam.y / TILE);
     const x1 = Math.min(world.size - 1, x0 + Math.ceil(SCREEN_W / TILE));
     const y1 = Math.min(world.size - 1, y0 + Math.ceil(SCREEN_H / TILE));
-    const shimmer = Math.floor(timeMs / 450);
     const snow = snowBand(state.tick);
+    this.ground.draw(g, cam.x, cam.y, SCREEN_W, SCREEN_H, snow);
+    this.water(cam, timeMs, x0, y0, x1, y1);
+    this.fish(state, cam, timeMs, dt);
 
-    for (let ty = y0; ty <= y1; ty++) {
+    const wind = weatherNow(state, world).wind;
+    const sway = (x: number, y: number) => Math.round(Math.sin(timeMs / (900 - wind * 400) + x * 0.9 + y * 0.43) * (0.55 + wind * 1.6));
+    const sun = this.sun(state);
+    const shadows: [number, number, number, number][] = [];
+    const survivorPx = Math.round(cam.px * TILE) - cam.x;
+    const survivorPy = Math.round(cam.py * TILE) - cam.y;
+    const prow = Math.round(cam.py);
+
+    // Features, loose things, and the survivor, row by row, so things lower on the screen stand in front.
+    // Rows below the view are included: a tall tree there can reach up into it.
+    const layer: (() => void)[] = [];
+    for (let ty = y0; ty <= Math.min(world.size - 1, y1 + 2); ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         const i = idx(tx, ty);
-        const t = world.terrain[i]!;
-        const dx = tx * TILE - cam.x;
-        const dy = ty * TILE - cam.y;
-        const v = Math.floor(rh(tx, ty, 1) * VARIANTS);
-        g.drawImage(this.atlas.terrain, v * TILE, t * TILE, TILE, TILE, dx, dy, TILE, TILE);
-        const s = this.shade[i]!;
-        if (s > 0.01 || s < -0.01) {
-          g.fillStyle = s > 0 ? `rgba(255,250,235,${s})` : `rgba(10,12,20,${-s})`;
-          g.fillRect(dx, dy, TILE, TILE);
-        }
-        if (world.band[i]! >= snow && !TERRAIN[t]!.water && t !== T.cliff && t !== T.headwall) {
-          g.fillStyle = 'rgba(236,240,236,0.72)';
-          g.fillRect(dx, dy, TILE, TILE);
-        }
-        if (world.flags[i]! & FLAG.trail && !TERRAIN[t]!.water) {
-          g.fillStyle = 'rgba(110,90,70,0.45)';
-          g.fillRect(dx + 3, dy + 6, 3, 2);
-          g.fillRect(dx + 10, dy + 11, 3, 2);
-        }
-        if (TERRAIN[t]!.water && t !== T.waterfall) {
-          // The water's shimmer: a few bright pixels that come and go.
-          for (let k = 0; k < 2; k++) {
-            const r = rh(tx * 3 + k, ty, shimmer + k * 7);
-            if (r < 0.3) {
-              g.fillStyle = 'rgba(200,225,225,0.55)';
-              g.fillRect(dx + Math.floor(r * 50) % 14, dy + Math.floor(r * 170) % 15, 2, 1);
-            }
+        const sx = tx * TILE - cam.x;
+        const sy = ty * TILE - cam.y;
+        if (ty <= y1) {
+          const l = looseAt(state, world, i);
+          if (l) {
+            const v = Math.floor(rh(tx, ty, 77) * 3);
+            const ox = Math.floor(rh(tx, ty, 78) * 5) - 2;
+            const oy = Math.floor(rh(tx, ty, 79) * 3) - 1;
+            const stoneTint = l === L.chip ? (looseData(world, i, 'outcrop') ?? 1) : 1;
+            const art = this.looseArt.get(l, v, stoneTint);
+            layer.push(() => g.drawImage(art, sx + ox, sy + oy));
+            if (!isTracks(l)) shadows.push([sx + 8 + ox, sy + 14 + oy, 9, 2]);
           }
         }
-      }
-    }
-
-    // Features and the survivor, row by row, so things lower on the screen stand in front.
-    const prow = Math.round(cam.py);
-    for (let ty = y0; ty <= y1; ty++) {
-      for (let tx = x0; tx <= x1; tx++) {
-        const i = idx(tx, ty);
         const f = state.arc.felled[i] ? F.log : world.feature[i]!;
         if (!f) continue;
+        if (f === F.conifer || f === F.aspen || f === F.stunted) {
+          const size = this.treeSize[i]!;
+          const t = this.tree(f, size, Math.floor(rh(tx, ty, 73) * 3));
+          const left = sx + 8 - Math.floor(t.c.width / 2);
+          const top = sy + 16 - t.c.height;
+          const h = t.c.height;
+          shadows.push([sx + 8, sy + 15, 6 + size * 2, h]);
+          // The canopy fades when the survivor is behind it (SPEC 12.1).
+          const behind = prow < ty && survivorPx + 12 > left + 3 && survivorPx + 4 < left + t.c.width - 3 && survivorPy + 14 > top && survivorPy < sy;
+          const s = sway(tx, ty);
+          layer.push(() => {
+            if (behind) g.globalAlpha = 0.45;
+            g.drawImage(t.c, 0, 0, t.c.width, t.crown, left + s, top, t.c.width, t.crown);
+            g.drawImage(t.c, 0, t.crown, t.c.width, h - t.crown, left, top + t.crown, t.c.width, h - t.crown);
+            g.globalAlpha = 1;
+          });
+          continue;
+        }
+        if (ty > y1) continue;
+        if (f === F.boulder) {
+          const big = rh(tx, ty, 74) < 0.55 ? 1 : 0;
+          const b = this.boulder(big, Math.floor(rh(tx, ty, 75) * 3));
+          shadows.push([sx + 8, sy + 15, big ? 14 : 10, big ? 11 : 8]);
+          layer.push(() => g.drawImage(b, sx, sy));
+          continue;
+        }
         // A picked-over patch looks thin until it comes back.
         const bare = (f === F.plant || f === F.herb || f === F.bush) && (state.regrow[i] ?? 0) > state.tick;
-        if (bare) g.globalAlpha = 0.4;
-        g.drawImage(this.atlas.feature(f, world.data[i]!), tx * TILE - cam.x, ty * TILE - cam.y);
-        g.globalAlpha = 1;
+        const v = Math.floor(rh(tx, ty, 76) * 3);
+        const art = f === F.outcrop ? this.cragArt(world.data[i]!, v) : f === F.overhang ? this.cragArt(-1, v) : f === F.log ? this.logArt(v) : this.atlas.feature(f, world.data[i]!);
+        if (f === F.snag || f === F.outcrop || f === F.crash || f === F.tail || f === F.arch || f === F.overhang) shadows.push([sx + 8, sy + 15, 12, 14]);
+        layer.push(() => {
+          if (bare) g.globalAlpha = 0.4;
+          g.drawImage(art, sx, sy);
+          g.globalAlpha = 1;
+        });
       }
-      for (const bd of state.builds) {
-        if (bd.y !== ty || bd.x < x0 || bd.x > x1) continue;
-        const bx = bd.x * TILE - cam.x;
-        const by = bd.y * TILE - cam.y;
+      if (ty <= y1) this.rowThings(state, cam, ty, x0, x1, timeMs, layer, shadows);
+      if (ty === prow) {
+        layer.push(() => this.drawSurvivor(state, cam));
+        shadows.push([survivorPx + 8, survivorPy + 15, 7, 14]);
+      }
+    }
+    // Every shadow first, then everything in row order, so rows below stand in front of rows above.
+    this.shadows(sun, shadows);
+    for (const d of layer) d();
+    if (prow > y1 + 2) this.drawSurvivor(state, cam);
+
+    if (hover) {
+      g.strokeStyle = 'rgba(255,255,255,0.6)';
+      g.strokeRect(hover.x * TILE - cam.x + 0.5, hover.y * TILE - cam.y + 0.5, TILE - 1, TILE - 1);
+    }
+    if (mark) this.brackets(mark.x * TILE - cam.x, mark.y * TILE - cam.y, timeMs);
+
+    this.cloudShadows(state, cam, timeMs, wind);
+    this.mist(state, cam, timeMs, x0, y0, x1, y1);
+    this.light(state, cam, timeMs);
+    this.ground.warm(cam.x, cam.y, SCREEN_W, SCREEN_H, snow);
+    return cam;
+  }
+
+  /** Builds, stashes, fires, and animals on one row. */
+  private rowThings(state: GameState, cam: Camera, ty: number, x0: number, x1: number, timeMs: number, layer: (() => void)[], shadows: [number, number, number, number][]): void {
+    const g = this.g;
+    for (const bd of state.builds) {
+      if (bd.y !== ty || bd.x < x0 || bd.x > x1) continue;
+      const bx = bd.x * TILE - cam.x;
+      const by = bd.y * TILE - cam.y;
+      layer.push(() => {
         if (bd.kind === 'reflector') {
           g.fillStyle = PALETTE.fog;
           for (const [sx, sy] of [[0, 4], [0, 9], [14, 4], [14, 9], [4, 0], [10, 0]] as const) g.fillRect(bx + sx, by + sy, 2, 2);
         } else g.drawImage(this.atlas.sprite(bd.kind), bx, by);
-      }
-      const sm = state.smoulder;
-      if (sm && sm.y === ty) {
-        const sx = sm.x * TILE - cam.x;
-        const sy = sm.y * TILE - cam.y;
+      });
+    }
+    const sm = state.smoulder;
+    if (sm && sm.y === ty) {
+      const sx = sm.x * TILE - cam.x;
+      const sy = sm.y * TILE - cam.y;
+      layer.push(() => {
         g.fillStyle = rh(2, Math.floor(timeMs / 200), 9) < 0.5 ? PALETTE.ember : PALETTE.fire;
         g.fillRect(sx + 7, sy + 4, 2, 2);
         for (let k = 0; k < 4; k++) {
@@ -176,32 +334,215 @@ export class Renderer {
           g.fillStyle = `rgba(200,200,195,${0.5 * (1 - age)})`;
           g.fillRect(sx + 6 + Math.round(Math.sin(age * 5 + k) * 2), sy + 2 - Math.round(age * 30), 3, 3);
         }
-      }
-      for (const a of state.animals) {
-        if (a.y !== ty || a.x < x0 || a.x > x1 || a.mode === 'gone') continue;
-        const near = Math.max(Math.abs(a.x - state.player.x), Math.abs(a.y - state.player.y));
-        if (a.kind === 'grouse' && a.mode !== 'flee' && near > 2) continue;
-        const last = this.lastX.get(a.id) ?? a.x;
-        if (last !== a.x) this.facingLeft.set(a.id, a.x < last);
-        this.lastX.set(a.id, a.x);
-        const bob = a.mode === 'flee' || a.mode === 'leave' ? Math.floor(timeMs / 120 + a.id) % 2 : 0;
-        g.drawImage(this.atlas.animal(a.kind, this.facingLeft.get(a.id) ?? false), a.x * TILE - cam.x, a.y * TILE - cam.y - bob);
-      }
-      for (const st of state.stashes) {
-        if (st.y === ty && st.x >= x0 && st.x <= x1) g.drawImage(this.atlas.sprite('stash'), st.x * TILE - cam.x, st.y * TILE - cam.y);
-      }
-      for (const f of state.fires) if (f.y === ty) this.drawFire(f, f.x * TILE - cam.x, f.y * TILE - cam.y, timeMs);
-      if (ty === prow) this.drawSurvivor(state, cam);
+      });
     }
-    if (prow > y1) this.drawSurvivor(state, cam);
-
-    if (hover) {
-      g.strokeStyle = 'rgba(255,255,255,0.6)';
-      g.strokeRect(hover.x * TILE - cam.x + 0.5, hover.y * TILE - cam.y + 0.5, TILE - 1, TILE - 1);
+    for (const st of state.stashes) {
+      if (st.y !== ty || st.x < x0 || st.x > x1 || !st.items.length) continue;
+      const art = this.looseArt.item(st.items[0]!.k) ?? this.atlas.sprite('stash');
+      const sx = st.x * TILE - cam.x;
+      const sy = st.y * TILE - cam.y;
+      const glint = st.items[0]!.k === 'metal-scrap' && Math.floor(timeMs / 140) % 11 === 0;
+      shadows.push([sx + 8, sy + 14, 9, 3]);
+      layer.push(() => {
+        g.drawImage(art, sx, sy);
+        if (glint) {
+          g.fillStyle = 'rgba(255,255,255,0.9)';
+          g.fillRect(sx + 6, sy + 6, 1, 5);
+          g.fillRect(sx + 4, sy + 8, 5, 1);
+        }
+      });
     }
+    for (const f of state.fires) if (f.y === ty) layer.push(() => this.drawFire(f, f.x * TILE - cam.x, f.y * TILE - cam.y, timeMs));
+    for (const a of state.animals) {
+      if (a.y !== ty || a.x < x0 || a.x > x1 || a.mode === 'gone') continue;
+      const near = Math.max(Math.abs(a.x - state.player.x), Math.abs(a.y - state.player.y));
+      if (a.kind === 'grouse' && a.mode !== 'flee' && near > 2) continue;
+      const last = this.lastX.get(a.id) ?? a.x;
+      if (last !== a.x) this.facingLeft.set(a.id, a.x < last);
+      this.lastX.set(a.id, a.x);
+      const bob = a.mode === 'flee' || a.mode === 'leave' ? Math.floor(timeMs / 120 + a.id) % 2 : 0;
+      const ax = a.x * TILE - cam.x;
+      const ay = a.y * TILE - cam.y;
+      if (a.kind !== 'jay') shadows.push([ax + 8, ay + 15, 8, 8]);
+      layer.push(() => g.drawImage(this.atlas.animal(a.kind, this.facingLeft.get(a.id) ?? false), ax, ay - bob));
+    }
+  }
 
-    this.light(state, cam, timeMs);
-    return cam;
+  /** Every shadow on the screen, cast away from the sun, merged so overlaps don't darken twice. */
+  private shadows(sun: { dx: number; len: number; alpha: number } | null, list: [number, number, number, number][]): void {
+    if (!sun || !list.length) return;
+    const s = this.shadowLayer.g;
+    s.globalCompositeOperation = 'copy';
+    s.fillStyle = 'rgba(0,0,0,0)';
+    s.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    s.globalCompositeOperation = 'source-over';
+    s.fillStyle = '#0a0d12';
+    for (const [x, y, w, h] of list) {
+      const reach = h * sun.len * 0.55;
+      const cx = x + sun.dx * reach * 0.7;
+      const cy = y - 1 - reach * 0.18;
+      s.beginPath();
+      s.ellipse(cx, cy, w / 2 + Math.abs(sun.dx) * reach * 0.5, 1.5 + Math.min(3, h * 0.08), 0, 0, Math.PI * 2);
+      s.fill();
+    }
+    this.g.globalAlpha = sun.alpha;
+    this.g.drawImage(this.shadowLayer.c, 0, 0);
+    this.g.globalAlpha = 1;
+  }
+
+  /** Water that moves: shimmer on the lake and streams, foam falling down the waterfall. */
+  private water(cam: Camera, timeMs: number, x0: number, y0: number, x1: number, y1: number): void {
+    const world = this.world!;
+    const g = this.g;
+    const shimmer = Math.floor(timeMs / 450);
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        const t = world.terrain[idx(tx, ty)]!;
+        if (!TERRAIN[t]!.water) continue;
+        const dx = tx * TILE - cam.x;
+        const dy = ty * TILE - cam.y;
+        if (t === T.waterfall) {
+          for (let k = 0; k < 4; k++) {
+            const y = (timeMs / 9 + k * 4 + tx * 5) % TILE;
+            g.fillStyle = 'rgba(240,248,246,0.6)';
+            g.fillRect(dx + 1 + k * 4, dy + Math.floor(y), 1, 3);
+          }
+          continue;
+        }
+        const n = t === T.stream || t === T.gravel ? 3 : 2;
+        for (let k = 0; k < n; k++) {
+          const r = rh(tx * 3 + k, ty, shimmer + k * 7);
+          if (r < 0.3) {
+            g.fillStyle = 'rgba(200,225,225,0.5)';
+            g.fillRect(dx + (Math.floor(r * 50) % 14), dy + (Math.floor(r * 170) % 15), t === T.stream ? 3 : 2, 1);
+          }
+        }
+      }
+    }
+  }
+
+  /** The trout (SPEC 7.4): dark shapes easing between their tiles, darting when startled; rings at dusk. */
+  private fish(state: GameState, cam: Camera, timeMs: number, dt: number): void {
+    const g = this.g;
+    const minute = clock(state.tick).minute;
+    const dusk = minute >= 1110 && minute <= 1290;
+    const seenIds = new Set<number>();
+    for (const f of state.fish) {
+      seenIds.add(f.id);
+      const tx = f.x * TILE + 3 + Math.floor(rh(f.id, 1, 81) * 10);
+      const ty = f.y * TILE + 4 + Math.floor(rh(f.id, 2, 81) * 9);
+      let at = this.fishAt.get(f.id);
+      if (!at) {
+        at = { x: tx, y: ty, left: false };
+        this.fishAt.set(f.id, at);
+      }
+      const k = Math.min(1, dt * (f.spook > 0 ? 9 : 1.6));
+      if (Math.abs(tx - at.x) > 0.5) at.left = tx < at.x;
+      at.x += (tx - at.x) * k;
+      at.y += (ty - at.y) * k;
+      const sx = Math.round(at.x + Math.sin(timeMs / 600 + f.id) * 0.8) - cam.x;
+      const sy = Math.round(at.y) - cam.y;
+      if (sx < -8 || sy < -8 || sx > SCREEN_W + 8 || sy > SCREEN_H + 8) continue;
+      const tail = Math.floor(timeMs / (f.spook > 0 ? 80 : 260) + f.id) % 2;
+      g.fillStyle = 'rgba(16,26,30,0.55)';
+      const dir = at.left ? -1 : 1;
+      g.fillRect(sx - 2, sy, 5, 2);
+      g.fillRect(sx - 1, sy - 1, 3, 1);
+      g.fillRect(sx - 3 * dir, sy + tail, 1, 1);
+      g.fillStyle = 'rgba(16,26,30,0.35)';
+      g.fillRect(sx - 4 * dir, sy - 1 + tail * 2, 1, 1);
+      if (dusk && rh(f.id, Math.floor(timeMs / 500), 82) < 0.012) this.rings.push({ x: at.x, y: at.y, t: timeMs });
+    }
+    for (const id of [...this.fishAt.keys()]) if (!seenIds.has(id)) this.fishAt.delete(id);
+    this.rings = this.rings.filter((r) => timeMs - r.t < 1600);
+    for (const r of this.rings) {
+      const age = (timeMs - r.t) / 1600;
+      g.strokeStyle = `rgba(220,235,232,${0.55 * (1 - age)})`;
+      g.beginPath();
+      g.ellipse(Math.round(r.x - cam.x) + 0.5, Math.round(r.y - cam.y) + 0.5, 1 + age * 6, 0.6 + age * 3, 0, 0, Math.PI * 2);
+      g.stroke();
+    }
+  }
+
+  /** Corner marks round the tile under the mouse, when a click would do something there. */
+  private brackets(x: number, y: number, timeMs: number): void {
+    const g = this.g;
+    const a = 0.55 + Math.sin(timeMs / 260) * 0.2;
+    g.fillStyle = `rgba(240,232,210,${a})`;
+    for (const [cx, cy, sx, sy] of [[0, 0, 1, 1], [15, 0, -1, 1], [0, 15, 1, -1], [15, 15, -1, -1]] as const) {
+      g.fillRect(x + cx + (sx < 0 ? -2 : 0), y + cy, 3, 1);
+      g.fillRect(x + cx, y + cy + (sy < 0 ? -2 : 0), 1, 3);
+    }
+  }
+
+  /** Cloud shadows drifting over the ground on a broken-cloud day (SPEC 12.1). */
+  private cloudShadows(state: GameState, cam: Camera, timeMs: number, wind: number): void {
+    const def = WEATHER[weatherAt(state)];
+    if (def.fog > 0 || def.gloom > 0.4 || daylight(state.tick) < 35) return;
+    if (!this.clouds) {
+      const c = document.createElement('canvas');
+      c.width = 96;
+      c.height = 96;
+      const cg = c.getContext('2d')!;
+      const img = cg.createImageData(96, 96);
+      for (let y = 0; y < 96; y++) {
+        for (let x = 0; x < 96; x++) {
+          // Wrapped noise, so the texture tiles without a seam.
+          const a = Math.sin((x / 96) * Math.PI * 2);
+          const b = Math.cos((x / 96) * Math.PI * 2);
+          const cc = Math.sin((y / 96) * Math.PI * 2);
+          const d = Math.cos((y / 96) * Math.PI * 2);
+          const v = perlin(901, a * 1.6 + 5, cc * 1.6 + 5) + perlin(902, b * 1.6 + 9, d * 1.6 + 9) * 0.8 + perlin(903, a * 3.2 + cc * 2, b * 3.2 + d * 2) * 0.35;
+          const o = (y * 96 + x) * 4;
+          img.data[o + 3] = Math.max(0, Math.min(255, (v - 0.18) * 900));
+        }
+      }
+      cg.putImageData(img, 0, 0);
+      this.clouds = c;
+    }
+    const scale = 9;
+    const size = 96 * scale;
+    const drift = (timeMs / 1000) * (3 + wind * 14);
+    const ox = (((-cam.x * 0.98 + drift) % size) + size) % size;
+    const oy = (((-cam.y * 0.98 + drift * 0.35) % size) + size) % size;
+    const g = this.g;
+    g.globalAlpha = def.gloom > 0.1 ? 0.12 : 0.16;
+    g.imageSmoothingEnabled = true;
+    g.globalCompositeOperation = 'multiply';
+    for (let y = oy - size; y < SCREEN_H; y += size) for (let x = ox - size; x < SCREEN_W; x += size) g.drawImage(this.clouds, x, y, size, size);
+    g.globalCompositeOperation = 'source-over';
+    g.imageSmoothingEnabled = false;
+    g.globalAlpha = 1;
+  }
+
+  /** Mist on the valley floor at dawn (SPEC 12.1), thinning as the morning goes on. */
+  private mist(state: GameState, cam: Camera, timeMs: number, x0: number, y0: number, x1: number, y1: number): void {
+    const m = clock(state.tick).minute;
+    const a = Math.max(0, 1 - Math.abs(m - 390) / 140);
+    if (a <= 0.01) return;
+    if (!this.mistBlob) {
+      const c = document.createElement('canvas');
+      c.width = 48;
+      c.height = 32;
+      const mg = c.getContext('2d')!;
+      const grad = mg.createRadialGradient(24, 16, 0, 24, 16, 22);
+      grad.addColorStop(0, 'rgba(225,230,232,0.9)');
+      grad.addColorStop(1, 'rgba(225,230,232,0)');
+      mg.fillStyle = grad;
+      mg.scale(1, 32 / 48);
+      mg.fillRect(0, 0, 48, 48);
+      this.mistBlob = c;
+    }
+    const g = this.g;
+    g.globalAlpha = a * 0.22;
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) {
+        if (!this.lowland[idx(tx, ty)] || (tx + ty) % 2) continue;
+        const drift = Math.sin(timeMs / 4000 + tx * 0.7 + ty * 0.3) * 5;
+        g.drawImage(this.mistBlob, tx * TILE - cam.x - 16 + drift, ty * TILE - cam.y - 8);
+      }
+    }
+    g.globalAlpha = 1;
   }
 
   private drawSurvivor(state: GameState, cam: Camera): void {

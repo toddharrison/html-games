@@ -41,8 +41,6 @@ const isWater = (w: World, tile: number) => {
   return t === T.shallows || t === T.stream || t === T.gravel;
 };
 
-const isTree = (f: number) => f === F.conifer || f === F.aspen || f === F.stunted || f === F.snag;
-
 export const ACTIONS: ActionDef[] = [
   {
     id: 'drink',
@@ -161,28 +159,6 @@ export const ACTIONS: ActionDef[] = [
       if (!ready(s, t)) return say(s, MSG.nothingLeft(), ev);
       gather(s, 'rose-hips', yieldRoll(s, 2, 4, 'foraging'), ev);
       deplete(s, t, REGROW_DAYS.bush);
-    },
-  },
-  {
-    id: 'pine-nuts',
-    offer: (s, w, t) => (w.feature[t] === F.conifer && inSeason(s, 'pine-nuts') ? 'Gather pine nuts' : null),
-    minutes: 25,
-    skill: 'foraging',
-    needsLight: true,
-    done: (s, _w, t, ev) => {
-      if (!ready(s, t)) return say(s, MSG.nothingLeft(), ev);
-      gather(s, 'pine-nuts', yieldRoll(s, 2, 3, 'foraging'), ev);
-      deplete(s, t, REGROW_DAYS.tree);
-    },
-  },
-  {
-    id: 'sticks',
-    offer: (_s, w, t) => (isTree(w.feature[t]!) || w.feature[t] === F.log || w.feature[t] === F.bush ? 'Gather sticks' : null),
-    minutes: 8,
-    done: (s, _w, t, ev) => {
-      void t;
-      const n = gather(s, 'stick', 2, ev, undefined, 'stick');
-      if (n === 0) return;
     },
   },
   {

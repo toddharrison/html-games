@@ -15,7 +15,7 @@ import { carryLimit, load, maxSlots } from '../sim/inventory.ts';
 import { candidate, type Protagonist } from '../sim/protagonist.ts';
 import { DEFAULT_SEED } from '../sim/newGame.ts';
 import { decodeRun } from '../sim/runCode.ts';
-import type { SimEvent } from '../sim/state.ts';
+import type { GameState, SimEvent } from '../sim/state.ts';
 import { clock } from '../sim/time.ts';
 import { runTo, stateHash, valley } from '../tools/runner.ts';
 import { craftMenu, restOptions } from '../ui/actionsUi.ts';
@@ -24,6 +24,8 @@ import { h } from '../ui/dom.ts';
 import { Hud } from '../ui/hud.ts';
 import { journal, type JournalTab } from '../ui/journal.ts';
 import { MapScreen } from '../ui/mapScreen.ts';
+import { lookAt, type Look } from '../ui/look.ts';
+import type { Reach } from '../sim/reach.ts';
 import { ListMenu } from '../ui/menu.ts';
 import { selectScreen } from '../ui/select.ts';
 import { summaryScreen } from '../ui/summary.ts';
@@ -58,6 +60,11 @@ export class App {
   private speed = 1;
   private scale = 1;
   private hover: { x: number; y: number } | null = null;
+  /** The mouse in stage pixels, for the label beside it. */
+  private mouse: { x: number; y: number } | null = null;
+  private readonly tip = h('div', { class: 'tip', hidden: true }, h('div', { class: 'name' }), h('div', { class: 'do' }));
+  private look: Look | null = null;
+  private lookKey = '';
   private camera = { x: 0, y: 0 };
   private taskLabel = '';
   private overShown = false;
@@ -74,20 +81,32 @@ export class App {
       () => this.onTick(),
       (alpha, now) => this.onFrame(alpha, now),
     );
-    this.stage.append(this.canvas, this.hud.el, this.overlay);
+    this.stage.append(this.canvas, this.hud.el, this.tip, this.overlay);
     root.append(this.stage);
     if (this.debug) root.append(this.debug.el);
     addEventListener('resize', () => this.fit());
     document.addEventListener('visibilitychange', () => {
       if (document.hidden) this.autosave();
     });
-    this.canvas.addEventListener('mousemove', (e) => {
-      const r = this.canvas.getBoundingClientRect();
-      const x = Math.floor(((e.clientX - r.left) / this.scale + this.camera.x) / TILE);
-      const y = Math.floor(((e.clientY - r.top) / this.scale + this.camera.y) / TILE);
-      this.hover = { x, y };
+    this.canvas.addEventListener('mousemove', (e) => this.pointAt(e));
+    this.canvas.addEventListener('mouseleave', () => {
+      this.hover = null;
+      this.mouse = null;
     });
-    this.canvas.addEventListener('mouseleave', () => (this.hover = null));
+    // The mouse (SPEC 12.4): a click does the obvious thing; a right-click offers everything.
+    this.canvas.addEventListener('mousedown', (e) => {
+      this.pointAt(e);
+      if (e.button === 0) this.click();
+    });
+    this.canvas.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      this.pointAt(e);
+      this.contextMenu();
+    });
+    this.overlay.addEventListener('mousedown', (e) => {
+      if (e.target === this.overlay && this.modal === 'menu') this.setModal(null);
+    });
+    this.overlay.addEventListener('contextmenu', (e) => e.preventDefault());
     this.applyPrefs(loadPrefs());
     const wakeSound = () => this.sound.start();
     addEventListener('keydown', wakeSound);
@@ -137,6 +156,7 @@ export class App {
     this.modal = m;
     if (m !== 'menu') this.menu = null;
     this.overlay.replaceChildren(...(content ? [content] : []));
+    this.overlay.classList.toggle('ctx', !!content?.classList.contains('context'));
     this.overlay.hidden = !content;
     this.input.playing = m === null;
     if (m !== null) this.input.release();
@@ -282,7 +302,9 @@ export class App {
     const st = s.state;
     this.loop.speed = (this.speed || 1) * (st.sleep ? SLEEP_SPEED : 1);
     this.stage.classList.toggle('asleep', !!st.sleep && !st.sleep.awake);
-    this.camera = this.renderer.draw(st, alpha, now, this.debug && !this.debug.el.hidden ? this.hover : null);
+    this.updateLook(st);
+    const mark = this.look && this.modal === null && (this.look.primary || this.look.options.length) ? { x: this.look.x, y: this.look.y } : null;
+    this.camera = this.renderer.draw(st, alpha, now, this.debug && !this.debug.el.hidden ? this.hover : null, mark);
     this.hud.update(st, this.taskLabel);
     this.debug?.update(s, this.hover, now);
     this.sound.update(this.modal === null || this.modal === 'menu' ? st : null, s.world, this.loop.speed);
@@ -339,7 +361,7 @@ export class App {
       case 'map':
         return this.openMap();
       case 'pause':
-        if (s.state.task) s.queue({ c: 'cancel' });
+        if (s.state.task || s.state.player.route) s.queue({ c: 'cancel' });
         else this.openPause();
         return;
       default:
@@ -347,7 +369,7 @@ export class App {
     }
   }
 
-  private openList(title: string, items: { label: string; hint?: string; disabled?: boolean; run: () => void }[], note?: string): void {
+  private openList(title: string, items: { label: string; hint?: string; disabled?: boolean; run: () => void }[], note?: string, at?: { x: number; y: number }): void {
     this.menu = new ListMenu(
       title,
       items,
@@ -358,12 +380,93 @@ export class App {
       },
       note ?? 'Number keys, or arrows and Enter · Esc to close',
     );
+    if (at) {
+      // A small menu beside the cursor, kept on the screen.
+      const el = this.menu.el;
+      el.classList.add('context');
+      el.style.left = `${Math.min(at.x + 6, SCREEN_W * this.scale * 0.62)}px`;
+      el.style.top = `${Math.min(at.y + 6, SCREEN_H * this.scale * 0.55)}px`;
+    }
     this.setModal('menu', this.menu.el);
   }
 
   private queueAct(o: { action: string; tile: number; label: string }): void {
     this.taskLabel = o.label;
     this.session!.queue({ c: 'act', action: o.action, tile: o.tile });
+  }
+
+  // ---- The mouse ----
+
+  private pointAt(e: MouseEvent): void {
+    const r = this.canvas.getBoundingClientRect();
+    const x = Math.floor(((e.clientX - r.left) / this.scale + this.camera.x) / TILE);
+    const y = Math.floor(((e.clientY - r.top) / this.scale + this.camera.y) / TILE);
+    this.hover = { x, y };
+    const sr = this.stage.getBoundingClientRect();
+    this.mouse = { x: e.clientX - sr.left, y: e.clientY - sr.top };
+  }
+
+  /** What's under the mouse, worked out again only when the tile or the moment changes. */
+  private updateLook(st: GameState): void {
+    const s = this.session;
+    const hv = this.modal === null && s && !st.over ? this.hover : null;
+    const key = hv ? `${hv.x},${hv.y},${st.tick},${st.inventory.length}` : '';
+    if (key !== this.lookKey) {
+      this.lookKey = key;
+      this.look = hv && s ? lookAt(st, s.world, hv.x, hv.y) : null;
+      const l = this.look;
+      this.canvas.dataset.cursor = l ? l.cursor : 'none';
+      this.tip.hidden = !l;
+      if (l) {
+        (this.tip.firstChild as HTMLElement).textContent = l.name;
+        const more = l.options.length > 1 ? ' · right-click for more' : '';
+        (this.tip.lastChild as HTMLElement).textContent = l.primary ? `${l.primary.label}${more}` : l.options.length ? `right-click to choose` : '';
+      }
+    }
+    if (this.look && this.mouse) {
+      this.tip.style.left = `${this.mouse.x + 14}px`;
+      this.tip.style.top = `${this.mouse.y + 10}px`;
+    }
+  }
+
+  private send(l: Look, r: Reach | null): void {
+    const s = this.session!;
+    const p = s.state.player;
+    this.taskLabel = r ? r.label : '';
+    const here = l.x === p.x && l.y === p.y;
+    if (!r) {
+      if (l.walk) s.queue({ c: 'goto', x: l.x, y: l.y, onto: true, action: null, at: 'front' });
+      return;
+    }
+    s.queue({ c: 'goto', x: l.x, y: l.y, onto: here, action: r.action, at: r.at });
+  }
+
+  private click(): void {
+    const s = this.session;
+    if (!s || this.modal !== null || s.state.over) return;
+    if (s.state.sleep) {
+      s.queue({ c: 'wake' });
+      return;
+    }
+    this.lookKey = '';
+    this.updateLook(s.state);
+    const l = this.look;
+    if (!l) return;
+    if (l.primary) return this.send(l, l.primary);
+    if (l.options.length > 1) return this.contextMenu();
+    this.send(l, null);
+  }
+
+  private contextMenu(): void {
+    const s = this.session;
+    if (!s || this.modal !== null || s.state.over || s.state.sleep) return;
+    this.lookKey = '';
+    this.updateLook(s.state);
+    const l = this.look;
+    if (!l || (!l.options.length && !l.walk)) return;
+    const items = l.options.map((o) => ({ label: o.label, hint: `${o.minutes} min`, run: () => this.send(l, o) }));
+    if (l.walk) items.push({ label: 'Walk here', hint: '', run: () => this.send(l, null) });
+    this.openList(l.name, items, 'Click, or a number key · Esc to close', this.mouse ?? undefined);
   }
 
   private openActions(): void {

@@ -38,7 +38,7 @@ export class Hud {
 
   constructor() {
     for (const [, icon, name] of VITALS) {
-      const m = h('span', { class: 'vital', title: name }, h('span', { class: 'icon' }, icon), h('span', { class: 'pips' }));
+      const m = h('span', { class: 'vital', title: name }, h('span', { class: 'icon' }, icon), h('span', { class: 'pips' }, h('i'), h('i'), h('i'), h('i')));
       this.marks.push(m);
       this.vitals.append(m);
     }
@@ -77,7 +77,7 @@ export class Hud {
         const m = this.marks[i]!;
         m.className = `vital ${state(v[k])}`;
         const pips = Math.round(v[k] / 25);
-        (m.lastChild as HTMLElement).textContent = '▮'.repeat(pips) + '▯'.repeat(4 - pips);
+        [...(m.lastChild as HTMLElement).children].forEach((seg, k) => seg.classList.toggle('on', k < pips));
       });
       this.feel.textContent = words.join(' · ');
     }

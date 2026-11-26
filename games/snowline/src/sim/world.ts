@@ -71,6 +71,8 @@ export interface World {
   /** Where each water source's cause would be (lake, near stream, far stream); only the foul one has it. */
   waterCauseSites: Point[];
   landmarks: Landmark[];
+  /** What lies loose on each tile (content/loose.ts, SPEC 6.7). */
+  loose: Uint8Array;
 }
 
 export const SIZE = MAP_SIZE;

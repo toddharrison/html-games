@@ -9,7 +9,7 @@ A monorepo of browser games, published to GitHub Pages at https://toddharrison.g
 
 ## Games
 - [games/behemoth-protocol/](games/behemoth-protocol/) (see its [CLAUDE.md](games/behemoth-protocol/CLAUDE.md)): a roguelike about driving a giant war machine. Phaser 4, TypeScript 7, Vite 8, Vitest 5.
-- [games/snowline/](games/snowline/): a top-down survival RPG titled Snowline. **Spec only so far:** [docs/SPEC.md](games/snowline/docs/SPEC.md). It has no `package.json` yet, so it isn't a workspace and isn't built or deployed; milestone M0 in the spec sets that up. No framework: TypeScript 7, Vite 8, Vitest 5, Canvas 2D.
+- [games/snowline/](games/snowline/) (see its [CLAUDE.md](games/snowline/CLAUDE.md)): a top-down survival RPG about a teenager alone in a mountain valley. Milestones M0 and M1 are built (a walkable generated valley); design in [docs/SPEC.md](games/snowline/docs/SPEC.md). No framework: TypeScript 7, Vite 8, Vitest 5, Canvas 2D.
 
 ## Commands (from the repo root)
 - `npm install` installs every workspace. There's one lockfile, at the root.

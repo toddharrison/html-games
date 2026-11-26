@@ -25,10 +25,18 @@ Top-down and tile-based, in simple pixel art. The mood comes from light, weather
 The full design is in **[docs/SPEC.md](docs/SPEC.md)**.
 
 ## Status
-In design. The specification is under review and nothing is playable yet. When it is, it will be at https://toddharrison.github.io/html-games/snowline/.
+In development. You can walk a generated valley from the lake to the bare rock, by day and through the night, and fill in its map from the high points. Nothing can be eaten, burned, or built yet: survival arrives in the next update. The game is at https://toddharrison.github.io/html-games/snowline/ once it is published, and also as a single HTML file you can download and open from disk.
+
+Controls: WASD or the arrow keys to walk, M for the map, Esc to pause.
 
 ## Tech
-TypeScript and Vite, drawn on a canvas with no game framework. It runs entirely in the browser: static files, no server, no network use while you play.
+TypeScript and Vite, drawn on a canvas with no game framework. It runs entirely in the browser: static files, no server, no network use while you play. The same seed and the same keys always play out the same way, on any machine.
+
+```sh
+npm install                  # at the repo root
+npm run dev -w snowline      # play locally; add ?seed=anything to pick a valley, ?debug=1 for the debug overlay
+npm test -w snowline         # the tests
+```
 
 ---
 *Inspired by Gary Paulsen's novel* Hatchet*, and by Tom Wham's board game* The Awful Green Things from Outer Space*, where the rules are dealt fresh every game. Snowline is an original game with its own characters, setting, and events.*

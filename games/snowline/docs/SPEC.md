@@ -1,6 +1,6 @@
 # Snowline — Game Specification
 
-Status: draft 5 for review, 2026-11-25. It folds in the decisions listed in section 13.1. Draft 5 adds the valley's rules (6.6): what things do is dealt fresh from each seed, so every valley has to be learned. That touches sections 2, 6–9, 11, and 14. It also sets the art direction (12.1): the mood and feel of *Kingdom Two Crowns* in a top-down game, with graphics that start simple. Draft 4 fitted the game into the html-games monorepo: it changes section 11 (technical design) and milestone M0, settles the title (Snowline, formerly Q14), and raises the question of when the game is listed publicly (Q15). The game design in sections 4–10 is unchanged from draft 3. Every open question was answered on 2026-11-25 (13.1), so the spec is ready to hand off for M0 and M1. Implementation has not started.
+Status: draft 5, 2026-11-25. **M0 and M1 are built** (2026-11-25): the workspace, the deterministic core, the deal, the generated valley, walking, the time of day, darkness, viewpoints, and the map; see [FEATURES.md](FEATURES.md) and [TODO.md](TODO.md). Choices made while building them are listed for review in 13.1. Draft 5 folds in the decisions listed in section 13.1. Draft 5 adds the valley's rules (6.6): what things do is dealt fresh from each seed, so every valley has to be learned. That touches sections 2, 6–9, 11, and 14. It also sets the art direction (12.1): the mood and feel of *Kingdom Two Crowns* in a top-down game, with graphics that start simple. Draft 4 fitted the game into the html-games monorepo: it changes section 11 (technical design) and milestone M0, settles the title (Snowline, formerly Q14), and raises the question of when the game is listed publicly (Q15). The game design in sections 4–10 is unchanged from draft 3. Every open question was answered on 2026-11-25 (13.1), so the spec is ready to hand off for M0 and M1.
 
 This game is the `snowline` workspace of the html-games monorepo. The repo-wide rules (layout, commands, deploy, commit workflow, versions) are in the root [CLAUDE.md](../../../CLAUDE.md). Paths in this file are relative to `games/snowline/`.
 
@@ -698,6 +698,16 @@ Changes made in draft 4 that follow from the monorepo decision but have not been
 - **The single file is built into `dist/standalone.html`**, so it is published as a download alongside the hosted game (11.1).
 - **Versions match the repo:** TypeScript 7, Vite 8, Vitest 5, semantic versions that change only at a release (11.1).
 - **The spec moved** from `SPEC.md` to `docs/SPEC.md`, where the repo keeps each game's docs.
+
+Choices made while building M0 and M1 (2026-11-25), for review:
+
+- **Two outcrops by the overhang:** the dealt spark-stone and an edge-stone, so "the stone by the overhang" isn't itself the answer. 6.3's rule (the spark-stone is the one at the overhang) still holds.
+- **Cliff bands only below the subalpine and alpine bands.** The valley floor rises into the forest as an open slope; the scramble routes are 4 into the subalpine band and 3 into the alpine.
+- **The dealt water sources are always the lake and two streams.** The near stream's mouth is beside the start, so the foul source is never the only water near it. A tarn, when one is placed, is extra high water that is always clean.
+- **The HUD shows a word for the time** ("Day 2 · dusk"), not a clock, in keeping with pillar 2. A wristwatch in the pockets could show the time later.
+- **A test fire is a debug command in the simulation**, so night and firelight can be judged in M1, before fire exists (M3). It is in the command log, so replays stay exact.
+- **The crash happens at 14:30 on day 1**, so the first dusk comes about two hours (eight real minutes) in.
+- **Imports carry `.ts` extensions and only erasable TypeScript is used**, so Node runs the simulation and tools directly (`npm run inspect`) with no build step.
 
 Changes made in draft 2 that follow from those decisions but have not been discussed individually, for review:
 

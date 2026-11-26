@@ -1,0 +1,27 @@
+{
+  "name": "snowline",
+  "title": "Snowline",
+  "description": "In development: a top-down survival game about a teenager alone in a mountain valley whose rules change with every seed.",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run typecheck && vite build && node scripts/standalone.mjs",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
+    "sweep": "vitest run --config vitest.sweep.config.ts",
+    "check:browser": "node scripts/check-browser.mjs",
+    "shots": "node scripts/shots.mjs",
+    "inspect": "node scripts/inspect.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "fast-check": "^4.11.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vitest": "^5.1.1"
+  }
+}

@@ -439,21 +439,21 @@ Results of the 70-seed run are in TODO.md's hand-off. Changes made because the b
 ## 24. Polish
 
 ### Sound effects and music
-`M6` · `uncommitted` · `playtest: pending` · SPEC §12.3
+`M6` · `8d45bb1` · `playtest: pending` · SPEC §12.3
 
 `src/platform/effects.ts`: footsteps by ground (water, stone, snow, reeds and sand, soft earth; at most one every 0.28 s), a bump, picking up, eating, drinking, chopping and striking at the start of the work, a fire catching, sickness, a discovery's two notes, an animal's warning growl and attack, sleep and waking, the storm and the slide's rumble; a search aircraft's drone while it's overhead (`Sound.update`). `src/platform/music.ts`: four short pieces, each played once a run: the first fire, the first wide view, the first snow, rescue. Slow lines of soft notes over a held low note, through an echo. Nothing loops under play. Music can be turned off in settings.
 
 ### Settings and accessibility
-`M6` · `uncommitted` · `playtest: pending` · SPEC §12.4
+`M6` · `8d45bb1` · `playtest: pending` · SPEC §12.4
 
 `src/ui/settings.ts`, from the title and the pause menu: text size (90–140%, scaling every screen), fewer and softer lightning flashes, volume, sound, music, and remapping every key (click *Change*, press a key; a key does one thing; *Default keys*). Stored as `snowline/settings`, `snowline/keys`, `snowline/volume`, `snowline/muted`, `snowline/music`. Conditions already show a shape as well as a word (M2).
 
 ### Art pass
-`M6` · `uncommitted` · `playtest: pending` · SPEC §12.1
+`M6` · `8d45bb1` · `playtest: pending` · SPEC §12.1
 
 Every feature is now a drawn sprite (`src/render/sprites.ts`): outcrops (tinted per stone), the overhang's face, herbs (tinted per remedy), bulbs, greens, and mushrooms (tinted per plant), bones, the rock arch, the beaver dam, the carcass, the midden, plus M3's camp builds, M4's animals, and M5's aircraft. The survivor rocks between frames while working. Terrain is still painted in code (flat colour and a glyph in four variants). Whether an artist redraws it is Q43.
 
 ### Originality check
-`M6` · `uncommitted` · `playtest: n/a` · SPEC §3
+`M6` · `8d45bb1` · `playtest: n/a` · SPEC §3
 
 `tests/originality.test.ts` fails the build if a name or coined term from the novel or the board game (or the novel's title, capitalised) appears in the game's source, data, `index.html`, or `package.json`. `docs/ORIGINALITY.md` sets out what was taken and what wasn't, for the review by someone qualified that SPEC §3 asks for before release.

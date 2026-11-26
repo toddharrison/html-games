@@ -1,6 +1,6 @@
 import { MATERIALS, type UnitMobility } from '../../content/terrain';
 import { NAV } from '../../content/tuning';
-import { footprint } from '../behemoth';
+import { towedFootprint } from '../behemoth';
 import type { Enemy } from '../entities';
 import { circleIntersectsRect, type Rect } from '../math';
 import type { Terrain } from '../terrain';
@@ -188,12 +188,14 @@ function clearOfZones(e: Enemy, w: World, g: Goal): Goal {
 
 /**
  * The ground the Behemoth will drive over in the next `NAV.hull.lead` s, widened by a unit's radius
- * and `NAV.hull.pad` at the sides and front. Behind the tail only the unit's radius: the hull is
- * driving away from there, and a wide berth behind it sends routes out of the back of the frame.
+ * and `NAV.hull.pad` at the sides and front. Behind the tail (the trailer's, when one is in tow)
+ * only the unit's radius: the hull is driving away from there, and a wide berth behind it sends
+ * routes out of the back of the frame.
  */
 function hullZone(e: Enemy, w: World): Rect {
   const b = w.behemoth;
-  const f = footprint(b);
+  // With a trailer in tow the zone runs back over it too: it crushes what drives into it.
+  const f = towedFootprint(b);
   const pad = e.def.radius + NAV.hull.pad;
   const ahead = Math.max(0, b.vx) * NAV.hull.lead;
   return { x0: f.x0 - e.def.radius, y0: f.y0 - pad, x1: f.x1 + ahead + pad, y1: f.y1 + pad };

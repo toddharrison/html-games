@@ -604,6 +604,20 @@ export function footprint(b: BehemothState): Rect {
   return boxBounds(hullBox(b));
 }
 
+/** The trailer's own turned box: what it covers of the ground, and what it crushes (SPEC §5.5). */
+export function trailerBox(t: TrailerState): Box {
+  return orientedBox(t.x, t.y, t.def.length / 2, t.def.width / 2, t.heading);
+}
+
+/** The footprint with whatever is in tow: the rect around the turned hull and its hitched trailer (what enemies route round). */
+export function towedFootprint(b: BehemothState): Rect {
+  const f = footprint(b);
+  const t = hitched(b);
+  if (!t) return f;
+  const r = boxBounds(trailerBox(t));
+  return { x0: Math.min(f.x0, r.x0), y0: Math.min(f.y0, r.y0), x1: Math.max(f.x1, r.x1), y1: Math.max(f.y1, r.y1) };
+}
+
 /**
  * The part of the footprint that meets the ground, for rock contact, fording, and bridge and ice
  * loads (chassis `ground`). Unturned on purpose: rock deflection is built on axis-aligned pushes

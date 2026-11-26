@@ -2,12 +2,12 @@ import { rainy } from '../content/conditions';
 import { isWet, MATERIALS } from '../content/terrain';
 import { FIRE } from '../content/tuning';
 import type { BurnSpec, FlameSpec, RoundSpec, WeaponDef } from '../content/weapons';
-import { hitArc, hitched, hullBox, soak } from './behemoth';
+import { hitArc, hitched, hullBox, soak, trailerBox } from './behemoth';
 import { markFlash } from './conditions';
 import { sealed, type Enemy } from './entities';
 import type { Owner } from './events';
 import { TIMER_SLACK } from './loop';
-import { angleDiff, orientedBox, pointInBox, type Box } from './math';
+import { angleDiff, pointInBox, type Box } from './math';
 import { damageEnemy } from './projectiles';
 import { mineAt, triggerMine } from './trailer';
 import type { World } from './world';
@@ -275,7 +275,7 @@ export function stepFire(w: World, dt: number): void {
   const b = w.behemoth;
   const over: Box[] = b.destroyed ? [] : [hullBox(b)];
   const tr = hitched(b);
-  if (tr && !b.destroyed) over.push(orientedBox(tr.x, tr.y, tr.def.length / 2, tr.def.width / 2, tr.heading));
+  if (tr && !b.destroyed) over.push(trailerBox(tr));
 
   const catches: [number, number][] = [];
   for (const [key, f] of w.fires) {

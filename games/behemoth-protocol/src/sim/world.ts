@@ -11,7 +11,7 @@ import {
   type BehemothState,
   type PlayerCommand,
 } from './behemoth';
-import { resolveBehemothCollisions } from './collision';
+import { resolveBehemothCollisions, resolveTrailerCollisions } from './collision';
 import { stepConcealment } from './concealment';
 import { createCondition, stepCondition, type ConditionState } from './conditions';
 import type { ConditionId } from '../content/conditions';
@@ -270,6 +270,7 @@ export function stepWorld(w: World, cmd: PlayerCommand): void {
     stepMovement(b, cmd, dt, w.terrain.height);
     resolveBehemothCollisions(w, dt, cmd.steer);
     stepTrailer(w, cmd, dt);
+    resolveTrailerCollisions(w, dt);
     checkExtraction(w);
     stepTurrets(b, cmd.aimX, cmd.aimY, dt);
     stepWeapons(w, cmd, dt);

@@ -1,10 +1,10 @@
 import { isWet } from '../content/terrain';
 import { POOL } from '../content/tuning';
 import type { PoolSpec, ShellSpec } from '../content/weapons';
-import { damageTreads, groundBox, hitched, type BehemothState } from './behemoth';
+import { damageTreads, groundBox, hitched, trailerBox, type BehemothState } from './behemoth';
 import { allocId, type Pool } from './entities';
 import { TIMER_SLACK } from './loop';
-import { circleIntersectsBox, closestInBox, orientedBox } from './math';
+import { circleIntersectsBox, closestInBox } from './math';
 import { igniteTile } from './fire';
 import { damageEnemy } from './projectiles';
 import { hitTrailer } from './trailer';
@@ -68,7 +68,7 @@ function burn(w: World, p: Pool, dt: number): void {
   const t = hitched(b);
   if (t) {
     // The trailer's own turned box.
-    const box = orientedBox(t.x, t.y, t.def.length / 2, t.def.width / 2, t.heading);
+    const box = trailerBox(t);
     if (circleIntersectsBox(box, p.x, p.y, radius)) {
       const at = closestInBox(box, p.x, p.y);
       hitTrailer(b, t, dps * POOL.trailer * dt, w.rng, w.events, at.x, at.y);

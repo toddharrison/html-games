@@ -122,7 +122,8 @@ export type SimEvent =
   | { type: 'tileChanged'; col: number; row: number; state: TileState; mat: MaterialId }
   /** A whole bridge span came down (shot out, or overloaded). */
   | { type: 'bridgeCollapse'; x: number; y: number; tiles: number; mat: MaterialId }
-  | { type: 'collision'; obstacle: ObstacleClass; x: number; y: number }
+  /** The machine drove into something; `trailer` when it was the trailer in tow that met it. */
+  | { type: 'collision'; obstacle: ObstacleClass; x: number; y: number; trailer?: true }
   /** Armor grinding along rock: sparks at the contact point. */
   | { type: 'scrape'; x: number; y: number }
   | { type: 'componentDamaged'; component: string; amount: number }

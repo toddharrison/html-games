@@ -15,6 +15,7 @@ import {
   lateralLimit,
   mobile,
   ramRating,
+  trailerBox,
   wearPlow,
   type ArmorArc,
   type BehemothState,
@@ -24,6 +25,7 @@ import type { Enemy } from './entities';
 import type { SimEvent } from './events';
 import { boxBounds, circleIntersectsBox, clamp, rectIntersectsBox, type Box, type Rect } from './math';
 import type { Terrain } from './terrain';
+import { wearTrailer } from './trailer';
 import { plowVehicle, trainBodies, trainStrikes, type TrainBody } from './train';
 import type { World } from './world';
 
@@ -41,19 +43,44 @@ export function resolveBehemothCollisions(w: World, dt: number, steer: -1 | 0 | 
 
   const b = w.behemoth;
   // The turned hull (it follows the machine's shape as it steers): only tiles it really covers are crushed.
-  const box = hullBox(b);
+  crushUnder(w, hullBox(b), dt, { gear: ramRating(b), pay: (cls, x, y) => applyObstacle(b, cls, w.events, x, y) });
+
+  ford(w, dt);
+}
+
+/**
+ * The trailer in tow meets the battlefield (SPEC §4.2, §5.5; user's call, Nov 25, 2026): buildings
+ * and units it's dragged into, or that drive into it, are crushed just as under the hull, and the
+ * trailer pays (`trailerObstacle`). Runs after the trailer has been placed for this step. An armored
+ * train's vehicles and rock are still the hull's alone to meet.
+ */
+export function resolveTrailerCollisions(w: World, dt: number): void {
+  const b = w.behemoth;
+  const t = hitched(b);
+  if (!t || b.destroyed) return;
+  crushUnder(w, trailerBox(t), dt, { gear: 0, pay: (cls, x, y) => trailerObstacle(w, cls, x, y) });
+}
+
+/** Who meets an obstacle: what it costs them (`pay`), and the ram gear behind a ram on a unit too big to crush. */
+interface Rammer {
+  gear: number;
+  pay: (cls: ObstacleClass, x: number, y: number) => void;
+}
+
+/** Everything a turned box of the machine is over: tiles it covers are crushed flat, and so are units (but for those too big, which are rammed). */
+function crushUnder(w: World, box: Box, dt: number, by: Rammer): void {
   const ts = w.terrain.tileSize;
   for (const [c, r] of tilesUnder(w.terrain, boxBounds(box))) {
     if (!rectIntersectsBox(box, { x0: c * ts, y0: r * ts, x1: (c + 1) * ts, y1: (r + 1) * ts })) continue;
     const cls = w.terrain.crush(c, r, w.events);
-    if (cls !== 'none') applyObstacle(b, cls, w.events, (c + 0.5) * ts, (r + 0.5) * ts);
+    if (cls !== 'none') by.pay(cls, (c + 0.5) * ts, (r + 0.5) * ts);
   }
 
   for (const e of w.enemies) {
     // An armored train's vehicles are `meetTrain`'s.
     if (!e.alive || e.train || !circleIntersectsBox(box, e.x, e.y, e.def.radius * RAM.crushRadius)) continue;
     if (e.def.ramDamage) {
-      ramBig(w, e, box, dt);
+      ramBig(w, e, box, dt, by);
       continue;
     }
     // Running down a bomb truck sets its bomb off under the nose: the bomb does the damage.
@@ -61,25 +88,24 @@ export function resolveBehemothCollisions(w: World, dt: number, steer: -1 | 0 | 
       destroyEnemy(w, e, 'crushed');
       continue;
     }
-    applyObstacle(b, e.def.obstacle, w.events, e.x, e.y);
+    by.pay(e.def.obstacle, e.x, e.y);
     destroyEnemy(w, e, 'crushed');
   }
-
-  ford(w, dt);
 }
 
 /**
  * A unit too big to crush (SPEC §7 siege tank, `EnemyDef.ramDamage`): the first contact costs the
  * Behemoth a ram of the unit's class and deals the unit damage by impact speed, more with ram gear
  * (the gear "adds damage to whatever you hit", SPEC §4.2). A survivor slides off the prow, shoved
- * to the nearer side, and can't be rammed again until `RAM.again` has passed.
+ * to the nearer side, and can't be rammed again until `RAM.again` has passed. The trailer rams the
+ * same way, without the gear.
  */
-function ramBig(w: World, e: Enemy, box: Box, dt: number): void {
+function ramBig(w: World, e: Enemy, box: Box, dt: number, by: Rammer): void {
   const b = w.behemoth;
   if (!e.ai.ramIn) {
     const impact = b.vx / b.chassis.speed.cruise;
-    const damage = e.def.ramDamage! * impact * (1 + RAM.gearDamage * ramRating(b));
-    applyObstacle(b, e.def.obstacle, w.events, e.x, e.y);
+    const damage = e.def.ramDamage! * impact * (1 + RAM.gearDamage * by.gear);
+    by.pay(e.def.obstacle, e.x, e.y);
     e.ai.ramIn = RAM.again;
     e.hp -= damage;
     if (e.hp <= 0) {
@@ -252,6 +278,23 @@ export function applyObstacle(b: BehemothState, cls: ObstacleClass, events: SimE
   const through = damageFront(b, x, y, def.armorDamage * dmg, events);
   damageTreads(b, def.treadDamage * dmg + through, events);
   if (cls !== 'trivial' && cls !== 'soft') events.push({ type: 'collision', obstacle: cls, x, y });
+}
+
+/**
+ * What an obstacle costs when it's the trailer that meets it (SPEC §5.5): the same class, at the
+ * same impact speed, with no ram gear back there. The trailer takes the class's armor and tread
+ * wear together (its armor first, then the frame or a module), and the tow drags the hull's speed
+ * down by the full dip.
+ */
+function trailerObstacle(w: World, cls: ObstacleClass, x: number, y: number): void {
+  const b = w.behemoth;
+  const t = hitched(b);
+  if (!t || cls === 'none') return;
+  const def = OBSTACLE_CLASSES[cls];
+  const impact = b.vx / b.chassis.speed.cruise;
+  b.vx *= 1 - def.speedDip;
+  wearTrailer(b, t, (def.armorDamage + def.treadDamage) * impact, w.rng, w.events);
+  if (cls !== 'trivial' && cls !== 'soft') w.events.push({ type: 'collision', obstacle: cls, x, y, trailer: true });
 }
 
 /** Off-center distance (hull units) within which a nose contact counts as dead center. */

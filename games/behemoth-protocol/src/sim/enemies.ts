@@ -11,8 +11,8 @@ import { allocId, type Enemy, type EnemyGun } from './entities';
 import type { KillCause } from './events';
 import { burnWreck, shootFlame, smoky } from './fire';
 import { frameRight, inFrame } from './frame';
-import { footprint, hitched, hullBox, revealRadius } from './behemoth';
-import { angleDiff, circleIntersectsRect, clamp, distanceToBox, rotateToward, type Rect } from './math';
+import { footprint, hitched, hullBox, revealRadius, trailerBox } from './behemoth';
+import { angleDiff, boxBounds, circleIntersectsRect, clamp, distanceToBox, rotateToward, type Rect } from './math';
 import { objectiveTaken } from './objective';
 import { stepMask } from './mask';
 import { roundSpec, shotSpec } from './projectiles';
@@ -257,14 +257,14 @@ function moveEnemy(w: World, e: Enemy, dt: number): void {
   if (t.speedAt(nx + Math.sign(e.vx) * r, e.y, mob) === 0) {
     e.vx = 0;
     e.vy += e.ai.orbitDir * e.def.accel * dt;
-  } else if (hull && entersHull(hull, e, nx, e.y)) {
+  } else if (entersHull(hull, e, nx, e.y)) {
     e.vx = 0;
   } else {
     e.x = nx;
   }
   const y0 = e.y;
   const ny = e.y + e.vy * dt;
-  if (t.speedAt(e.x, ny + Math.sign(e.vy) * r, mob) === 0 || (hull && entersHull(hull, e, e.x, ny))) {
+  if (t.speedAt(e.x, ny + Math.sign(e.vy) * r, mob) === 0 || entersHull(hull, e, e.x, ny)) {
     e.vy = 0;
   } else {
     e.y = ny;
@@ -305,16 +305,20 @@ export function hitFacing(e: Enemy, dx: number, dy: number): Facing {
 }
 
 /**
- * The Behemoth's footprint once it has ground to a halt in the last stand: a solid obstacle units
- * slide along. (While it's moving, anything it touches is crushed instead.)
+ * The Behemoth's footprint once it has ground to a halt in the last stand, and its trailer's if
+ * one is still in tow: solid obstacles units slide along. (While it's moving, anything either
+ * touches is crushed instead.)
  */
-function stoppedHull(w: World): Rect | null {
-  return w.lastStand && w.behemoth.vx < 0.5 ? footprint(w.behemoth) : null;
+function stoppedHull(w: World): Rect[] {
+  const b = w.behemoth;
+  if (!w.lastStand || b.vx >= 0.5) return [];
+  const t = b.destroyed ? null : hitched(b);
+  return t ? [footprint(b), boxBounds(trailerBox(t))] : [footprint(b)];
 }
 
-/** Moving to (x, y) would put the unit against the hull when it isn't already. */
-function entersHull(hull: Rect, e: Enemy, x: number, y: number): boolean {
-  return circleIntersectsRect(x, y, e.def.radius, hull) && !circleIntersectsRect(e.x, e.y, e.def.radius, hull);
+/** Moving to (x, y) would put the unit against the hull (or its trailer) when it isn't already. */
+function entersHull(hull: Rect[], e: Enemy, x: number, y: number): boolean {
+  return hull.some((h) => circleIntersectsRect(x, y, e.def.radius, h) && !circleIntersectsRect(e.x, e.y, e.def.radius, h));
 }
 
 /** How a gun is laid: its traverse, reach, telegraph, pivot, and what it shoots at. */

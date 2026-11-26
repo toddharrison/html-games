@@ -50,6 +50,11 @@ export function stepTrailer(w: World, cmd: PlayerCommand, dt: number): void {
  */
 export function hitTrailer(b: BehemothState, t: TrailerState, damage: number, rng: Rng, events: SimEvent[], x: number, y: number): void {
   events.push({ type: 'trailerHit', damage, x, y });
+  wearTrailer(b, t, damage, rng, events);
+}
+
+/** Damage to the trailer with no hit to show for it (what it crushes, `collision.ts`): armor first, as `hitTrailer`. */
+export function wearTrailer(b: BehemothState, t: TrailerState, damage: number, rng: Rng, events: SimEvent[]): void {
   if (b.invulnerable) return;
   const absorbed = Math.min(Math.max(0, t.armor.hp), damage);
   t.armor.hp -= absorbed;

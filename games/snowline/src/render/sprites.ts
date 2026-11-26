@@ -1,0 +1,437 @@
+// Drawn sprites (SPEC 12.1): small grids of palette colours, one character per pixel, built into canvases
+// when the game starts. A form that can be drawn, reviewed in a diff, and changed like code. Each sprite
+// has its own legend from characters to palette colours; '.' is transparent. The survivor's legend has
+// slots (S skin, H hair, C clothes, P trousers) filled from the protagonist's looks.
+
+import { PALETTE as P } from './palette.ts';
+
+export interface SpriteDef {
+  legend: Record<string, string>;
+  rows: string[];
+}
+
+const TREE = { d: P.pine, g: P.pineLight, t: P.bark, s: '#16261b' };
+
+export const SPRITES: Record<string, SpriteDef> = {
+  conifer: {
+    legend: TREE,
+    rows: [
+      '.......d........',
+      '......dgd.......',
+      '......dgd.......',
+      '.....dggdd......',
+      '.....dgddd......',
+      '....ddgdddd.....',
+      '....dggddsd.....',
+      '...ddgdddddd....',
+      '...dggddddsd....',
+      '..ddgddddddds...',
+      '..dggdddddddsd..',
+      '.ddgdddddddddss.',
+      '.ddddddddddsssd.',
+      '...ssss.tssss...',
+      '.......tt.......',
+      '......tttt......',
+    ],
+  },
+  stunted: {
+    legend: TREE,
+    rows: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '.........d......',
+      '........dgd.....',
+      '.......dgdd.....',
+      '......ddgdds....',
+      '.....dgddddd....',
+      '....ddgdddsdd...',
+      '...ddgddddddss..',
+      '....sss.tsss....',
+      '........t.......',
+      '.......tt.......',
+      '................',
+      '................',
+    ],
+  },
+  aspen: {
+    legend: { a: P.aspen, b: '#8a8344', l: '#c9c070', w: P.cream, k: P.ink },
+    rows: [
+      '.....aaaa.......',
+      '...aalaaaab.....',
+      '..aallaaaaab....',
+      '..alaaaabaab....',
+      '.aaaaaabaaabb...',
+      '.alaaaaaaaaab...',
+      '.aaaabaaaaabb...',
+      '..aaaaaaabbb....',
+      '...abbaabbb.....',
+      '.....bbwbb......',
+      '.......w........',
+      '.......wk.......',
+      '.......w........',
+      '.......wk.......',
+      '......www.......',
+      '................',
+    ],
+  },
+  snag: {
+    legend: { f: P.fog, s: P.stone, k: P.ink },
+    rows: [
+      '.....f....f.....',
+      '.....f...f......',
+      '......f.ff......',
+      '......fkf.......',
+      '......fks.......',
+      '......fks.......',
+      '.....ffks.......',
+      '......fks.......',
+      '......fks.......',
+      '......fks.......',
+      '......fks.......',
+      '......fkss......',
+      '.....ffkss......',
+      '.....fffsss.....',
+      '....ffssssss....',
+      '................',
+    ],
+  },
+  boulder: {
+    legend: { s: P.stone, f: P.fog, p: P.pale, k: P.slate, i: P.ink },
+    rows: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '.....ffff.......',
+      '....fppfsss.....',
+      '...fpffsssss....',
+      '..ffffsssssks...',
+      '..fffssssssks...',
+      '..ffsssssskks...',
+      '..fssssssskkk...',
+      '..sssssskkkkk...',
+      '...kkkkkkkkki...',
+      '....iiiiiiii....',
+      '................',
+    ],
+  },
+  bush: {
+    legend: { b: P.scrub, m: P.meadow, r: P.ember, t: P.bark },
+    rows: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '.....b...b......',
+      '...b.b.bbb.b....',
+      '...bbmbbmbbb....',
+      '..bmbbrbbmbbb...',
+      '..bbmbbbbbbrb...',
+      '...bbbbmbbbb....',
+      '..b.bbbbbbb.b...',
+      '....t.t..t......',
+      '................',
+      '................',
+      '................',
+    ],
+  },
+  berries: {
+    legend: { d: P.forest, g: P.meadow, x: '#X', t: P.bark },
+    rows: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '.....ddddd......',
+      '...ddgdxddd.....',
+      '..ddxgddddxd....',
+      '..dgddxdgddd....',
+      '.ddddgdddxddd...',
+      '.dxdddgxddgdd...',
+      '.ddgdddddddxd...',
+      '..ddxddgdxdd....',
+      '...ddddddddd....',
+      '.....t..t.......',
+      '................',
+      '................',
+    ],
+  },
+  log: {
+    legend: { w: P.wood, l: '#9a7d58', b: P.bark, r: P.cream },
+    rows: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '.lllllllllllll..',
+      'wwwwwwwwwwwwwbr.',
+      'wwbwwwwwbwwwwbrr',
+      'wwwwwbwwwwwwwbr.',
+      '.bbbbbbbbbbbbb..',
+      '................',
+      '................',
+      '................',
+      '................',
+    ],
+  },
+  crash: {
+    legend: { w: P.pale, h: P.snow, k: P.ink, s: P.stone, r: P.red, z: P.slate },
+    rows: [
+      '................',
+      '................',
+      '................',
+      '..........s.....',
+      '.........ss.....',
+      '...hhhhhhhhhh...',
+      '..hwwwwwwwwwwh..',
+      '.hwkkwkkwkkwwwh.',
+      '.hwkkwkkwkkwwwh.',
+      '.hrrrrrrrrrrrrh.',
+      '.hwwwwwwwwwwwwz.',
+      '..zwwwwwwwwwzz..',
+      '...zzzzzzzzzz...',
+      '................',
+      '................',
+      '................',
+    ],
+  },
+  tail: {
+    legend: { w: P.pale, h: P.snow, r: P.red, z: P.slate },
+    rows: [
+      '................',
+      '..........hh....',
+      '.........hwh....',
+      '........hwwh....',
+      '.......hrrwh....',
+      '......hwwwwh....',
+      '.....hwwwwwh....',
+      '....hwwwwwwh....',
+      '..hhwwwwwwwhh...',
+      '.hwwwwwwwwwwwh..',
+      '.hwwwwwwwwwwwz..',
+      '..zzzzzzzzzzz...',
+      '................',
+      '................',
+      '................',
+      '................',
+    ],
+  },
+  stash: {
+    legend: { b: P.bark, w: P.wood, c: P.cream },
+    rows: [
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '................',
+      '.....ww.........',
+      '....wwbbc.......',
+      '....wbbbbcw.....',
+      '.....bbbbww.....',
+      '......bbb.......',
+      '................',
+      '................',
+    ],
+  },
+};
+
+/** The survivor, facing south, north, and east (west is east mirrored), in two walking frames each. */
+const PERSON_ROWS: Record<string, string[]> = {
+  south0: [
+    '................',
+    '......HHHH......',
+    '.....HHHHHH.....',
+    '.....HSSSSH.....',
+    '.....SkSSkS.....',
+    '.....SSSSSS.....',
+    '......SSSS......',
+    '....CCCCCCCC....',
+    '...CCCCCCCCCC...',
+    '...SCCCCCCCCS...',
+    '...SCCCCCCCCS...',
+    '....CCCCCCCC....',
+    '.....PPPPPP.....',
+    '.....PP..PP.....',
+    '.....PP..PP.....',
+    '.....kk..kk.....',
+  ],
+  south1: [
+    '................',
+    '......HHHH......',
+    '.....HHHHHH.....',
+    '.....HSSSSH.....',
+    '.....SkSSkS.....',
+    '.....SSSSSS.....',
+    '......SSSS......',
+    '....CCCCCCCC....',
+    '...CCCCCCCCCC...',
+    '...SCCCCCCCCS...',
+    '....CCCCCCCCS...',
+    '....CCCCCCCC....',
+    '.....PPPPPP.....',
+    '.....PP..PP.....',
+    '....PP....PP....',
+    '....kk....kk....',
+  ],
+  north0: [
+    '................',
+    '......HHHH......',
+    '.....HHHHHH.....',
+    '.....HHHHHH.....',
+    '.....HHHHHH.....',
+    '.....SHHHHS.....',
+    '......SSSS......',
+    '....CCCCCCCC....',
+    '...CCCCCCCCCC...',
+    '...SCCCCCCCCS...',
+    '...SCCCCCCCCS...',
+    '....CCCCCCCC....',
+    '.....PPPPPP.....',
+    '.....PP..PP.....',
+    '.....PP..PP.....',
+    '.....kk..kk.....',
+  ],
+  north1: [
+    '................',
+    '......HHHH......',
+    '.....HHHHHH.....',
+    '.....HHHHHH.....',
+    '.....HHHHHH.....',
+    '.....SHHHHS.....',
+    '......SSSS......',
+    '....CCCCCCCC....',
+    '...CCCCCCCCCC...',
+    '...SCCCCCCCCS...',
+    '...SCCCCCCCC....',
+    '....CCCCCCCC....',
+    '.....PPPPPP.....',
+    '.....PP..PP.....',
+    '....PP....PP....',
+    '....kk....kk....',
+  ],
+  east0: [
+    '................',
+    '......HHHH......',
+    '.....HHHHHH.....',
+    '.....HHHSSS.....',
+    '.....HHSSkS.....',
+    '.....HSSSSSS....',
+    '......SSSS......',
+    '.....CCCCCC.....',
+    '....CCCCCCCC....',
+    '....CCCCCCSS....',
+    '....CCCCCC......',
+    '.....CCCCC......',
+    '.....PPPPP......',
+    '.....PP.PP......',
+    '.....PP..PP.....',
+    '.....kk..kk.....',
+  ],
+  east1: [
+    '................',
+    '......HHHH......',
+    '.....HHHHHH.....',
+    '.....HHHSSS.....',
+    '.....HHSSkS.....',
+    '.....HSSSSSS....',
+    '......SSSS......',
+    '.....CCCCCC.....',
+    '....CCCCCCCC....',
+    '...SCCCCCCC.....',
+    '....CCCCCC......',
+    '.....CCCCC......',
+    '.....PPPPP......',
+    '.....PPPP.......',
+    '......PP........',
+    '......kk........',
+  ],
+  asleep: [
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '................',
+    '..HHH...........',
+    '.HHSSSCCCCCCPPPk',
+    '.HSSSSCCCCCCPPPk',
+    '..HSS.CCCCCC....',
+    '................',
+    '................',
+    '................',
+    '................',
+  ],
+};
+
+export const SKIN = ['#f1d0b5', '#e0b28f', '#c68b63', '#9c6644', '#7a4a2e', '#5a3420'];
+export const HAIR = ['#2b2018', '#4a3020', '#7a4b28', '#b07a3c', '#d9b36a', '#8a2f1c'];
+export const SHIRT = ['#8a3b32', '#3f5f8a', '#4f7a4a', '#c09a3a', '#6a4a7a', '#b5662f', '#3a6d72', '#9a9a92'];
+export const PANTS = ['#3b4458', '#4d4436', '#5a5a5a', '#2f3a2f', '#6b5a44'];
+
+export interface Looks {
+  skin: number;
+  hair: number;
+  hairStyle: number;
+  shirt: number;
+  pants: number;
+}
+
+/** The survivor's rows for a pose, with the hair style drawn in: 0 short, 1 long, 2 tied back. */
+export function personSprite(looks: Looks, pose: 'south' | 'north' | 'east' | 'asleep', frame: number): SpriteDef {
+  const key = pose === 'asleep' ? 'asleep' : `${pose}${frame}`;
+  const rows = PERSON_ROWS[key]!.map((r) => r.split(''));
+  const set = (x: number, y: number) => {
+    if (rows[y]?.[x] !== undefined && (rows[y]![x] === '.' || rows[y]![x] === 'S')) rows[y]![x] = 'H';
+  };
+  if (pose !== 'asleep') {
+    if (looks.hairStyle === 1) {
+      for (let y = 2; y <= 7; y++) {
+        if (pose === 'east') set(5, y);
+        else {
+          set(4, y);
+          set(11, y);
+        }
+      }
+    } else if (looks.hairStyle === 2) {
+      if (pose === 'north') for (let y = 5; y <= 8; y++) set(7, y), set(8, y);
+      else if (pose === 'east') for (let y = 3; y <= 6; y++) set(4, y);
+    }
+  }
+  return {
+    legend: {
+      S: SKIN[looks.skin] ?? SKIN[0]!,
+      H: HAIR[looks.hair] ?? HAIR[0]!,
+      C: SHIRT[looks.shirt] ?? SHIRT[0]!,
+      P: PANTS[looks.pants] ?? PANTS[0]!,
+      k: P.ink,
+    },
+    rows: rows.map((r) => r.join('')),
+  };
+}
+
+/** Draw a sprite onto a canvas context at (x, y). `swap` replaces legend colours (berry tints). */
+export function paint(g: CanvasRenderingContext2D, def: SpriteDef, x = 0, y = 0, swap: Record<string, string> = {}, mirror = false): void {
+  def.rows.forEach((row, ry) => {
+    for (let rx = 0; rx < row.length; rx++) {
+      const ch = row[rx]!;
+      if (ch === '.') continue;
+      const c = swap[ch] ?? def.legend[ch];
+      if (!c) continue;
+      g.fillStyle = c;
+      g.fillRect(x + (mirror ? row.length - 1 - rx : rx), y + ry, 1, 1);
+    }
+  });
+}

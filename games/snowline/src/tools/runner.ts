@@ -36,11 +36,11 @@ export function startScenario(s: Scenario): { state: GameState; world: World } {
   return { state: newGame(s.seed, who, world, structuredClone(rules)), world };
 }
 
-/** Run `state` forward to tick `until`, feeding each command on its tick. Commands must be in tick order. */
+/** Run `state` forward to tick `until` (or the end of the run), feeding each command on its tick. Commands must be in tick order. */
 export function runTo(state: GameState, world: World, commands: readonly Command[], until: number, onEvents?: (e: SimEvent[]) => void): void {
   let k = 0;
   while (k < commands.length && commands[k]!.t < state.tick) k++;
-  while (state.tick < until) {
+  while (state.tick < until && !state.over) {
     const now: Command[] = [];
     while (k < commands.length && commands[k]!.t === state.tick) now.push(commands[k++]!);
     const events = step(state, world, now);

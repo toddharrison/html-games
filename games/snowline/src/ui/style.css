@@ -299,3 +299,371 @@ button:focus-visible,
   padding: 4px 12px 4px 0;
   vertical-align: top;
 }
+
+/* ---- M2: menus, journal, selection, summary, HUD ---- */
+
+.panel {
+  background: rgba(20, 22, 26, 0.94);
+  border: 1px solid var(--line);
+  padding: 0.8em 1.2em;
+  max-height: 88%;
+  overflow: auto;
+  text-align: left;
+}
+
+.panel h2 {
+  margin: 0 0 0.5em;
+  font-size: 1.1em;
+}
+
+.menu-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  min-width: 18em;
+}
+
+.menu-list li {
+  display: flex;
+  gap: 0.6em;
+  padding: 0.2em 0.4em;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+}
+
+.menu-list li.on {
+  border-left-color: var(--warm);
+  background: rgba(232, 163, 61, 0.08);
+}
+
+.menu-list li.disabled {
+  color: var(--dim);
+  cursor: default;
+}
+
+.menu-list .key {
+  color: var(--dim);
+  width: 1em;
+}
+
+.menu-list .label {
+  flex: 1;
+}
+
+.menu-list .hint {
+  color: var(--dim);
+  font-size: 0.8em;
+}
+
+.empty {
+  color: var(--dim);
+  font-style: italic;
+}
+
+.journal {
+  width: 80%;
+  height: 84%;
+  display: flex;
+  flex-direction: column;
+}
+
+.journal .tabs {
+  display: flex;
+  gap: 0.3em;
+}
+
+.journal .tabs button {
+  min-width: 0;
+  padding: 0.2em 0.8em;
+}
+
+.journal .tabs button.on {
+  border-color: var(--warm);
+  color: var(--warm);
+}
+
+.journal .page {
+  flex: 1;
+  overflow: auto;
+  margin-top: 0.5em;
+  font-size: 0.85em;
+}
+
+.journal h3 {
+  margin: 0.8em 0 0.2em;
+  font-size: 1em;
+  font-weight: normal;
+  letter-spacing: 0.05em;
+  color: var(--warm);
+}
+
+.journal .count {
+  color: var(--dim);
+  font-size: 0.85em;
+}
+
+.journal table {
+  border-collapse: collapse;
+}
+
+.journal td {
+  padding: 0.1em 0.8em 0.1em 0;
+  vertical-align: top;
+}
+
+.journal tr.unknown .status {
+  color: var(--dim);
+}
+
+.journal tr.suspected .status {
+  font-style: italic;
+}
+
+.journal tr.known .status {
+  color: #d9c9a4;
+}
+
+.journal .how {
+  color: var(--dim);
+  font-size: 0.85em;
+}
+
+.deck {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3em 0.8em;
+  font-size: 0.8em;
+  color: var(--dim);
+}
+
+.deck .some {
+  color: #c9bb94;
+}
+
+.deck .done {
+  text-decoration: line-through;
+}
+
+.journal .log p {
+  margin: 0.15em 0;
+}
+
+.journal .log .when {
+  color: var(--dim);
+  font-size: 0.85em;
+}
+
+.journal .bar {
+  display: inline-block;
+  height: 0.5em;
+  background: var(--warm);
+  opacity: 0.6;
+}
+
+.journal .body td:nth-child(3) {
+  width: 12em;
+}
+
+.select {
+  max-width: 48em;
+}
+
+.select .cards {
+  display: flex;
+  gap: 0.6em;
+  margin: 0.8em 0;
+}
+
+.select .card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35em;
+  text-align: left;
+  padding: 0.6em;
+  min-width: 0;
+  font-size: 0.75em;
+}
+
+.select .card .name {
+  font-size: 1.3em;
+}
+
+.select .row,
+.summary .row {
+  display: flex;
+  gap: 0.5em;
+  justify-content: center;
+}
+
+.builder label {
+  display: flex;
+  justify-content: space-between;
+  gap: 1em;
+  margin: 0.3em 0;
+  font-size: 0.8em;
+}
+
+.builder select,
+.builder input,
+.summary .code {
+  font: inherit;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--line);
+  max-width: 24em;
+}
+
+.summary table {
+  margin: 0.5em auto;
+  font-size: 0.85em;
+}
+
+.summary td {
+  padding: 0.1em 0.8em;
+}
+
+.summary td:first-child {
+  color: var(--dim);
+  text-align: right;
+}
+
+.summary .last {
+  font-style: italic;
+}
+
+.summary .code {
+  width: 90%;
+  font-size: 0.6em;
+}
+
+.file.link {
+  border: none;
+  padding: 0;
+  min-width: 0;
+  font-size: 1em;
+  color: var(--dim);
+  text-decoration: underline;
+}
+
+.file input {
+  display: none;
+}
+
+.hud .vitals {
+  position: absolute;
+  right: 0.7em;
+  top: 0.45em;
+  display: flex;
+  gap: 0.7em;
+  font-size: 0.7em;
+  text-shadow: 0 0 0.4em rgba(0, 0, 0, 0.9);
+}
+
+.hud .vital {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+  color: rgba(230, 225, 210, 0.8);
+}
+
+.hud .vital .pips {
+  font-size: 0.55em;
+  letter-spacing: -0.05em;
+}
+
+.hud .vital.fair {
+  color: #d9c9a4;
+}
+
+.hud .vital.low {
+  color: #e8a33d;
+}
+
+.hud .vital.critical {
+  color: #e06a5a;
+  animation: pulse 1.2s infinite;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.hud .feel {
+  position: absolute;
+  right: 0.7em;
+  top: 2.2em;
+  font-size: 0.65em;
+  font-style: italic;
+  color: #d9c9a4;
+  text-shadow: 0 0 0.4em rgba(0, 0, 0, 0.9);
+}
+
+.hud .task {
+  position: absolute;
+  left: 50%;
+  bottom: 3.8em;
+  transform: translateX(-50%);
+  font-size: 0.7em;
+  text-align: center;
+  opacity: 0;
+  transition: opacity 0.3s;
+  text-shadow: 0 0 0.4em rgba(0, 0, 0, 0.9);
+}
+
+.hud .task.on {
+  opacity: 1;
+}
+
+.hud .task .bar {
+  display: block;
+  width: 10em;
+  height: 3px;
+  margin: 0.2em auto 0;
+  background: rgba(255, 255, 255, 0.15);
+}
+
+.hud .task .fill {
+  display: block;
+  height: 100%;
+  background: var(--warm);
+}
+
+.hud .lines {
+  position: absolute;
+  left: 0.7em;
+  bottom: 0.5em;
+  width: 55%;
+  font-size: 0.68em;
+  text-shadow: 0 0 0.4em rgba(0, 0, 0, 1);
+}
+
+.hud .lines p {
+  margin: 0.1em 0;
+  transition: opacity 2s;
+}
+
+.hud .lines p.old {
+  opacity: 0;
+}
+
+.hud .caption {
+  bottom: auto;
+  top: 30%;
+}
+
+.stage.asleep .view {
+  filter: brightness(0.45);
+  transition: filter 1s;
+}
+
+.debug .console input {
+  font: inherit;
+  background: var(--ink);
+  color: var(--paper);
+  border: 1px solid var(--line);
+  flex: 1;
+}

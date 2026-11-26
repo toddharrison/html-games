@@ -116,7 +116,7 @@ export async function openBrowser({ width = 1152, height = 648 } = {}) {
       throw new Error(`timed out waiting for ${expression}`);
     },
     async key(code, holdMs = 60) {
-      const keyName = { Backquote: '`', KeyM: 'm', Escape: 'Escape' }[code] ?? code;
+      const keyName = { Backquote: '`', Escape: 'Escape', Space: ' ', Enter: 'Enter' }[code] ?? code.replace(/^Key|^Digit/, '').toLowerCase();
       await page('Input.dispatchKeyEvent', { type: 'keyDown', code, key: keyName });
       await sleep(holdMs);
       await page('Input.dispatchKeyEvent', { type: 'keyUp', code, key: keyName });

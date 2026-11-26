@@ -1,6 +1,6 @@
 # Snowline — Game Specification
 
-Status: draft 5, 2026-11-25. **M0 and M1 are built** (2026-11-25): the workspace, the deterministic core, the deal, the generated valley, walking, the time of day, darkness, viewpoints, and the map; see [FEATURES.md](FEATURES.md) and [TODO.md](TODO.md). Choices made while building them are listed for review in 13.1. Draft 5 folds in the decisions listed in section 13.1. Draft 5 adds the valley's rules (6.6): what things do is dealt fresh from each seed, so every valley has to be learned. That touches sections 2, 6–9, 11, and 14. It also sets the art direction (12.1): the mood and feel of *Kingdom Two Crowns* in a top-down game, with graphics that start simple. Draft 4 fitted the game into the html-games monorepo: it changes section 11 (technical design) and milestone M0, settles the title (Snowline, formerly Q14), and raises the question of when the game is listed publicly (Q15). The game design in sections 4–10 is unchanged from draft 3. Every open question was answered on 2026-11-25 (13.1), so the spec is ready to hand off for M0 and M1.
+Status: draft 5, 2026-11-25. **Built so far: M0, M1, and M2** (2026-11-25); see [FEATURES.md](FEATURES.md) and [TODO.md](TODO.md). Choices made while building M0 and M1 are listed for review in 13.1; questions raised later are in 13.2 (Q19 on). Draft 5 folds in the decisions listed in section 13.1. Draft 5 adds the valley's rules (6.6): what things do is dealt fresh from each seed, so every valley has to be learned. That touches sections 2, 6–9, 11, and 14. It also sets the art direction (12.1): the mood and feel of *Kingdom Two Crowns* in a top-down game, with graphics that start simple. Draft 4 fitted the game into the html-games monorepo: it changes section 11 (technical design) and milestone M0, settles the title (Snowline, formerly Q14), and raises the question of when the game is listed publicly (Q15). The game design in sections 4–10 is unchanged from draft 3. Every open question was answered on 2026-11-25 (13.1), so the spec is ready to hand off for M0 and M1.
 
 This game is the `snowline` workspace of the html-games monorepo. The repo-wide rules (layout, commands, deploy, commit workflow, versions) are in the root [CLAUDE.md](../../../CLAUDE.md). Paths in this file are relative to `games/snowline/`.
 
@@ -720,7 +720,14 @@ Changes made in draft 2 that follow from those decisions but have not been discu
 
 ### 13.2 Still open
 
-Nothing, as of 2026-11-25. New questions get the next number, starting at Q19.
+Raised while building, each with the simple option taken so work could go on (2026-11-25). Each is for discussion; changing the choice later is cheap unless noted.
+
+- **Q19. What a save holds.** 11.6 says a save is the differences from the freshly generated world. *Taken:* the whole game state without the deal and the map (about 40 KB, mostly the explored bitset). Simpler and safer; worth revisiting only if saves get large.
+- **Q20. What a taste tells.** *Taken:* a taste of a nourishing or a poor plant feels the same ("did no harm", suspected safe); only eating a handful tells them apart. A sickening or deadly plant is known from a taste.
+- **Q21. Watching before there are jays.** *Taken:* until animals exist (M4), "watch the patch" is an action: 40 minutes in daylight, after which jays have eaten the plant or left it alone, giving a suspicion. When jays arrive, should watching stay an action, or only happen by standing still near them?
+- **Q22. Each background's valley fact.** The spec names three. *Taken:* Scout knows the bow-drill wood, Angler the foul water, Hunter's kid one animal's temper, Farm kid one plant, Runner one stone, Reader one remedy. The Angler's is strong (it settles a whole row); is that right?
+- **Q23. How fast sleep runs.** *Taken:* 90× (a night's sleep in about 4 real seconds), by running ticks.
+- **Q24. The HUD's vitals.** *Taken:* six small marks in the top right (♥ ◊ ● ☾ ≈ ☼) with four pips each, which change colour and pulse when low, plus words for what the survivor feels. Is that the right amount of information on screen?
 
 ## 14. Milestones
 

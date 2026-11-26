@@ -15,7 +15,8 @@
     "sweep": "vitest run --config vitest.sweep.config.ts",
     "check:browser": "node scripts/check-browser.mjs",
     "shots": "node scripts/shots.mjs",
-    "inspect": "node scripts/inspect.ts"
+    "inspect": "node scripts/inspect.ts",
+    "tour": "node scripts/tour.mjs"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

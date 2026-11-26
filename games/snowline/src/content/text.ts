@@ -5,7 +5,7 @@ export const TEXT = {
   title: 'Snowline',
   tagline: 'A survival game about a teenager alone in a mountain valley.',
   inDevelopment:
-    'In development. The valley can be walked, but nothing in it can be eaten, burned, or built yet. Survival arrives in a later update.',
+    'In development. You can forage, drink, taste, and sleep, but there is no fire, weather, or rescue yet: every run ends in death for now.',
   opening: (name: string): string[] => [
     'The engine coughed and quit somewhere over the mountains.',
     'Now there was only the lake, the trees, and the quiet.',

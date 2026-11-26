@@ -8,6 +8,7 @@ import { STREAMS } from '../sim/rng.ts';
 import { clock, daylight, formatClock, sightRadius } from '../sim/time.ts';
 import { idx, inBounds, type World } from '../sim/world.ts';
 import type { Session } from '../platform/session.ts';
+import type { Vitals } from '../sim/state.ts';
 import { VERSION } from '../platform/version.ts';
 import { h } from './dom.ts';
 
@@ -19,6 +20,8 @@ export interface DebugActions {
   exportReplay(): void;
   importReplay(file: File): void;
   toggleMap(): void;
+  give(k: string, d: number, n: number): void;
+  vital(vital: keyof Vitals, value: number): void;
 }
 
 export class DebugPanel {
@@ -63,9 +66,29 @@ export class DebugPanel {
         h('button', { onclick: () => actions.exportReplay() }, 'export replay'),
         h('label', { class: 'file' }, 'import replay', file),
       ),
+      this.console(),
       this.rules,
     );
     this.markSpeed();
+  }
+
+  /** A tiny console: `give <item> [data] [count]`, `set <vital> <value>`. */
+  private console(): HTMLElement {
+    const box = h('input', { type: 'text', placeholder: 'give stick 0 4 · set hydration 20', spellcheck: 'false' });
+    const out = h('span', { class: 'out' });
+    box.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      const [cmd, a, b, c] = box.value.trim().split(/\s+/);
+      if (cmd === 'give' && a) {
+        this.actions.give(a, b === undefined ? -1 : Number(b), c === undefined ? 1 : Number(c));
+        out.textContent = `gave ${a}`;
+      } else if (cmd === 'set' && a && b) {
+        this.actions.vital(a as keyof Vitals, Number(b));
+        out.textContent = `set ${a}`;
+      } else out.textContent = 'give <item> [data] [n] · set <vital> <value>';
+      box.value = '';
+    });
+    return h('div', { class: 'row console' }, box, out);
   }
 
   setSpeed(s: number): void {

@@ -6,6 +6,7 @@ import { PLANTS } from '../content/decks.ts';
 import { F, T, TERRAIN } from '../content/terrain.ts';
 import type { Protagonist } from '../sim/protagonist.ts';
 import { PALETTE, TERRAIN_COLOR, rgb, type PaletteKey } from './palette.ts';
+import { SPRITES, paint, personSprite } from './sprites.ts';
 
 export const VARIANTS = 4;
 const S = 16;
@@ -180,16 +181,6 @@ const STONE_TINT: [string, string][] = [
   [P.rock, P.ink],
 ];
 
-function conifer(g: Ctx, top: number, scale: number): void {
-  px(g, 7, 13, P.bark, 2, 3);
-  for (let row = 0; row < 12 * scale; row++) {
-    const y = top + row;
-    const half = Math.floor((row % (4 * scale)) / scale) + Math.floor(row / (4 * scale)) + 1;
-    px(g, 8 - half, y, P.pine, half * 2, 1);
-    px(g, 8 - half, y, P.pineLight, 1, 1);
-  }
-}
-
 function blob(g: Ctx, cx: number, cy: number, rx: number, ry: number, c: string): void {
   for (let y = -ry; y <= ry; y++) {
     for (let x = -rx; x <= rx; x++) {
@@ -201,45 +192,29 @@ function blob(g: Ctx, cx: number, cy: number, rx: number, ry: number, c: string)
 function paintFeature(g: Ctx, f: number, data: number): void {
   switch (f) {
     case F.conifer:
-      conifer(g, 1, 1);
+      paint(g, SPRITES.conifer!);
       break;
     case F.stunted:
-      px(g, 7, 13, P.bark, 2, 2);
-      for (let row = 0; row < 8; row++) {
-        const half = Math.floor(row / 2) + 1;
-        px(g, 8 - half, 5 + row, P.pineLight, half * 2, 1);
-        px(g, 8 - half, 5 + row, P.pine, 1, 1);
-      }
+      paint(g, SPRITES.stunted!);
       break;
     case F.aspen:
-      px(g, 7, 9, P.cream, 2, 7);
-      px(g, 7, 11, P.ink, 1, 1);
-      blob(g, 8, 6, 5, 5, P.aspen);
-      for (let k = 0; k < 6; k++) px(g, 4 + Math.floor(rh(k, 1, 3) * 8), 2 + Math.floor(rh(1, k, 3) * 8), mix(P.aspen, P.ink, 0.25));
+      paint(g, SPRITES.aspen!);
       break;
     case F.boulder:
-      blob(g, 8, 10, 6, 4, P.stone);
-      blob(g, 7, 9, 3, 2, P.fog);
-      px(g, 3, 13, P.slate, 10, 1);
+      paint(g, SPRITES.boulder!);
       break;
     case F.bush:
       // Wild rose: a loose, thorny, paler bush with a couple of hips, unlike the dense berry bushes.
-      for (let k = 0; k < 6; k++) px(g, 3 + k * 2, 7 + (k % 3), P.scrub, 1, 6 - (k % 3));
-      blob(g, 8, 11, 4, 2, P.meadow);
-      px(g, 5, 8, P.ember, 1, 1);
-      px(g, 11, 9, P.ember, 1, 1);
+      paint(g, SPRITES.bush!);
       break;
     case F.log:
-      px(g, 1, 9, P.wood, 14, 4);
-      px(g, 1, 9, mix(P.wood, P.cream, 0.3), 14, 1);
-      px(g, 13, 9, P.bark, 2, 4);
+      paint(g, SPRITES.log!);
       break;
     case F.plant: {
       const p = PLANTS[data];
       const tint = PLANT_TINT[p?.tint ?? 'green']!;
       if (!p || p.kind === 'berry') {
-        blob(g, 8, 10, 5, 4, P.forest);
-        for (let k = 0; k < 7; k++) px(g, 4 + Math.floor(rh(k, data, 5) * 9), 7 + Math.floor(rh(data, k, 5) * 6), tint);
+        paint(g, SPRITES.berries!, 0, 0, { x: tint });
       } else if (p.kind === 'bulb') {
         for (let k = 0; k < 4; k++) px(g, 5 + k * 2, 5 + (k % 2) * 2, P.meadowLight, 1, 7);
         px(g, 6, 12, tint, 5, 2);
@@ -274,23 +249,13 @@ function paintFeature(g: Ctx, f: number, data: number): void {
       px(g, 0, 12, P.ink, 16, 3);
       break;
     case F.crash:
-      px(g, 1, 6, P.pale, 14, 6);
-      px(g, 1, 6, P.snow, 14, 2);
-      px(g, 3, 8, P.ink, 3, 2);
-      px(g, 8, 8, P.ink, 3, 2);
-      px(g, 12, 4, P.stone, 3, 3);
-      px(g, 1, 11, P.slate, 14, 1);
+      paint(g, SPRITES.crash!);
       break;
     case F.tail:
-      px(g, 4, 9, P.pale, 10, 4);
-      px(g, 9, 1, P.snow, 4, 8);
-      px(g, 10, 3, P.ember, 2, 2);
+      paint(g, SPRITES.tail!);
       break;
     case F.snag:
-      px(g, 7, 3, P.fog, 2, 13);
-      px(g, 5, 2, P.fog, 2, 4);
-      px(g, 9, 1, P.fog, 2, 5);
-      px(g, 7, 6, P.ink, 1, 8);
+      paint(g, SPRITES.snag!);
       break;
     case F.midden:
       blob(g, 8, 10, 6, 4, P.stone);
@@ -318,59 +283,16 @@ function paintFeature(g: Ctx, f: number, data: number): void {
   }
 }
 
-// ---- The survivor ----
-
-const SKIN = ['#f1d0b5', '#e0b28f', '#c68b63', '#9c6644', '#7a4a2e', '#5a3420'];
-const HAIR = ['#2b2018', '#4a3020', '#7a4b28', '#b07a3c', '#d9b36a', '#8a2f1c'];
-const SHIRT = ['#8a3b32', '#3f5f8a', '#4f7a4a', '#c09a3a', '#6a4a7a', '#b5662f', '#3a6d72', '#9a9a92'];
-const PANTS = ['#3b4458', '#4d4436', '#5a5a5a', '#2f3a2f', '#6b5a44'];
-
-/** The survivor, facing `dir` (north, east, south, west), on walk frame 0 or 1. */
-function paintPerson(g: Ctx, who: Protagonist, dir: number, frame: number): void {
-  const l = who.looks;
-  const skin = SKIN[l.skin] ?? SKIN[0]!;
-  const hair = HAIR[l.hair] ?? HAIR[0]!;
-  const shirt = SHIRT[l.shirt] ?? SHIRT[0]!;
-  const pants = PANTS[l.pants] ?? PANTS[0]!;
-  // Shadow, legs, body, arms, head.
-  g.fillStyle = 'rgba(0,0,0,0.25)';
-  g.fillRect(4, 14, 8, 2);
-  const step = frame === 1 ? 1 : 0;
-  px(g, 6, 11, pants, 2, 3 + (step ? 0 : 1));
-  px(g, 8, 11, pants, 2, 3 + (step ? 1 : 0));
-  px(g, 5, 6, shirt, 6, 6);
-  px(g, 4, 7, shirt, 1, 4);
-  px(g, 11, 7, shirt, 1, 4);
-  px(g, 4, 11, skin, 1, 1);
-  px(g, 11, 11, skin, 1, 1);
-  px(g, 5, 1, skin, 6, 5);
-  px(g, 5, 0, hair, 6, 2);
-  if (l.hairStyle === 1) {
-    px(g, 4, 1, hair, 1, 6);
-    px(g, 11, 1, hair, 1, 6);
-  }
-  if (dir === 0) {
-    px(g, 5, 1, hair, 6, 4);
-    if (l.hairStyle === 2) px(g, 7, 5, hair, 2, 3);
-  } else if (dir === 2) {
-    px(g, 6, 3, P.ink, 1, 1);
-    px(g, 9, 3, P.ink, 1, 1);
-  } else {
-    const front = dir === 1 ? 9 : 6;
-    const back = dir === 1 ? 5 : 9;
-    px(g, back, 1, hair, 2, 3);
-    px(g, front, 3, P.ink, 1, 1);
-    if (l.hairStyle === 2) px(g, dir === 1 ? 4 : 11, 2, hair, 1, 3);
-  }
-}
-
 // ---- The atlas ----
 
 export interface Atlas {
   /** Every terrain in every variant: variant v of terrain t is at (v * 16, t * 16). */
   terrain: HTMLCanvasElement;
   feature(f: number, data: number): HTMLCanvasElement;
+  /** The survivor facing `dir` on walk frame 0 or 1; dir -1 is asleep. */
   person(who: Protagonist, dir: number, frame: number): HTMLCanvasElement;
+  /** A named sprite from SPRITES (the stash bundle, ...). */
+  sprite(name: string): HTMLCanvasElement;
 }
 
 export function buildAtlas(): Atlas {
@@ -389,7 +311,18 @@ export function buildAtlas(): Atlas {
   }
   const features = new Map<string, HTMLCanvasElement>();
   const people = new Map<string, HTMLCanvasElement>();
+  const named = new Map<string, HTMLCanvasElement>();
   return {
+    sprite(name) {
+      let c = named.get(name);
+      if (!c) {
+        c = makeCanvas(S, S);
+        const def = SPRITES[name];
+        if (def) paint(c.getContext('2d')!, def);
+        named.set(name, c);
+      }
+      return c;
+    },
     terrain,
     feature(f, data) {
       const key = `${f}:${data}`;
@@ -406,7 +339,13 @@ export function buildAtlas(): Atlas {
       let c = people.get(key);
       if (!c) {
         c = makeCanvas(S, S);
-        paintPerson(c.getContext('2d')!, who, dir, frame);
+        const g = c.getContext('2d')!;
+        if (dir !== -1) {
+          g.fillStyle = 'rgba(0,0,0,0.22)';
+          g.fillRect(4, 14, 8, 2);
+        }
+        const pose = dir === -1 ? 'asleep' : dir === 0 ? 'north' : dir === 2 ? 'south' : 'east';
+        paint(g, personSprite(who.looks, pose, frame), 0, 0, {}, dir === 3);
         people.set(key, c);
       }
       return c;

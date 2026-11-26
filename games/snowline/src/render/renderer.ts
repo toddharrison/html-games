@@ -3,7 +3,7 @@
 // never writes to it; its own randomness (shimmer, flicker) never feeds back (SPEC 11.3, rule 3).
 
 import { SCREEN_H, SCREEN_W, TILE } from '../content/balance.ts';
-import { FLAG, T, TERRAIN } from '../content/terrain.ts';
+import { F, FLAG, T, TERRAIN } from '../content/terrain.ts';
 import type { GameState } from '../sim/state.ts';
 import { sightCircles } from '../sim/step.ts';
 import { clock, daylight } from '../sim/time.ts';
@@ -130,7 +130,15 @@ export class Renderer {
       for (let tx = x0; tx <= x1; tx++) {
         const i = idx(tx, ty);
         const f = world.feature[i]!;
-        if (f) g.drawImage(this.atlas.feature(f, world.data[i]!), tx * TILE - cam.x, ty * TILE - cam.y);
+        if (!f) continue;
+        // A picked-over patch looks thin until it comes back.
+        const bare = (f === F.plant || f === F.herb || f === F.bush) && (state.regrow[i] ?? 0) > state.tick;
+        if (bare) g.globalAlpha = 0.4;
+        g.drawImage(this.atlas.feature(f, world.data[i]!), tx * TILE - cam.x, ty * TILE - cam.y);
+        g.globalAlpha = 1;
+      }
+      for (const st of state.stashes) {
+        if (st.y === ty && st.x >= x0 && st.x <= x1) g.drawImage(this.atlas.sprite('stash'), st.x * TILE - cam.x, st.y * TILE - cam.y);
       }
       for (const l of state.lights) if (l.y === ty) this.drawFire(l.x * TILE - cam.x, l.y * TILE - cam.y, timeMs);
       if (ty === prow) this.drawSurvivor(state, cam);
@@ -149,8 +157,9 @@ export class Renderer {
   private drawSurvivor(state: GameState, cam: Camera): void {
     const p = state.player;
     const moving = p.stepLeft > 0;
-    const frame = moving && p.stepLeft * 2 > p.stepTotal ? (p.x + p.y) % 2 : 0;
-    const sprite = this.atlas.person(state.protagonist, p.facing, frame);
+    const frame = moving && p.stepLeft * 2 > p.stepTotal ? 1 : 0;
+    const asleep = state.sleep !== null && !state.sleep.awake;
+    const sprite = this.atlas.person(state.protagonist, asleep ? -1 : p.facing, frame);
     this.g.drawImage(sprite, Math.round(cam.px * TILE) - cam.x, Math.round(cam.py * TILE) - cam.y);
   }
 

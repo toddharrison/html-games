@@ -19,6 +19,7 @@ export interface TitleActions {
   start(seedOrCode: string): void;
   continue(): void;
   importSave(file: File): void;
+  settings(): void;
 }
 
 /** The title screen. It shows "Carry on" once it hears (a `saved` event) that a run is saved. */
@@ -62,6 +63,7 @@ export function titleScreen(actions: TitleActions): HTMLElement {
         ? h('a', { href: './standalone.html', download: 'snowline.html', title: 'One file that runs from disk, offline' }, 'Download (single file)')
         : h('span'),
       h('label', { class: 'file link' }, 'Load a saved file', file),
+      h('button', { class: 'link', onclick: () => actions.settings() }, 'Settings'),
       h('span', { class: 'version' }, VERSION),
     ),
   );

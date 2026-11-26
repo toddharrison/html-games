@@ -9,8 +9,9 @@ This game is one workspace in the html-games monorepo. The repo-wide rules (layo
 - Decisions are logged in SPEC §13.1; open questions are in §13.2 (new ones take the next number, from Q19). When a design decision is made in conversation, update the spec, not only this file.
 
 ## Status
-- **M0–M5 are built** (Nov 2026; M3 onward in progress, see TODO.md), awaiting the user's review and playtest. See [docs/TODO.md](docs/TODO.md) for what's open and [docs/FEATURES.md](docs/FEATURES.md) for what's built.
+- **M0–M6 are built** (every milestone in SPEC §14) (Nov 2026; M3 onward in progress, see TODO.md), awaiting the user's review and playtest. See [docs/TODO.md](docs/TODO.md) for what's open and [docs/FEATURES.md](docs/FEATURES.md) for what's built.
 - Versions: TypeScript 7, Vite 8, Vitest 5, fast-check 4, no runtime dependencies, no game framework (SPEC §11.1).
+- **Originality is tested:** `tests/originality.test.ts` fails on banned names and terms (SPEC §3); add any you find to its list. The pre-release review notes are in `docs/ORIGINALITY.md`.
 
 ## Rules that are easy to break
 - **Originality (SPEC §3).** No text, names, or coined terms from *Hatchet* or from *The Awful Green Things from Outer Space* in the game, its data, or `package.json`. The README and credits may name both as inspirations, nothing more. Dealt things are named by how they look ("dull red berries"), never by a real species.

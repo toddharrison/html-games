@@ -88,6 +88,9 @@ try {
   await sleep(500);
   await b.key('Escape');
   await shot('pause');
+  await click('Settings');
+  await shot('settings');
+  await click('Done');
   await b.key('Escape');
   // Camp and fire (M3).
   await consoleCmd('give boughs -1 4');

@@ -28,13 +28,14 @@ import { ListMenu } from '../ui/menu.ts';
 import { selectScreen } from '../ui/select.ts';
 import { summaryScreen } from '../ui/summary.ts';
 import { randomSeed, titleScreen } from '../ui/title.ts';
+import { loadPrefs, settingsScreen, type Prefs } from '../ui/settings.ts';
 import { Sound, playEvents } from './audio.ts';
 import { Input, type Action } from './input.ts';
 import { download, parseReplay, toReplay } from './replay.ts';
 import { deleteRun, loadRun, migrate, parseSave, restore, saveRun, toRecord, type SaveRecord } from './saves.ts';
 import { Loop, Session } from './session.ts';
 
-type Modal = 'title' | 'loading' | 'select' | 'map' | 'pause' | 'menu' | 'journal' | 'summary' | null;
+type Modal = 'title' | 'loading' | 'select' | 'map' | 'pause' | 'menu' | 'journal' | 'summary' | 'settings' | null;
 
 /** Game minutes pass this many times faster while the survivor sleeps (SPEC 5.1: by running ticks). */
 const SLEEP_SPEED = 90;
@@ -87,10 +88,35 @@ export class App {
       this.hover = { x, y };
     });
     this.canvas.addEventListener('mouseleave', () => (this.hover = null));
+    this.applyPrefs(loadPrefs());
     const wakeSound = () => this.sound.start();
     addEventListener('keydown', wakeSound);
     addEventListener('pointerdown', wakeSound);
     this.fit();
+  }
+
+  private applyPrefs(p: Prefs): void {
+    this.stage.style.setProperty('--text', String(p.textSize));
+    this.renderer.reduceFlashes = p.reduceFlashes;
+  }
+
+  /** The settings screen, from the title or the pause menu; `back` returns there. */
+  private openSettings(back: () => void): void {
+    this.setModal(
+      'settings',
+      settingsScreen({
+        prefs: loadPrefs(),
+        volume: this.sound.volume,
+        muted: this.sound.muted,
+        music: this.sound.music,
+        apply: (p) => this.applyPrefs(p),
+        setVolume: (v) => this.sound.setVolume(v),
+        setMuted: (m) => this.sound.setMuted(m),
+        setMusic: (m) => this.sound.setMusic(m),
+        rebind: (k) => this.input.rebind(k),
+        back,
+      }),
+    );
   }
 
   start(): void {
@@ -144,6 +170,7 @@ export class App {
         else this.showSelect(seedOrCode);
       },
       continue: () => this.continueSaved(),
+      settings: () => this.openSettings(() => this.showTitle()),
       importSave: (file) =>
         file
           .text()
@@ -184,6 +211,7 @@ export class App {
       if (saved) s.state = restore(saved, rules);
       this.session = s;
       this.overShown = false;
+      this.sound.newRun();
       this.renderer.setWorld(world);
       then?.(s);
       const at = this.debug ? /^(\d+),(\d+)$/.exec(this.params.get('at') ?? '') : null;
@@ -234,7 +262,7 @@ export class App {
   }
 
   private onEvents(events: SimEvent[]): void {
-    playEvents(events, this.sound);
+    playEvents(events, this.sound, this.session?.state);
     for (const e of events) {
       if (e.type === 'viewpoint') {
         this.hud.say([e.index === 0 ? TEXT.viewpointKnoll : e.index === 1 ? TEXT.viewpointWreck : TEXT.viewpoint]);
@@ -289,6 +317,7 @@ export class App {
       if (a === 'pause') this.setModal(null);
       return;
     }
+    if (this.modal === 'settings') return;
     if (this.modal !== null) return;
     const s = this.session;
     if (!s || s.state.over) return;
@@ -456,10 +485,7 @@ export class App {
           h('button', { onclick: () => this.setModal(null), autofocus: true }, 'Carry on'),
           h('button', { onclick: () => void saveRun(s.state).then(() => this.showTitle()) }, 'Save and leave'),
           h('button', { onclick: () => download(`snowline-save-${s.seed}-day${clock(s.state.tick).day}.json`, JSON.stringify(toRecord(s.state))) }, 'Save to a file'),
-          h('button', { onclick: (e: Event) => {
-            this.sound.setMuted(!this.sound.muted);
-            (e.target as HTMLButtonElement).textContent = this.sound.muted ? 'Sound: off' : 'Sound: on';
-          } }, this.sound.muted ? 'Sound: off' : 'Sound: on'),
+          h('button', { onclick: () => this.openSettings(() => this.openPause()) }, 'Settings'),
         ),
         h('p', { class: 'keys' }, 'The game saves itself whenever you sleep. Death is final.'),
       ),

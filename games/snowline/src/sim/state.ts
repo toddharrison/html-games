@@ -247,4 +247,5 @@ export type SimEvent =
   | { type: 'animal'; kind: string; what: string }
   | { type: 'aircraft' }
   | { type: 'storm' }
-  | { type: 'slide' };
+  | { type: 'slide' }
+  | { type: 'snow'; band: number };

@@ -349,6 +349,94 @@ export const SPRITES: Record<string, SpriteDef> = {
       '................',
     ],
   },
+  outcrop: {
+    legend: { b: '#X', m: '#Y', k: P.ink, s: P.slate },
+    rows: [
+      '................', '................', '................', '................',
+      '......bbbb......', '....bbmbbbbb....', '...bbbbbmbbbb...', '..bmbbbbbbbmbb..', '..bbbbmbbbbbbbs.',
+      '.bbbbbbbbmbbbbs.', '.bbmbbbbbbbbmss.', '.bbbbbbmbbbbsss.', '..sssssssssssk..', '...kkkkkkkkkk...', '................', '................',
+    ],
+  },
+  overhang: {
+    legend: { l: P.fog, r: P.stone, d: P.slate, k: P.ink },
+    rows: [
+      'llllllllllllllll', 'lrlrrlrrrlrrlrrl', 'rrrrrrrrrrrrrrrr', 'rrdrrrrdrrrrdrrr', 'rrrrrdrrrrrrrrdr', 'rdrrrrrrrdrrrrrr',
+      'rrrrrrdrrrrrdrrr', 'rrdrrrrrrrrrrrrr', 'drrrrdrrrdrrrdrr', 'rrrrrrrrrrrrrrrr', 'dddddddddddddddd', 'kkkkkkkkkkkkkkkk',
+      'kkkkkkkkkkkkkkkk', '.k.k.k.k.k.k.k.k', '................', '................',
+    ],
+  },
+  herb: {
+    legend: { x: '#X', g: P.forest, w: P.snow },
+    rows: [
+      '................', '................', '................', '................', '................', '................',
+      '.....w....w.....', '....xxx..xxx....', '...x.x.xx.x.x...', '....xxgxxgxx....', '..xx.xgggx.xx...', '...xxxgxgxxx....',
+      '.....xxgxx......', '......ggg.......', '................', '................',
+    ],
+  },
+  bulb: {
+    legend: { g: P.meadowLight, d: P.meadow, x: '#X' },
+    rows: [
+      '................', '................', '................', '.....g....g.....', '.....g...g......', '......g..g...g..',
+      '..g...g.g...g...', '...g..ggg..g....', '....g.ggg.g.....', '.....dgggd......', '......ddd.......', '.....xxxxx......',
+      '....xxxxxxx.....', '.....xxxxx......', '................', '................',
+    ],
+  },
+  greens: {
+    legend: { x: '#X', d: P.forest },
+    rows: [
+      '................', '................', '................', '................', '................', '......xx........',
+      '..xx..xxx..xx...', '.xxxx.xdx.xxxx..', '..xxxxxdxxxxx...', '...xxdxdxdxx....', '.xxxxxdddxxxxx..', '..xxxxxdxxxxx...',
+      '....xxxdxxx.....', '......ddd.......', '................', '................',
+    ],
+  },
+  mushroom: {
+    legend: { x: '#X', y: '#Y', c: P.cream, k: P.bark },
+    rows: [
+      '................', '................', '................', '................', '................', '................',
+      '..........xx....', '...xxxx..xyxx...', '..xyxxxx.xxxx...', '..xxxxyx..cc....', '....cc....cc....', '....cc....cc....',
+      '...kccck..kk....', '..kkkkkkkk......', '................', '................',
+    ],
+  },
+  bones: {
+    legend: { c: P.cream, s: P.pale, k: P.stone },
+    rows: [
+      '................', '................', '................', '................', '................', '................',
+      '................', '...cc.......cc..', '....cccccccc....', '...cc.......cc..', '.....s..s.......', '..csc.cskc.sc...',
+      '...s..s..s..s...', '..ccc.ccc.ccc...', '................', '................',
+    ],
+  },
+  arch: {
+    legend: { r: P.stone, l: P.fog, d: P.slate },
+    rows: [
+      '................', '...llllllllll...', '..lrrrrrrrrrrl..', '.lrrrdrrrrdrrrl.', '.rrrr......rrrr.', '.rrd........drr.',
+      '.rrr........rrr.', '.rdr........rdr.', '.rrr........rrr.', '.rrr........rrr.', '.drr........rrd.', '.rrr........rrr.',
+      'drrrd......drrrd', 'dddd........dddd', '................', '................',
+    ],
+  },
+  beaverDam: {
+    legend: { w: P.wood, b: P.bark, l: '#9a7d58', m: P.soil },
+    rows: [
+      '................', '................', '................', '................', '................',
+      '.l....l...l...l.', 'lwlwbwlwbwlwlwbl', 'wbwlwbwlwbwlwbwl', 'bwmwlwmwbwmwlwmw', 'mmwbmwmbwmbmwmbm', 'mmmmmmmmmmmmmmmm',
+      '................', '................', '................', '................', '................',
+    ],
+  },
+  carcass: {
+    legend: { b: P.bark, d: '#4a3624', c: P.cream },
+    rows: [
+      '................', '................', '................', '................', '................', '................',
+      '................', '.....bbbbbbbb...', '...bbbcbcbcbbbd.', '..bbdbcbcbcbbbdd', '..bbbbbbbbbbbb..', '...b..b...b..b..',
+      '................', '................', '................', '................',
+    ],
+  },
+  midden: {
+    legend: { s: P.stone, l: P.fog, k: P.ink, w: P.wood, c: P.cream },
+    rows: [
+      '................', '................', '................', '................', '......ss........',
+      '....sslsss......', '...sssslsss.....', '..sslkkkksss....', '..sswkcwkwss....', '.sssskkkksssss..', '.sslsssssslsss..',
+      '..ssssssssssss..', '...kkkkkkkkkk...', '................', '................', '................',
+    ],
+  },
   plane: {
     legend: { w: '#d8dcdc', g: '#8a9094', r: P.red },
     rows: [

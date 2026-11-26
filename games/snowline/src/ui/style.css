@@ -30,7 +30,44 @@ body {
 
 .stage {
   position: relative;
-  font-size: calc(var(--k) * 5.2px);
+  --text: 1;
+  font-size: calc(var(--k) * 5.2px * var(--text));
+}
+
+button.link {
+  border: none;
+  padding: 0;
+  min-width: 0;
+  font-size: 1em;
+  color: var(--dim);
+  text-decoration: underline;
+}
+
+.settings {
+  min-width: 26em;
+}
+
+.settings .row {
+  display: flex;
+  gap: 0.5em;
+  align-items: center;
+  margin: 0.4em 0;
+  font-size: 0.85em;
+}
+
+.settings button {
+  min-width: 0;
+  padding: 0.15em 0.6em;
+}
+
+.settings button.on {
+  border-color: var(--warm);
+  color: var(--warm);
+}
+
+.settings .keys-table td {
+  padding: 0.1em 0.8em 0.1em 0;
+  font-size: 0.8em;
 }
 
 .view {

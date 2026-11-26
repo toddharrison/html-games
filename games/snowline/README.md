@@ -25,7 +25,7 @@ Top-down and tile-based, in simple pixel art. The mood comes from light, weather
 The full design is in **[docs/SPEC.md](docs/SPEC.md)**.
 
 ## Status
-In development. Choose a survivor and keep them alive in a generated valley: find water, forage, taste carefully, make fire, build a camp, and fill in your notes on what this valley's plants, stone, wood, and water do. Weather turns, animals go about their business, and winter comes down the mountain. Get out by signal fire when the search aircraft pass, or climb to the beacon in the tail wreckage once the great storm's rockslide opens a way. Sound effects, music, and a final art pass are still to come. The game is at https://toddharrison.github.io/html-games/snowline/ once it is published, and also as a single HTML file you can download and open from disk.
+Playable from start to rescue; awaiting review before release. Choose a survivor and keep them alive in a generated valley: find water, forage, taste carefully, make fire, build a camp, and fill in your notes on what this valley's plants, stone, wood, and water do. Weather turns, animals go about their business, and winter comes down the mountain. Get out by signal fire when the search aircraft pass, or climb to the beacon in the tail wreckage once the great storm's rockslide opens a way. The game is at https://toddharrison.github.io/html-games/snowline/ once it is published, and also as a single HTML file you can download and open from disk.
 
 Controls: WASD or the arrow keys to walk (Shift to turn on the spot), E to act on what you face, I for what you carry, 1–9 to use it, C to make things, J for the journal, R to rest, M for the map, Esc to pause.
 

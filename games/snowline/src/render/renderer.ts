@@ -207,7 +207,8 @@ export class Renderer {
   private drawSurvivor(state: GameState, cam: Camera): void {
     const p = state.player;
     const moving = p.stepLeft > 0;
-    const frame = moving && p.stepLeft * 2 > p.stepTotal ? 1 : 0;
+    // Walking alternates feet; working (a task) rocks slowly between the frames.
+    const frame = moving ? (p.stepLeft * 2 > p.stepTotal ? 1 : 0) : state.task ? Math.floor(performance.now() / 350) % 2 : 0;
     const asleep = state.sleep !== null && !state.sleep.awake;
     const sprite = this.atlas.person(state.protagonist, asleep ? -1 : p.facing, frame);
     this.g.drawImage(sprite, Math.round(cam.px * TILE) - cam.x, Math.round(cam.py * TILE) - cam.y);

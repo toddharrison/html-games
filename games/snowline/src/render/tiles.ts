@@ -181,14 +181,6 @@ const STONE_TINT: [string, string][] = [
   [P.rock, P.ink],
 ];
 
-function blob(g: Ctx, cx: number, cy: number, rx: number, ry: number, c: string): void {
-  for (let y = -ry; y <= ry; y++) {
-    for (let x = -rx; x <= rx; x++) {
-      if ((x * x) / (rx * rx + 0.5) + (y * y) / (ry * ry + 0.5) <= 1) px(g, cx + x, cy + y, c);
-    }
-  }
-}
-
 function paintFeature(g: Ctx, f: number, data: number): void {
   switch (f) {
     case F.conifer:
@@ -216,37 +208,24 @@ function paintFeature(g: Ctx, f: number, data: number): void {
       if (!p || p.kind === 'berry') {
         paint(g, SPRITES.berries!, 0, 0, { x: tint });
       } else if (p.kind === 'bulb') {
-        for (let k = 0; k < 4; k++) px(g, 5 + k * 2, 5 + (k % 2) * 2, P.meadowLight, 1, 7);
-        px(g, 6, 12, tint, 5, 2);
+        paint(g, SPRITES.bulb!, 0, 0, { x: tint });
       } else if (p.kind === 'greens') {
-        blob(g, 8, 11, 5, 3, tint);
-        px(g, 8, 8, P.forest, 1, 6);
+        paint(g, SPRITES.greens!, 0, 0, { x: p.id === 'feathery-greens' ? P.meadowLight : tint });
       } else {
-        px(g, 5, 11, P.cream, 1, 3);
-        px(g, 10, 10, P.cream, 1, 4);
-        blob(g, 5, 10, 2, 1, tint);
-        blob(g, 10, 9, 3, 1, tint);
+        paint(g, SPRITES.mushroom!, 0, 0, { x: tint, y: mix(tint, P.snow, 0.35) });
       }
       break;
     }
-    case F.herb: {
-      const c = HERB_TINT[data] ?? P.pale;
-      for (let k = 0; k < 5; k++) px(g, 4 + k * 2, 9 + (k % 2), c, 1, 4);
-      px(g, 5, 8, mix(c, P.snow, 0.4), 1, 1);
-      px(g, 10, 8, mix(c, P.snow, 0.4), 1, 1);
+    case F.herb:
+      paint(g, SPRITES.herb!, 0, 0, { x: HERB_TINT[data] ?? P.pale });
       break;
-    }
     case F.outcrop: {
       const [body, mark] = STONE_TINT[data] ?? [P.stone, P.pale];
-      blob(g, 8, 9, 6, 5, body);
-      for (let k = 0; k < 5; k++) px(g, 4 + Math.floor(rh(k, data, 7) * 8), 6 + Math.floor(rh(data, k, 7) * 7), mark, 2, 1);
-      px(g, 3, 14, P.ink, 10, 1);
+      paint(g, SPRITES.outcrop!, 0, 0, { b: body, m: mark });
       break;
     }
     case F.overhang:
-      px(g, 0, 2, P.slate, 16, 12);
-      px(g, 0, 2, P.fog, 16, 2);
-      px(g, 0, 12, P.ink, 16, 3);
+      paint(g, SPRITES.overhang!);
       break;
     case F.crash:
       paint(g, SPRITES.crash!);
@@ -258,27 +237,19 @@ function paintFeature(g: Ctx, f: number, data: number): void {
       paint(g, SPRITES.snag!);
       break;
     case F.midden:
-      blob(g, 8, 10, 6, 4, P.stone);
-      px(g, 5, 9, P.ink, 6, 2);
-      for (let k = 0; k < 4; k++) px(g, 4 + k * 2, 7 + (k % 2), P.wood, 3, 1);
+      paint(g, SPRITES.midden!);
       break;
     case F.bones:
-      px(g, 3, 10, P.cream, 6, 1);
-      px(g, 9, 12, P.cream, 4, 1);
-      px(g, 6, 8, P.cream, 1, 5);
+      paint(g, SPRITES.bones!);
       break;
     case F.arch:
-      px(g, 1, 3, P.stone, 4, 12);
-      px(g, 11, 3, P.stone, 4, 12);
-      px(g, 1, 2, P.fog, 14, 3);
+      paint(g, SPRITES.arch!);
       break;
     case F.beaverDam:
-      for (let k = 0; k < 6; k++) px(g, 1 + k, 7 + (k % 3), P.wood, 10, 1);
-      px(g, 2, 11, P.bark, 12, 2);
+      paint(g, SPRITES.beaverDam!);
       break;
     case F.carcass:
-      blob(g, 8, 11, 5, 3, P.bark);
-      for (let k = 0; k < 4; k++) px(g, 5 + k * 2, 9, P.cream, 1, 3);
+      paint(g, SPRITES.carcass!);
       break;
   }
 }

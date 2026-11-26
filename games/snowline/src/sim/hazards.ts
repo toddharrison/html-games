@@ -95,7 +95,10 @@ export function hazardsMinute(s: GameState, w: World, ev: SimEvent[]): void {
     }
     s.memory['walked-at-midnight'] = s.stats.distance;
     const band = snowBand(s.tick);
-    if (band !== snowBand(s.tick - 14400)) say(s, band === 0 ? WEATHER_TEXT.winter : WEATHER_TEXT.snowFirst, ev);
+    if (band !== snowBand(s.tick - 14400)) {
+      say(s, band === 0 ? WEATHER_TEXT.winter : WEATHER_TEXT.snowFirst, ev);
+      ev.push({ type: 'snow', band });
+    }
     if (c.day >= WINTER_DAY && !s.over) {
       s.over = { kind: 'death', cause: 'winter', tick: s.tick };
       say(s, HAZARD_TEXT.winterEnd(wh), ev);

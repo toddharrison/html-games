@@ -37,6 +37,7 @@ Useful greps: `grep -n "playtest: pending" docs/FEATURES.md`, `grep -n "uncommit
 21. [Ambient sound](#21-ambient-sound)
 22. [The arc and rescue](#22-the-arc-and-rescue)
 23. [The bot and balance](#23-the-bot-and-balance)
+24. [Polish](#24-polish)
 
 ## 1. Project and dev tools
 
@@ -396,41 +397,63 @@ All seven now act: light sleeper and afraid of the dark (M2, via sleep and moral
 ## 22. The arc and rescue
 
 ### Search aircraft, signal fires, and the late signal
-`M5` · `uncommitted` · `playtest: pending` · SPEC §10, §5.3
+`M5` · `f32db44` · `playtest: pending` · SPEC §10, §5.3
 
 `planArc` (`src/sim/arc.ts`) fixes the flights at the start from the `events` stream: two or three search flights on days 2–10 between 9:00 and 17:00, then late flights every 5–9 days from about day 40. A distant drone is heard 20 minutes before; the aircraft is overhead for 12 minutes (drawn crossing the sky). At the end of its pass, the chance it saw the survivor (`signalChance`) comes from the best burning fire with smoke: 0.25, plus 0.12 a band up, 0.3 on the signal knoll, 0.1 for a lit signal pile, 0.08 if no trees within 2 tiles (less among trees); a fire without smoke 0.03; flashing the mirror in clear weather +0.25 (*Flash the mirror at the aircraft*). Late flights see 70% as well. Seen: rescue 2½ hours later. A missed search flight costs 18 morale.
 - The signal pile (build, *signal* technique) is lit with matches, embers, or the spark-stone (*Light the signal fire*): a big fire with 5 hours of smoke.
 
 ### The severe storm and the rockslide
-`M5` · `uncommitted` · `playtest: pending` · SPEC §6.5, §10
+`M5` · `f32db44` · `playtest: pending` · SPEC §6.5, §10
 
 On the severe storm's first minute (`storm` in `src/sim/arc.ts`): lean-tos, walls, beds, woodpiles, signal piles, and snares are wrecked (reflector stones, the cache, and the weir stand); fires go out (a banked one may survive); everything left lying out is flung up to 5 tiles; about a hundred trees across the valley come down (`arc.felled`: drawn and passable as deadfall); the survivor is soaked and shaken, and outside a shelter chilled and perhaps hurt. When the storm passes, the mountain comes down: the cliff ring's gap opens (`arcOpens`, read by `blockedBySystems`), and seeing the slide from near it says so.
 
 ### The wreckage and the beacon
-`M5` · `uncommitted` · `playtest: pending` · SPEC §10
+`M5` · `f32db44` · `playtest: pending` · SPEC §10
 
 *Search the tail wreckage* (once): the beacon, a metal pot, 12 matches, fishing line and hooks, a first-aid kit, and 4 packs of food (what doesn't fit is left on the ground). *Switch on the beacon*: rescue comes 1–3 days later, which still have to be survived.
 
 ### Title and summary
-`M5` · `uncommitted` · `playtest: pending` · SPEC §5.4, §11.1
+`M5` · `f32db44` · `playtest: pending` · SPEC §5.4, §11.1
 
 The title shows the first valley at golden hour behind it. The in-development notice is gone (SPEC §11.1: until a run can end in rescue), and `package.json`'s description no longer says so. The summary says how a rescue came.
 
 ### Turning in place
-`M5` · `uncommitted` · `playtest: pending` · SPEC §12.4
+`M5` · `f32db44` · `playtest: pending` · SPEC §12.4
 
 Shift and a direction turns to face it without stepping (`face` command). Needed to light a fire facing open ground, and handy everywhere.
 
 ## 23. The bot and balance
 
 ### The bot player
-`M5` · `uncommitted` · `playtest: n/a` · SPEC §11.4
+`M5` · `f32db44` · `playtest: n/a` · SPEC §11.4
 
 `src/tools/bot.ts` (`Bot`, `playBot`): a scripted survivor that plays through the same commands as a player. In priority: back away from a warning animal (or shout, if it knows noise turns it); sleep when exhausted; go for the wreckage once the slide opens, and switch on the beacon; drink at water not known to be foul; at night or in a downpour, go to the overhang, light and feed a fire, sleep until first light; eat (cooking first) what's known or suspected safe, tasting unknown plants one at a time; find the spark-stone by striking outcrops and carry a piece; keep tinder (not known to fail), sticks, and firewood; lay a bough bed; forage. It puts down what it knows is useless. `handDeal` gives it every valley fact for the second mode.
 - `npm run bot -- [--count N] [--days D]` (`scripts/bot.ts`, `src/tools/botReport.ts`) plays N seeds with the backgrounds in turn, each in both modes, and writes `renders/bot/report.txt` and `runs.json`.
 - **Gotcha:** the bot is a balance probe, not a good player: it never makes warm layers, hunts, fishes with a spear, or builds walls, and it climbs to the wreckage without preparing. A careful human should do better.
 
 ### The balance pass
-`M5` · `uncommitted` · `playtest: n/a` · SPEC §11.4, §14
+`M5` · `f32db44` · `playtest: n/a` · SPEC §11.4, §14
 
 Results of the 70-seed run are in TODO.md's hand-off. Changes made because the bot showed nights were lethal for reasons a player couldn't fix: wet clothes dry much faster (`DRYING`: 0.35 a minute by day, 1 by a fire), the cold bites a little less (`COLD_LOSS` 0.0038, `WET_CHILL` 1.8), hypothermia takes about 14 hours to kill instead of 10, clear midday sun warms (`SUN_WARMTH`), digging cattails soaks less, and a survivor woken by the cold can doze off again (woken at most every 3 hours).
+
+## 24. Polish
+
+### Sound effects and music
+`M6` · `uncommitted` · `playtest: pending` · SPEC §12.3
+
+`src/platform/effects.ts`: footsteps by ground (water, stone, snow, reeds and sand, soft earth; at most one every 0.28 s), a bump, picking up, eating, drinking, chopping and striking at the start of the work, a fire catching, sickness, a discovery's two notes, an animal's warning growl and attack, sleep and waking, the storm and the slide's rumble; a search aircraft's drone while it's overhead (`Sound.update`). `src/platform/music.ts`: four short pieces, each played once a run: the first fire, the first wide view, the first snow, rescue. Slow lines of soft notes over a held low note, through an echo. Nothing loops under play. Music can be turned off in settings.
+
+### Settings and accessibility
+`M6` · `uncommitted` · `playtest: pending` · SPEC §12.4
+
+`src/ui/settings.ts`, from the title and the pause menu: text size (90–140%, scaling every screen), fewer and softer lightning flashes, volume, sound, music, and remapping every key (click *Change*, press a key; a key does one thing; *Default keys*). Stored as `snowline/settings`, `snowline/keys`, `snowline/volume`, `snowline/muted`, `snowline/music`. Conditions already show a shape as well as a word (M2).
+
+### Art pass
+`M6` · `uncommitted` · `playtest: pending` · SPEC §12.1
+
+Every feature is now a drawn sprite (`src/render/sprites.ts`): outcrops (tinted per stone), the overhang's face, herbs (tinted per remedy), bulbs, greens, and mushrooms (tinted per plant), bones, the rock arch, the beaver dam, the carcass, the midden, plus M3's camp builds, M4's animals, and M5's aircraft. The survivor rocks between frames while working. Terrain is still painted in code (flat colour and a glyph in four variants). Whether an artist redraws it is Q43.
+
+### Originality check
+`M6` · `uncommitted` · `playtest: n/a` · SPEC §3
+
+`tests/originality.test.ts` fails the build if a name or coined term from the novel or the board game (or the novel's title, capitalised) appears in the game's source, data, `index.html`, or `package.json`. `docs/ORIGINALITY.md` sets out what was taken and what wasn't, for the review by someone qualified that SPEC §3 asks for before release.

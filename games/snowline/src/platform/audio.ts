@@ -13,6 +13,9 @@ import { weatherAt, weatherNow } from '../sim/weather.ts';
 import { idx, inBounds, type World } from '../sim/world.ts';
 import { settings } from '../ui/dom.ts';
 import { effect } from './effects.ts';
+import { playPiece } from './music.ts';
+import { flightNow } from '../sim/arc.ts';
+import { FLIGHT_MINUTES } from '../content/arc.ts';
 
 interface Loop {
   gain: GainNode;
@@ -23,7 +26,9 @@ export class Sound {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private noise: AudioBuffer | null = null;
-  private loops: Record<'wind' | 'water' | 'rain' | 'fire', Loop> | null = null;
+  private loops: Record<'wind' | 'water' | 'rain' | 'fire' | 'drone', Loop> | null = null;
+  /** Pieces already played this run (each plays once). */
+  private played = new Set<string>();
   private nextChirp = 0;
   private nextCrackle = 0;
   private nextBugle = 0;
@@ -57,7 +62,7 @@ export class Sound {
         src.start(0, Math.random() * 2);
         return { gain, filter };
       };
-      this.loops = { wind: loop('bandpass', 420, 0.6), water: loop('lowpass', 320), rain: loop('highpass', 1400), fire: loop('bandpass', 900, 2) };
+      this.loops = { wind: loop('bandpass', 420, 0.6), water: loop('lowpass', 320), rain: loop('highpass', 1400), fire: loop('bandpass', 900, 2), drone: loop('bandpass', 110, 6) };
     } catch {
       this.ctx = null;
     }
@@ -103,6 +108,8 @@ export class Sound {
     set(L.rain, s.sleep && !s.sleep.awake ? wet * 0.5 : wet);
     const fire = s.fires.some((f) => burning(f) && Math.abs(f.x - p.x) <= 4 && Math.abs(f.y - p.y) <= 4);
     set(L.fire, fire ? 0.02 : 0);
+    const flight = flightNow(s);
+    set(L.drone, flight ? 0.06 * (1 - Math.abs((s.tick - flight.t) / (FLIGHT_MINUTES * 10) - 0.5) * 1.6) : 0);
     if (fire && now > this.nextCrackle) {
       this.nextCrackle = now + 0.05 + Math.random() * 0.4;
       this.burst(1800 + Math.random() * 2000, 0.012 + Math.random() * 0.03, 0.04 + Math.random() * 0.05);
@@ -119,13 +126,31 @@ export class Sound {
     }
   }
 
-  /** A sim event: thunder after lightning, and the effects (M6). */
-  event(e: SimEvent): void {
+  setMusic(m: boolean): void {
+    this.music = m;
+    settings.set('music', m);
+  }
+
+  /** A new run: every piece may play again. */
+  newRun(): void {
+    this.played.clear();
+  }
+
+  /** A sim event: thunder after lightning, the effects, and music at the moments that matter. */
+  event(e: SimEvent, s?: GameState): void {
     const ctx = this.ctx;
     if (!ctx || !this.master || !this.noise) return;
     if (e.type === 'lightning') setTimeout(() => this.thunder(), 400 + Math.random() * 2500);
     effect(ctx, this.master, this.noise, e);
+    const piece =
+      e.type === 'fire-lit' && s && (s.memory['fires-lit'] ?? 0) <= 1 ? 'fire' : e.type === 'viewpoint' ? 'view' : e.type === 'snow' ? 'snow' : e.type === 'over' && e.kind === 'rescue' ? 'rescue' : '';
+    if (piece && !this.played.has(piece) && this.music) {
+      this.played.add(piece);
+      playPiece(ctx, this.master, piece);
+    }
   }
+
+  music = settings.get<boolean>('music', true);
 
   private burst(freq: number, gain: number, dur: number): void {
     const ctx = this.ctx!;
@@ -200,7 +225,7 @@ export class Sound {
 }
 
 /** Kept for the step's event hook: the app routes events to its Sound. */
-export function playEvents(events: readonly SimEvent[], sound?: Sound): void {
+export function playEvents(events: readonly SimEvent[], sound?: Sound, s?: GameState): void {
   if (!sound) return;
-  for (const e of events) sound.event(e);
+  for (const e of events) sound.event(e, s);
 }

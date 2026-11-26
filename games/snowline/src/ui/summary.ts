@@ -17,6 +17,7 @@ export function summaryScreen(s: GameState, actions: { newValley(): void; again(
     'div',
     { class: 'screen summary' },
     h('h2', {}, o.kind === 'rescue' ? 'Rescued' : 'The valley kept them'),
+    o.kind === 'rescue' ? h('p', { class: 'how' }, o.cause === 'beacon' ? 'They followed the beacon from the tail wreckage.' : o.cause === 'search aircraft' ? 'A search aircraft saw the smoke.' : 'A late aircraft crossing the range saw the smoke.') : null,
     h('p', { class: 'last' }, last),
     h(
       'table',

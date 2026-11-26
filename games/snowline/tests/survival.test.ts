@@ -106,8 +106,9 @@ describe('the body', () => {
 
   it('is colder at night and higher up, and a fire warms', () => {
     const { state, world } = setup((w) => w.band.fill(0));
+    run(state, world, 10 * 60 * MIN); // to half past midnight
     state.vitals.warmth = 50;
-    run(state, world, 10 * 60 * MIN); // into the night
+    run(state, world, 4 * 60 * MIN); // the small hours
     const cold = state.vitals.warmth;
     expect(cold).toBeLessThan(50);
     step(state, world, [{ t: state.tick, c: 'debug-fire' }]);

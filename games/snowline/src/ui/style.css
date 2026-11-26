@@ -157,6 +157,15 @@ button:focus-visible,
   position: static;
 }
 
+.overlay:has(.title) {
+  background: rgba(10, 12, 16, 0.45);
+}
+
+.title h1,
+.title .tagline {
+  text-shadow: 0 0 0.6em rgba(0, 0, 0, 0.9);
+}
+
 .loading p {
   color: var(--dim);
   font-style: italic;

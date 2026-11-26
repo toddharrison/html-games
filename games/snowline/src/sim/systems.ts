@@ -10,6 +10,8 @@ import { animalAt, animalsTick, blocks } from './animals.ts';
 import { hazardsMinute } from './hazards.ts';
 import { trapsHour } from './hunting.ts';
 import { sightOf } from './sight.ts';
+import { arcMinute, arcOpens } from './arc.ts';
+import { idx } from './world.ts';
 
 type Hook = (s: GameState, w: World, events: SimEvent[]) => void;
 
@@ -26,6 +28,7 @@ export function minuteHooks(s: GameState, w: World, events: SimEvent[]): void {
   fireMinute(s, w, events, wind, (f) => rainOn(s, w, f));
   weatherMinute(s, w, events, () => strikeSnag(s, w, events));
   hazardsMinute(s, w, events);
+  arcMinute(s, w, events);
   if (s.tick % 600 === 0) trapsHour(s, w, events);
   for (const h of MINUTE) h(s, w, events);
 }
@@ -43,10 +46,10 @@ export function commandHooks(s: GameState, w: World, cmd: Command, events: SimEv
  * rockslide's gap after the storm), true blocks one; null leaves the map's answer.
  */
 export function blockedBySystems(s: GameState, w: World, x: number, y: number): boolean | null {
-  void w;
   // A fire is not walked through, nor a big animal.
   if (s.fires.some((f) => f.x === x && f.y === y)) return true;
   const a = animalAt(s, x, y);
   if (a && blocks(a)) return true;
+  if (arcOpens(s, w, idx(x, y))) return false;
   return null;
 }

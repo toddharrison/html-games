@@ -95,6 +95,12 @@ export class Input {
     const a = this.byCode.get(e.code);
     if (!a) return;
     const dir = MOVES[a];
+    if (dir !== undefined && this.playing && e.shiftKey) {
+      // Shift and a direction turns to face it without stepping.
+      e.preventDefault();
+      if (!e.repeat) this.command({ c: 'face', dir });
+      return;
+    }
     if (dir !== undefined && this.playing) {
       e.preventDefault();
       if (e.repeat) return;

@@ -53,6 +53,7 @@ export function newGame(seed: string, protagonist: Protagonist, world: World, ru
     smoulder: null,
     weather: { f: [], severeDay: 0 },
     animals: [],
+    arc: { flights: [], stormHit: false, slide: false, searched: false, rescueAt: -1, rescueBy: '', felled: {} },
     rules,
     known: { facts: [], techniques: ['sharpen', ...(bg?.mods.techniques ?? [])].sort(), seen: [] },
     task: null,

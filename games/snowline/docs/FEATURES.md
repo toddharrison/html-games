@@ -35,6 +35,8 @@ Useful greps: `grep -n "playtest: pending" docs/FEATURES.md`, `grep -n "uncommit
 19. [Hunting and fishing](#19-hunting-and-fishing)
 20. [Illness, injury, remedies, traits](#20-illness-injury-remedies-traits)
 21. [Ambient sound](#21-ambient-sound)
+22. [The arc and rescue](#22-the-arc-and-rescue)
+23. [The bot and balance](#23-the-bot-and-balance)
 
 ## 1. Project and dev tools
 
@@ -323,7 +325,7 @@ C lists what the survivor knows how to make (`craftOptions` in `src/sim/craft.ts
 ## 17. Weather
 
 ### The forecast, temperature, rain, and the snowline
-`M4` · `uncommitted` · `playtest: pending` · SPEC §6.5
+`M4` · `28dfbbf` · `playtest: pending` · SPEC §6.5
 
 `makeForecast` (`src/sim/weather.ts`) draws the whole run's weather at the start from the `weather` stream: a state every 3 hours (`GameState.weather.f`, 90 days), from transition odds (`TRANSITIONS` in `src/content/weather.ts`) adjusted so mornings clear, afternoons build to thunderstorms, fog gathers before dawn, and rain grows week by week. The severe storm takes four periods on an afternoon in days 18–30 (`severeDay`; its effects are M5). The forecast never reads the player.
 - Each state (`WEATHER`) changes the air by day and night, adds wind (worse higher up), wets (rain soaks the survivor outside the overhang or a lean-to, and drowns an uncovered fire), fogs (sight shrinks: `sightOf` in `src/sim/sight.ts`), and darkens the sky. Clear midday sun warms (`SUN_WARMTH`).
@@ -332,14 +334,14 @@ C lists what the survivor knows how to make (`craftOptions` in `src/sim/craft.ts
 - The HUD names the weather; the log notes each change.
 
 ### Weather signs
-`M4` · `uncommitted` · `playtest: pending` · SPEC §6.5, §6.6
+`M4` · `28dfbbf` · `playtest: pending` · SPEC §6.5, §6.6
 
 Every 3 hours while the survivor is awake (5:00–22:00), each sign may show as a log line (`WEATHER_TEXT.sign`): a sign the deal says foretells shows 70% of the time when rain or a storm is coming within 9 hours, else 4%; a noise sign 10%. Each sign shown is judged 12 hours later against the forecast (`judgeSign`): after 2 judgements a suspicion, after 4 consistent ones it's known (foretells or noise). The tally is in `GameState.memory` (`sign-hit:i`, `sign-miss:i`).
 
 ## 18. Animals
 
 ### The valley's animals
-`M4` · `uncommitted` · `playtest: pending` · SPEC §9
+`M4` · `28dfbbf` · `playtest: pending` · SPEC §9
 
 `src/content/animals.ts` (kinds, counts, speeds, active hours, senses, ranges) and `src/sim/animals.ts`. At the start (`spawnAnimals`): 10 grouse, 12 hares, 8 marmots, 6 jays, 3 pack rats, 2 porcupines, a black bear, 6 elk (one bull), a cougar, 4 mountain goats, each near its ground and territory. Every tick each animal counts down to its next step, in ID order (`animalsTick`), and decides: wander its range, rest outside its hours, run from the survivor (prey), or its own business:
 - **Grouse** hide until flushed or the hunter is close; **marmots** whistle and scatter everything nearby; **hares** run at dawn and dusk.
@@ -350,7 +352,7 @@ Every 3 hours while the survivor is awake (5:00–22:00), each sign may show as 
 - Big animals and porcupines block the way. Drawn as 2-frame sprites (`ANIMAL_SPRITES`), facing the way they last moved.
 
 ### Dealt tempers: bear, elk in the rut, cougar
-`M4` · `uncommitted` · `playtest: pending` · SPEC §9, §6.6
+`M4` · `28dfbbf` · `playtest: pending` · SPEC §9, §6.6
 
 Too close (by the dealt boldness: shy 2, wary 3, bold 5 tiles; a shy one may simply leave), a dangerous animal **warns** with its dealt warning, for about a minute. Then it backs off if it was met with its dealt deterrent: **face** (stood still, facing it, not a step taken), **noise** (*Shout and wave your arms*, offered while one warns), or **fire** (a burning fire within 3 tiles). Backing well away always works. Otherwise it attacks: a wound and a blow, never instant death unless the survivor is already failing. The bull elk is dangerous only in the rut (days 20–45); other elk run. The cougar only follows at dusk when the survivor is weak, alone, and far from fire, then closes in. The bear raids food left out within its reach.
 - Learning: a warning seen gives boldness and warning (suspected); being turned by the deterrent makes it known. Watching from 6–12 tiles, standing still 20 minutes in daylight, gives the first part safely.
@@ -358,35 +360,77 @@ Too close (by the dealt boldness: shy 2, wary 3, bold 5 tiles; a shy one may sim
 ## 19. Hunting and fishing
 
 ### Hunting, snares, dressing game
-`M4` · `uncommitted` · `playtest: pending` · SPEC §7.4, §9
+`M4` · `28dfbbf` · `playtest: pending` · SPEC §7.4, §9
 
 `src/sim/hunting.ts`. With a spear, *Throw the spear at the hare* (within 3 tiles) or with a bow and arrows *Shoot* (6): one try, its chance from distance, hunting skill, a fire-hardened point, and whether the animal is already running. A kill is a `game` item; *Skin and gut* (a steel tool) gives meat and a hide, or for a grouse meat and feathers; the log says what was done plainly. Snares (recipe, technique) set on the faced tile catch hares that range near at night (`trapsHour`); *Take the hare from the snare*.
 
 ### Fishing and the trout run
-`M4` · `uncommitted` · `playtest: pending` · SPEC §7.4
+`M4` · `28dfbbf` · `playtest: pending` · SPEC §7.4
 
 Fish aren't animals but a density per water tile (`fishHere`): spawning gravel best, then streams, then lake shallows; the trout run (days 25–40) doubles the near stream and the gravel. *Spear fish* (20 minutes) is poor until the survivor learns to aim low, which four misses teach (failure). *Fish with the line* (from the wreckage) is better. *Watch the fish* at gravel or a stream ripens the weir; a weir of stones (technique) fills by itself, up to three fish.
 
 ## 20. Illness, injury, remedies, traits
 
 ### Injuries and illness
-`M4` · `uncommitted` · `playtest: pending` · SPEC §7.7
+`M4` · `28dfbbf` · `playtest: pending` · SPEC §7.7
 
 `src/sim/hazards.ts`: mosquitoes at dawn and dusk near water below the forest's top, before day 45, unless there's smoke close by (bites); sunburn high up in clear midday sun; exhaustion with rest nearly gone; falls on talus, scree, boulders, and snow, much likelier in the dark or exhausted (sprain; with glasses, they may break: sight −3); a blade slipping when cutting wood exhausted (wound); an animal's attack (wound). A wound left uncleaned for 12 hours turns to infection (55%); *Clean the wound with the boiled water* prevents it; the first-aid kit (M5) treats wounds, infection, and sprains. A splint (recipe) treats a sprain. *Pull out the quills*.
 
 ### Remedies
-`M4` · `uncommitted` · `playtest: pending` · SPEC §7.7, §6.6
+`M4` · `28dfbbf` · `playtest: pending` · SPEC §7.7, §6.6
 
 A herb can be tried three ways when there's a complaint: *Chew* for the stomach, *Press on the wound*, *Rub on against insects* (always offered). The right one works (the deal: one each), and becomes known; the irritant stings and nauseates (known); the others do nothing (suspected "not for …", known "nothing" after two). The insects stay away from the insect herb growing wild: standing beside a patch at dusk shows it.
 
 ### Traits
-`M4` · `uncommitted` · `playtest: pending` · SPEC §4.2
+`M4` · `28dfbbf` · `playtest: pending` · SPEC §4.2
 
 All seven now act: light sleeper and afraid of the dark (M2, via sleep and morale), weak stomach (M2), picky eater (M2), wears glasses (broken in a fall or an attack: sight −3 by day), poor swimmer (slips in streams and shallows: soaked, chilled, shaken), restless (a day with under 30 tiles walked costs morale at midnight).
 
 ## 21. Ambient sound
 
 ### Ambient loops
-`M4` · `uncommitted` · `playtest: pending` · SPEC §12.3
+`M4` · `28dfbbf` · `playtest: pending` · SPEC §12.3
 
 `Sound` (`src/platform/audio.ts`) synthesizes everything with WebAudio from a noise buffer and oscillators, so no audio files ship: wind (stronger with the weather and higher up), water near the lake and streams (loudest by a waterfall), rain, a fire's hiss and crackle, night insects (summer, low down, dry nights), an elk's bugle at dusk in the rut, and thunder after lightning. Loops fade to silence in menus, while asleep at high speed, and when the run is over. It starts on the first key or click (browsers require it). The pause menu toggles sound (`snowline/muted` in settings). Effects for events come in M6 (`src/platform/effects.ts`).
+
+## 22. The arc and rescue
+
+### Search aircraft, signal fires, and the late signal
+`M5` · `uncommitted` · `playtest: pending` · SPEC §10, §5.3
+
+`planArc` (`src/sim/arc.ts`) fixes the flights at the start from the `events` stream: two or three search flights on days 2–10 between 9:00 and 17:00, then late flights every 5–9 days from about day 40. A distant drone is heard 20 minutes before; the aircraft is overhead for 12 minutes (drawn crossing the sky). At the end of its pass, the chance it saw the survivor (`signalChance`) comes from the best burning fire with smoke: 0.25, plus 0.12 a band up, 0.3 on the signal knoll, 0.1 for a lit signal pile, 0.08 if no trees within 2 tiles (less among trees); a fire without smoke 0.03; flashing the mirror in clear weather +0.25 (*Flash the mirror at the aircraft*). Late flights see 70% as well. Seen: rescue 2½ hours later. A missed search flight costs 18 morale.
+- The signal pile (build, *signal* technique) is lit with matches, embers, or the spark-stone (*Light the signal fire*): a big fire with 5 hours of smoke.
+
+### The severe storm and the rockslide
+`M5` · `uncommitted` · `playtest: pending` · SPEC §6.5, §10
+
+On the severe storm's first minute (`storm` in `src/sim/arc.ts`): lean-tos, walls, beds, woodpiles, signal piles, and snares are wrecked (reflector stones, the cache, and the weir stand); fires go out (a banked one may survive); everything left lying out is flung up to 5 tiles; about a hundred trees across the valley come down (`arc.felled`: drawn and passable as deadfall); the survivor is soaked and shaken, and outside a shelter chilled and perhaps hurt. When the storm passes, the mountain comes down: the cliff ring's gap opens (`arcOpens`, read by `blockedBySystems`), and seeing the slide from near it says so.
+
+### The wreckage and the beacon
+`M5` · `uncommitted` · `playtest: pending` · SPEC §10
+
+*Search the tail wreckage* (once): the beacon, a metal pot, 12 matches, fishing line and hooks, a first-aid kit, and 4 packs of food (what doesn't fit is left on the ground). *Switch on the beacon*: rescue comes 1–3 days later, which still have to be survived.
+
+### Title and summary
+`M5` · `uncommitted` · `playtest: pending` · SPEC §5.4, §11.1
+
+The title shows the first valley at golden hour behind it. The in-development notice is gone (SPEC §11.1: until a run can end in rescue), and `package.json`'s description no longer says so. The summary says how a rescue came.
+
+### Turning in place
+`M5` · `uncommitted` · `playtest: pending` · SPEC §12.4
+
+Shift and a direction turns to face it without stepping (`face` command). Needed to light a fire facing open ground, and handy everywhere.
+
+## 23. The bot and balance
+
+### The bot player
+`M5` · `uncommitted` · `playtest: n/a` · SPEC §11.4
+
+`src/tools/bot.ts` (`Bot`, `playBot`): a scripted survivor that plays through the same commands as a player. In priority: back away from a warning animal (or shout, if it knows noise turns it); sleep when exhausted; go for the wreckage once the slide opens, and switch on the beacon; drink at water not known to be foul; at night or in a downpour, go to the overhang, light and feed a fire, sleep until first light; eat (cooking first) what's known or suspected safe, tasting unknown plants one at a time; find the spark-stone by striking outcrops and carry a piece; keep tinder (not known to fail), sticks, and firewood; lay a bough bed; forage. It puts down what it knows is useless. `handDeal` gives it every valley fact for the second mode.
+- `npm run bot -- [--count N] [--days D]` (`scripts/bot.ts`, `src/tools/botReport.ts`) plays N seeds with the backgrounds in turn, each in both modes, and writes `renders/bot/report.txt` and `runs.json`.
+- **Gotcha:** the bot is a balance probe, not a good player: it never makes warm layers, hunts, fishes with a spear, or builds walls, and it climbs to the wreckage without preparing. A careful human should do better.
+
+### The balance pass
+`M5` · `uncommitted` · `playtest: n/a` · SPEC §11.4, §14
+
+Results of the 70-seed run are in TODO.md's hand-off. Changes made because the bot showed nights were lethal for reasons a player couldn't fix: wet clothes dry much faster (`DRYING`: 0.35 a minute by day, 1 by a fire), the cold bites a little less (`COLD_LOSS` 0.0038, `WET_CHILL` 1.8), hypothermia takes about 14 hours to kill instead of 10, clear midday sun warms (`SUN_WARMTH`), digging cattails soaks less, and a survivor woken by the cold can doze off again (woken at most every 3 hours).

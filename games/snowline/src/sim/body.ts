@@ -7,6 +7,7 @@ import {
   COMFORT,
   DAY_CURVE,
   DRAIN,
+  DRYING,
   EMPTY_HARM,
   EXERTION,
   FIRE_WARMTH,
@@ -143,7 +144,7 @@ export function bodyMinute(s: GameState, w: World, ctx: MinuteContext, events: S
 
   // Drying out: by a fire, in the sun, or slowly anywhere out of the rain.
   if (w.terrain[here] !== T.shallows && w.terrain[here] !== T.stream && !weather.wetting) {
-    const dry = fire > 0 ? 0.6 : clock(s.tick).hour >= 9 && clock(s.tick).hour < 18 ? 0.15 : 0.04;
+    const dry = fire > 0 ? DRYING.fire : clock(s.tick).hour >= 8 && clock(s.tick).hour < 19 ? DRYING.day : DRYING.night;
     p.wet = Math.max(0, p.wet - dry);
   } else if (weather.wetting && shelter.rain < 0.5) {
     p.wet = Math.min(100, p.wet + 0.8);

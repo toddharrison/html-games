@@ -7,6 +7,7 @@ import type { SkillId } from '../content/protagonists.ts';
 import type { Protagonist } from './protagonist.ts';
 import type { RngState, StreamName } from './rng.ts';
 import type { Rules } from './rules.ts';
+import type { Arc } from './arc.ts';
 
 /** Facing and movement directions: north, east, south, west. */
 export type Dir = 0 | 1 | 2 | 3;
@@ -181,6 +182,8 @@ export interface GameState {
   /** The run's weather, fixed at the start (SPEC 6.5): an index into weather.ts's ALL for each 3-hour period. */
   weather: { f: number[]; severeDay: number };
   animals: Animal[];
+  /** The run's arc: flights, the storm and slide, the wreckage, rescue (sim/arc.ts). */
+  arc: Arc;
   /** What each dealt thing is in this valley (SPEC 6.6). Re-dealt from the seed on load. */
   rules: Rules;
   /**
@@ -208,6 +211,7 @@ export interface GameState {
 export type Command =
   | { t: number; c: 'move'; dir: Dir }
   | { t: number; c: 'halt' }
+  | { t: number; c: 'face'; dir: Dir }
   | { t: number; c: 'act'; action: string; tile: number }
   | { t: number; c: 'use'; action: string; slot: number }
   | { t: number; c: 'craft'; recipe: string }
@@ -240,4 +244,7 @@ export type SimEvent =
   | { type: 'over'; kind: 'death' | 'rescue' }
   | { type: 'weather'; id: string }
   | { type: 'lightning' }
-  | { type: 'animal'; kind: string; what: string };
+  | { type: 'animal'; kind: string; what: string }
+  | { type: 'aircraft' }
+  | { type: 'storm' }
+  | { type: 'slide' };

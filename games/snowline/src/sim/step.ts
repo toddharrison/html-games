@@ -54,7 +54,10 @@ function minute(s: GameState, w: World, events: SimEvent[]): void {
   if (s.sleep) {
     if (s.tick >= s.sleep.until) wake(s, w, MSG.wake(wh), events);
     else if (!s.sleep.awake && s.vitals.hydration < 6) wake(s, w, MSG.wakeThirst(wh), events);
-    else if (!s.sleep.awake && s.vitals.warmth < 8) wake(s, w, MSG.wakeCold(wh), events);
+    else if (!s.sleep.awake && s.vitals.warmth < 8 && s.tick - s.sleep.from > 600 && (s.memory['woke-cold'] ?? -1e9) < s.tick - 1800) {
+      s.memory['woke-cold'] = s.tick;
+      wake(s, w, MSG.wakeCold(wh), events);
+    }
   } else if (s.vitals.rest <= 0) {
     s.task = null;
     s.sleep = { until: s.tick + 240 * TICKS_PER_MINUTE, awake: false, from: s.tick };
@@ -103,6 +106,11 @@ function apply(state: GameState, world: World, cmd: Command, events: SimEvent[])
       break;
     case 'halt':
       p.intent = -1;
+      break;
+    case 'face':
+      if (state.sleep && !state.sleep.awake) break;
+      p.facing = cmd.dir;
+      p.bumped = false;
       break;
     case 'act':
       startAction(state, world, cmd.action, cmd.tile, events);

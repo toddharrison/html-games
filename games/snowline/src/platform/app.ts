@@ -13,6 +13,7 @@ import { availableActions, itemActions } from '../sim/actions.ts';
 import { itemName } from '../sim/food.ts';
 import { carryLimit, load, maxSlots } from '../sim/inventory.ts';
 import { candidate, type Protagonist } from '../sim/protagonist.ts';
+import { DEFAULT_SEED } from '../sim/newGame.ts';
 import { decodeRun } from '../sim/runCode.ts';
 import type { SimEvent } from '../sim/state.ts';
 import { clock } from '../sim/time.ts';
@@ -126,6 +127,16 @@ export class App {
     const ctx = this.canvas.getContext('2d')!;
     ctx.fillStyle = '#14161a';
     ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    // Behind the title, the first valley at dusk.
+    setTimeout(() => {
+      if (this.modal !== 'title') return;
+      const { rules, world } = valley(DEFAULT_SEED);
+      const s = new Session(DEFAULT_SEED, candidate(DEFAULT_SEED, 0), world, rules);
+      s.state.animals = [];
+      for (let n = 0; n < 2500; n++) s.tick();
+      this.renderer.setWorld(world);
+      if (this.modal === 'title') this.renderer.draw(s.state, 0, performance.now());
+    }, 50);
     const screen = titleScreen({
       start: (seedOrCode) => {
         const run = decodeRun(seedOrCode);

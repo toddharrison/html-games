@@ -1,7 +1,7 @@
 {
   "name": "snowline",
   "title": "Snowline",
-  "description": "In development: a top-down survival game about a teenager alone in a mountain valley whose rules change with every seed.",
+  "description": "A top-down survival game about a teenager alone in a mountain valley whose rules change with every seed.",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -16,7 +16,8 @@
     "check:browser": "node scripts/check-browser.mjs",
     "shots": "node scripts/shots.mjs",
     "inspect": "node scripts/inspect.ts",
-    "tour": "node scripts/tour.mjs"
+    "tour": "node scripts/tour.mjs",
+    "bot": "node scripts/bot.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",

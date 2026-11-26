@@ -52,9 +52,9 @@ export function titleScreen(actions: TitleActions): HTMLElement {
     { class: 'screen title' },
     h('h1', {}, TEXT.title),
     h('p', { class: 'tagline' }, TEXT.tagline),
-    h('p', { class: 'notice' }, TEXT.inDevelopment),
+    TEXT.inDevelopment ? h('p', { class: 'notice' }, TEXT.inDevelopment) : null,
     menu,
-    h('p', { class: 'keys' }, 'WASD or arrows to walk · E act · I carry · C make · J journal · R rest · M map · Esc pause'),
+    h('p', { class: 'keys' }, 'WASD or arrows to walk (Shift to turn) · E act · I carry · C make · J journal · R rest · M map · Esc pause'),
     h(
       'div',
       { class: 'foot' },

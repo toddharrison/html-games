@@ -10,6 +10,8 @@ import { sightCircles } from '../sim/step.ts';
 import { clock, daylight } from '../sim/time.ts';
 import { WEATHER } from '../content/weather.ts';
 import { snowBand, weatherAt, weatherNow } from '../sim/weather.ts';
+import { flightNow } from '../sim/arc.ts';
+import { FLIGHT_MINUTES } from '../content/arc.ts';
 import { idx, type World } from '../sim/world.ts';
 import { gradeAt } from './grade.ts';
 import { PALETTE } from './palette.ts';
@@ -146,7 +148,7 @@ export class Renderer {
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         const i = idx(tx, ty);
-        const f = world.feature[i]!;
+        const f = state.arc.felled[i] ? F.log : world.feature[i]!;
         if (!f) continue;
         // A picked-over patch looks thin until it comes back.
         const bare = (f === F.plant || f === F.herb || f === F.bush) && (state.regrow[i] ?? 0) > state.tick;
@@ -331,6 +333,17 @@ export class Renderer {
     m.globalCompositeOperation = 'source-over';
     g.drawImage(this.mask.c, 0, 0);
     this.flash(timeMs);
+    this.aircraft(state);
+  }
+
+  /** A search aircraft crossing the sky, high over everything (SPEC 10). */
+  private aircraft(state: GameState): void {
+    const f = flightNow(state);
+    if (!f) return;
+    const t = (state.tick - f.t) / (FLIGHT_MINUTES * 10);
+    this.g.globalAlpha = daylight(state.tick) > 20 ? 0.9 : 0.4;
+    this.g.drawImage(this.atlas.sprite('plane'), Math.round(-20 + t * (SCREEN_W + 40)), 18 + Math.round(t * 30));
+    this.g.globalAlpha = 1;
   }
 
   /** Lightning lights everything for a moment (toned down if the setting asks). */

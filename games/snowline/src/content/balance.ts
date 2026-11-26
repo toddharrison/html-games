@@ -54,7 +54,7 @@ export const SLEEP_DRAIN = 0.5;
 /** Rest regained per minute asleep, at sleep quality 1. */
 export const SLEEP_GAIN = 0.32;
 /** Health lost per minute while a vital is empty. Hydration at zero kills in about a day. */
-export const EMPTY_HARM = { hydration: 100 / 1440, nutrition: 100 / (4 * 1440), warmth: 100 / (10 * 60), rest: 0 };
+export const EMPTY_HARM = { hydration: 100 / 1440, nutrition: 100 / (4 * 1440), warmth: 100 / (14 * 60), rest: 0 };
 /** Health regained per minute when every other vital is above HEAL_ABOVE (doubled asleep). */
 export const HEAL_RATE = 100 / (3 * 1440);
 export const HEAL_ABOVE = 30;
@@ -74,14 +74,16 @@ export const NIGHT_POOLING = 2;
 /** Below this the body loses warmth; above it, it gains. */
 export const COMFORT = 15;
 /** Warmth lost per minute per degree below comfort, and gained per degree above (slowly). */
-export const COLD_LOSS = 0.0045;
+export const COLD_LOSS = 0.0038;
 export const WARM_GAIN = 0.02;
 /** Extra warmth per minute in clear midday sun. */
 export const SUN_WARMTH = 0.05;
 /** Warmth from a fire within its reach, per minute. */
 export const FIRE_WARMTH = 0.35;
 /** Being wet, or out in the wind, multiplies the loss. */
-export const WET_CHILL = 2.2;
+export const WET_CHILL = 1.8;
+/** Wet clothes dry this much a minute: by a fire, in daylight, at night. */
+export const DRYING = { fire: 1, day: 0.35, night: 0.08 };
 
 // ---- Food and water (SPEC 7.3, 7.4) ----
 

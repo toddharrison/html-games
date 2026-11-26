@@ -131,7 +131,7 @@ export const ACTIONS: ActionDef[] = [
       if (!ready(s, t)) return say(s, MSG.nothingLeft(), ev);
       gather(s, 'cattail-root', yieldRoll(s, 1, 2, 'foraging'), ev);
       practise(s, 'foraging', 1);
-      s.player.wet = Math.min(100, s.player.wet + 25);
+      s.player.wet = Math.min(100, s.player.wet + 15);
       deplete(s, t, REGROW_DAYS.reeds);
     },
   },

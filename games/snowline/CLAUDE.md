@@ -9,7 +9,7 @@ This game is one workspace in the html-games monorepo. The repo-wide rules (layo
 - Decisions are logged in SPEC §13.1; open questions are in §13.2 (new ones take the next number, from Q19). When a design decision is made in conversation, update the spec, not only this file.
 
 ## Status
-- **M0–M4 are built** (Nov 2026; M3 onward in progress, see TODO.md), awaiting the user's review and playtest. See [docs/TODO.md](docs/TODO.md) for what's open and [docs/FEATURES.md](docs/FEATURES.md) for what's built.
+- **M0–M5 are built** (Nov 2026; M3 onward in progress, see TODO.md), awaiting the user's review and playtest. See [docs/TODO.md](docs/TODO.md) for what's open and [docs/FEATURES.md](docs/FEATURES.md) for what's built.
 - Versions: TypeScript 7, Vite 8, Vitest 5, fast-check 4, no runtime dependencies, no game framework (SPEC §11.1).
 
 ## Rules that are easy to break
@@ -20,13 +20,13 @@ This game is one workspace in the html-games monorepo. The repo-wide rules (layo
 - **World generation never reads the deal's stream, and placement never branches on the deal.** Set-piece slots are placed the same way whatever was dealt and only labelled from it afterwards (`sim/worldgen/setpieces.ts`), and validation checks only deal-independent things. `tests/rules.test.ts` checks that changing the deal leaves the terrain alone.
 - **Imports carry the `.ts` extension, and only erasable TypeScript is allowed** (`allowImportingTsExtensions`, `erasableSyntaxOnly`): no enums, no namespaces, no constructor parameter properties. That lets Node run any module directly, e.g. `node scripts/inspect.ts`.
 - **Storage names start with `snowline`** (`localStorage` keys `snowline/...`, IndexedDB database `snowline`): every game shares the origin.
-- **The game is public from M0** with an in-development notice in `package.json`'s `description` and on the title screen (`TEXT.inDevelopment` in `src/content/text.ts`). Both stay until a run can end in rescue (M5).
+- **The game is public from M0.** The in-development notice (`package.json`'s `description`, `TEXT.inDevelopment`) came off at M5, when a run could first end in rescue (SPEC §11.1; Q39 asks whether to restore it until M6).
 
 ## Testing
 - `npm test` runs in CI and gates every game's deploy: keep it deterministic and quick (target under 30 s; it is about 7 s now).
 - **Golden replays** (`src/tools/goldens.ts`): when a deliberate change to the sim or world generation moves a hash, `tests/golden.test.ts` prints the new one. Check the change is meant, paste it in, and say so in the hand-off. Then run `npm run check:browser` to confirm browsers agree.
 - **The default seed** (`first-light`, `DEFAULT_SEED`) is every player's first valley. If world generation changes, look at it again (`npm run inspect -- first-light`) before updating its snapshot in `tests/worldgen.test.ts`.
-- Run by hand (SPEC §11.4): `npm run sweep` (1,000 seeds, a couple of minutes), `npm run check:browser` (golden replays in headless Chromium, served and from disk). Tools for looking: `npm run inspect -- <seeds>` (map PNGs in `renders/inspect/`), `npm run shots -- [--at X,Y] [HH:MM ...]` (screenshots at times of day in `renders/shots/`). `renders/` is git-ignored.
+- Run by hand (SPEC §11.4): `npm run sweep` (1,000 seeds, a few minutes), `npm run check:browser` (golden replays in headless Chromium, served and from disk), `npm run bot` (the bot over many seeds in both modes; `renders/bot/report.txt`), `npm run tour` (screenshots of every screen; fails on page errors). Tools for looking: `npm run inspect -- <seeds>` (map PNGs in `renders/inspect/`), `npm run shots -- [--at X,Y] [HH:MM ...]` (screenshots at times of day in `renders/shots/`). `renders/` is git-ignored.
 - Tests use Node APIs, so they are type-checked by `tsconfig.node.json` with the scripts; `tsconfig.json` covers `src/` only.
 
 ## Task tracking (docs/TODO.md and docs/FEATURES.md)

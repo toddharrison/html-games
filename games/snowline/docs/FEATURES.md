@@ -249,18 +249,18 @@ Trees are two to three tiles tall (`CONIFER` and `ASPEN` sizes in `src/render/fl
 - **Gotcha:** a step's `done` must become true when the player has done the thing, or it holds the chain back for `PATIENCE` each time; a nudge with nothing to do (`look`) counts as done once thought.
 
 ### Tasks fast-forward
-`M7` · `uncommitted` · `playtest: pending` · SPEC §5.1
+`M7` · `cb96676` · `playtest: pending` · SPEC §5.1
 
 `App.onFrame` (`src/platform/app.ts`) runs the loop at `TASK_SPEED` (8) while `state.task` is set, as it runs `SLEEP_SPEED` while asleep: ticks run faster, never skipped, so replays and hashes don't change. An event in `STEADY_ON` (an animal, a thought, a storm, a slide, an aircraft, sickness, the weather, lightning, a notice) sets `steadied`, and the rest of that task runs at normal speed; `task-start` clears it. Platform only.
 
 ### Thoughts up front, and the fire reactions
-`M7` · `uncommitted` · `playtest: pending` · SPEC §12.2
+`M7` · `cb96676` · `playtest: pending` · SPEC §12.2
 
 The first day's chain (`FIRST` in `src/sim/thoughts.ts`, text in `content/thoughtText.ts`) now starts with `cold` (the snow on the peaks: a fire before dark), then `water`, `gather` (what a fire needs), `fire` (striking rock; due once tinder or a stick is carried), `lay` (enough to lay one and a way to light it), then shelter, dark, food as before; `look` folded into `gather`'s hint. `FIRE_REACTIONS` (`FIRE_THOUGHTS`: `sparked`, `carrying`, `laid`, `noCatch`, `lit`) come ahead of the chain once `REACT_GAP` (10 game minutes) has passed since the last thought; only the latest that applies is said, and the earlier ones are marked thought. The caption sits at 22% from the top, thought text 1.4em (`style.css`, the M7 block at the end).
 - **Gotcha:** `laid` waits for a way to light (a carried spark-stone, matches, or embers); without one it would tell the kid to strike sparks they can't make.
 
 ### Insight slips
-`M7` · `uncommitted` · `playtest: pending` · SPEC §12.2, §8.1
+`M7` · `cb96676` · `playtest: pending` · SPEC §12.2, §8.1
 
 On a `discovery` event the app asks `insightText` (`src/ui/insight.ts`) for a card: a technique gives "New idea!", its name, its text, and the recipes it adds to Make; a fact gives "Now I know" or "I think...", "The <look> <what it means>" (`MEANS`, else the raw value), and how it was learned. `Hud.insight` queues them and shows each on a slip of notebook paper below the kid for 6.5 s. UI only.
 
@@ -410,7 +410,7 @@ R offers: rest an hour (awake), sleep three hours, sleep until first light, slee
 ## 14. Fire
 
 ### Laying a fire
-`M7` · `uncommitted` · `playtest: pending` · SPEC §8.3, §12.4
+`M7` · `cb96676` · `playtest: pending` · SPEC §8.3, §12.4
 
 A laid fire is a build, `fire-lay` (`LAY` in `src/sim/fire.ts`), whose `items` hold its tinder, sticks, and wood (`layParts`; ready to light with tinder and `LAY_STICKS` (2) sticks, `layReady`). `fire-site` (unlisted: only the Make page's placing or the bot start it) needs open ground (`fireSiteProblem`: not water, snow, scree, a feature, a fire, a build, or things lying there), rings the spot, and puts in what's carried (`layIn`: the best-known tinder, up to two sticks, the best-known wood). `lay-fire` adds what's missing, greyed with what's still needed; `unlay-fire` gives it all back. The light actions (`fire-sparks`, `-match`, `-embers`, `-drill`) are offered on a laid fire for each way the kid knows of (`knowsOf`: sparks whenever a steel tool is carried), greyed with `lightProblem`. Lighting burns the laid tinder whether it catches or not; a fire that catches gets the sticks (12 min each) and the wood (`WOOD_BURN`), and the lay is gone. A laid fire blocks walking (`blockedBySystems`). Drawn by `drawLay` (`render/fireArt.ts`): scraped earth, a stone ring, a tinder nest, a tent of sticks, a split log. Clicking does the obvious thing (`OBVIOUS` in `ui/look.ts`: lay, then light by match, embers, sparks, drill); `strike-outcrop` is offered only until that stone is known, so the next click on it pries a piece loose. The bot lays and lights the same way (`tendFire`).
 - **Gotcha:** lighting no longer works on open ground from the pockets; every fire starts as a laid one. The signal pile still lights from the pockets (`canIgnite` in `arc.ts`).
@@ -441,7 +441,7 @@ A laid fire is a build, `fire-lay` (`LAY` in `src/sim/fire.ts`), whose `items` h
 - **Tools differ** (`TOOL_WORK`): the hatchet cuts wood fastest and is clumsy at fine work; the knife is the reverse and best with fibre; the multi-tool is middling at everything and poor at sparks.
 
 ### The Make page
-`M7` · `uncommitted` · `playtest: pending` · SPEC §8.2, §12.4
+`M7` · `cb96676` · `playtest: pending` · SPEC §8.2, §12.4
 
 C opens `makePage` (`src/ui/make.ts`), a notebook page (the journal's `.notebook` styles) listing `makeBook` (`src/sim/craft.ts`): the fire first (`fireEntry`), then every known recipe and build, grouped by `need` (`NEEDS` in `content/recipes.ts`, in the kid's words, in that order). Each entry has a picture (loose-thing art by item, `DRAWN_AS`; the fire is `drawLay`) and its parts with icons, green and ticked when carried, red with a question mark when `unknown`. The fire's parts name this valley's things once known: a tinder known to catch, a wood known to burn long, a piece of the known spark-stone; until then "something dry that catches a spark", "wood that burns well", "a rock that sparks on steel". Number keys pick the first nine. Choosing the fire starts placing; anything else is crafted or built as before. `craftMenu` is gone.
 - **Placing** (`App.placing`): the tile under the mouse (or the faced one) shows `drawLayGhost` (`render/fireArt.ts`), drawn after the light so it shows at night; the tip says "Lay the fire here" or "Not here: <reason>" (`fireSiteProblem`, or no stand beside it). Click or E queues a `goto` with `fire-site`; Esc or C stops.

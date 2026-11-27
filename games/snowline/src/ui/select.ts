@@ -2,7 +2,7 @@
 // or one built by hand.
 
 import { BACKGROUNDS, NAMES, POCKET_ITEMS, TOOLS, TRAITS } from '../content/protagonists.ts';
-import { candidate, type Protagonist } from '../sim/protagonist.ts';
+import { candidate, PAGE, type Protagonist } from '../sim/protagonist.ts';
 import { h } from './dom.ts';
 
 function card(p: Protagonist, pick: () => void, autofocus: boolean): HTMLElement {
@@ -23,7 +23,7 @@ function card(p: Protagonist, pick: () => void, autofocus: boolean): HTMLElement
 export function selectScreen(seed: string, start: (p: Protagonist) => void, back: () => void, page = 0): HTMLElement {
   const root = h('div', { class: 'screen select' });
   const draw = (pg: number) => {
-    const cands = [0, 1, 2].map((i) => candidate(seed, pg * 3 + i));
+    const cands = Array.from({ length: PAGE }, (_, i) => candidate(seed, pg * PAGE + i));
     root.replaceChildren(
       h('h2', {}, 'Who walked away from the plane?'),
       h('p', { class: 'keys' }, `Valley: ${seed}`),

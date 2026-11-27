@@ -2,7 +2,7 @@
 
 ### 4.1 Selection
 
-Starting a new run opens a selection screen with three generated candidates. The player can pick one, reroll for three more, or build one by hand.
+Starting a new run opens a selection screen with three generated candidates. The player can pick one, reroll for three more, or build one by hand. The three shown together never share a name, background, trait, or starting tool, so each set of three offers one of each tool.
 
 Each protagonist has:
 
@@ -47,4 +47,4 @@ Backgrounds, traits, tools, and pocket items are data in `content/`. Each is a s
 
 ### 4.3 Determinism
 
-A run is identified by the world seed plus the protagonist definition. Random candidates are drawn from the seed's `protagonist` stream, so "seed X, candidate 2" always gives the same person. A run code shown on the summary screen encodes both, and tests always specify both.
+A run is identified by the world seed plus the protagonist definition. Random candidates are drawn from the seed's `protagonist` stream, so "seed X, candidate 2" always gives the same person. Each set of three is dealt its names, backgrounds, traits, and tools together, without repeats; each candidate's own draw gives the rest. A run code shown on the summary screen encodes both, and tests always specify both.

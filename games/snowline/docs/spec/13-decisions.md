@@ -55,6 +55,7 @@
 | Fallen trees lie across the streams (up to a dozen, near trees, where trails cross first, one near the start): a dry way over, slower, and slippery in the dark or when worn out. | 6.3 |
 | The first public release is 0.0.1 (was Q45). | 11.1 |
 | The bear's den is a cave: a mound of rock about three tiles wide with a dark mouth wide enough for a bear, the spoil heaped in front. The cougar's lair and the marmots' burrows stay small. | 6.3, 9, 12.1 |
+| The three candidates shown together never share a name, background, trait, or tool, so every page offers one of each tool (the user saw two Miras, two anglers, two with glasses, and two multi-tools in the first valley). | 4.1, 4.3 |
 
 **2026-11-25.**
 

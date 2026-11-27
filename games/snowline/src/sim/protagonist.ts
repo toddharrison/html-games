@@ -1,8 +1,13 @@
-// Protagonists (SPEC 4). A candidate is drawn from the seed's `protagonist` stream, one sub-stream per
-// candidate number, so "seed X, candidate 2" is always the same person however many rerolls came first.
+// Protagonists (SPEC 4). Candidates come in pages of three, the cards the selection screen shows together.
+// A page's sub-stream deals its three cards different names, backgrounds, traits, and tools; each card's
+// own sub-stream gives the rest. So "seed X, candidate 2" is always the same person however many rerolls
+// came first.
 
 import { BACKGROUNDS, LOOKS, NAMES, POCKET_ITEMS, TOOLS, TRAITS } from '../content/protagonists.ts';
-import { chance, makeRng, nextInt, nextRange, pick, shuffle } from './rng.ts';
+import { chance, makeRng, nextInt, nextRange, shuffle } from './rng.ts';
+
+/** Cards on one page of the selection screen. Each list in the roster must have at least this many. */
+export const PAGE = 3;
 
 export interface Protagonist {
   name: string;
@@ -17,9 +22,17 @@ export interface Protagonist {
 
 /** Candidate number `index` for a seed. The selection screen shows 0–2, a reroll 3–5, and so on. */
 export function candidate(seed: string, index: number): Protagonist {
+  const slot = index % PAGE;
+  const deal = makeRng(seed, `protagonist-page:${(index - slot) / PAGE}`);
+  const names = { boy: shuffle(deal, NAMES.boy), girl: shuffle(deal, NAMES.girl) };
+  const background = shuffle(deal, BACKGROUNDS)[slot]!.id;
+  const trait = shuffle(deal, TRAITS)[slot]!.id;
+  const tool = shuffle(deal, TOOLS)[slot]!.id;
+
   const rng = makeRng(seed, `protagonist:${index}`);
   const gender = chance(rng, 0.5) ? 'girl' : 'boy';
-  const name = pick(rng, NAMES[gender]);
+  // Slot k takes the k-th name of its gender's shuffled list, so two cards of one gender never share one.
+  const name = names[gender][slot]!;
   const age = nextRange(rng, 12, 15);
   const looks = {
     skin: nextInt(rng, LOOKS.skin),
@@ -28,9 +41,6 @@ export function candidate(seed: string, index: number): Protagonist {
     shirt: nextInt(rng, LOOKS.shirt),
     pants: nextInt(rng, LOOKS.pants),
   };
-  const background = pick(rng, BACKGROUNDS).id;
-  const trait = pick(rng, TRAITS).id;
-  const tool = pick(rng, TOOLS).id;
   const pockets = shuffle(rng, POCKET_ITEMS.map((p) => p.id)).slice(0, nextRange(rng, 1, 2));
   return { name, gender, age, looks, background, trait, tool, pockets };
 }

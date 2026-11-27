@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { BACKGROUNDS, NAMES, TOOLS, TRAITS } from '../src/content/protagonists.ts';
 import { DEFAULT_SEED, newGame } from '../src/sim/newGame.ts';
-import { candidate, protagonistProblems, pronouns, type Protagonist } from '../src/sim/protagonist.ts';
+import { candidate, PAGE, protagonistProblems, pronouns, type Protagonist } from '../src/sim/protagonist.ts';
 import { step } from '../src/sim/step.ts';
 import { passable } from '../src/sim/world.ts';
 import { valley } from '../src/tools/runner.ts';
@@ -23,6 +23,14 @@ describe('protagonists', () => {
     }
     expect([...genders].sort()).toEqual(['boy', 'girl']);
     expect(NAMES.boy.length).toBe(NAMES.girl.length);
+  });
+
+  it('the three cards on a page never share a name, background, trait, or tool', () => {
+    for (const seed of [DEFAULT_SEED, 'roster', 'x'])
+      for (let page = 0; page < 20; page++) {
+        const cards = [0, 1, 2].map((i) => candidate(seed, page * PAGE + i));
+        for (const k of ['name', 'background', 'trait', 'tool'] as const) expect(new Set(cards.map((c) => c[k])).size).toBe(PAGE);
+      }
   });
 
   it('pronouns follow the protagonist', () => {

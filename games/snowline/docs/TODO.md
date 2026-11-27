@@ -3,6 +3,7 @@
 Open work and the hand-off between sessions. See CLAUDE.md for how to maintain it. **Only open items live here:** when a task is done, move it to [FEATURES.md](FEATURES.md) (under its system, with the tag line) and delete it here.
 
 ## Hand-off notes
+- **Released 0.1.0 (2026-11-27):** a pre-release on GitHub (`snowline-v0.1.0`), pushed to `main`: everything below, through the placed builds and the notebook inventory (`6b6bb55`). The playtest queue is what the user hasn't seen yet.
 - **Released 0.0.1 (2026-11-26):** the first public release, pushed to `main` (the deploy builds the site; Snowline is on the landing page). Everything up to here is in it.
 - **Where things stand (2026-11-26):** M0–M6, the M7 slice, and everything below are committed on branch `snowline/spec` (the work below is `46d8182`), not pushed; version 0.1.0. All of it came from the user playing the slice and asking for changes the same day; every design decision is a dated row in `docs/spec/13-decisions.md` (2026-11-26 table), and FEATURES.md has the code pointers.
 - **What changed (`46d8182`):**

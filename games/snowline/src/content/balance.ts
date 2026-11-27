@@ -100,8 +100,16 @@ export const TASTE_DOSE = 0.15;
 export const TASTE_DELAY = 60;
 /** Nutrition by plant outcome, for a full portion (a handful). */
 export const PLANT_NUTRITION = { nourishing: 9, poor: 3, sickening: 2, deadly: 1 } as const;
-/** Days until a harvested patch, tree, or reed bed gives again. */
+/** Days until a harvested patch, bush, reed bed, or the shallows give again. */
 export const REGROW_DAYS = { plant: 6, reeds: 4, shallows: 2, tree: 8, bush: 7 } as const;
+/**
+ * What doesn't grow back within a run (SPEC 8.2): how many times one tile gives before it's used up for
+ * good. A tree's firewood (limbs cut with the steel tool), its bark (stripped, or shredded for tinder:
+ * one supply), the lichen on it; a deadfall's breakable wood and the punk in it.
+ */
+export const SUPPLY = { wood: 3, bark: 3, lichen: 2, deadfall: 3, punk: 2 } as const;
+/** Wind this strong or more (WEATHER[id].wind) brings down fresh branches and washes up driftwood. */
+export const BLOWING = 0.7;
 /** When foods are in season, by day of the run [first, last] (SPEC 7.4). */
 export const SEASONS = {
   berry: [1, 30],

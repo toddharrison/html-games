@@ -24,6 +24,8 @@ const FEATURE_COLOR: Partial<Record<number, string>> = {
   [F.arch]: PALETTE.ink,
   [F.beaverDam]: PALETTE.bark,
   [F.carcass]: PALETTE.red,
+  [F.den]: '#00e5ff',
+  [F.thicket]: '#0f1f14',
 };
 
 /** One RGBA pixel per tile, with markers for the set pieces when `marks` is set. */

@@ -73,6 +73,10 @@ export interface World {
   landmarks: Landmark[];
   /** What lies loose on each tile (content/loose.ts, SPEC 6.7). */
   loose: Uint8Array;
+  /** Whose game trail each tile is (TRAIL_BY: 0 none, 1 elk, 2 bear, 3 cougar), from worldgen layTrails. */
+  trails: Uint8Array;
+  /** Years since the forest on each tile last burned (255: older than that; 0: no forest), from its fire history (SPEC 6.3). */
+  age: Uint8Array;
 }
 
 export const SIZE = MAP_SIZE;

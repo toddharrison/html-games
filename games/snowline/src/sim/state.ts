@@ -227,8 +227,10 @@ export interface GameState {
   /** Asleep (or resting awake) until a tick. */
   sleep: { until: number; awake: boolean; from: number } | null;
   stashes: Stash[];
-  /** Tile index -> the tick its food or wood comes back. Looked up, never iterated. */
+  /** Tile index (with a kind prefix: `l` loose things) -> the tick its food or wood comes back. Looked up, never iterated. */
   regrow: Record<string, number>;
+  /** Harvests that never come back (content SUPPLY): `<kind><tile>` -> times taken. Looked up, never iterated. */
+  taken: Record<string, number>;
   pending: Pending[];
   /** Recent drinks by water body, for working out which water made the survivor ill. */
   drinks: { w: number; t: number }[];
@@ -265,6 +267,8 @@ export type SimEvent =
   | { type: 'teleport' }
   | { type: 'fire-lit'; x: number; y: number }
   | { type: 'say'; text: string }
+  /** A thought of the survivor's (sim/thoughts.ts), and how to act on it. */
+  | { type: 'thought'; text: string; hint: string }
   | { type: 'task-start'; action: string }
   | { type: 'task-done'; action: string }
   | { type: 'eat' }

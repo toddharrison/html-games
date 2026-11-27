@@ -10,7 +10,7 @@ import { MSG, who } from '../content/messages.ts';
 import { F, T } from '../content/terrain.ts';
 import { clumsyFactor } from './body.ts';
 import { drinkAt, eat, itemName, taste } from './food.ts';
-import { drop, give, stashAt, tidyStashes } from './inventory.ts';
+import { drop, give, hasRoom, stashAt, tidyStashes } from './inventory.ts';
 import {
   type ActionDef,
   type ActionOption,
@@ -21,6 +21,7 @@ import {
   gather,
   inSeason,
   ready,
+  spentUntilBack,
   yieldRoll,
 } from './actionKit.ts';
 import { learn, lookName, see, thingName } from './knowledge.ts';
@@ -55,6 +56,7 @@ export const ACTIONS: ActionDef[] = [
       const st = stashAt(s, t % 256, Math.floor(t / 256));
       return st && st.items.length ? `Pick up ${st.items.map((i) => itemName(s, i)).join(', ')}` : null;
     },
+    spent: (s, _w, t) => (stashAt(s, t % 256, Math.floor(t / 256))?.items.some((i) => hasRoom(s, i.k, i.d)) ? null : 'hands full'),
     minutes: 1,
     done: (s, _w, t, ev) => {
       const st = stashAt(s, t % 256, Math.floor(t / 256));
@@ -73,6 +75,7 @@ export const ACTIONS: ActionDef[] = [
   {
     id: 'pick',
     offer: (s, w, t) => (w.feature[t] === F.plant ? `Pick ${thingName(s, 'plant', w.data[t]!)}` : null),
+    spent: (s, w, t) => (!inSeason(s, PLANTS[w.data[t]!]!.kind) ? 'out of season' : ready(s, t) ? null : 'picked over for now'),
     minutes: 10,
     skill: 'foraging',
     needsLight: true,
@@ -108,6 +111,7 @@ export const ACTIONS: ActionDef[] = [
   {
     id: 'pick-herb',
     offer: (s, w, t) => (w.feature[t] === F.herb ? `Pick ${thingName(s, 'remedy', w.data[t]!)}` : null),
+    spent: spentUntilBack('picked over for now'),
     minutes: 8,
     skill: 'foraging',
     needsLight: true,
@@ -122,6 +126,7 @@ export const ACTIONS: ActionDef[] = [
   {
     id: 'dig-cattail',
     offer: (_s, w, t) => (w.terrain[t] === T.reeds ? 'Dig cattail roots' : null),
+    spent: spentUntilBack('dug out for now'),
     minutes: 25,
     skill: 'foraging',
     needsLight: true,
@@ -136,6 +141,7 @@ export const ACTIONS: ActionDef[] = [
   {
     id: 'feel-shallows',
     offer: (_s, w, t) => (w.terrain[t] === T.shallows ? 'Feel for crayfish and mussels' : null),
+    spent: spentUntilBack('nothing left for now'),
     minutes: 30,
     skill: 'foraging',
     needsLight: true,
@@ -152,6 +158,7 @@ export const ACTIONS: ActionDef[] = [
   {
     id: 'rose-hips',
     offer: (s, w, t) => (w.feature[t] === F.bush ? (inSeason(s, 'rose-hips') ? 'Pick rose hips' : null) : null),
+    spent: spentUntilBack('picked over for now'),
     minutes: 10,
     skill: 'foraging',
     needsLight: true,
@@ -237,7 +244,10 @@ export function availableActions(s: GameState, w: World): ActionOption[] {
       const label = a.offer(s, w, t, t === front);
       if (!label) continue;
       if (out.some((o) => o.action === a.id && o.label === label)) continue;
-      out.push({ action: a.id, tile: t, label, minutes: minutesFor(s, w, a, t) });
+      const o: ActionOption = { action: a.id, tile: t, label, minutes: minutesFor(s, w, a, t) };
+      const spent = a.spent?.(s, w, t);
+      if (spent) o.spent = spent;
+      out.push(o);
     }
   }
   return out;
@@ -263,7 +273,7 @@ export function startAction(s: GameState, w: World, action: string, tile: number
   if (s.over || s.sleep || s.task) return;
   if (!targets(s).includes(tile)) return;
   const a = ACTIONS.find((x) => x.id === action);
-  if (!a || !a.offer(s, w, tile, tile === frontTile(s))) return;
+  if (!a || !a.offer(s, w, tile, tile === frontTile(s)) || a.spent?.(s, w, tile)) return;
   if (a.needsLight && !canSee(s)) {
     say(s, MSG.tooDark(), events);
     return;

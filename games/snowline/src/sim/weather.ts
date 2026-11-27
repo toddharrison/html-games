@@ -19,7 +19,7 @@ import {
   WEATHER_IDS,
   type WeatherId,
 } from '../content/weather.ts';
-import { START_MINUTE } from '../content/balance.ts';
+import { BLOWING, START_MINUTE } from '../content/balance.ts';
 import { T } from '../content/terrain.ts';
 import { learn, see } from './knowledge.ts';
 import { say } from './log.ts';
@@ -73,6 +73,14 @@ export function makeForecast(rng: RngState): { f: number[]; severeDay: number } 
   // Before it, the sky builds.
   if (first - 1 >= 0) f[first - 1] = ALL.indexOf('cloudy');
   return { f, severeDay };
+}
+
+/** Did the wind blow hard (BLOWING) in any forecast period after the one holding `since`, up to now? */
+export function blewSince(s: GameState, since: number): boolean {
+  const f = s.weather.f;
+  const last = Math.min(f.length - 1, periodAt(s.tick));
+  for (let p = periodAt(since) + 1; p <= last; p++) if (WEATHER[ALL[f[p]!]!].wind >= BLOWING) return true;
+  return false;
 }
 
 /** The forecast period at a tick. */

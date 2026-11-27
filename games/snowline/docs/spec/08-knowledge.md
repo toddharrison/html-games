@@ -25,7 +25,7 @@ The starting tool is the root of everything.
 - Hides + cord, dry grass stuffing → **warm layers** for the high country
 - Logs + cord → raft (optional: deep-water fishing, crossing the lake)
 
-The raw materials are gathered from things on the ground and from features (6.7). Crafting uses a list of known recipes, showing which ingredients are on hand (a visual version, with pictures of the thing and its ingredients, follows the slice: 14, M7). Each craft takes time and can fail at low skill, sometimes consuming materials. Task times depend on the starting tool.
+The raw materials are gathered from things on the ground and from features (6.7). Only what really comes back within weeks does: fallen twigs and branches, driftwood, berries, shellfish, cattails. What doesn't is used up for good after a few takes per tile: a tree's limbs for firewood, its bark (stripped, or shredded for tinder), the lichen on it, a deadfall's breakable wood and the punk in it (the trunk stays), and loose stones. A stripped tree shows it for the rest of the run. Crafting uses a list of known recipes, showing which ingredients are on hand (a visual version, with pictures of the thing and its ingredients, follows the slice: 14, M7). Each craft takes time and can fail at low skill, sometimes consuming materials. Task times depend on the starting tool.
 
 ### 8.3 Fire
 

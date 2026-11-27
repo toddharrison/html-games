@@ -6,6 +6,7 @@ import { availableActions } from '../src/sim/actions.ts';
 import { sleepQuality } from '../src/sim/body.ts';
 import { craftOptions } from '../src/sim/craft.ts';
 import { strikeSnag } from '../src/sim/fire.ts';
+import { SUPPLY } from '../src/content/balance.ts';
 import { count, give } from '../src/sim/inventory.ts';
 import { fact, knowsTechnique } from '../src/sim/knowledge.ts';
 import { newGame } from '../src/sim/newGame.ts';
@@ -244,6 +245,50 @@ describe('the tool chain (SPEC 8.2)', () => {
     act(state, world, 'cut-wood', FRONT);
     expect(count(state, 'firewood', 4)).toBeGreaterThan(0);
     expect(state.known.seen).toContain('wood:4');
+  });
+
+  it('bark that does not fit lands at the feet', () => {
+    const { state, world } = setup({ edit: (w) => (w.feature[FRONT] = F.aspen) });
+    while (state.inventory.length < 8) give(state, 'stone', 1, state.inventory.length);
+    const ev = act(state, world, 'bark', FRONT);
+    expect(count(state, 'bark')).toBe(0);
+    expect(state.stashes).toEqual([{ x: 128, y: 128, items: [{ k: 'bark', n: 2 }] }]);
+    expect(ev.some((e) => e.type === 'say' && /set them down at/.test(e.text))).toBe(true);
+    expect(availableActions(state, world).find((a) => a.action === 'pick-up' && a.tile === HERE)!.spent).toBe('hands full');
+  });
+
+  it('a tree is stripped for good after a few takes (bark and inner bark share it), but still gives firewood', () => {
+    const { state, world } = setup({ edit: (w) => (w.feature[FRONT] = F.aspen) });
+    const offer = (id: string) => availableActions(state, world).find((a) => a.action === id && a.tile === FRONT)!;
+    for (let k = 0; k < SUPPLY.bark - 1; k++) act(state, world, 'bark', FRONT);
+    act(state, world, 'tinder-bark', FRONT);
+    expect(count(state, 'bark')).toBe(2 * (SUPPLY.bark - 1));
+    expect(offer('bark').spent).toBe('already stripped');
+    expect(offer('tinder-bark').spent).toBe('already stripped');
+    expect(offer('cut-wood').spent).toBeUndefined();
+    state.tick += 60 * 14400;
+    expect(offer('bark').spent, 'bark does not grow back in a run').toBe('already stripped');
+    step(state, world, [{ t: state.tick, c: 'act', action: 'bark', tile: FRONT }]);
+    expect(state.task, 'stripped bark takes no time').toBeNull();
+  });
+
+  it('a tree gives firewood a few times, then has no good limbs left', () => {
+    const { state, world } = setup({ edit: (w) => (w.feature[FRONT] = F.conifer) });
+    for (let k = 0; k < SUPPLY.wood; k++) act(state, world, 'cut-wood', FRONT);
+    expect(count(state, 'firewood')).toBeGreaterThanOrEqual(2 * SUPPLY.wood);
+    const cut = availableActions(state, world).find((a) => a.action === 'cut-wood')!;
+    expect(cut.spent).toBe('no good limbs left');
+    expect(availableActions(state, world).find((a) => a.action === 'bark')!.spent).toBeUndefined();
+  });
+
+  it('a deadfall breaks up until only the trunk is left, and its punk runs out', () => {
+    const { state, world } = setup({ edit: (w) => (w.feature[FRONT] = F.log) });
+    for (let k = 0; k < SUPPLY.deadfall; k++) act(state, world, 'deadfall-wood', FRONT);
+    for (let k = 0; k < SUPPLY.punk; k++) act(state, world, 'tinder-punk', FRONT);
+    const offer = (id: string) => availableActions(state, world).find((a) => a.action === id)!;
+    expect(offer('deadfall-wood').spent).toBe('only the trunk is left');
+    expect(offer('tinder-punk').spent).toBe('none left in it');
+    expect(world.feature[FRONT], 'the trunk stays where it lies').toBe(F.log);
   });
 });
 

@@ -17,7 +17,8 @@ The valley rises from the lake through four bands. Elevation is what makes this 
 | Subalpine | Thin stunted trees, open meadow, boulders | Marmots, elk, long views; exposed to wind |
 | Alpine | Talus, bare rock, late snow patches | Wreckage, goats, the best signal sites; dangerous cold and falls |
 
-- Bands are separated by slopes and by **cliff bands** that can be crossed only at a few scramble routes.
+- Bands follow warmth, not height alone (decided 2026-11-26): a north-facing slope is as cold as a higher one facing the sun, so the treeline climbs the sunny side and drops on the shady one.
+- Bands are separated by slopes and by **cliff bands** where the ground steps down steeply, crossed only at a few scramble routes.
 - Each band up is colder and windier, and steeper tiles cost more time and rest.
 - High points are **viewpoints**: reaching one reveals a wide area of the map.
 
@@ -27,22 +28,22 @@ Decided 2026-11-25: procedural terrain with authored set pieces, plus one hand-c
 
 Before any terrain is made, the valley's rules are dealt (6.6). Later steps read them: which patches are safe and which stone is the spark-stone depend on the deal.
 
-Pipeline, all driven by the world seed:
+Pipeline, all driven by the world seed. **The valley is made by its history** (decided 2026-11-26): steps 1–5 simulate how a real glacial valley forms, so its shape, water, and forests make sense together. Generation time doesn't matter much (once per run, about a third of a second).
 
-1. Height map from layered gradient noise, shaped into a basin with one high side.
-2. Fill the basin floor to make the lake; carve one or two streams from the high ground down to it.
-3. Cut the height map into elevation bands; place cliff bands and scramble routes.
-4. Moisture map; assign terrain from band and moisture.
-5. Scatter features (trees, rocks, bushes) with spacing rules per terrain.
+1. **Rock and ice.** The land is laid out along the valley's line: low along it, falling from the head under the high side to the outlet, rising to ridges either side, with peaks and spurs from ridged noise and a high rim round the map. Rock hardness varies in tilted beds. The main glacier flows from a cirque under the high side and carves a U-shaped trough, gouged deepest a little above its snout; two or three side glaciers from cirques on the flanks join it high above its bed, leaving hanging valleys (waterfalls). The ice leaves a terminal moraine across the snout (it dams the lake) and lateral moraines along the trough, and a knobbly, ice-scoured floor (points, bays, islands where the lake lies). Below the moraine the outlet river cuts a gorge out through the rim.
+2. **Rain and frost.** Droplet erosion cuts gullies and carries sediment down; steep soft rock slumps to talus. Closed hollows are breached by the streams that drain them (only the lake's basin is spared).
+3. **Water.** Every depression fills: the main one behind the moraine is the lake (its moraine raised or lowered until the lake is 1,500–3,000 tiles), small high ones are tarns, the rest are filled level (bogs). What's left of the ice lies in the cirques (small glaciers) and on high north-facing ground (snowpack), and **the rivers begin at their meltwater**. Flow accumulation, with meandering (randomised) drainage, finds the streams; the two that carry most into the lake are streams A and B, with their tributaries. The lake drains over the moraine and out through the gorge, falling away where it crosses the rim.
+4. **Bands, cliffs, ground.** Bands by warmth (6.2); cliffs where a band edge is steep. Ground from band, slope, aspect, and wetness (from the flow): beaches, reed bays, and marsh by the water and on the deltas; wet meadows on flats; dry grass on steep sunny slopes; fir on the shady side up to the treeline; talus under cliffs; snow where the ice lies; avalanche chutes cleared down steep slopes.
+5. **The forest's history.** Three centuries of lightning fires, starting where it's dry, running uphill, dying out on wet ground. Each tile keeps its stand's age: recent burns are open ground with fallen trunks and seedlings; young stands are thick, aspen first where it's damp, with **thickets** too dense to pass; old growth is big trees with gaps and deadfall. Tree size follows age. **Trees are walked among and under** (slower); only thickets, krummholz, and rock block the way. Copses in the meadows, aspen groves, krummholz clumps, and boulders along ridgelines come from smooth noise fields.
 6. Place set pieces by constraint search (see below).
-7. Lay game trails between water, feeding areas, and dens.
+7. Lay game trails as each animal wears them on its own round, not from one den to another: the elk (who make most of them) between bedding cover, their meadow, water, and the nearest pass; the bear from its den to the berry patches and to water; the cougar from its lair to where the elk feed, and to water; every grazing meadow down to the nearest water (they run together as they near it); every pass on to the nearest trail or water. Trails meander (through waypoints pushed off the line by a smooth field), keep to easy grades, cross streams where they're narrow, and merge where one already goes. Each tile of a route knows whose it is, and that animal's prints lie along it (none on bare rock). A trail shows as a worn path only where the ground holds a tread (forest floor, scrub, sand; patchy across grass; never over rock, talus, scree, or bog), so it comes and goes.
 8. Validate. If a check fails, derive the next seed and regenerate, so the result is still deterministic.
 
 Set pieces, each guaranteed once per map unless noted:
 
 | Set piece | Placement rule | Purpose |
 |---|---|---|
-| Crash site and start | Valley floor near the lake; the aircraft's forward section | Start |
+| Crash site and start | Valley floor near the lake; the aircraft's forward section, two tiles long on the shore, broken behind the cabin, one wing snapped skyward, a furrow and pieces scattered round it | Start |
 | Rock overhang | Within 40 tiles of start, at the forest edge | First shelter site |
 | Spark-stone outcrop | Part of or near the overhang | One route to fire |
 | Safe berry patches (2–3) | Forest edge and subalpine meadow | Early food |
@@ -51,11 +52,11 @@ Set pieces, each guaranteed once per map unless noted:
 | Tail wreckage | Alpine band, behind a cliff band with no route at first | Endgame target (section 10) |
 | Rockslide path | Slope below the wreckage | Becomes the route after the severe storm |
 | Signal knoll | Open high ground visible from the air | Best signal-fire site |
-| Bear range, elk meadow, cougar ridge, marmot colony | Away from start, near their food | Animal territories |
+| Bear den, elk meadow, cougar lair, marmot burrows | Where each would really live: the bear's den dug under rock on a shady forested slope near the high berries; the elk on the biggest open meadow with water and timber close; the cougar's lair on a rock shelf above the elk; the marmots' burrows in sunny talus by a high meadow. Away from the start, inside the rim | Animal territories; the dens are drawn and can be looked into (9) |
 | Pack-rat midden | Rock crevice within reach of camp | Stolen items end up here |
 | Unique details (4–6 chosen from a pool) | Anywhere valid | Landmarks: waterfall, lightning-split snag, beaver dam, bone pile, old avalanche path, tarn, wind-carved arch |
 
-Validation checks: start can reach water, the overhang, a route to fire, and at least one safe food source on foot; the wreckage is unreachable before the rockslide and reachable after; at least one viewpoint shows the wreckage; no set pieces overlap; the deal of rules is fair (6.6).
+Validation checks: the rim holds (headwall, or the outlet's falls), start can reach water, the overhang, a route to fire, and at least one safe food source on foot; the wreckage is unreachable before the rockslide and reachable after; at least one viewpoint shows the wreckage; no set pieces overlap; the deal of rules is fair (6.6).
 
 ### 6.4 Day, night, and visibility
 
@@ -115,7 +116,7 @@ It also fixes a weakness in drafts 1–4. With fixed rules, a player who had fin
 
 Decided 2026-11-26, after the first playtest: the player should see the valley's resources and its secrets, not find them in a menu.
 
-**Loose things.** Everything portable that can be gathered by hand lies on the ground as something drawn, and is gathered by clicking it (or facing it and pressing E). The ground type alone no longer gives anything: a meadow is not a source of dry grass, but a tuft of dry grass on a meadow is. Each is placed when the valley is generated, by a position hash and the ground around it (never the deal), and comes back some days after it is taken. Several come in sizes, and the bigger one gives more.
+**Loose things.** Everything portable that can be gathered by hand lies on the ground as something drawn, and is gathered by clicking it (or facing it and pressing E). The ground type alone no longer gives anything: a meadow is not a source of dry grass, but a tuft of dry grass on a meadow is. Each is placed when the valley is generated, by a position hash and the ground around it (never the deal), and comes back some days after it is taken, sooner after a hard wind for fallen branches and driftwood; loose stones and chips, once taken, are gone for the run. Several come in sizes, and the bigger one gives more.
 
 | Thing | Where it lies | Gives |
 |---|---|---|
@@ -138,4 +139,4 @@ Work that needs the steel tool or a feature (cutting wood, stripping bark, inner
 
 ### 6.8 Variety in how things look
 
-Ground and features vary in a way that is always the same for a seed and a tile, and that hangs together across the map: a smooth noise field chooses each tile's variant and tint (patches of lusher grass, flowers, mossier forest floor), so a meadow is not a sheet of one tile. Things come in sizes: saplings to tall trees, pebbles to boulders, a twig to a fallen branch. All of this is the renderer's own hashing of the tile position, except what the simulation uses (loose things and their sizes), which is generated with the world.
+Ground and features vary in a way that is always the same for a seed and a tile, and that hangs together across the map: a smooth noise field chooses each tile's variant and tint (patches of lusher grass, flowers, mossier forest floor), so a meadow is not a sheet of one tile. Things come in sizes: saplings to trees three tiles tall, pebbles to boulders to rock formations, a twig to a fallen branch. Rocks that crowd together are drawn as one outcropping. All of this is the renderer's own hashing of the tile position, except what the simulation uses (loose things and their sizes), which is generated with the world.

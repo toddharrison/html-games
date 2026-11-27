@@ -21,7 +21,7 @@ import { startSystems } from './start.ts';
 export const DEFAULT_SEED = 'first-light';
 
 /** The save format. Bump it when GameState changes shape (SPEC 11.6). */
-export const SCHEMA = 3;
+export const SCHEMA = 5;
 
 /** Deal the rules and generate the valley for a seed. Slow (a few hundred ms): do it once per seed. */
 export function buildValley(seed: string): { rules: Rules; world: World } {
@@ -62,6 +62,7 @@ export function newGame(seed: string, protagonist: Protagonist, world: World, ru
     sleep: null,
     stashes: [],
     regrow: {},
+    taken: {},
     pending: [],
     drinks: [],
     log: [],

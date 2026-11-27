@@ -27,6 +27,18 @@ export interface Gen {
   flags: Uint8Array;
   /** Tiles a set piece has claimed (with its margin), so set pieces never overlap. */
   reserved: Uint8Array;
+  /** Rain that drains through each tile (tiles' worth, more up high): streams, wet ground (geology.ts). */
+  flow: Float64Array;
+  /** Hollows filled level that hold water only in spring: bog and marsh for the ground cover. */
+  bog: Uint8Array;
+  /** Ice left from the glaciers: 2 a small glacier in a cirque, 1 snowpack on high north-facing ground. */
+  snow: Uint8Array;
+  /** Whose game trail each tile is (TRAIL_BY in content/terrain.ts). */
+  trailBy: Uint8Array;
+  /** Years since each tile's forest last burned (cover.ts's fire history): 255 old growth, 0 no forest. */
+  age: Uint8Array;
+  /** The lake's outlet, from the spill point down to the rim. */
+  outlet: number[];
   /** Which way the high side of the valley faces (a unit vector). */
   high: Point;
   lakeSize: number;
@@ -66,6 +78,12 @@ export function newGen(genSeed: string, rules: Rules): Gen {
     water: new Uint8Array(N),
     flags: new Uint8Array(N),
     reserved: new Uint8Array(N),
+    flow: new Float64Array(N),
+    bog: new Uint8Array(N),
+    outlet: [],
+    snow: new Uint8Array(N),
+    age: new Uint8Array(N),
+    trailBy: new Uint8Array(N),
     high: { x: 0, y: -1 },
     lakeSize: 0,
     streamA: [],

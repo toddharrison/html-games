@@ -7,7 +7,8 @@ import { coverGround } from './cover.ts';
 import { layTrails, validate } from './finish.ts';
 import { type Gen, newGen, pt } from './gen.ts';
 import { placeSetPieces } from './setpieces.ts';
-import { carveStreams, cutBands, raiseCliffs, shapeBasin } from './shape.ts';
+import { cutBands, raiseCliffs } from './shape.ts';
+import { shapeValley } from './geology.ts';
 import { chooseStart, sealWreck } from './wreck.ts';
 import { scatterLoose } from './loose.ts';
 
@@ -23,9 +24,8 @@ export function attemptSeed(seed: string, attempt: number): string {
 export function tryGenerate(genSeed: string, rules: Rules): { gen: Gen; problems: string[] } {
   const g = newGen(genSeed, rules);
   const stages: (() => string | null | void)[] = [
-    () => shapeBasin(g),
+    () => shapeValley(g),
     () => cutBands(g),
-    () => carveStreams(g),
     () => raiseCliffs(g),
     () => chooseStart(g),
     () => sealWreck(g),
@@ -84,5 +84,7 @@ function toWorld(seed: string, g: Gen, attempts: number, failures: string[]): Wo
     waterCauseSites: g.waterCauseSites.map(pt),
     landmarks: g.landmarks,
     loose: scatterLoose(g),
+    age: g.age,
+    trails: g.trailBy,
   };
 }

@@ -3,7 +3,7 @@
 // rules allow. Only what the survivor has seen is named.
 
 import { ANIMALS } from '../content/animals.ts';
-import { isTracks } from '../content/loose.ts';
+import { DENS, isTracks } from '../content/loose.ts';
 import { F, FEATURES, T, TERRAIN } from '../content/terrain.ts';
 import { itemName } from '../sim/food.ts';
 import { lookName, thingName } from '../sim/knowledge.ts';
@@ -24,6 +24,7 @@ export interface Look {
   /** What a left-click does: an action, or walking there (`action` null), or nothing. */
   primary: Reach | null;
   walk: boolean;
+  /** Everything on offer here, including what can't be done again yet (`spent`). */
   options: Reach[];
 }
 
@@ -33,6 +34,7 @@ const OBVIOUS = [
   'pick-up',
   'spear-fish',
   'look-tracks',
+  'look-den',
   'watch-fish',
   'search-crash',
   'examine-cause',
@@ -44,7 +46,7 @@ const OBVIOUS = [
   'snare-take',
   'cache-take',
 ];
-const WATCHING = new Set(['watch-fish', 'look-tracks', 'watch', 'examine-cause']);
+const WATCHING = new Set(['watch-fish', 'look-tracks', 'look-den', 'watch', 'examine-cause']);
 
 const BUILD_NAMES: Record<string, string> = {
   'lean-to': 'the lean-to',
@@ -79,23 +81,39 @@ export function nameAt(s: GameState, w: World, x: number, y: number): string {
   if (b) return BUILD_NAMES[b.kind] ?? b.kind;
   const l = looseAt(s, w, i);
   if (l) {
-    if (isTracks(l)) return `prints in the ${TERRAIN[w.terrain[i]!]!.name}`;
+    if (isTracks(l)) return `${looseName(w, i, l)} in the ${TERRAIN[w.terrain[i]!]!.name}`;
     return looseName(w, i, l);
   }
   const f = s.arc.felled[i] ? F.log : w.feature[i]!;
   if (f === F.plant) return thingName(s, 'plant', w.data[i]!);
   if (f === F.herb) return thingName(s, 'remedy', w.data[i]!);
   if (f === F.outcrop) return `an outcrop of ${lookName('stone', w.data[i]!)}`;
+  if (f === F.den) return DENS[w.data[i]!]?.name ?? 'a den';
   if (f) return FEATURES[f]!.name;
   return TERRAIN[w.terrain[i]!]!.name;
+}
+
+/** A menu row for an action: how long it takes, or greyed out with why it can't be done again yet. */
+export function offered(o: { label: string; minutes: number; spent?: string }): { label: string; hint: string; disabled?: boolean } {
+  return o.spent ? { label: o.label, hint: o.spent, disabled: true } : { label: o.label, hint: `${o.minutes} min` };
+}
+
+/** The hint under the name: what a click does, or why nothing here can be done again yet. */
+export function lookHint(l: Look): string {
+  const live = l.options.filter((o) => !o.spent);
+  if (l.primary) return `${l.primary.label}${live.length > 1 || live.length < l.options.length ? ' · right-click for more' : ''}`;
+  if (live.length) return 'right-click to choose';
+  const spent = l.options[0];
+  return spent ? `${spent.label}: ${spent.spent}` : '';
 }
 
 export function lookAt(s: GameState, w: World, x: number, y: number): Look | null {
   if (!inBounds(x, y) || !isExplored(s, idx(x, y))) return null;
   const options = actionsAt(s, w, x, y);
-  const primary = OBVIOUS.map((id) => options.find((o) => o.action === id)).find((o) => o) ?? (options.length === 1 ? options[0]! : null);
+  const live = options.filter((o) => !o.spent);
+  const primary = OBVIOUS.map((id) => live.find((o) => o.action === id)).find((o) => o) ?? (live.length === 1 ? live[0]! : null);
   const here = x === s.player.x && y === s.player.y;
   const walk = !here && canEnter(s, w, x, y) && w.terrain[idx(x, y)] !== T.deep;
-  const cursor: Cursor = primary ? (WATCHING.has(primary.action) ? 'eye' : 'hand') : options.length ? 'hand' : walk ? 'walk' : 'none';
+  const cursor: Cursor = primary ? (WATCHING.has(primary.action) ? 'eye' : 'hand') : live.length ? 'hand' : walk ? 'walk' : 'none';
   return { x, y, name: nameAt(s, w, x, y), cursor, primary, walk, options };
 }

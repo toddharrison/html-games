@@ -6,14 +6,14 @@ import { F, T, WATER } from '../src/content/terrain.ts';
 import { availableActions, itemActions } from '../src/sim/actions.ts';
 import { count, give, take } from '../src/sim/inventory.ts';
 import { fact } from '../src/sim/knowledge.ts';
-import { newGame } from '../src/sim/newGame.ts';
+import { SCHEMA, newGame } from '../src/sim/newGame.ts';
 import { candidate, type Protagonist } from '../src/sim/protagonist.ts';
 import { dealRules, type Rules } from '../src/sim/rules.ts';
 import { decodeRun, encodeRun } from '../src/sim/runCode.ts';
 import type { Command, GameState, SimEvent } from '../src/sim/state.ts';
 import { step } from '../src/sim/step.ts';
 import { idx, type World } from '../src/sim/world.ts';
-import { restore, toRecord } from '../src/platform/saves.ts';
+import { migrate, restore, toRecord } from '../src/platform/saves.ts';
 import { runTo, stateHash } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
 
@@ -168,21 +168,43 @@ describe('dealt plants (SPEC 6.6)', () => {
     r.plants[0] = outcome;
   };
 
-  it('picking gives handfuls, then the patch is bare for days', () => {
+  const pickOption = (state: GameState, world: World) => availableActions(state, world).find((o) => o.action === 'pick' && o.tile === FRONT);
+
+  it('picking gives handfuls, then the patch is bare for days, and the menu says so', () => {
     const { state, world } = setup(patch(0), deal('nourishing'));
+    expect(pickOption(state, world)?.spent).toBeUndefined();
     act(state, world, 'pick', FRONT);
     const got = count(state, 'plant', 0);
     expect(got).toBeGreaterThanOrEqual(2);
-    act(state, world, 'pick', FRONT);
-    expect(count(state, 'plant', 0)).toBe(got);
     expect(state.known.seen).toContain('plant:0');
+    expect(pickOption(state, world)?.spent).toBe('picked over for now');
+    step(state, world, [{ t: state.tick, c: 'act', action: 'pick', tile: FRONT }]);
+    expect(state.task, 'a picked-over patch takes no time').toBeNull();
+    expect(count(state, 'plant', 0)).toBe(got);
+    state.tick += 10 * DAY;
+    expect(pickOption(state, world)?.spent).toBeUndefined();
   });
 
   it('berries go out of season after the first month', () => {
     const { state, world } = setup(patch(0), deal('nourishing'));
     state.tick = 31 * DAY;
-    act(state, world, 'pick', FRONT);
+    expect(pickOption(state, world)?.spent).toBe('out of season');
+    step(state, world, [{ t: state.tick, c: 'act', action: 'pick', tile: FRONT }]);
+    expect(state.task).toBeNull();
     expect(count(state, 'plant', 0)).toBe(0);
+  });
+
+  it('what does not fit is set down at the survivor\'s feet', () => {
+    const { state, world } = setup(patch(0), deal('nourishing'));
+    while (state.inventory.length < 8) give(state, 'stone', 1, state.inventory.length);
+    give(state, 'stone', 99, 0);
+    const before = state.inventory.map((i) => ({ ...i }));
+    const ev = act(state, world, 'pick', FRONT);
+    expect(state.inventory).toEqual(before);
+    const st = state.stashes.find((t) => t.x === state.player.x && t.y === state.player.y);
+    expect(st?.items).toEqual([expect.objectContaining({ k: 'plant', d: 0 })]);
+    expect(st!.items[0]!.n).toBeGreaterThanOrEqual(2);
+    expect(ev.some((e) => e.type === 'say' && /set them down at/.test(e.text))).toBe(true);
   });
 
   for (const o of ['nourishing', 'poor', 'sickening', 'deadly'] as const) {
@@ -330,6 +352,13 @@ describe('saves and run codes', () => {
     runTo(back, a.world, cmds, 1200);
     runTo(b.state, b.world, cmds, 1200);
     expect(stateHash(back)).toBe(stateHash(b.state));
+  });
+
+  it('a save from before the valleys changed is refused, not loaded into a different valley', () => {
+    const { state } = setup();
+    const rec = JSON.parse(JSON.stringify(toRecord(state)));
+    expect(() => migrate({ ...rec, schema: SCHEMA - 1 })).toThrow(/older version/);
+    expect(migrate(rec).schema).toBe(SCHEMA);
   });
 
   it('a run code holds the seed and the protagonist', () => {

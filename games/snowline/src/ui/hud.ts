@@ -101,6 +101,14 @@ export class Hud {
     }
   }
 
+  /** A thought of the survivor's, in their voice, with how to act on it smaller beneath; it stays a while. */
+  think(text: string, hint: string): void {
+    this.caption.replaceChildren(h('p', { class: 'thought' }, text), ...(hint ? [h('p', { class: 'hint' }, hint)] : []));
+    this.caption.classList.add('on');
+    clearTimeout(this.captionTimer);
+    this.captionTimer = window.setTimeout(() => this.caption.classList.remove('on'), hint ? 11000 : 7000);
+  }
+
   /** Show lines of text in the middle of the screen, fading after `ms`. */
   say(lines: readonly string[], ms = 6000): void {
     this.caption.replaceChildren(...lines.map((l) => h('p', {}, l)));

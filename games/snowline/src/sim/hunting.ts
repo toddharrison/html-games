@@ -8,7 +8,7 @@ import { ANIMAL_TEXT } from '../content/animalText.ts';
 import { technique } from '../content/insights.ts';
 import { who } from '../content/messages.ts';
 import { F, T, TERRAIN, WATER } from '../content/terrain.ts';
-import { type ActionDef, type ItemActionDef, canSee, frontTile } from './actionKit.ts';
+import { type ActionDef, type ItemActionDef, canSee, frontTile, receive } from './actionKit.ts';
 import { cheb, kill, warning } from './animals.ts';
 import { treat } from './body.ts';
 import { buildAt } from './camp.ts';
@@ -73,8 +73,8 @@ function shoot(s: GameState, how: 'spear' | 'bow', ev: SimEvent[]): void {
     return;
   }
   kill(s, a);
-  give(s, 'game', 1, ANIMALS[a.kind].game);
   say(s, ANIMAL_TEXT.hit(wh, name), ev);
+  receive(s, 'game', 1, ev, ANIMALS[a.kind].game);
   ev.push({ type: 'animal', kind: a.kind, what: 'killed' });
 }
 
@@ -119,8 +119,8 @@ export const HUNT_ACTIONS: ActionDef[] = [
       practise(s, 'fishing', 1.5);
       if (chance(s.rng['skill-checks'], Math.min(0.85, p))) {
         s.fish = s.fish.filter((f) => f !== fish);
-        give(s, 'fish', 1, undefined, s.tick);
         say(s, ANIMAL_TEXT.fishHit(wh), ev);
+        receive(s, 'fish', 1, ev);
         ev.push({ type: 'fish', what: 'caught' });
         return;
       }
@@ -138,9 +138,9 @@ export const HUNT_ACTIONS: ActionDef[] = [
     done: (s, w, t, ev) => {
       const p = Math.min(0.9, fishHere(s, w, t) + 0.3 + 0.05 * level(s, 'fishing'));
       const n = (chance(s.rng['skill-checks'], p) ? 1 : 0) + (chance(s.rng['skill-checks'], p / 2) ? 1 : 0);
-      if (n) give(s, 'fish', n, undefined, s.tick);
       practise(s, 'fishing', 1);
       say(s, ANIMAL_TEXT.fishLine(who(s.protagonist), n), ev);
+      if (n) receive(s, 'fish', n, ev);
     },
   },
   {
@@ -178,9 +178,9 @@ export const HUNT_ACTIONS: ActionDef[] = [
     done: (s, _w, t, ev) => {
       const b = buildAt(s, t, 'snare');
       if (!b?.items?.length) return;
-      give(s, 'game', 1, 0);
       b.items = [];
       say(s, ANIMAL_TEXT.snareTook(who(s.protagonist)), ev);
+      receive(s, 'game', 1, ev, 0);
     },
   },
   {
@@ -219,11 +219,11 @@ export const HUNT_ITEM_ACTIONS: ItemActionDef[] = [
       if (!it || it.d === undefined) return;
       const g = GAME[it.d]!;
       takeFromSlot(s, slot, 1);
-      give(s, 'meat', g.meat, undefined, s.tick);
-      if (g.hide) give(s, 'hide', g.hide);
-      if (g.feathers) give(s, 'feathers', g.feathers);
       practise(s, 'hunting', 1);
       say(s, ANIMAL_TEXT.dressed(who(s.protagonist), g.verb, g.name), ev);
+      receive(s, 'meat', g.meat, ev);
+      if (g.hide) receive(s, 'hide', g.hide, ev);
+      if (g.feathers) receive(s, 'feathers', g.feathers, ev);
     },
   },
   {

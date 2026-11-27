@@ -3,7 +3,7 @@
 // It doesn't affect validation; it only decides what lies where.
 
 import { L } from '../../content/loose.ts';
-import { BAND, F, FEATURES, FLAG, T, TERRAIN, WATER } from '../../content/terrain.ts';
+import { BAND, F, FEATURES, FLAG, T, TERRAIN, TRAIL_BY, WATER } from '../../content/terrain.ts';
 import { hash2f } from '../rng.ts';
 import { type Gen, xOf, yOf } from './gen.ts';
 import { N } from './grid.ts';
@@ -29,6 +29,9 @@ const CHANCE = {
   tracksFirm: 0.02,
   hare: 0.03,
 } as const;
+
+/** Bare rock and stone holds no print. */
+const stone = (t: number) => t === T.rock || t === T.talus || t === T.boulders || t === T.scree;
 
 export function scatterLoose(g: Gen): Uint8Array {
   const out = new Uint8Array(N);
@@ -72,7 +75,10 @@ export function scatterLoose(g: Gen): Uint8Array {
 
     {
       const p = trail ? CHANCE.tracksTrail : soft ? CHANCE.tracks : CHANCE.tracksFirm;
-      if (territory(i, 'bear') && roll(1, p)) l = L.tracksBear;
+      // On a trail, the prints are whoever wears it; none show on bare rock.
+      const by = stone(t) ? 0 : g.trailBy[i]!;
+      if (by && roll(16, CHANCE.tracksTrail)) l = by === TRAIL_BY.bear ? L.tracksBear : by === TRAIL_BY.cougar ? L.tracksCougar : L.tracksElk;
+      else if (territory(i, 'bear') && roll(1, p)) l = L.tracksBear;
       else if (territory(i, 'cougar') && roll(2, p * 0.6)) l = L.tracksCougar;
       else if (territory(i, 'elk') && roll(3, p)) l = L.tracksElk;
       else if ((soft || trail) && g.band[i] === BAND.floor && roll(4, trail ? CHANCE.hare * 2 : CHANCE.hare)) l = L.tracksHare;

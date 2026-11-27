@@ -246,6 +246,27 @@ button:focus-visible,
   margin: 0.2em 0;
 }
 
+.hud .caption .thought,
+.hud .caption .hint {
+  display: table;
+  margin: 0.15em auto;
+  padding: 0.15em 0.7em;
+  border-radius: 0.35em;
+  background: rgba(10, 12, 16, 0.5);
+}
+
+.hud .caption .thought {
+  font-size: 1.1em;
+  color: #f1ead6;
+}
+
+.hud .caption .hint {
+  font-style: normal;
+  font-size: 0.85em;
+  color: rgba(230, 225, 210, 0.62);
+  letter-spacing: 0.02em;
+}
+
 /* The map: a sketch on paper. */
 .map {
   max-width: none;

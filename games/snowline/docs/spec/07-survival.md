@@ -39,7 +39,7 @@ Every protagonist begins with one of three steel tools. It never wears out, but 
 - **Fishing:** spear in shallows, later a fish trap (rock weir) and bow. Hook and line come from the wreckage. Trout are fish in the water, not a number (decided 2026-11-26, replacing Q34): a few dark shapes in each pool and run, most on the spawning gravel and at the stream mouth. They hold against the current, drift between pools, scatter when the survivor walks up, and settle again if they stand still; at dusk they rise. A spear is thrown at one particular fish on the faced tile. Watching them (click a fish) is how the survivor learns their habits; missing teaches to aim below them. The line and the weir still go by how many fish the water holds.
 - **Hunting:** grouse, hare, and marmot with a thrown spear or bow; snares for hare.
 - **Seasons:** each food has an availability window. Berries peak early and fade; nuts and rose hips come late. Around days 25–40 trout run up the stream to spawn: easy fish in quantity, and bears know it too.
-- **Depletion:** patches regrow slowly, and animal populations do not respawn fast. Over-harvesting near camp forces the player to range further and higher.
+- **Depletion:** patches regrow slowly, and animal populations do not respawn fast. What doesn't grow back within a run is used up for good (8.2). Over-harvesting near camp forces the player to range further and higher.
 - **Unknown foods:** a dealt plant is labelled by appearance ("red berries") until identified. A small taste gives a mild version of its effect, a full portion the whole of it, and watching birds or bears eat it marks it as suspected safe. What is learned goes in the valley notes (6.6) and holds for this valley only.
 
 ### 7.5 Cooking and spoilage
@@ -83,3 +83,4 @@ The treatments in the table work in every valley. Each valley also has a few pla
 
 - No backpack at the start: two hands and pockets, about 8 slots with a weight limit.
 - A crafted bark basket or pack adds capacity. Camp storage is unlimited but exposed unless cached.
+- Nothing gathered or made is lost to full hands: what doesn't fit is set down at the survivor's feet, and the log says so.

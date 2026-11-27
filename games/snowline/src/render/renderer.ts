@@ -10,17 +10,19 @@ import { sightCircles } from '../sim/step.ts';
 import { clock, daylight } from '../sim/time.ts';
 import { WEATHER } from '../content/weather.ts';
 import { snowBand, weatherAt, weatherNow } from '../sim/weather.ts';
-import { flightNow } from '../sim/arc.ts';
+import { arcOpens, flightNow } from '../sim/arc.ts';
 import { FLIGHT_MINUTES } from '../content/arc.ts';
 import { idx, type World } from '../sim/world.ts';
 import { gradeAt } from './grade.ts';
 import { PALETTE } from './palette.ts';
 import { buildAtlas, rh, type Atlas } from './tiles.ts';
 import { Ground } from './ground.ts';
-import { aspen, boulder, conifer, crag, log, stunted, type Tall } from './flora.ts';
+import { aspen, conifer, log, rockMass, snag, stunted, type Tall } from './flora.ts';
+import { WRECK_W, crashScar, forwardWreck, tailWreck } from './wreck.ts';
 import { LooseArt } from './looseArt.ts';
 import { L, isTracks } from '../content/loose.ts';
 import { looseAt, looseData } from '../sim/loose.ts';
+import { barkStripped } from '../sim/materials.ts';
 import { hashString } from '../sim/rng.ts';
 import { perlin } from '../sim/worldgen/noise.ts';
 
@@ -78,6 +80,11 @@ export class Renderer {
   private lastFrame = 0;
   private readonly trees = new Map<string, Tall>();
   private readonly boulders = new Map<string, HTMLCanvasElement>();
+  private readonly tall = new Map<string, Tall>();
+  /** Per tile: a rock's size (rockMass), bigger where rocks crowd into a formation. */
+  private rockSize = new Uint8Array(0);
+  /** The forward wreck: its left tile, how many tiles wide, which way it lies, and the scar under it. */
+  private wreck: { x: number; y: number; wide: number; mirror: boolean; scar: HTMLCanvasElement; ox: number; oy: number } | null = null;
   private clouds: HTMLCanvasElement | null = null;
   private mistBlob: HTMLCanvasElement | null = null;
 
@@ -98,7 +105,9 @@ export class Renderer {
     this.ground = new Ground(world, hashString(`${world.genSeed}/look`)[0]);
     const n = world.size;
     this.treeSize = new Uint8Array(n * n);
+    this.rockSize = new Uint8Array(n * n);
     this.lowland = new Uint8Array(n * n);
+    this.wreck = this.layWreck(world);
     const isTree = (i: number) => {
       const f = world.feature[i];
       return f === F.conifer || f === F.aspen || f === F.stunted;
@@ -110,14 +119,35 @@ export class Renderer {
           // Trees grow bigger in the heart of a stand, and smaller up high; the hash varies the rest.
           let near = 0;
           for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && isTree(idx(x + dx, y + dy))) near++;
-          let size = near >= 4 ? 3 : 2;
+          let size = near >= 3 ? 3 : 2;
           const r = rh(x, y, 71);
           if (r < 0.2) size++;
           else if (r > 0.86) size--;
           if (r > 0.95) size = 0;
           if (world.band[i]! >= 2) size--;
-          if (world.feature[i] === F.aspen) size = Math.min(2, size);
+          // Where the forest has a history, its age decides: seedlings in a burn, tall in old growth.
+          const age = world.age?.[i] ?? 0;
+          if (age > 0) size = age < 20 ? (r < 0.5 ? 0 : 1) : age < 50 ? 1 : age < 100 ? 2 : age < 170 ? 3 : r < 0.4 ? 4 : 3;
+          if (world.band[i]! >= 2 && age > 0) size--;
+          if (world.feature[i] === F.aspen) size = Math.min(3, size);
           this.treeSize[i] = Math.max(0, Math.min(4, size));
+        }
+        const f = world.feature[i];
+        if (f === F.boulder || f === F.outcrop) {
+          // Rocks that crowd together grow into one outcropping; a lone one is a boulder.
+          let near = 0;
+          for (let dy = -1; dy <= 1; dy++)
+            for (let dx = -1; dx <= 1; dx++) {
+              if (!dx && !dy) continue;
+              const n2 = idx(x + dx, y + dy);
+              const nf = world.feature[n2];
+              if (nf === F.boulder || nf === F.outcrop || nf === F.overhang || world.terrain[n2] === T.cliff) near++;
+            }
+          const r = rh(x, y, 74);
+          let size = near >= 3 ? 3 : near >= 1 ? 2 : r < 0.45 ? 1 : 0;
+          if (near >= 1 && r < 0.25) size--;
+          if (f === F.outcrop) size = Math.max(2, size);
+          this.rockSize[i] = Math.max(0, Math.min(3, size));
         }
         if (world.band[i] === 0) {
           let wet = false;
@@ -153,25 +183,60 @@ export class Renderer {
     return t;
   }
 
-  private boulder(size: number, v: number): HTMLCanvasElement {
-    const key = `${size}:${v}`;
-    let b = this.boulders.get(key);
-    if (!b) {
-      b = boulder(size, v);
-      this.boulders.set(key, b);
+  /** A rock formation of a size; `stone` is a dealt stone's look, -1 plain grey rock, -2 a boulder's weathered grey. */
+  private rock(size: number, stone: number, v: number): Tall {
+    const key = `rock:${size}:${stone}:${v}`;
+    let r = this.tall.get(key);
+    if (!r) {
+      const [body, mark] = stone === -2 ? ['#7f7c71', '#4f4d47'] : stone < 0 ? ['#5f666c', '#3b4350'] : (STONE_LOOK[stone] ?? STONE_LOOK[1]!);
+      r = rockMass(size, v, body, mark);
+      this.tall.set(key, r);
     }
-    return b;
+    return r;
   }
 
-  private cragArt(stone: number, v: number): HTMLCanvasElement {
-    const key = `crag:${stone}:${v}`;
-    let b = this.boulders.get(key);
-    if (!b) {
-      const [body, mark] = stone < 0 ? ['#5f666c', '#3b4350'] : (STONE_LOOK[stone] ?? STONE_LOOK[1]!);
-      b = crag(body, mark, v);
-      this.boulders.set(key, b);
+  /** The forward wreck across its tiles (world gen lays it on one or two side by side), and the scar it left, with water left clear. */
+  private layWreck(world: World): Renderer['wreck'] {
+    const { x, y } = world.crash;
+    if (x < 0) return null;
+    const right = world.feature[idx(x + 1, y)] === F.crash;
+    const left = world.feature[idx(x - 1, y)] === F.crash;
+    const lx = left ? x - 1 : x;
+    const wide = left || right ? 2 : 1;
+    const mirror = rh(x, y, 90) < 0.5;
+    const s = crashScar(wide);
+    const [c, g] = (() => {
+      const cc = document.createElement('canvas');
+      cc.width = s.c.width;
+      cc.height = s.c.height;
+      return [cc, cc.getContext('2d')!] as const;
+    })();
+    if (mirror) {
+      g.translate(c.width, 0);
+      g.scale(-1, 1);
     }
-    return b;
+    g.drawImage(s.c, 0, 0);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    const ox = mirror ? -(c.width + s.ox) + TILE * wide : s.ox;
+    for (let ty = 0; ty < c.height / TILE; ty++) {
+      for (let tx = 0; tx < c.width / TILE; tx++) {
+        const wx = lx + tx + ox / TILE;
+        const wy = y + ty + s.oy / TILE;
+        const t = world.terrain[idx(Math.max(0, Math.min(world.size - 1, wx)), Math.max(0, Math.min(world.size - 1, wy)))] ?? 0;
+        if (TERRAIN[t]?.water) g.clearRect(tx * TILE, ty * TILE, TILE, TILE);
+      }
+    }
+    return { x: lx, y, wide, mirror, scar: c, ox, oy: s.oy };
+  }
+
+  /** Tall one-off art: the snag, the wreckage. */
+  private once(key: string, make: () => Tall): Tall {
+    let t = this.tall.get(key);
+    if (!t) {
+      t = make();
+      this.tall.set(key, t);
+    }
+    return t;
   }
 
   private logArt(v: number): HTMLCanvasElement {
@@ -216,6 +281,9 @@ export class Renderer {
     this.ground.draw(g, cam.x, cam.y, SCREEN_W, SCREEN_H, snow);
     this.water(cam, timeMs, x0, y0, x1, y1);
     this.fish(state, cam, timeMs, dt);
+    // The scar the crash ploughed, flat on the ground under everything that stands.
+    const wr = this.wreck;
+    if (wr) g.drawImage(wr.scar, wr.x * TILE - cam.x + wr.ox, wr.y * TILE - cam.y + wr.oy);
 
     const wind = weatherNow(state, world).wind;
     const sway = (x: number, y: number) => Math.round(Math.sin(timeMs / (900 - wind * 400) + x * 0.9 + y * 0.43) * (0.55 + wind * 1.6));
@@ -226,10 +294,13 @@ export class Renderer {
     const prow = Math.round(cam.py);
 
     // Features, loose things, and the survivor, row by row, so things lower on the screen stand in front.
-    // Rows below the view are included: a tall tree there can reach up into it.
+    // Rows below the view are included: a tall tree there can reach up into it (three tiles).
     const layer: (() => void)[] = [];
-    for (let ty = y0; ty <= Math.min(world.size - 1, y1 + 2); ty++) {
-      for (let tx = x0; tx <= x1; tx++) {
+    const over: (() => void)[] = [];
+    const pcol = Math.round(cam.px);
+    for (let ty = y0; ty <= Math.min(world.size - 1, y1 + 3); ty++) {
+      // Two columns either side too: a wide tree, rock, or the wreck there can reach into the view.
+      for (let tx = Math.max(0, x0 - 2); tx <= Math.min(world.size - 1, x1 + 2); tx++) {
         const i = idx(tx, ty);
         const sx = tx * TILE - cam.x;
         const sy = ty * TILE - cam.y;
@@ -246,7 +317,27 @@ export class Renderer {
           }
         }
         const f = state.arc.felled[i] ? F.log : world.feature[i]!;
-        if (!f) continue;
+        if (!f) {
+          // Cliffs and the rim are rock walls: drawn as formations, bigger where the wall is deep.
+          const tt = world.terrain[i];
+          if ((tt === T.cliff || tt === T.headwall) && !arcOpens(state, world, i)) {
+            let near = 0;
+            for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+              const n = world.terrain[idx(Math.max(0, Math.min(world.size - 1, tx + dx)), Math.max(0, Math.min(world.size - 1, ty + dy)))];
+              if (n === T.cliff || n === T.headwall) near++;
+            }
+            const r = this.rock(Math.min(3, 1 + (near >= 2 ? 1 : 0) + (tt === T.headwall ? 1 : 0)), -1, Math.floor(rh(tx, ty, 75) * 3));
+            const left = sx + 8 - Math.floor(r.c.width / 2);
+            const top = sy + 16 - r.c.height;
+            const behind = prow < ty && survivorPx + 12 > left + 3 && survivorPx + 4 < left + r.c.width - 3 && survivorPy + 14 > top && survivorPy < sy;
+            layer.push(() => {
+              if (behind) g.globalAlpha = 0.5;
+              g.drawImage(r.c, left, top);
+              g.globalAlpha = 1;
+            });
+          }
+          continue;
+        }
         if (f === F.conifer || f === F.aspen || f === F.stunted) {
           const size = this.treeSize[i]!;
           const t = this.tree(f, size, Math.floor(rh(tx, ty, 73) * 3));
@@ -254,30 +345,90 @@ export class Renderer {
           const top = sy + 16 - t.c.height;
           const h = t.c.height;
           shadows.push([sx + 8, sy + 15, 6 + size * 2, h]);
-          // The canopy fades when the survivor is behind it (SPEC 12.1).
-          const behind = prow < ty && survivorPx + 12 > left + 3 && survivorPx + 4 < left + t.c.width - 3 && survivorPy + 14 > top && survivorPy < sy;
+          // The canopy fades when the survivor is behind it, or under it: standing among the trunks, the
+          // tree is drawn over them (SPEC 12.1).
+          const under = tx === pcol && ty === prow;
+          const behind = under || (prow < ty && survivorPx + 12 > left + 3 && survivorPx + 4 < left + t.c.width - 3 && survivorPy + 14 > top && survivorPy < sy);
           const s = sway(tx, ty);
-          layer.push(() => {
+          // Stripped bark leaves the raw wood showing, for the rest of the run.
+          const stripped = barkStripped(state, i);
+          (under ? over : layer).push(() => {
             if (behind) g.globalAlpha = 0.45;
             g.drawImage(t.c, 0, 0, t.c.width, t.crown, left + s, top, t.c.width, t.crown);
             g.drawImage(t.c, 0, t.crown, t.c.width, h - t.crown, left, top + t.crown, t.c.width, h - t.crown);
+            if (stripped) {
+              g.fillStyle = '#d2b07c';
+              g.fillRect(f === F.aspen ? sx + 7 : sx + 6, sy + 12, 2, 3);
+            }
             g.globalAlpha = 1;
           });
           continue;
         }
-        if (ty > y1) continue;
-        if (f === F.boulder) {
-          const big = rh(tx, ty, 74) < 0.55 ? 1 : 0;
-          const b = this.boulder(big, Math.floor(rh(tx, ty, 75) * 3));
-          shadows.push([sx + 8, sy + 15, big ? 14 : 10, big ? 11 : 8]);
-          layer.push(() => g.drawImage(b, sx, sy));
+        if (f === F.thicket) {
+          // A tangle of young trees, too close to push between: three saplings crowded on the tile.
+          const v = Math.floor(rh(tx, ty, 73) * 3);
+          const parts = [
+            [-4, -1, 1],
+            [4, -2, 1],
+            [0, 1, rh(tx, ty, 74) < 0.5 ? 1 : 2],
+          ] as const;
+          shadows.push([sx + 8, sy + 15, 14, 22]);
+          const behind = prow < ty && Math.abs(survivorPx - sx) < 14 && survivorPy + 14 > sy - 24 && survivorPy < sy;
+          layer.push(() => {
+            if (behind) g.globalAlpha = 0.5;
+            for (const [ox, oy, size] of parts) {
+              const t = this.tree(F.conifer, size, (v + ox + 9) % 3);
+              g.drawImage(t.c, sx + 8 + ox - Math.floor(t.c.width / 2), sy + 16 + oy - t.c.height);
+            }
+            g.globalAlpha = 1;
+          });
           continue;
         }
+        // Things taller than their tile: rocks, the snag, the wreckage. Each blocks only its own tile(s);
+        // the survivor can stand behind it, and it fades a little then (SPEC 12.1).
+        const standUp = (t: Tall, cx: number, mirror = false, shadowW = 12) => {
+          const left = cx - Math.floor(t.c.width / 2);
+          const top = sy + 16 - t.c.height;
+          const behind = prow < ty && survivorPx + 12 > left + 3 && survivorPx + 4 < left + t.c.width - 3 && survivorPy + 14 > top && survivorPy < sy;
+          shadows.push([cx, sy + 15, shadowW, t.c.height]);
+          layer.push(() => {
+            if (behind) g.globalAlpha = 0.5;
+            if (mirror) {
+              g.save();
+              g.translate(left + t.c.width, top);
+              g.scale(-1, 1);
+              g.drawImage(t.c, 0, 0);
+              g.restore();
+            } else g.drawImage(t.c, left, top);
+            g.globalAlpha = 1;
+          });
+        };
+        const v3 = Math.floor(rh(tx, ty, 75) * 3);
+        if (f === F.boulder || f === F.outcrop || f === F.overhang) {
+          const size = f === F.overhang ? 3 : this.rockSize[i]!;
+          const r = this.rock(size, f === F.boulder ? -2 : f === F.overhang ? -1 : world.data[i]!, v3);
+          standUp(r, sx + 8 + (rh(tx, ty, 76) < 0.5 ? 0 : 1), false, r.c.width - 2);
+          continue;
+        }
+        if (f === F.snag) {
+          standUp(this.once(`snag:${v3 % 2}`, () => snag(v3 % 2)), sx + 8, false, 8);
+          continue;
+        }
+        if (f === F.tail) {
+          standUp(this.once('tail', tailWreck), sx + 8, rh(tx, ty, 91) < 0.5, 26);
+          continue;
+        }
+        if (f === F.crash) {
+          const wr = this.wreck;
+          if (wr && ty === wr.y && tx === wr.x) standUp(this.once('wreck', () => ({ c: forwardWreck(), crown: 0 })), sx + 8 * wr.wide, wr.mirror, WRECK_W - 16);
+          continue;
+        }
+        if (ty > y1) continue;
         // A picked-over patch looks thin until it comes back.
         const bare = (f === F.plant || f === F.herb || f === F.bush) && (state.regrow[i] ?? 0) > state.tick;
         const v = Math.floor(rh(tx, ty, 76) * 3);
-        const art = f === F.outcrop ? this.cragArt(world.data[i]!, v) : f === F.overhang ? this.cragArt(-1, v) : f === F.log ? this.logArt(v) : this.atlas.feature(f, world.data[i]!);
-        if (f === F.snag || f === F.outcrop || f === F.crash || f === F.tail || f === F.arch || f === F.overhang) shadows.push([sx + 8, sy + 15, 12, 14]);
+        const art = f === F.log ? this.logArt(v) : this.atlas.feature(f, world.data[i]!);
+        if (f === F.arch) shadows.push([sx + 8, sy + 15, 12, 14]);
         layer.push(() => {
           if (bare) g.globalAlpha = 0.4;
           g.drawImage(art, sx, sy);
@@ -287,13 +438,16 @@ export class Renderer {
       if (ty <= y1) this.rowThings(state, cam, ty, x0, x1, timeMs, layer, shadows);
       if (ty === prow) {
         layer.push(() => this.drawSurvivor(state, cam));
+        // A tree the survivor stands under goes on top of them.
+        for (const d of over) layer.push(d);
+        over.length = 0;
         shadows.push([survivorPx + 8, survivorPy + 15, 7, 14]);
       }
     }
     // Every shadow first, then everything in row order, so rows below stand in front of rows above.
     this.shadows(sun, shadows);
     for (const d of layer) d();
-    if (prow > y1 + 2) this.drawSurvivor(state, cam);
+    if (prow > y1 + 3) this.drawSurvivor(state, cam);
 
     if (hover) {
       g.strokeStyle = 'rgba(255,255,255,0.6)';

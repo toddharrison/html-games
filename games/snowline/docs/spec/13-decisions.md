@@ -12,6 +12,22 @@
 | Mouse and keyboard together: hover names, click to walk and act, right-click for a menu. | 5.2, 12.4 |
 | Variety from a smooth noise field; things in sizes; the beauty pass now, in code. | 6.8, 12.1; Q43 |
 | Build a slice first, judge it, then roll out (builds and crafting with pictures after). | 14, M7; Q28 |
+| What's gathered or made but doesn't fit is set down at the survivor's feet, never lost. | 7.8 |
+| Something used up (picked over, stripped, out of season, hands full) stays in the menu, greyed out with the reason, and takes no time. | 5.2, 12.4 |
+| Trees two and three tiles tall, rock formations up to two, the split snag and the tail tall too; each blocks only its tile and can be walked behind. | 12.1, 6.8 |
+| Placement by noise fields: forest with glades, copses, aspen groves, krummholz clumps, rock along ridgelines. | 6.3, 6.8 |
+| The valley is made by its history: uplift, glaciers (trough, cirques, hanging valleys, moraines), erosion, water (moraine-dammed lake, tarns, outlet gorge, rivers from glaciers and snowpack), climate, and three centuries of forest fires. | 6.2, 6.3 |
+| The lake is smaller (1,500–3,000 tiles) with a rough shore: points, bays, islands. | 6.3 |
+| Trees are walked among and under; thickets of young growth are what can't be passed. | 6.3, 12.1 |
+| Dens where each animal would really live, drawn and lookable. | 6.3, 9 |
+| Game trails are each animal's own round (den or bedding, food, water, passes), meandering, never den to den; prints along each are that animal's, named by look; a warning thought on a bear's trail. | 6.3, 9, 12.2 |
+| A game trail shows as a worn path only where the ground holds a tread (forest floor, scrub, sand; patchy on grass; never on rock, talus, scree, bog), so trails come and go; no prints on bare rock. | 6.3, 9 |
+| Bands follow warmth (height and aspect), so the treeline climbs the sunny side; cliffs only where a band edge is steep. | 6.2, 6.3 |
+| Valley generation may take as long as it needs (once per run); the in-suite world sample shrank to keep `npm test` quick, and the sweep stays the real check. | 6.3, 11.4 |
+| Saves from before the new valleys are refused, not loaded into a different valley (schema 5). | 11.6 |
+| The forward wreck looks like a crash: two tiles, broken and scattered. | 6.3 |
+| The tutorial is the survivor's own thoughts, with a how-to line under each (can be turned off). | 12.2 |
+| Only what really comes back within a run regrows (fallen wood and driftwood sooner after a hard wind); a tree's limbs, bark, and lichen, a deadfall's wood and punk, and loose stones are used up for good after a few takes. | 6.7, 7.4, 8.2 |
 
 **2026-11-25.**
 
@@ -68,7 +84,7 @@ Changes made in draft 4 that follow from the monorepo decision but have not been
 
 - **A test replaces the ESLint rule** that bans non-deterministic calls in `sim/` and `content/` (11.3, rule 8). The repo has no linter and CI does not run one; a test is enforced by the gate that already exists.
 - **Playwright is not a dependency.** The browser replay check is a script run by hand before a release, on the pattern the other game already uses (11.4). CI checks the replays in Node only.
-- **The 1,000-seed sweep and the bot runs are run by hand**, with a 25-seed sample in `npm test`, because this game's tests now gate the deploy of every game (11.4).
+- **The 1,000-seed sweep and the bot runs are run by hand**, with a 10-seed sample in `npm test` (25 until 2026-11-26, when each valley became a simulation of about a second), because this game's tests now gate the deploy of every game (11.4).
 - **Storage is prefixed with `snowline`**, and run saves stay in IndexedDB instead of the `localStorage` the other game uses, because the origin's storage is shared (11.6).
 - **The single file is built into `dist/standalone.html`**, so it is published as a download alongside the hosted game (11.1).
 - **Versions match the repo:** TypeScript 7, Vite 8, Vitest 5, semantic versions that change only at a release (11.1).

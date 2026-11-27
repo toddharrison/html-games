@@ -7,10 +7,10 @@ import { CRAFT_MSG } from '../content/fireText.ts';
 import { itemDef } from '../content/items.ts';
 import { who } from '../content/messages.ts';
 import { F, T, TERRAIN } from '../content/terrain.ts';
-import { frontTile } from './actionKit.ts';
+import { frontTile, receive } from './actionKit.ts';
 import { clumsyFactor } from './body.ts';
 import { fireAt, steelTool } from './fire.ts';
-import { count, give, take } from './inventory.ts';
+import { count, take } from './inventory.ts';
 import { knowsTechnique, lookName } from './knowledge.ts';
 import { say } from './log.ts';
 import { toolTime } from './materials.ts';
@@ -122,6 +122,6 @@ export function finishCraft(s: GameState, w: World, recipe: string, tile: number
     say(s, CRAFT_MSG.failed(wh, `a ${itemDef(r.out.k).name}`), events);
     return;
   }
-  give(s, r.out.k, r.out.n, wood);
   say(s, CRAFT_MSG.made(wh, r.out.n > 1 ? `${r.out.n} ${itemDef(r.out.k).name}` : `a ${itemDef(r.out.k).name}`), events);
+  receive(s, r.out.k, r.out.n, events, wood);
 }

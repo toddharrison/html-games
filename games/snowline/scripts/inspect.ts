@@ -80,6 +80,26 @@ for (const seed of seeds) {
     }
   const file = join(outDir, `${seed.replace(/[^\w.-]+/g, '_')}.png`);
   writeFileSync(file, png(n, n, big));
+  // Shaded relief, lit from the north-west: the landforms themselves, water in blue, ice in white.
+  const relief = new Uint8ClampedArray(n * n * 4);
+  const S = world.size;
+  for (let y = 0; y < n; y++)
+    for (let x = 0; x < n; x++) {
+      const tx = Math.floor(x / scale);
+      const ty = Math.floor(y / scale);
+      const i = ty * S + tx;
+      const e = (dx: number, dy: number) => world.elev[Math.min(S - 1, Math.max(0, ty + dy)) * S + Math.min(S - 1, Math.max(0, tx + dx))]!;
+      const shade = Math.max(0, Math.min(1, 0.55 + ((e(-1, 0) - e(1, 0)) + (e(0, -1) - e(0, 1))) * 0.06));
+      const base = 70 + world.elev[i]! * 0.55;
+      let r = base * shade * 1.3;
+      let gg = r;
+      let b = r;
+      if (world.water[i]) [r, gg, b] = [40 * shade + 20, 80 * shade + 30, 140 * shade + 40];
+      else if (world.terrain[i] === 16) [r, gg, b] = [235, 240, 245];
+      else if (world.terrain[i] === 1 || world.terrain[i] === 0) [r, gg, b] = [r * 0.7, gg * 0.65, b * 0.6];
+      relief.set([r, gg, b, 255], (y * n + x) * 4);
+    }
+  writeFileSync(file.replace(/\.png$/, '-relief.png'), png(n, n, relief));
   console.log(`${seed}: ${ms} ms, ${world.attempts} tries, start ${world.start.x},${world.start.y} -> ${file}`);
   for (const f of world.failures) console.log(`  failed ${f}`);
 }

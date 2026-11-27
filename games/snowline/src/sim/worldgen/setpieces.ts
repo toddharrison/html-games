@@ -7,7 +7,7 @@
 
 import { PLANTS, REMEDIES, STONES, WATER_SOURCES } from '../../content/decks.ts';
 import { BAND, F, FEATURES, FLAG, T, TERRAIN, WATER } from '../../content/terrain.ts';
-import { hash2, nextInt, nextRange, pick, shuffle } from '../rng.ts';
+import { hash2, hash2f, nextInt, nextRange, pick, shuffle } from '../rng.ts';
 import type { PatchRole } from '../world.ts';
 import { type Gen, anyNear, clearAround, dist2, forBox, isOpenLand, pt, reserve, tilesWhere, xOf, yOf } from './gen.ts';
 import { DX8, DY8, N, bfs } from './grid.ts';
@@ -49,8 +49,27 @@ function choose(g: Gen, test: (i: number) => boolean, near?: { at: number; r: nu
 export function settleStart(g: Gen): void {
   if (g.terrain[g.start] === T.marsh || g.terrain[g.start] === T.reeds) g.terrain[g.start] = T.meadow;
   clearAround(g, g.start, 3);
-  g.feature[g.crash] = F.crash;
-  if (g.terrain[g.crash] === T.reeds || g.terrain[g.crash] === T.marsh) g.terrain[g.crash] = T.sand;
+  // The forward section is two tiles long, lying east–west: beside the crash tile along the shore if the
+  // crash is north or south of the start, else on past it. Never on water, and never touching the start's
+  // own four sides, so the survivor can always walk away.
+  const cx = xOf(g.crash);
+  const cy = yOf(g.crash);
+  const sideways = cy !== yOf(g.start);
+  const away = Math.sign(cx - xOf(g.start));
+  const order = sideways ? (hash2(g.word, cx, cy, 31) & 1 ? [1, -1] : [-1, 1]) : [away];
+  const lay = (i: number) => {
+    g.feature[i] = F.crash;
+    if (g.terrain[i] === T.reeds || g.terrain[i] === T.marsh) g.terrain[i] = T.sand;
+  };
+  lay(g.crash);
+  for (const d of order) {
+    const nx = cx + d;
+    if (nx < 0 || nx >= SIZE) continue;
+    const n = g.crash + d;
+    if (g.water[n] !== WATER.none || !TERRAIN[g.terrain[n]!]!.passable || n === g.start) continue;
+    lay(n);
+    break;
+  }
 }
 
 /** The rock overhang: the first shelter, at the forest's edge within 40 tiles of the start. */
@@ -277,27 +296,101 @@ function placeViewpoints(g: Gen): string | null {
   return null;
 }
 
-/** Home ranges for the bear, elk, cougar, and marmots: away from the start, near their food. */
+/**
+ * Home ranges, each round where the animal would really live (SPEC 9): the bear's den dug under rock on
+ * a shady slope in the forest, near the high berries; the elk on the biggest open meadow with water and
+ * timber close by; the cougar's lair on a rock shelf above the elk; the marmots' burrows in sunny talus
+ * beside a high meadow. Dens are features the survivor can find (F.den). All away from the start.
+ */
 function placeTerritories(g: Gen): string | null {
   const land = (i: number) => TERRAIN[g.terrain[i]!]!.passable && g.water[i] === WATER.none && !(g.flags[i]! & FLAG.pocket);
-  const any = (test: (i: number) => boolean) => {
-    const c = tilesWhere((i) => land(i) && test(i));
-    return c.length ? pick(g.rng, c) : -1;
+  const inside = (i: number) => Math.min(xOf(i), yOf(i), SIZE - 1 - xOf(i), SIZE - 1 - yOf(i)) >= 10;
+  const free = (i: number) => land(i) && inside(i) && g.feature[i] === F.none && !g.reserved[i];
+  const far = (i: number, d: number) => dist2(i, g.start) >= d * d;
+  const e = (i: number) => g.elev[i]!;
+  // Facing north: the ground rises to the south. Facing the sun: it rises to the north.
+  const facing = (i: number) => (yOf(i) > 0 && yOf(i) < SIZE - 1 ? (e(i + SIZE) - e(i - SIZE)) / 8 : 0);
+  const steep = (i: number) => {
+    let s = 0;
+    forBox(i, 1, (n) => {
+      s = Math.max(s, Math.abs(e(n) - e(i)));
+    });
+    return s;
   };
+  const rocky = (i: number) => anyNear(i, 1, (n) => g.feature[n] === F.boulder || g.feature[n] === F.outcrop || g.terrain[n] === T.cliff || g.terrain[n] === T.boulders);
+  const count = (i: number, r: number, test: (n: number) => boolean) => {
+    let c = 0;
+    forBox(i, r, (n) => {
+      if (test(n)) c++;
+    });
+    return c;
+  };
+  const best = (test: (i: number) => boolean, score: (i: number) => number): number => {
+    let b = -1;
+    let bs = -Infinity;
+    for (let i = 0; i < N; i++) {
+      if (!free(i) || !test(i)) continue;
+      const v = score(i) + hash2f(g.word, xOf(i), yOf(i), 77) * 0.6;
+      if (v > bs) {
+        bs = v;
+        b = i;
+      }
+    }
+    return b;
+  };
+  const den = (at: number, kind: number) => {
+    g.feature[at] = F.den;
+    g.data[at] = kind;
+    reserve(g, at, 1);
+  };
+
   const highBerries = g.patches.filter((p) => p.role === 'safe' && g.band[p.center.y * SIZE + p.center.x] === BAND.subalpine)[0];
   const hb = highBerries ? highBerries.center.y * SIZE + highBerries.center.x : -1;
-  const far = (i: number, d: number) => dist2(i, g.start) >= d * d;
-  const bear =
-    hb >= 0
-      ? any((i) => g.band[i]! <= BAND.subalpine && g.band[i]! >= BAND.montane && within(i, hb, 8, 22) && far(i, 45))
-      : -1;
-  const bearAt = bear >= 0 ? bear : any((i) => g.band[i] === BAND.montane && far(i, 45));
-  const elk = any((i) => g.terrain[i] === T.highMeadow && far(i, 50));
-  const cougar = any((i) => g.band[i]! >= BAND.subalpine && far(i, 60) && anyNear(i, 3, (n) => g.terrain[n] === T.cliff));
-  const marmot = any((i) => (g.terrain[i] === T.talus || g.terrain[i] === T.boulders) && far(i, 40));
-  if (bearAt < 0 || elk < 0 || cougar < 0 || marmot < 0) return 'no room for an animal territory';
+  const water = bfs(
+    tilesWhere((i) => g.terrain[i] === T.stream || g.terrain[i] === T.shallows),
+    (i) => TERRAIN[g.terrain[i]!]!.passable,
+    false,
+    14,
+  );
+
+  const bear = best(
+    (i) => g.band[i]! >= BAND.montane && g.band[i]! <= BAND.subalpine && far(i, 45) && (hb < 0 || within(i, hb, 5, 26)) && rocky(i),
+    (i) => facing(i) * 0.6 + (anyNear(i, 2, (n) => g.terrain[n] === T.forest) ? 1 : 0) + Math.min(steep(i), 8) * 0.08,
+  );
+  if (bear < 0) return 'no den site for the bear';
+  den(bear, 0);
+
+  const meadow = (n: number) => g.terrain[n] === T.highMeadow || (g.terrain[n] === T.meadow && g.band[n]! >= BAND.montane);
+  const elk = best(
+    (i) => meadow(i) && far(i, 50),
+    (i) => count(i, 5, meadow) / 40 + (water[i]! >= 0 ? 1 - water[i]! / 14 : 0) + (anyNear(i, 6, (n) => g.terrain[n] === T.forest) ? 0.6 : 0),
+  );
+  if (elk < 0) return 'no meadow for the elk';
+
+  const cougar = best(
+    (i) => g.band[i]! >= BAND.montane && far(i, 60) && rocky(i) && within(i, elk, 6, 34),
+    (i) => (e(i) - e(elk)) / 30 + Math.min(steep(i), 10) * 0.06,
+  );
+  if (cougar < 0) return 'no lair for the cougar';
+  den(cougar, 1);
+
+  const marmot = best(
+    (i) => (g.terrain[i] === T.talus || g.terrain[i] === T.boulders) && g.band[i]! >= BAND.subalpine && far(i, 40) && anyNear(i, 3, (n) => g.terrain[n] === T.highMeadow),
+    (i) => -facing(i) * 0.6 + count(i, 4, (n) => g.terrain[n] === T.highMeadow) / 30,
+  );
+  if (marmot < 0) return 'no talus for the marmots';
+  den(marmot, 2);
+  // A colony: a few more burrows round the first.
+  let more = 0;
+  forBox(marmot, 3, (n) => {
+    if (more < 3 && n !== marmot && free(n) && hash2f(g.word, xOf(n), yOf(n), 78) < 0.3) {
+      den(n, 2);
+      more++;
+    }
+  });
+
   g.territories = [
-    { animal: 'bear', ...pt(bearAt), r: 20 },
+    { animal: 'bear', ...pt(bear), r: 20 },
     { animal: 'elk', ...pt(elk), r: 16 },
     { animal: 'cougar', ...pt(cougar), r: 24 },
     { animal: 'marmot', ...pt(marmot), r: 6 },

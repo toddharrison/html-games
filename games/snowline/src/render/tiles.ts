@@ -239,6 +239,9 @@ function paintFeature(g: Ctx, f: number, data: number): void {
     case F.midden:
       paint(g, SPRITES.midden!);
       break;
+    case F.den:
+      paint(g, SPRITES[`den${data}`] ?? SPRITES.den0!);
+      break;
     case F.bones:
       paint(g, SPRITES.bones!);
       break;

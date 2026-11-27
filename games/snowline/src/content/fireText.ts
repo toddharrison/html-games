@@ -26,7 +26,6 @@ export const FIRE_MSG = {
   crumbles: (_w: Who, stone: string) => `The ${stone} crumbled under the steel.`,
   nothing: (_w: Who, stone: string) => `Nothing came of striking the ${stone}.`,
   tookStone: (w: Who, stone: string) => `${w.name} pried loose a piece of the ${stone}.`,
-  full: (w: Who) => `${w.Their} hands and pockets were full.`,
   banked: (w: Who) => `${w.name} buried the coals in ash for the night.`,
   wrapped: (w: Who) => `${w.name} wrapped a few live embers in bark.`,
   snagEmbers: (w: Who) => `The snag was still smouldering. ${w.name} wrapped a few glowing pieces in bark.`,

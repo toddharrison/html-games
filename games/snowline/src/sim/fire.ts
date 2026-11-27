@@ -8,9 +8,9 @@ import { FIRE_MSG } from '../content/fireText.ts';
 import { itemDef } from '../content/items.ts';
 import { who } from '../content/messages.ts';
 import { F, T, TERRAIN } from '../content/terrain.ts';
-import { type ActionDef, type ItemActionDef, frontTile } from './actionKit.ts';
+import { type ActionDef, type ItemActionDef, frontTile, receive } from './actionKit.ts';
 import { itemName, waterRisk } from './food.ts';
-import { count, give, has, slotOf, take, takeFromSlot } from './inventory.ts';
+import { count, giveOrDrop, has, slotOf, take, takeFromSlot } from './inventory.ts';
 import { fact, knowsTechnique, learn, learnTechnique, lookName } from './knowledge.ts';
 import { say } from './log.ts';
 import { remember } from './memory.ts';
@@ -301,9 +301,8 @@ export const FIRE_ACTIONS: ActionDef[] = [
     offer: (_s, w, t) => (isOutcrop(w, t) ? `Pry loose some ${lookName('stone', w.data[t]!)}` : null),
     minutes: 10,
     done: (s, w, t, ev) => {
-      const got = give(s, 'stone', 1, w.data[t]!);
-      if (got) say(s, FIRE_MSG.tookStone(who(s.protagonist), lookName('stone', w.data[t]!)), ev);
-      else say(s, FIRE_MSG.full(who(s.protagonist)), ev);
+      say(s, FIRE_MSG.tookStone(who(s.protagonist), lookName('stone', w.data[t]!)), ev);
+      receive(s, 'stone', 1, ev, w.data[t]!);
     },
   },
   ...(['stick', 'firewood', 'boughs'] as const).map(
@@ -347,8 +346,8 @@ export const FIRE_ACTIONS: ActionDef[] = [
     minutes: 5,
     done: (s, _w, _t, ev) => {
       if (!take(s, 'bark', 1)) return;
-      give(s, 'ember-pouch', 1, undefined, s.tick);
       say(s, FIRE_MSG.wrapped(who(s.protagonist)), ev);
+      receive(s, 'ember-pouch', 1, ev, undefined, s.tick);
     },
   },
   {
@@ -360,8 +359,8 @@ export const FIRE_ACTIONS: ActionDef[] = [
     minutes: 5,
     done: (s, _w, _t, ev) => {
       if (!take(s, 'bark', 1)) return;
-      give(s, 'ember-pouch', 1, undefined, s.tick);
       say(s, FIRE_MSG.snagEmbers(who(s.protagonist)), ev);
+      receive(s, 'ember-pouch', 1, ev, undefined, s.tick);
       learnTechnique(s, 'carry-embers', technique('carry-embers').learned, ev);
     },
   },
@@ -376,8 +375,8 @@ export const FIRE_ACTIONS: ActionDef[] = [
     done: (s, w, t, ev) => {
       const pot = has(s, 'pot');
       take(s, pot ? 'pot' : 'bark-vessel', 1);
-      give(s, pot ? 'pot-water' : 'water-vessel', 1, w.water[t]!);
       say(s, FIRE_MSG.filled(who(s.protagonist)), ev);
+      receive(s, pot ? 'pot-water' : 'water-vessel', 1, ev, w.water[t]!);
     },
   },
 ];
@@ -415,9 +414,9 @@ export const FIRE_ITEM_ACTIONS: ItemActionDef[] = [
       if (!it || !to) return;
       const n = it.n;
       takeFromSlot(s, slot, n);
-      give(s, to, n, undefined, s.tick);
       practise(s, 'firecraft', 0.5);
       say(s, FIRE_MSG.cooked(who(s.protagonist), itemDef(to).name), ev);
+      receive(s, to, n, ev, undefined, s.tick);
     },
   },
   {
@@ -435,8 +434,8 @@ export const FIRE_ITEM_ACTIONS: ItemActionDef[] = [
       const to = it.k.includes('fish') ? 'smoked-fish' : 'smoked-meat';
       const n = it.n;
       takeFromSlot(s, slot, n);
-      give(s, to, n, undefined, s.tick);
       say(s, FIRE_MSG.smoked(who(s.protagonist)), ev);
+      receive(s, to, n, ev, undefined, s.tick);
     },
   },
   {
@@ -454,8 +453,8 @@ export const FIRE_ITEM_ACTIONS: ItemActionDef[] = [
       if (!it) return;
       const pot = it.k === 'pot-water';
       takeFromSlot(s, slot, 1);
-      give(s, pot ? 'pot-boiled' : 'boiled-water', 1);
       say(s, FIRE_MSG.boiled(who(s.protagonist)), ev);
+      receive(s, pot ? 'pot-boiled' : 'boiled-water', 1, ev);
     },
   },
   {
@@ -471,7 +470,7 @@ export const FIRE_ITEM_ACTIONS: ItemActionDef[] = [
       const boiled = it.k === 'boiled-water' || it.k === 'pot-boiled';
       const pot = it.k.startsWith('pot');
       takeFromSlot(s, slot, 1);
-      give(s, pot ? 'pot' : 'bark-vessel', 1);
+      giveOrDrop(s, pot ? 'pot' : 'bark-vessel', 1);
       s.vitals.hydration = Math.min(100, s.vitals.hydration + 30);
       ev.push({ type: 'drink' });
       say(s, boiled ? FIRE_MSG.drankBoiled(who(s.protagonist)) : FIRE_MSG.drankVessel(who(s.protagonist)), ev);

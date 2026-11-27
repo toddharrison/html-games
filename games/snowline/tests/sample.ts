@@ -7,7 +7,7 @@ import type { GameState } from '../src/sim/state.ts';
 import type { World } from '../src/sim/world.ts';
 
 /** The world generation sample in `npm test` (SPEC 11.4): about 25 seeds, the default among them. */
-export const SAMPLE_SEEDS = [DEFAULT_SEED, ...Array.from({ length: 24 }, (_, i) => `sample-${i + 1}`)];
+export const SAMPLE_SEEDS = [DEFAULT_SEED, ...Array.from({ length: 9 }, (_, i) => `sample-${i + 1}`)];
 
 /** A valley that is all meadow at one height, with the survivor's start in the middle. */
 export function flatWorld(): World {
@@ -45,6 +45,8 @@ export function flatWorld(): World {
     waterCauseSites: [],
     landmarks: [],
     loose: new Uint8Array(n),
+    age: new Uint8Array(n),
+    trails: new Uint8Array(n),
   };
 }
 

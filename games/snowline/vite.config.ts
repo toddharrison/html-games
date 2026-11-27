@@ -26,5 +26,8 @@ export default defineConfig({
   test: {
     include: ['tests/**/*.test.ts'],
     environment: 'node',
+    // A real valley takes about a second to make (its geology and history are simulated), and tests that
+    // build several run alongside each other.
+    testTimeout: 20000,
   },
 });

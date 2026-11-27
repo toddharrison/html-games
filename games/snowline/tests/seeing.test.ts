@@ -9,6 +9,7 @@ import { availableActions } from '../src/sim/actions.ts';
 import { count, give } from '../src/sim/inventory.ts';
 import { knowsTechnique } from '../src/sim/knowledge.ts';
 import { looseAt } from '../src/sim/loose.ts';
+import { ALL, periodAt } from '../src/sim/weather.ts';
 import { newGame } from '../src/sim/newGame.ts';
 import { debrisSites } from '../src/sim/notice.ts';
 import { candidate } from '../src/sim/protagonist.ts';
@@ -60,6 +61,25 @@ describe('loose things (SPEC 6.7)', () => {
     expect(count(state, 'stick')).toBeGreaterThanOrEqual(2);
     expect(looseAt(state, world, idx(128, 129))).toBe(0);
     state.tick += LOOSE[L.twigs]!.regrow * 14400;
+    expect(looseAt(state, world, idx(128, 129))).toBe(L.twigs);
+  });
+
+  it('loose stones, once taken, are gone for the run', () => {
+    const { state, world } = setup((w) => (w.loose[idx(128, 129)] = L.stones));
+    run(state, world, [{ c: 'act', action: 'gather-loose', tile: idx(128, 129) }], 200);
+    expect(count(state, 'stone')).toBeGreaterThanOrEqual(1);
+    state.tick += 60 * 14400;
+    expect(looseAt(state, world, idx(128, 129))).toBe(0);
+  });
+
+  it('a hard wind brings down fresh twigs before they would come back', () => {
+    const { state, world } = setup((w) => (w.loose[idx(128, 129)] = L.twigs));
+    run(state, world, [{ c: 'act', action: 'gather-loose', tile: idx(128, 129) }], 200);
+    state.tick += 3 * 600; // hours on, still calm
+    expect(looseAt(state, world, idx(128, 129))).toBe(0);
+    state.weather.f[periodAt(state.tick) + 1] = ALL.indexOf('wind');
+    expect(looseAt(state, world, idx(128, 129)), 'not before the wind comes').toBe(0);
+    state.tick += 6 * 600;
     expect(looseAt(state, world, idx(128, 129))).toBe(L.twigs);
   });
 

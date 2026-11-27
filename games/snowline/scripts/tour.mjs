@@ -86,7 +86,12 @@ try {
   await shot('asleep');
   await b.key('KeyE');
   await sleep(500);
-  await b.key('Escape');
+  // E may have opened what's on offer instead (if the survivor had already woken): Esc until paused.
+  for (let k = 0; k < 3; k++) {
+    await b.key('Escape');
+    await sleep(200);
+    if (await b.evaluate("[...document.querySelectorAll('button')].some((x) => x.textContent.startsWith('Settings'))")) break;
+  }
   await shot('pause');
   await click('Settings');
   await shot('settings');

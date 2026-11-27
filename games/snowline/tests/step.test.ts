@@ -53,9 +53,20 @@ describe('movement', () => {
     expect([state.player.x, state.player.y]).toEqual([129, 129]);
   });
 
-  it('blocked by trees and cliffs, with one bump, facing the way pushed', () => {
-    const { state, world } = setup((w) => {
+  it('walks among trees, slower than in the open', () => {
+    const world = flatWorld();
+    world.feature[idx(1, 0)] = F.conifer;
+    expect(stepTicks(world, idx(0, 0), idx(1, 0))).toBeGreaterThan(stepTicks(world, idx(1, 0), idx(2, 0)));
+    const { state, world: w2 } = setup((w) => {
       w.feature[idx(129, 128)] = F.conifer;
+    });
+    run(state, w2, [{ t: 0, c: 'move', dir: 1 }], 12);
+    expect(state.player.x, 'walked onto the tree tile, and on').toBeGreaterThanOrEqual(129);
+  });
+
+  it('blocked by thickets and cliffs, with one bump, facing the way pushed', () => {
+    const { state, world } = setup((w) => {
+      w.feature[idx(129, 128)] = F.thicket;
       w.terrain[idx(128, 127)] = T.cliff;
     });
     const events = run(state, world, [{ t: 0, c: 'move', dir: 1 }], 40);

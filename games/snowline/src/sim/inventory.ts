@@ -66,6 +66,25 @@ export function give(s: GameState, k: string, n: number, d?: number, t?: number)
   return n - left;
 }
 
+/** Add up to `n` of an item; what doesn't fit goes on the ground at the survivor's feet. Returns how many were set down. */
+export function giveOrDrop(s: GameState, k: string, n: number, d?: number, t?: number): number {
+  const left = n - give(s, k, n, d, t);
+  if (left > 0) {
+    const it: Item = { k, n: left };
+    if (d !== undefined) it.d = d;
+    if (t !== undefined) it.t = t;
+    drop(s, s.player.x, s.player.y, it);
+  }
+  return left;
+}
+
+/** Would at least one of this item fit? */
+export function hasRoom(s: GameState, k: string, d?: number): boolean {
+  const def = itemDef(k);
+  if (def.weight > 0 && load(s) + def.weight > carryLimit(s) + 1e-9) return false;
+  return s.inventory.length < maxSlots(s) || s.inventory.some((it) => it.k === k && it.d === d && it.n < def.stack);
+}
+
 /** Take `n` from a slot; an emptied slot is removed. */
 export function takeFromSlot(s: GameState, slot: number, n = 1): Item | null {
   const it = s.inventory[slot];

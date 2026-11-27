@@ -2,6 +2,10 @@
 
 Animals are simple state machines with a home range, a daily schedule, and senses (sight radius, hearing of player noise). They path-find on the tile grid. Populations are fixed at generation and recover slowly.
 
+**Dens** (decided 2026-11-26). The bear, the cougar, and the marmots have dens placed where each would really live (6.3), drawn on the map, and named by how they look until looked into: "a hollow dug under the rock" (the bear's), "a shelf under the rocks" (the cougar's), "holes among the rocks" (the marmots'). Looking into one says what lives there, which for a dangerous animal is a row in the valley notes, and is a discovery the first time. A home range is centred on its den, and its trail runs from it to its food and to water.
+
+**Prints** are named by how they look ("split-hoof prints", "broad prints with claw marks", "round prints, no claw marks", "small paired prints"), and looking closer says whose. They lie along each animal's own trail. On the bear's trail with its prints in sight, the survivor thinks so at once: "This is a bear's trail. I shouldn't be following it." (12.2)
+
 | Animal | Role | Behaviour |
 |---|---|---|
 | Trout | Food | Fish in the water, drawn (7.4): hold in pools, at the stream mouth, and on the gravel; scatter from a survivor walking up and settle when they stand still; rise at dusk; spawning run in autumn |

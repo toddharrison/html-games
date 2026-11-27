@@ -95,13 +95,18 @@ export const F = {
   arch: 16,
   beaverDam: 17,
   carcass: 18,
+  /** An animal's den, burrows, or lair; the data byte is which (content/loose.ts DENS). */
+  den: 19,
+  /** Young trees grown so close together there's no way through. */
+  thicket: 20,
 } as const;
 export type FeatureId = (typeof F)[keyof typeof F];
 
 export const FEATURES: readonly FeatureDef[] = [
   { id: 'none', name: '', blocks: false, extraTicks: 0, fixed: false },
-  { id: 'conifer', name: 'conifer', blocks: true, extraTicks: 0, fixed: false },
-  { id: 'aspen', name: 'aspen', blocks: true, extraTicks: 0, fixed: false },
+  // Trees are walked among and under (slower, between the trunks); a thicket is what can't be walked through.
+  { id: 'conifer', name: 'conifer', blocks: false, extraTicks: 3, fixed: false },
+  { id: 'aspen', name: 'aspen', blocks: false, extraTicks: 2, fixed: false },
   { id: 'stunted', name: 'stunted tree', blocks: true, extraTicks: 0, fixed: false },
   { id: 'boulder', name: 'boulder', blocks: true, extraTicks: 0, fixed: false },
   { id: 'bush', name: 'wild rose', blocks: false, extraTicks: 4, fixed: false },
@@ -118,7 +123,12 @@ export const FEATURES: readonly FeatureDef[] = [
   { id: 'arch', name: 'rock arch', blocks: true, extraTicks: 0, fixed: true },
   { id: 'beaverDam', name: 'beaver dam', blocks: false, extraTicks: 6, fixed: true },
   { id: 'carcass', name: 'carcass', blocks: false, extraTicks: 3, fixed: true },
+  { id: 'den', name: 'den', blocks: false, extraTicks: 4, fixed: true },
+  { id: 'thicket', name: 'thicket', blocks: true, extraTicks: 0, fixed: false },
 ];
+
+/** Whose game trail a tile is (World.trails). A tile both walk is the bear's: that's the one that matters. */
+export const TRAIL_BY = { none: 0, elk: 1, bear: 2, cougar: 3 } as const;
 
 /** Flag bits on a tile. */
 export const FLAG = {

@@ -86,6 +86,7 @@ export async function deleteRun(): Promise<void> {
 export function migrate(r: SaveRecord): SaveRecord {
   if (r.game !== 'snowline' || !r.state) throw new Error('not a Snowline save');
   if (r.schema > SCHEMA) throw new Error(`this save is from a newer version (${r.version})`);
+  // Schema 5 (2026-11-26): the valley is made by its history now, so an older save's seed makes a different valley.
   if (r.schema < SCHEMA) throw new Error(`this save is from an older version of the game (${r.version}) and can't be carried on`);
   return r;
 }

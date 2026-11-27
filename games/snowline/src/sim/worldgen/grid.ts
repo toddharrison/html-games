@@ -58,7 +58,7 @@ export function bfs(sources: readonly number[], open: (i: number) => boolean, di
 }
 
 /** A binary min-heap of tiles keyed by cost, ties broken by tile index. */
-class TileHeap {
+export class TileHeap {
   private costs: number[] = [];
   private tiles: number[] = [];
   get size(): number {

@@ -437,6 +437,33 @@ export const SPRITES: Record<string, SpriteDef> = {
       '..ssssssssssss..', '...kkkkkkkkkk...', '................', '................', '................',
     ],
   },
+  /** A bear's den: earth dug out from under a rock, a dark mouth, the spoil heaped in front. */
+  den0: {
+    legend: { s: P.stone, l: P.fog, k: P.ink, e: P.soil, d: '#4a3d2f' },
+    rows: [
+      '................', '................', '................', '....sslss.......', '..sssssslsss....',
+      '.ssslsssssssss..', 'ssssskkkkkssss..', 'sssskkkkkkksss..', '.sskkkkkkkkkss..', '..dkkkkkkkkkd...',
+      '.ddeekkkkkeedd..', '.deeeeeeeeeeed..', '..ddeeeeeeedd...', '....dddddd......', '................', '................',
+    ],
+  },
+  /** A cougar's lair: a dry shelf under a slab of rock, dark beneath, a bone at the edge. */
+  den1: {
+    legend: { s: P.stone, l: P.fog, k: P.ink, c: P.cream, t: P.talus },
+    rows: [
+      '................', '................', '................', '................', '..llllllllll....',
+      '.ssssssssssssl..', 'sssssssssssssss.', 'kkkkkkkkkkkkksss', 'kkkkkkkkkkkkkss.', '.tttttttttttt...',
+      '..tttcctttttt...', '...tttttttt.....', '................', '................', '................', '................',
+    ],
+  },
+  /** Marmot burrows: holes among the stones, each with a fan of earth. */
+  den2: {
+    legend: { s: P.stone, k: P.ink, e: P.soil, l: P.fog },
+    rows: [
+      '................', '................', '..ss............', '.slss.......ss..', '..kk.......slss.',
+      '.eeke.......kk..', 'eeeeee.....ekke.', '..ee.....eeeeee.', '.......ss...ee..', '......slss......',
+      '.......kk.......', '.....eekkee.....', '....eeeeeeee....', '......eeee......', '................', '................',
+    ],
+  },
   plane: {
     legend: { w: '#d8dcdc', g: '#8a9094', r: P.red },
     rows: [

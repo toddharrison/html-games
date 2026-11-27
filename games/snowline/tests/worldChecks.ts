@@ -109,10 +109,10 @@ export function checkWorld(w: World, rules: Rules): string[] {
   if (w.territories.length !== 4) out.push('missing animal territories');
   if (w.landmarks.length < 4) out.push(`only ${w.landmarks.length} landmarks`);
 
-  // The rim holds: every edge tile is headwall.
+  // The rim holds: every edge tile is headwall, or the falls where the lake's outlet leaves the valley.
   for (let k = 0; k < w.size; k++) {
     for (const i of [idx(k, 0), idx(k, w.size - 1), idx(0, k), idx(w.size - 1, k)]) {
-      if (w.terrain[i] !== T.headwall) {
+      if (w.terrain[i] !== T.headwall && w.terrain[i] !== T.waterfall) {
         out.push('the rim has a gap');
         k = w.size;
         break;

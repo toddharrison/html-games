@@ -53,7 +53,7 @@ export function sketchMap(img: ImageData, state: GameState, world: World, all: b
       const f = world.feature[i]!;
       const shade = (world.elev[i]! - 128) * 0.12;
       let dark = 0;
-      if (f === F.conifer || f === F.aspen || f === F.stunted) dark = 22;
+      if (f === F.conifer || f === F.aspen || f === F.stunted || f === F.thicket) dark = 22;
       if (f === F.boulder || f === F.outcrop) dark = 14;
       if (world.terrain[i] === T.cliff || world.terrain[i] === T.headwall) c = INK;
       if (world.flags[i]! & FLAG.trail) dark -= 10;

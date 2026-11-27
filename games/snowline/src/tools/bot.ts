@@ -25,6 +25,7 @@ import { weatherAt } from '../sim/weather.ts';
 import { idx, type World } from '../sim/world.ts';
 import { L } from '../content/loose.ts';
 import { looseAt } from '../sim/loose.ts';
+import { woodLeft } from '../sim/materials.ts';
 import { startScenario } from './runner.ts';
 
 const DX = [0, 1, 0, -1] as const;
@@ -315,7 +316,7 @@ export class Bot {
     // Tinder: three of something not known to fail.
     const goodTinder = s.inventory.filter((it) => it.k === 'tinder' && fact(s, 'tinder', it.d!)?.value !== 'fails').reduce((n, it) => n + it.n, 0);
     if (goodTinder < 3) {
-      const opts = availableActions(s, w).filter((o) => o.action.startsWith('tinder-') && (s.regrow[o.tile] ?? 0) <= s.tick);
+      const opts = availableActions(s, w).filter((o) => o.action.startsWith('tinder-') && !o.spent);
       for (const o of opts) {
         const tinderIndex = { 'tinder-bark': 1, 'tinder-lichen': 2, 'tinder-punk': 4 }[o.action]!;
         if (fact(s, 'tinder', tinderIndex)?.value !== 'fails') return this.act(o.action, o.tile);
@@ -340,9 +341,9 @@ export class Bot {
       const drift = (i: number) => looseAt(s, w, i) === L.driftwood || looseAt(s, w, i) === L.driftlog || looseAt(s, w, i) === L.branch;
       const near = this.gatherNear(drift);
       if (near) return near;
-      const opts = availableActions(s, w).filter((o) => (o.action === 'deadfall-wood' || o.action === 'cut-wood') && (s.regrow[o.tile] ?? 0) <= s.tick);
+      const opts = availableActions(s, w).filter((o) => (o.action === 'deadfall-wood' || o.action === 'cut-wood') && !o.spent);
       if (opts.length) return this.act(opts[0]!.action, opts[0]!.tile);
-      const wood = this.goAdjacentTo('wood', (i) => ((w.feature[i] === F.log || w.feature[i] === F.conifer || w.feature[i] === F.aspen) && (s.regrow[i] ?? 0) <= s.tick) || drift(i), 8000);
+      const wood = this.goAdjacentTo('wood', (i) => ((w.feature[i] === F.log || w.feature[i] === F.conifer || w.feature[i] === F.aspen) && woodLeft(s, w, i)) || drift(i), 8000);
       if (wood) return wood;
     }
     return null;

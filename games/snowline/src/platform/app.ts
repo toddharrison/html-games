@@ -24,7 +24,7 @@ import { h } from '../ui/dom.ts';
 import { Hud } from '../ui/hud.ts';
 import { journal, type JournalTab } from '../ui/journal.ts';
 import { MapScreen } from '../ui/mapScreen.ts';
-import { lookAt, type Look } from '../ui/look.ts';
+import { lookAt, lookHint, offered, type Look } from '../ui/look.ts';
 import type { Reach } from '../sim/reach.ts';
 import { ListMenu } from '../ui/menu.ts';
 import { selectScreen } from '../ui/select.ts';
@@ -117,7 +117,11 @@ export class App {
   private applyPrefs(p: Prefs): void {
     this.stage.style.setProperty('--text', String(p.textSize));
     this.renderer.reduceFlashes = p.reduceFlashes;
+    this.hints = p.hints;
   }
+
+  /** Show the how-to line under a thought (Prefs.hints). */
+  private hints = true;
 
   /** The settings screen, from the title or the pause menu; `back` returns there. */
   private openSettings(back: () => void): void {
@@ -286,6 +290,8 @@ export class App {
     for (const e of events) {
       if (e.type === 'viewpoint') {
         this.hud.say([e.index === 0 ? TEXT.viewpointKnoll : e.index === 1 ? TEXT.viewpointWreck : TEXT.viewpoint]);
+      } else if (e.type === 'thought') {
+        this.hud.think(e.text, this.hints ? e.hint : '');
       } else if (e.type === 'sleep') {
         this.autosave();
       } else if (e.type === 'lightning') {
@@ -419,8 +425,7 @@ export class App {
       this.tip.hidden = !l;
       if (l) {
         (this.tip.firstChild as HTMLElement).textContent = l.name;
-        const more = l.options.length > 1 ? ' · right-click for more' : '';
-        (this.tip.lastChild as HTMLElement).textContent = l.primary ? `${l.primary.label}${more}` : l.options.length ? `right-click to choose` : '';
+        (this.tip.lastChild as HTMLElement).textContent = lookHint(l);
       }
     }
     if (this.look && this.mouse) {
@@ -453,7 +458,7 @@ export class App {
     const l = this.look;
     if (!l) return;
     if (l.primary) return this.send(l, l.primary);
-    if (l.options.length > 1) return this.contextMenu();
+    if (l.options.some((o) => !o.spent) || (l.options.length && !l.walk)) return this.contextMenu();
     this.send(l, null);
   }
 
@@ -464,7 +469,7 @@ export class App {
     this.updateLook(s.state);
     const l = this.look;
     if (!l || (!l.options.length && !l.walk)) return;
-    const items = l.options.map((o) => ({ label: o.label, hint: `${o.minutes} min`, run: () => this.send(l, o) }));
+    const items = l.options.map((o) => ({ ...offered(o), run: () => this.send(l, o) }));
     if (l.walk) items.push({ label: 'Walk here', hint: '', run: () => this.send(l, null) });
     this.openList(l.name, items, 'Click, or a number key · Esc to close', this.mouse ?? undefined);
   }
@@ -476,10 +481,10 @@ export class App {
       this.hud.say(['Nothing to do here.'], 1500);
       return;
     }
-    if (opts.length === 1) return this.queueAct(opts[0]!);
+    if (opts.length === 1 && !opts[0]!.spent) return this.queueAct(opts[0]!);
     this.openList(
       'Do what?',
-      opts.map((o) => ({ label: o.label, hint: `${o.minutes} min`, run: () => this.queueAct(o) })),
+      opts.map((o) => ({ ...offered(o), run: () => this.queueAct(o) })),
     );
   }
 

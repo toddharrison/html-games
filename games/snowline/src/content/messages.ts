@@ -63,6 +63,8 @@ export const MSG = {
   watchUnsafe: (thing: string) => `Birds came and went, and left the ${thing} alone.`,
   tooDark: () => `It was too dark to see.`,
   full: (w: Who) => `${w.Their} hands and pockets were full.`,
+  /** `what` is 'it', 'them', or 'the rest', after a line saying what was found or made. */
+  setDown: (w: Who, what: string) => `${w.Their} hands and pockets were full, so ${w.they} set ${what} down at ${w.their} feet.`,
   spoiled: (w: Who, thing: string) => `The ${thing} had gone bad. ${w.They} threw ${thing.endsWith('s') ? 'them' : 'it'} away.`,
   waterIll: (w: Who) => `Cramps knotted ${w.name}'s stomach. Something ${w.they} drank days ago.`,
   suspectWater: (w: Who, source: string) => `${w.They} thought back. Most of ${w.their} water had come from ${source}.`,

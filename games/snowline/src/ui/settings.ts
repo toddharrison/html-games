@@ -7,10 +7,12 @@ import { h, settings } from './dom.ts';
 export interface Prefs {
   textSize: number;
   reduceFlashes: boolean;
+  /** Show how to act on a thought, under it (the tutorial's how-to lines). */
+  hints: boolean;
 }
 
 export function loadPrefs(): Prefs {
-  return { textSize: 1, reduceFlashes: false, ...settings.get<Partial<Prefs>>('settings', {}) };
+  return { textSize: 1, reduceFlashes: false, hints: true, ...settings.get<Partial<Prefs>>('settings', {}) };
 }
 
 const ACTION_NAMES: [string, string][] = [
@@ -70,6 +72,12 @@ export function settingsScreen(hooks: SettingsHooks): HTMLElement {
         { class: 'row' },
         h('input', { type: 'checkbox', ...(prefs.reduceFlashes ? { checked: true } : {}), onchange: (e: Event) => ((prefs.reduceFlashes = (e.target as HTMLInputElement).checked), save()) }),
         'Fewer, softer lightning flashes',
+      ),
+      h(
+        'label',
+        { class: 'row' },
+        h('input', { type: 'checkbox', ...(prefs.hints ? { checked: true } : {}), onchange: (e: Event) => ((prefs.hints = (e.target as HTMLInputElement).checked), save()) }),
+        'How-to lines under the survivor\'s thoughts',
       ),
       h(
         'label',

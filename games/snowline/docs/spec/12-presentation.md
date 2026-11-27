@@ -8,7 +8,7 @@
 
 | What gives the feeling | How Snowline gets it, simply |
 |---|---|
-| Small figures, big landscape | One-tile sprites on a screen 24 tiles wide. Nothing to add |
+| Small figures, big landscape | One-tile figures on a screen 24 tiles wide, among trees two and three tiles tall and rock formations up to two. Tall things block only their own tile: the survivor walks behind them, and they fade a little then |
 | The time of day sets the tone | One colour grade over the whole scene, changing through the day: cool dawn, flat noon, amber dusk, blue night |
 | Fire means safety | Night is dark and nearly colourless. A fire is a warm pool of light, and the only colour on screen |
 | Quiet, with few words | A small HUD (pillar 2), a sparse message log (12.2), and no clutter |
@@ -44,6 +44,8 @@ Still later, if wanted: more animation frames for the survivor, the lake mirrori
 A scrolling message log in short, plain, past-tense sentences carries much of the atmosphere: "The berries were bitter. He ate them anyway." Names and pronouns are filled in from the protagonist. All text lives in `content/` for later editing or translation.
 
 Tone (decided 2026-11-25): suitable for ages 10 and up. The pilot's death is implied in the opening text and never shown. Despair is expressed through morale and the message log, never through self-harm.
+
+**Thoughts are the tutorial** (decided 2026-11-26). There is no separate tutorial: the survivor thinks what a kid alone out here would think next, in their own voice, first person and present tense ("My mouth is so dry. First thing: a drink."), shown in the middle of the screen and kept in the log in quotes. Under each, smaller and plainly, is how to do it ("Click the water to drink, or face it and press E."); the settings can turn those lines off. The first evening's thoughts come in order, each once, and wait for the player to act before the next idea (water; what's around; things for a fire; striking rock for a spark; shelter as the sun gets low; staying put in the dark; food and which berries are safe), though evening and dark come on time. Later, thirst, hunger, cold, and tiredness come back as thoughts when they bite, no more than every few hours, and the first full pockets once. Never two thoughts within half an hour of game time.
 
 Hunting and butchering are abstract but clear (decided 2026-11-25). Nothing graphic is drawn: an action, a sound, and an item. But the game does not hide what is being done. The action is named for what it is (kill, skin, gut, pluck), and the message log says it plainly: "She skinned and gutted the hare."
 

@@ -265,7 +265,7 @@ The first day's chain (`FIRST` in `src/sim/thoughts.ts`, text in `content/though
 On a `discovery` event the app asks `insightText` (`src/ui/insight.ts`) for a card: a technique gives "New idea!", its name, its text, and the recipes it adds to Make; a fact gives "Now I know" or "I think...", "The <look> <what it means>" (`MEANS`, else the raw value), and how it was learned. Shown as a note (below). UI only.
 
 ### Thoughts and insights as notes
-`M7` · `uncommitted` · `playtest: pending` · SPEC §12.2
+`M7` · `d88b426` · `playtest: pending` · SPEC §12.2
 
 Each `thought` event and each `discovery` with an insight card is queued in `App.notes` (`src/platform/app.ts`); after a tick's events, if nothing else is open, `showNote` opens the `note` modal (`notePage`, `src/ui/note.ts`), which pauses the loop like any modal. A click anywhere, E/Space, Enter, or Esc (`closeNote`) shows the next queued note or returns to play; a note can't be closed for its first 400 ms (`NOTE_GUARD`) so a key or click already on its way doesn't skip it. The note is a slip of notebook paper (ruled, the kid's hand, tilted) in the middle of the screen, the scene dimmed a little behind it (`.overlay.noting`, `.note` in `style.css`), with "Click or press E to carry on" (or "more (N)"). The lines at the foot of the screen skip thoughts (log lines in quotes) and techniques' `learned` lines (`isNote` in `src/ui/hud.ts`); the journal's log and the diary keep them. Platform and UI only: hashes unchanged.
 - `Loop` (`src/platform/session.ts`) now checks `paused` before each tick, so a note opened by a tick stops the rest of that frame's ticks (at 8× or 90× a frame runs many).

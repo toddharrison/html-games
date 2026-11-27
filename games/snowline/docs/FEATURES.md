@@ -170,7 +170,7 @@ Placed in order, each on a random tile meeting its rule, claiming room round its
 - For now a run plays candidate 0 (or `?candidate=N`); the selection screen is M2. `tests/protagonist.test.ts` starts a run with every background, trait, and tool.
 
 ### No repeats among the three cards
-`M7` · `uncommitted` · `playtest: pending` · SPEC §4.1, §4.3
+`M7` · `86eeda9` · `playtest: pending` · SPEC §4.1, §4.3
 
 Candidates come in pages of `PAGE` (3, `src/sim/protagonist.ts`; `ui/select.ts` shows one page). The sub-stream `protagonist-page:<page>` shuffles both name lists, the backgrounds, the traits, and the tools; card `index % PAGE` takes its slot from each, so a page never repeats a name (two cards of one gender take different slots of that gender's list), background, trait, or tool, and every page offers a hatchet, a knife, and a multi-tool. Gender, age, looks, and pockets still come from `protagonist:<index>`. `tests/protagonist.test.ts` checks 20 pages of three seeds.
 - Changed who every seed's candidates are (first-light's first page: Wren, Theo, Hazel; was Mira, Ravi, Mira). Run codes and saves store the whole protagonist, so they're unaffected; `?candidate=N` links show someone new. Goldens moved (state only): `first steps` `ba0804cf`/`4fd41a24`, `night walk` `e23c937b`/`738a07f9`.

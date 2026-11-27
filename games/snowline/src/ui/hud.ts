@@ -8,7 +8,12 @@ import type { GameState } from '../sim/state.ts';
 import { clock, formatClock } from '../sim/time.ts';
 import { WEATHER } from '../content/weather.ts';
 import { weatherAt } from '../sim/weather.ts';
+import { TECHNIQUES } from '../content/insights.ts';
 import { h } from './dom.ts';
+
+/** Log lines that pop up as notes instead (SPEC 12.2): the kid's thoughts, in quotes, and what was worked out. */
+const REALIZED = new Set(TECHNIQUES.map((t) => t.learned));
+const isNote = (text: string) => text.startsWith('“') || REALIZED.has(text);
 
 const VITALS: [keyof GameState['vitals'], string, string][] = [
   ['health', '♥', 'health'],
@@ -31,10 +36,6 @@ export class Hud {
   private readonly task = h('div', { class: 'task' }, h('span', { class: 'label' }), h('span', { class: 'bar' }, h('span', { class: 'fill' })));
   private readonly lines = h('div', { class: 'lines' });
   private readonly caption = h('div', { class: 'caption' });
-  /** A slip of notebook paper for something just worked out (SPEC 8.1). */
-  private readonly insightEl = h('div', { class: 'insight' });
-  private readonly insights: { title: string; line: string; sub: string }[] = [];
-  private insightTimer = 0;
   private readonly marks: HTMLElement[] = [];
   private lastKey = '';
   private shownLog = 0;
@@ -46,7 +47,7 @@ export class Hud {
       this.marks.push(m);
       this.vitals.append(m);
     }
-    this.el.append(this.when, this.vitals, this.feel, this.task, this.lines, this.caption, this.insightEl);
+    this.el.append(this.when, this.vitals, this.feel, this.task, this.lines, this.caption);
   }
 
   /** Start fresh for a new run, showing nothing older than now. */
@@ -95,6 +96,7 @@ export class Hud {
     if (s.log.length < this.shownLog) this.shownLog = 0;
     if (s.log.length > this.shownLog) {
       for (const l of s.log.slice(this.shownLog)) {
+        if (isNote(l.text)) continue;
         const p = h('p', {}, l.text);
         this.lines.append(p);
         setTimeout(() => p.classList.add('old'), 9000);
@@ -103,35 +105,6 @@ export class Hud {
       while (this.lines.childElementCount > 4) this.lines.firstElementChild!.remove();
       this.shownLog = s.log.length;
     }
-  }
-
-  /** A thought of the survivor's, in their voice, with how to act on it smaller beneath; it stays a while. */
-  think(text: string, hint: string): void {
-    this.caption.replaceChildren(h('p', { class: 'thought' }, text), ...(hint ? [h('p', { class: 'hint' }, hint)] : []));
-    this.caption.classList.add('on');
-    clearTimeout(this.captionTimer);
-    this.captionTimer = window.setTimeout(() => this.caption.classList.remove('on'), hint ? 11000 : 7000);
-  }
-
-  /** Something the kid just worked out: shown on a slip of notebook paper, one at a time, each a few seconds. */
-  insight(card: { title: string; line: string; sub: string }): void {
-    this.insights.push(card);
-    if (!this.insightTimer) this.nextInsight();
-  }
-
-  private nextInsight(): void {
-    const card = this.insights.shift();
-    if (!card) {
-      this.insightEl.classList.remove('on');
-      this.insightTimer = 0;
-      return;
-    }
-    this.insightEl.replaceChildren(h('p', { class: 'title' }, card.title), h('p', { class: 'line' }, card.line), h('p', { class: 'sub' }, card.sub));
-    this.insightEl.classList.add('on');
-    this.insightTimer = window.setTimeout(() => {
-      this.insightEl.classList.remove('on');
-      this.insightTimer = window.setTimeout(() => this.nextInsight(), 700);
-    }, 6500);
   }
 
   /** Show lines of text in the middle of the screen, fading after `ms`. */

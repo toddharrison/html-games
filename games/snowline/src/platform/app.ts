@@ -20,6 +20,7 @@ import { restOptions } from '../ui/actionsUi.ts';
 import { makePage } from '../ui/make.ts';
 import { packPage, type PackTab } from '../ui/pack.ts';
 import { insightText } from '../ui/insight.ts';
+import { notePage, type Note } from '../ui/note.ts';
 import type { MakeEntry } from '../sim/craft.ts';
 import { fireSiteProblem } from '../sim/fire.ts';
 import { buildDef, buildSiteProblem } from '../sim/craft.ts';
@@ -44,7 +45,10 @@ import { download, parseReplay, toReplay } from './replay.ts';
 import { deleteRun, loadRun, migrate, parseSave, restore, saveRun, toRecord, type SaveRecord } from './saves.ts';
 import { Loop, Session } from './session.ts';
 
-type Modal = 'title' | 'loading' | 'select' | 'map' | 'pause' | 'menu' | 'journal' | 'make' | 'pack' | 'summary' | 'settings' | null;
+type Modal = 'title' | 'loading' | 'select' | 'map' | 'pause' | 'menu' | 'journal' | 'make' | 'pack' | 'summary' | 'settings' | 'note' | null;
+
+/** A note can't be closed this soon after it shows (ms), so a key or click already on its way doesn't skip it unread. */
+const NOTE_GUARD = 400;
 
 /** Game minutes pass this many times faster while the survivor sleeps (SPEC 5.1: by running ticks). */
 const SLEEP_SPEED = 90;
@@ -89,6 +93,9 @@ export class App {
   private camera = { x: 0, y: 0 };
   private taskLabel = '';
   private overShown = false;
+  /** Thoughts and insights waiting to be shown as notes, each pausing the game (SPEC 12.2). */
+  private notes: Note[] = [];
+  private noteAt = 0;
   readonly sound = new Sound();
 
   constructor(root: HTMLElement, params: URLSearchParams) {
@@ -125,7 +132,8 @@ export class App {
       this.contextMenu();
     });
     this.overlay.addEventListener('mousedown', (e) => {
-      if (e.target === this.overlay && this.modal === 'menu') this.setModal(null);
+      if (this.modal === 'note') this.closeNote();
+      else if (e.target === this.overlay && this.modal === 'menu') this.setModal(null);
     });
     this.overlay.addEventListener('contextmenu', (e) => e.preventDefault());
     this.applyPrefs(loadPrefs());
@@ -182,6 +190,7 @@ export class App {
     if (m !== 'menu') this.menu = null;
     this.overlay.replaceChildren(...(content ? [content] : []));
     this.overlay.classList.toggle('ctx', !!content?.classList.contains('context'));
+    this.overlay.classList.toggle('noting', m === 'note');
     this.overlay.hidden = !content;
     this.input.playing = m === null;
     if (m !== null) this.input.release();
@@ -194,6 +203,7 @@ export class App {
   private showTitle(): void {
     this.loop.stop();
     this.session = null;
+    this.notes = [];
     this.hud.el.hidden = true;
     const ctx = this.canvas.getContext('2d')!;
     ctx.fillStyle = '#14161a';
@@ -258,6 +268,7 @@ export class App {
       // In debug, the running session for scripts that drive the game (renders/kidmap).
       if (this.debug) (window as unknown as { __snowline: Session }).__snowline = s;
       this.overShown = false;
+      this.notes = [];
       this.sound.newRun();
       this.renderer.setWorld(world);
       then?.(s);
@@ -316,10 +327,10 @@ export class App {
       if (e.type === 'viewpoint') {
         this.hud.say([e.index === 0 ? TEXT.viewpointKnoll : e.index === 1 ? TEXT.viewpointWreck : TEXT.viewpoint]);
       } else if (e.type === 'thought') {
-        this.hud.think(e.text, this.hints ? e.hint : '');
+        this.notes.push({ kind: 'thought', text: e.text, hint: this.hints ? e.hint : '' });
       } else if (e.type === 'discovery' && this.session) {
         const card = insightText(this.session.state, e.key);
-        if (card) this.hud.insight(card);
+        if (card) this.notes.push({ kind: 'insight', ...card });
       } else if (e.type === 'sleep') {
         this.autosave();
       } else if (e.type === 'lightning') {
@@ -328,6 +339,21 @@ export class App {
         void deleteRun();
       }
     }
+    if (this.notes.length && this.modal === null) this.showNote();
+  }
+
+  /** Pause on the next thought or insight, on a notebook slip. */
+  private showNote(): void {
+    const n = this.notes.shift();
+    if (!n) return this.setModal(null);
+    this.noteAt = performance.now();
+    this.setModal('note', notePage(n, this.notes.length));
+  }
+
+  /** Done reading: the next note, or back to play. */
+  private closeNote(): void {
+    if (performance.now() - this.noteAt < NOTE_GUARD) return;
+    this.showNote();
   }
 
   private onFrame(alpha: number, now: number): void {
@@ -353,6 +379,10 @@ export class App {
   private onAction(a: Action): void {
     if (a === 'debug') {
       if (this.debug) this.debug.el.hidden = !this.debug.el.hidden;
+      return;
+    }
+    if (this.modal === 'note') {
+      if (a === 'act' || a === 'confirm' || a === 'pause') this.closeNote();
       return;
     }
     if (this.modal === 'menu' && this.menu) {

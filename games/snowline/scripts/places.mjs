@@ -35,6 +35,7 @@ try {
     await browser.waitFor("document.querySelector('.hud') && !document.querySelector('.hud').hidden");
     await browser.evaluate("document.querySelector('.debug').hidden = true; document.querySelector('.caption').classList.remove('on')");
     await sleep(1400);
+    await browser.clearNotes();
     const file = join(outDir, `${p.name}.png`);
     writeFileSync(file, await browser.screenshot());
     console.log(`${p.name} (${p.x},${p.y}) -> ${file}`);

@@ -39,6 +39,7 @@ async function shot(name, time, after) {
   await browser.evaluate("document.querySelector('.debug').hidden = true; document.querySelector('.caption').classList.remove('on')");
   if (after) await after();
   await sleep(1600);
+  await browser.clearNotes();
   const file = join(outDir, `${name}.png`);
   writeFileSync(file, await browser.screenshot());
   console.log(file);

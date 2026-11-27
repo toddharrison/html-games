@@ -244,7 +244,7 @@ Trees are two to three tiles tall (`CONIFER` and `ASPEN` sizes in `src/render/fl
 ### The survivor's thoughts (the tutorial)
 `M7` · `46d8182` · `playtest: pending` · SPEC §12.2
 
-`thinkMinute` (`src/sim/thoughts.ts`, run each game minute from `minuteHooks`) gives at most one thought per half hour of game time (`THOUGHT_GAP`), none in the first 20 minutes (`FIRST_AT`) or asleep. The first evening's steps (`FIRST`: water, look, gather, fire, shelter, dark, food) come once each, skipped once done; a step thought but not done holds back the next non-urgent one for two game hours (`PATIENCE`); shelter, dark, and food are urgent and come on time. Then the first full pockets once, and thirst, hunger, cold, and tiredness whenever they bite, at most every 8 game hours each (`RETURN_GAP`). Words in `src/content/thoughtText.ts`. A thought is a log line in quotes and a `thought` event; the HUD shows it as the caption with the how-to line under it (`Hud.think`), which settings can turn off (`Prefs.hints`).
+`thinkMinute` (`src/sim/thoughts.ts`, run each game minute from `minuteHooks`) gives at most one thought per half hour of game time (`THOUGHT_GAP`), none in the first 20 minutes (`FIRST_AT`) or asleep. The first evening's steps (`FIRST`: water, look, gather, fire, shelter, dark, food) come once each, skipped once done; a step thought but not done holds back the next non-urgent one for two game hours (`PATIENCE`); shelter, dark, and food are urgent and come on time. Then the first full pockets once, and thirst, hunger, cold, and tiredness whenever they bite, at most every 8 game hours each (`RETURN_GAP`). Words in `src/content/thoughtText.ts`. A thought is a log line in quotes and a `thought` event; the app shows it as a note that pauses the game, with the how-to line under it, which settings can turn off (`Prefs.hints`) (see "Thoughts and insights as notes").
 - Memory keys: `thought:<id>` (count), `thought-last:<id>` and `thought-at` (ticks), `thought:slept`.
 - **Gotcha:** a step's `done` must become true when the player has done the thing, or it holds the chain back for `PATIENCE` each time; a nudge with nothing to do (`look`) counts as done once thought.
 
@@ -256,13 +256,21 @@ Trees are two to three tiles tall (`CONIFER` and `ASPEN` sizes in `src/render/fl
 ### Thoughts up front, and the fire reactions
 `M7` · `cb96676` · `playtest: pending` · SPEC §12.2
 
-The first day's chain (`FIRST` in `src/sim/thoughts.ts`, text in `content/thoughtText.ts`) now starts with `cold` (the snow on the peaks: a fire before dark), then `water`, `gather` (what a fire needs), `fire` (striking rock; due once tinder or a stick is carried), `lay` (enough to lay one and a way to light it), then shelter, dark, food as before; `look` folded into `gather`'s hint. `FIRE_REACTIONS` (`FIRE_THOUGHTS`: `sparked`, `carrying`, `laid`, `noCatch`, `lit`) come ahead of the chain once `REACT_GAP` (10 game minutes) has passed since the last thought; only the latest that applies is said, and the earlier ones are marked thought. The caption sits at 22% from the top, thought text 1.4em (`style.css`, the M7 block at the end).
+The first day's chain (`FIRST` in `src/sim/thoughts.ts`, text in `content/thoughtText.ts`) now starts with `cold` (the snow on the peaks: a fire before dark), then `water`, `gather` (what a fire needs), `fire` (striking rock; due once tinder or a stick is carried), `lay` (enough to lay one and a way to light it), then shelter, dark, food as before; `look` folded into `gather`'s hint. `FIRE_REACTIONS` (`FIRE_THOUGHTS`: `sparked`, `carrying`, `laid`, `noCatch`, `lit`) come ahead of the chain once `REACT_GAP` (10 game minutes) has passed since the last thought; only the latest that applies is said, and the earlier ones are marked thought. Shown as notes (below).
 - **Gotcha:** `laid` waits for a way to light (a carried spark-stone, matches, or embers); without one it would tell the kid to strike sparks they can't make.
 
 ### Insight slips
 `M7` · `cb96676` · `playtest: pending` · SPEC §12.2, §8.1
 
-On a `discovery` event the app asks `insightText` (`src/ui/insight.ts`) for a card: a technique gives "New idea!", its name, its text, and the recipes it adds to Make; a fact gives "Now I know" or "I think...", "The <look> <what it means>" (`MEANS`, else the raw value), and how it was learned. `Hud.insight` queues them and shows each on a slip of notebook paper below the kid for 6.5 s. UI only.
+On a `discovery` event the app asks `insightText` (`src/ui/insight.ts`) for a card: a technique gives "New idea!", its name, its text, and the recipes it adds to Make; a fact gives "Now I know" or "I think...", "The <look> <what it means>" (`MEANS`, else the raw value), and how it was learned. Shown as a note (below). UI only.
+
+### Thoughts and insights as notes
+`M7` · `uncommitted` · `playtest: pending` · SPEC §12.2
+
+Each `thought` event and each `discovery` with an insight card is queued in `App.notes` (`src/platform/app.ts`); after a tick's events, if nothing else is open, `showNote` opens the `note` modal (`notePage`, `src/ui/note.ts`), which pauses the loop like any modal. A click anywhere, E/Space, Enter, or Esc (`closeNote`) shows the next queued note or returns to play; a note can't be closed for its first 400 ms (`NOTE_GUARD`) so a key or click already on its way doesn't skip it. The note is a slip of notebook paper (ruled, the kid's hand, tilted) in the middle of the screen, the scene dimmed a little behind it (`.overlay.noting`, `.note` in `style.css`), with "Click or press E to carry on" (or "more (N)"). The lines at the foot of the screen skip thoughts (log lines in quotes) and techniques' `learned` lines (`isNote` in `src/ui/hud.ts`); the journal's log and the diary keep them. Platform and UI only: hashes unchanged.
+- `Loop` (`src/platform/session.ts`) now checks `paused` before each tick, so a note opened by a tick stops the rest of that frame's ticks (at 8× or 90× a frame runs many).
+- Scripts: `clearNotes()` in `scripts/browser.mjs` reads away any open notes; `tour`, `shots`, and `places` call it (the tour before each key and shot, and it shoots the first thought as `04-note`).
+- **Gotcha:** the old caption (`Hud.think`) and timed slip (`Hud.insight`) are gone; `Hud.say` still puts narration (the opening, a view, "Not there") in the caption.
 
 ### Title, HUD, map, pause, check page
 `M0`/`M1` · `27fbb89` · `playtest: pending` · SPEC §11.1, §6.4, §12.1

@@ -71,7 +71,7 @@ export const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Start the browser and open one page. Returns helpers: `goto(url)`, `evaluate(js)`, `waitFor(js)`,
- * `key(code)`, `screenshot()` (PNG bytes), the page `errors` seen so far, and `close()`.
+ * `key(code)`, `clearNotes()`, `screenshot()` (PNG bytes), the page `errors` seen so far, and `close()`.
  */
 export async function openBrowser({ width = 1152, height = 648 } = {}) {
   const profile = mkdtempSync(join(tmpdir(), 'snowline-browser-'));
@@ -120,6 +120,13 @@ export async function openBrowser({ width = 1152, height = 648 } = {}) {
       await page('Input.dispatchKeyEvent', { type: 'keyDown', code, key: keyName });
       await sleep(holdMs);
       await page('Input.dispatchKeyEvent', { type: 'keyUp', code, key: keyName });
+    },
+    /** Thoughts and insights pause the game as notes: read away any that are up (each can't be closed for 400 ms). */
+    async clearNotes() {
+      for (let k = 0; k < 30 && (await evaluate("!!document.querySelector('.note')")); k++) {
+        await sleep(450);
+        await evaluate("document.querySelector('.overlay').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))");
+      }
     },
     async screenshot() {
       const { data } = await page('Page.captureScreenshot', { format: 'png' });

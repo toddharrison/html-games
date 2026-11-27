@@ -73,7 +73,8 @@ export class Loop {
         this.acc += dt * this.speed;
         const max = Math.max(5, Math.ceil(this.speed * 3));
         let n = 0;
-        while (this.acc >= TICK_MS && n < max) {
+        // A tick can pause the loop (a note pops up): stop there, not at the end of the frame.
+        while (!this.paused && this.acc >= TICK_MS && n < max) {
           this.onTick();
           this.acc -= TICK_MS;
           n++;

@@ -2,6 +2,12 @@
 
 ### 13.1 Decided
 
+**2026-11-27, thoughts and insights stop the game.** The user asked for every thought or realization of the kid's to pop up as a note and pause the game, instead of passing by at the bottom left.
+
+| Decision | Where it shows up |
+|---|---|
+| A thought or an insight pauses the game and shows as a note on the notebook's paper in the middle of the screen until the player clicks or presses E; several come one after another. Neither shows in the lines at the foot of the screen (the journal's log keeps them). | 12.2 |
+
 **2026-11-27, builds, what a kid knows, and the notebook.** The user asked for every build to work like the fire, for starting recipes to come from the kid's background, for recipe parts not to give discoveries away, and for the inventory to be the kid's own sketched notebook page.
 
 | Decision | Where it shows up |

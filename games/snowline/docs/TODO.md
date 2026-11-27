@@ -3,8 +3,8 @@
 Open work and the hand-off between sessions. See CLAUDE.md for how to maintain it. **Only open items live here:** when a task is done, move it to [FEATURES.md](FEATURES.md) (under its system, with the tag line) and delete it here.
 
 ## Hand-off notes
-- **Where things stand (2026-11-26):** M0–M6 and the M7 slice are committed on branch `snowline/spec` (last `cf4f2e9`), not pushed; version 0.1.0. **Everything below is uncommitted** (the user reviews diffs; commit only when asked). All of it came from the user playing the slice and asking for changes the same day; every design decision is a dated row in `docs/spec/13-decisions.md` (2026-11-26 table), and FEATURES.md has the code pointers.
-- **What changed, uncommitted:**
+- **Where things stand (2026-11-26):** M0–M6, the M7 slice, and everything below are committed on branch `snowline/spec` (the work below is `46d8182`), not pushed; version 0.1.0. All of it came from the user playing the slice and asking for changes the same day; every design decision is a dated row in `docs/spec/13-decisions.md` (2026-11-26 table), and FEATURES.md has the code pointers.
+- **What changed (`46d8182`):**
   1. *Full hands and used-up spots* (FEATURES §12): what doesn't fit is set down at the feet; used-up actions are greyed out with the reason and take no time; only what really regrows regrows (trees, deadfall, lichen, punk, loose stones are used up for good; wind brings back fallen wood and driftwood).
   2. *Tall things and the wreck* (FEATURES §7): trees 2–3 tiles tall, rock formations, the tall snag and tail; cliffs and the rim drawn as rock; the forward wreck a two-tile crash with a scar and debris.
   3. *The tutorial as thoughts* (FEATURES §8): the kid's first-person thoughts with a how-to line (settings can hide those lines); the first evening in order; thirst, hunger, cold, tiredness when they bite; the bear-trail warning at once.

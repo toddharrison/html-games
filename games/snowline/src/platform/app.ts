@@ -234,6 +234,8 @@ export class App {
       const s = new Session(seed, who, world, rules);
       if (saved) s.state = restore(saved, rules);
       this.session = s;
+      // In debug, the running session for scripts that drive the game (renders/kidmap).
+      if (this.debug) (window as unknown as { __snowline: Session }).__snowline = s;
       this.overShown = false;
       this.sound.newRun();
       this.renderer.setWorld(world);
@@ -567,6 +569,7 @@ export class App {
     const s = this.session!;
     this.map.draw(s.state, s.world, {
       revealAll: this.debug?.revealMap ?? false,
+      accurate: !!this.debug,
       onPick: this.debug
         ? (x, y) => {
             s.queue({ c: 'debug-teleport', x, y });

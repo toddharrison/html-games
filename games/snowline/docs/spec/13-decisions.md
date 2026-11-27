@@ -48,6 +48,7 @@
 | The survivor is drawn shaded (lit from the upper left), with eyes, a zipped jacket, boots, and a dark outline so they read on any ground. | 4, 12.1 |
 | Free walking over the grid is being tried, behind one switch (Q46). | 5.2 |
 | A cliff is where the ground steps down to the lower band, not into a gully within its own band; water falls only where the stream itself drops (fed from above, going on below), never on a bank beside it. | 6.3 |
+| The map is the kid's own sketch: not to scale, only what's been seen and learned, labelled in their words, "me" only near a known place; it updates as soon as something is seen. The accurate map is kept for debugging only. | 6.4 |
 | The bear's den is a cave: a mound of rock about three tiles wide with a dark mouth wide enough for a bear, the spoil heaped in front. The cougar's lair and the marmots' burrows stay small. | 6.3, 9, 12.1 |
 
 **2026-11-25.**

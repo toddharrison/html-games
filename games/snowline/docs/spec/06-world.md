@@ -62,7 +62,7 @@ Validation checks: the rim holds (headwall, or the outlet's falls), start can re
 
 - Sun position drives the colour and direction of the light (12.1) and a visibility radius. At night without a light source the survivor sees 2 tiles; a fire lights 6.
 - Moving at night without light risks falls and blundering into animals.
-- The map screen shows only what has been explored, drawn as a rough sketch.
+- The map screen is the survivor's own map, drawn as a kid would on a notebook page (decided 2026-11-26): not to scale (what's near camp big, what's far squeezed small, north up), only what they've seen and learned, with their own labels ("PLANE", "camp", "BEAR!!", "good berries"), and a "me" only when they're near somewhere drawn on it. The accurate map is for debugging.
 
 ### 6.5 Weather
 

@@ -285,6 +285,18 @@ button:focus-visible,
   margin: 0.4em 0 0;
 }
 
+/* The kid's map: a notebook page, drawn smooth, a little askew. */
+.map canvas.kid {
+  image-rendering: auto;
+  height: calc(var(--k) * 206px);
+  width: calc(var(--k) * 206px);
+  transform: rotate(-0.6deg);
+}
+
+.map .map-switch {
+  margin-top: 0.4em;
+}
+
 /* Debug overlay (?debug=1). */
 .debug {
   position: fixed;

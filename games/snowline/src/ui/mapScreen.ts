@@ -1,6 +1,8 @@
-// The map screen (M): the explored valley as a sketch, where the survivor is, and the viewpoints they
-// have stood on. In debug, it can show everything and teleport on a click.
+// The map screen (M): the survivor's own map, drawn as a kid would (render/kidMap.ts), not to scale. In
+// debug, the accurate map too: the explored valley tile by tile, where the survivor is, the viewpoints,
+// everything when revealed, and a click teleports.
 
+import { KID_MAP_SIZE, drawKidMap } from '../render/kidMap.ts';
 import { sketchMap } from '../render/mapSketch.ts';
 import type { GameState } from '../sim/state.ts';
 import type { World } from '../sim/world.ts';
@@ -10,6 +12,8 @@ const SCALE = 3;
 
 export interface MapOptions {
   revealAll: boolean;
+  /** Debug: offer the accurate map (shown first), with a button to switch to the kid's. */
+  accurate?: boolean;
   /** In debug, a click teleports there. */
   onPick?: (x: number, y: number) => void;
 }
@@ -18,12 +22,32 @@ export class MapScreen {
   readonly el = h('div', { class: 'screen map' });
   private readonly sketch = document.createElement('canvas');
   private readonly view = document.createElement('canvas');
+  private readonly toggle = h('button', { class: 'map-switch' }, 'kid\'s map');
+  /** In debug, which map is showing. */
+  private showKid = false;
 
   constructor() {
-    this.el.append(this.view, h('p', { class: 'keys' }, 'M or Esc to close'));
+    this.toggle.hidden = true;
+    this.el.append(this.view, h('p', { class: 'keys' }, 'M or Esc to close'), this.toggle);
   }
 
   draw(state: GameState, world: World, opts: MapOptions): void {
+    this.toggle.hidden = !opts.accurate;
+    this.toggle.onclick = () => {
+      this.showKid = !this.showKid;
+      this.draw(state, world, opts);
+    };
+    if (!opts.accurate || this.showKid) {
+      this.toggle.textContent = 'accurate map';
+      this.view.width = this.view.height = KID_MAP_SIZE;
+      this.view.classList.add('kid');
+      this.view.onclick = null;
+      this.view.style.cursor = 'default';
+      drawKidMap(this.view.getContext('2d')!, state, world);
+      return;
+    }
+    this.toggle.textContent = 'kid\'s map';
+    this.view.classList.remove('kid');
     const n = world.size;
     this.sketch.width = this.sketch.height = n;
     const sg = this.sketch.getContext('2d')!;

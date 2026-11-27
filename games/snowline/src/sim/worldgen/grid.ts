@@ -111,11 +111,14 @@ export class TileHeap {
   }
 }
 
+const SQRT2 = 1.4142135623730951;
+
 /**
  * The cheapest four-way path from `start` to the nearest tile where `goal` holds, start and goal
- * included, or null. `cost(from, to)` is the price of a step; Infinity forbids it.
+ * included, or null. `cost(from, to)` is the price of a step; Infinity forbids it. With `diagonal`,
+ * eight-way: a diagonal step costs √2 times as much, and only where both tiles beside it are open.
  */
-export function cheapestPath(start: number, cost: (from: number, to: number) => number, goal: (i: number) => boolean): number[] | null {
+export function cheapestPath(start: number, cost: (from: number, to: number) => number, goal: (i: number) => boolean, diagonal = false): number[] | null {
   const dist = new Float64Array(N).fill(Infinity);
   const prev = new Int32Array(N).fill(-1);
   const heap = new TileHeap();
@@ -129,18 +132,60 @@ export function cheapestPath(start: number, cost: (from: number, to: number) => 
       for (let t = i; t !== -1; t = prev[t]!) path.push(t);
       return path.reverse();
     }
-    forNeighbours4(i, (n) => {
-      const step = cost(i, n);
-      if (step === Infinity) return;
+    const x = i % SIZE;
+    const y = (i - x) / SIZE;
+    for (let k = 0; k < 8; k += diagonal ? 1 : 2) {
+      const nx = x + DX8[k]!;
+      const ny = y + DY8[k]!;
+      if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+      const n = ny * SIZE + nx;
+      let step = cost(i, n);
+      if (step === Infinity) continue;
+      if (k & 1) {
+        if (cost(i, y * SIZE + nx) === Infinity || cost(i, ny * SIZE + x) === Infinity) continue;
+        step *= SQRT2;
+      }
       const nc = c + step;
       if (nc < dist[n]!) {
         dist[n] = nc;
         prev[n] = i;
         heap.push(nc, n);
       }
-    });
+    }
   }
   return null;
+}
+
+/**
+ * The tiles of a four-way line from `a` to `b`, both included: each step goes along x or along y,
+ * whichever keeps nearer the straight line between them.
+ */
+export function line4(a: number, b: number): number[] {
+  const ax = a % SIZE;
+  const ay = (a - ax) / SIZE;
+  const bx = b % SIZE;
+  const by = (b - bx) / SIZE;
+  const adx = Math.abs(bx - ax);
+  const ady = Math.abs(by - ay);
+  const sx = bx > ax ? 1 : -1;
+  const sy = by > ay ? 1 : -1;
+  const out = [a];
+  let x = ax;
+  let y = ay;
+  let nx = 0;
+  let ny = 0;
+  while (nx < adx || ny < ady) {
+    // Step along x while the next x-crossing of the line comes before the next y-crossing.
+    if (ny >= ady || (nx < adx && (1 + 2 * nx) * ady < (1 + 2 * ny) * adx)) {
+      x += sx;
+      nx++;
+    } else {
+      y += sy;
+      ny++;
+    }
+    out.push(y * SIZE + x);
+  }
+  return out;
 }
 
 /** The four-way connected tiles from `start` where `open` holds, marking each in `seen`. */

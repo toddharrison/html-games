@@ -1,11 +1,13 @@
-// The start by the lake, and the tail wreckage high on the mountain: a pocket of alpine ground sealed
-// by a ring of cliff, with a rockslide path below it that the severe storm will open (SPEC 6.3, 10).
+// The start by the lake, and the tail wreckage high on the mountain: a ragged pocket of alpine ground
+// walled by cliff (a headwall behind, a thin lip below), with a rockslide path below the lip that the
+// severe storm will open (SPEC 6.3, 10).
 
 import { BAND, F, FLAG, T, WATER } from '../../content/terrain.ts';
-import { pick } from '../rng.ts';
+import { hash2f, pick } from '../rng.ts';
 import { SIZE } from '../world.ts';
 import { type Gen, UNSET, dist2, forBox, reserve, tilesWhere, xOf, yOf } from './gen.ts';
-import { DX8, DY8, bfs } from './grid.ts';
+import { DX8, DY8, N, bfs, floodFill } from './grid.ts';
+import { perlin } from './noise.ts';
 
 /** The start: dry valley floor beside the lake, a few tiles from the near stream's mouth. */
 export function chooseStart(g: Gen): string | null {
@@ -15,7 +17,18 @@ export function chooseStart(g: Gen): string | null {
     false,
     3,
   );
+  // Only on the main body of land, never an island or a spit cut off by cliffs.
+  const seen = new Uint8Array(N);
+  let mainland: number[] = [];
+  for (let i = 0; i < N; i++) {
+    if (seen[i] || g.water[i] !== WATER.none || g.terrain[i] === T.headwall || g.terrain[i] === T.cliff) continue;
+    const part = floodFill(i, (n) => g.water[n] === WATER.none && g.terrain[n] !== T.headwall && g.terrain[n] !== T.cliff, seen);
+    if (part.length > mainland.length) mainland = part;
+  }
+  const onMain = new Uint8Array(N);
+  for (const n of mainland) onMain[n] = 1;
   const ok = (i: number) =>
+    onMain[i] === 1 &&
     g.band[i] === BAND.floor &&
     g.water[i] === WATER.none &&
     g.terrain[i] !== T.headwall &&
@@ -42,43 +55,92 @@ export function chooseStart(g: Gen): string | null {
   return null;
 }
 
-/** Radius of the sealed pocket round the tail wreckage. */
+/** The pocket's mean radius round the tail wreckage, and how far its edge wanders in or out. */
 const POCKET_R = 5;
-const RING_OUTER2 = (POCKET_R + 1.5) * (POCKET_R + 1.5);
+const POCKET_WOBBLE = 2;
+/** Farthest the pocket and its walls (up to three tiles thick) reach from the wreckage. */
+const POCKET_REACH = POCKET_R + POCKET_WOBBLE + 3;
 /** The wreckage is at least this far from the start, in tiles. */
 const WRECK_MIN_DIST = 90;
 const SLIDE_LENGTH = 10;
 
 export function sealWreck(g: Gen): string | null {
-  // Only open alpine ground, well clear of cliffs, streams, and the rim, can hold the pocket.
-  const bad = (i: number) => g.band[i] !== BAND.alpine || g.water[i] !== WATER.none || g.terrain[i] !== UNSET;
+  // Open alpine ground, clear of cliffs and streams: best a ledge right under the rim, so the rim's
+  // headwall is the pocket's back wall; otherwise open ground well clear of the rim too.
+  const bad = (i: number) => g.band[i] !== BAND.alpine || g.water[i] !== WATER.none || (g.terrain[i] !== UNSET && g.terrain[i] !== T.headwall);
   const fromBad = bfs(tilesWhere(bad), () => true, true);
-  const candidates = tilesWhere((i) => fromBad[i]! >= POCKET_R + 3 && dist2(i, g.start) >= WRECK_MIN_DIST * WRECK_MIN_DIST);
+  const fromRim = bfs(tilesWhere((i) => g.terrain[i] === T.headwall), () => true, true);
+  const far = (i: number) => fromBad[i]! >= POCKET_REACH + 1 && dist2(i, g.start) >= WRECK_MIN_DIST * WRECK_MIN_DIST;
+  let candidates = tilesWhere((i) => far(i) && fromRim[i]! >= POCKET_R - 1 && fromRim[i]! <= POCKET_R + 1);
+  if (candidates.length === 0) candidates = tilesWhere((i) => far(i) && fromRim[i]! >= POCKET_REACH + 1);
   if (candidates.length === 0) return 'no room for the wreck pocket';
   const c = pick(g.rng, candidates);
   g.wreck = c;
+  const cx = xOf(c);
+  const cy = yOf(c);
 
+  // The pocket: a bench in the mountainside, its edge wandering in and out with the rock (not a circle).
+  const edge = (n: number) => perlin((g.word + 120) | 0, xOf(n) / 3.5, yOf(n) / 3.5);
+  const hollow = new Uint8Array(N);
+  forBox(c, POCKET_R + POCKET_WOBBLE, (n, dx, dy) => {
+    const r = POCKET_R + edge(n) * (POCKET_WOBBLE / 0.7);
+    if (dx * dx + dy * dy < r * r && g.terrain[n] === UNSET) hollow[n] = 1;
+  });
+  const pocket = bfs([c], (n) => hollow[n] === 1);
+  const inPocket = (n: number) => pocket[n]! >= 0;
+  const wall = new Uint8Array(N);
   const ring: number[] = [];
-  forBox(c, POCKET_R + 2, (n, dx, dy) => {
-    const d2 = dx * dx + dy * dy;
-    if (d2 < POCKET_R * POCKET_R) {
-      g.flags[n] = g.flags[n]! | FLAG.pocket;
-      g.terrain[n] = T.talus;
-    } else if (d2 < RING_OUTER2) {
-      g.terrain[n] = T.cliff;
-      ring.push(n);
+  const addWall = (n: number) => {
+    if (wall[n] || inPocket(n)) return;
+    wall[n] = 1;
+    ring.push(n);
+  };
+  // The first course of wall: every tile touching the pocket, corners too, so nothing slips through.
+  forBox(c, POCKET_REACH, (n) => {
+    if (!inPocket(n)) return;
+    for (let k = 0; k < 8; k++) {
+      const nx = xOf(n) + DX8[k]!;
+      const ny = yOf(n) + DY8[k]!;
+      if (nx >= 0 && ny >= 0 && nx < SIZE && ny < SIZE) addWall(ny * SIZE + nx);
     }
   });
-  reserve(g, c, POCKET_R + 3);
+  // The lip: the lowest of it, which is where the slope below gives way in the storm.
+  let low = -1;
+  for (const r of ring) {
+    if (g.terrain[r] === T.headwall) continue;
+    if (low < 0 || g.elev[r]! < g.elev[low]! || (g.elev[r] === g.elev[low] && r < low)) low = r;
+  }
+  if (low < 0) return 'no lip below the wreck pocket';
+  // Thicker where the mountain rises behind the pocket (a headwall), thin at the lip; ragged everywhere.
+  for (let course = 2; course <= 3; course++) {
+    const outer = ring.slice();
+    for (const r of outer) {
+      for (let k = 0; k < 8; k++) {
+        const nx = xOf(r) + DX8[k]!;
+        const ny = yOf(r) + DY8[k]!;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+        const n = ny * SIZE + nx;
+        if (dist2(n, low) <= 16 || (nx - cx) * (nx - cx) + (ny - cy) * (ny - cy) > POCKET_REACH * POCKET_REACH) continue;
+        const rise = g.elev[n]! - g.elev[c]!;
+        const rag = hash2f(g.word, nx, ny, 121);
+        if (rise > 0 ? rag < (course === 2 ? 0.85 : 0.5) : rag < (course === 2 ? 0.3 : 0.08)) addWall(n);
+      }
+    }
+  }
+  for (let n = 0; n < N; n++) {
+    if (inPocket(n)) {
+      g.flags[n] = g.flags[n]! | FLAG.pocket;
+      g.terrain[n] = T.talus;
+    } else if (wall[n] && g.terrain[n] !== T.headwall) g.terrain[n] = T.cliff;
+  }
+  reserve(g, c, POCKET_REACH);
   g.feature[c] = F.tail;
   const east = c + 1;
   if (xOf(east) === xOf(c) + 1) g.feature[east] = F.tail;
 
-  // The gap: where the ring is lowest, which is where the slope below gives way in the storm.
-  let low = ring[0]!;
-  for (const r of ring) if (g.elev[r]! < g.elev[low]!) low = r;
+  // The gap: the lip, round its lowest point.
   for (const r of ring) {
-    if (dist2(r, low) <= 2) {
+    if (dist2(r, low) <= 2 && g.terrain[r] === T.cliff) {
       g.slideGap.push(r);
       g.flags[r] = g.flags[r]! | FLAG.slideGap;
     }

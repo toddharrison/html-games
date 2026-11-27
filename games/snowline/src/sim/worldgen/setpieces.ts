@@ -10,7 +10,8 @@ import { BAND, F, FEATURES, FLAG, T, TERRAIN, WATER } from '../../content/terrai
 import { hash2, hash2f, nextInt, nextRange, pick, shuffle } from '../rng.ts';
 import type { PatchRole } from '../world.ts';
 import { type Gen, anyNear, clearAround, dist2, forBox, isOpenLand, pt, reserve, tilesWhere, xOf, yOf } from './gen.ts';
-import { DX8, DY8, N, bfs } from './grid.ts';
+import { DX8, DY8, N, TileHeap, bfs } from './grid.ts';
+import { perlin } from './noise.ts';
 import { neighbour } from './shape.ts';
 import { SIZE } from '../world.ts';
 
@@ -167,12 +168,23 @@ function placePatch(
 ): number {
   const center = choose(g, (i) => test(i) && !FEATURES[g.feature[i]!]!.blocks, near);
   if (center < 0) return -1;
-  const around: number[] = [];
-  forBox(center, 2, (n) => {
-    if (n !== center && isOpenLand(g, n) && VEGETATED.includes(g.terrain[n]!)) around.push(n);
-  });
-  around.sort((a, b) => hash2(g.word, xOf(a), yOf(a), 61) - hash2(g.word, xOf(b), yOf(b), 61) || a - b);
-  const tiles = [center, ...around.slice(0, size - 1)];
+  // The patch grows the way the plant spreads: each new one beside one already there (corners too), now
+  // and then a step further off (a seedling), so patches come out as clumps and drifts, never a block.
+  const tiles = [center];
+  const fits = (n: number) => n !== center && !tiles.includes(n) && isOpenLand(g, n) && VEGETATED.includes(g.terrain[n]!) && dist2(n, center) <= 16;
+  const cx = xOf(center);
+  const cy = yOf(center);
+  for (let step = 0; tiles.length < size && step < size * 16; step++) {
+    const h = (salt: number) => hash2f(g.word, cx * 64 + step, cy * 64 + tiles.length, salt);
+    const from = tiles[Math.floor(h(61) * tiles.length)]!;
+    const k = Math.floor(h(62) * 8);
+    const far = h(63) < 0.2 ? 2 : 1;
+    const nx = xOf(from) + DX8[k]! * far;
+    const ny = yOf(from) + DY8[k]! * far;
+    if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+    const n = ny * SIZE + nx;
+    if (fits(n)) tiles.push(n);
+  }
   const feature = role === 'herb' ? F.herb : F.plant;
   for (const t of tiles) {
     g.feature[t] = feature;
@@ -422,8 +434,15 @@ function placeWaterCauses(g: Gen): string | null {
     (i) => g.band[i] === BAND.floor && dist2(i, g.start) >= 35 * 35 && [0, 1, 2, 3].some((d) => g.water[neighbour(i, d)] === WATER.lake),
   );
   if (shore < 0) return 'no lake shore for the water cause';
+  // Midway up the stream: the open stream tile nearest its middle, either way (its upper reaches may run
+  // under the ice), but well clear of the mouth.
   const upstream = (path: number[]) => {
-    for (let k = Math.floor(path.length * 0.5); k >= 0; k--) if (g.terrain[path[k]!] === T.stream && !g.reserved[path[k]!]) return path[k]!;
+    const mid = Math.floor(path.length * 0.5);
+    const ok = (k: number) => k >= 0 && k < path.length - 8 && g.terrain[path[k]!] === T.stream && !g.reserved[path[k]!];
+    for (let off = 0; off < path.length; off++) {
+      if (ok(mid - off)) return path[mid - off]!;
+      if (ok(mid + off)) return path[mid + off]!;
+    }
     return -1;
   };
   const a = upstream(g.streamA);
@@ -470,13 +489,7 @@ function placeDetails(g: Gen): void {
         if (at >= 0) carveAvalanche(g, at);
         break;
       case 'tarn':
-        at = choose(
-          g,
-          (i) =>
-            g.band[i]! >= BAND.subalpine &&
-            !anyNear(i, 3, (n) => !isOpenLand(g, n) || g.band[n] !== g.band[i] || g.feature[n] !== F.none && FEATURES[g.feature[n]!]!.fixed),
-        );
-        if (at >= 0) carveTarn(g, at);
+        at = placeTarn(g);
         break;
     }
     if (at < 0) continue;
@@ -511,16 +524,65 @@ function carveAvalanche(g: Gen, top: number): void {
   }
 }
 
-/** A small mountain tarn: deep in the middle, shallows round it. */
-function carveTarn(g: Gen, c: number): void {
-  forBox(c, 3, (n, dx, dy) => {
-    const d2 = dx * dx + dy * dy;
-    if (d2 <= 6) g.feature[n] = F.none;
-    if (d2 <= 1) g.terrain[n] = T.deep;
-    else if (d2 <= 5) g.terrain[n] = T.shallows;
-    else return;
+/**
+ * The tarn landmark: a tarn the ice left (geology's), if the valley has one; otherwise water lying in
+ * the deepest little hollow on open high ground, filled from its lowest point up, so it takes the
+ * hollow's shape. Deep where it's water all round, shallows at its edge. Returns a tile of it, or -1.
+ */
+function placeTarn(g: Gen): number {
+  // Never in the rim's margin, where the ground climbs into the headwall and may be out of reach.
+  const inland = (i: number, d: number) => Math.min(xOf(i), yOf(i), SIZE - 1 - xOf(i), SIZE - 1 - yOf(i)) >= d;
+  const natural = tilesWhere((i) => g.water[i] === WATER.tarn && inland(i, 10));
+  if (natural.length) return pick(g.rng, natural);
+  const ok = (i: number) =>
+    g.band[i]! >= BAND.subalpine && inland(i, 12) && isOpenLand(g, i) && !g.reserved[i] && !(g.feature[i] !== F.none && FEATURES[g.feature[i]!]!.fixed);
+  // How far a tile lies below the ground four tiles round it.
+  let best = -1;
+  let bestDepth = 0;
+  for (let i = 0; i < N; i++) {
+    if (!ok(i) || anyNear(i, 3, (n) => !ok(n) || g.band[n] !== g.band[i])) continue;
+    let ring = 0;
+    let count = 0;
+    forBox(i, 4, (n, dx, dy) => {
+      if (Math.max(Math.abs(dx), Math.abs(dy)) !== 4) return;
+      ring += g.elev[n]!;
+      count++;
+    });
+    const depth = ring / count - g.elev[i]!;
+    if (depth > bestDepth) [best, bestDepth] = [i, depth];
+  }
+  if (best < 0) return -1;
+  // Fill from the bottom: each step the lowest tile at the water's edge (stirred a little, for a ragged shore).
+  const size = nextRange(g.rng, 9, 22);
+  const inTarn = new Uint8Array(N);
+  const queued = new Uint8Array(N);
+  const heap = new TileHeap();
+  const level = (n: number) => g.elev[n]! + perlin((g.word + 140) | 0, xOf(n) / 2.5, yOf(n) / 2.5) * 2.5;
+  heap.push(level(best), best);
+  queued[best] = 1;
+  const tiles: number[] = [];
+  while (heap.size > 0 && tiles.length < size) {
+    const { tile } = heap.pop();
+    inTarn[tile] = 1;
+    tiles.push(tile);
+    for (let k = 0; k < 8; k += 2) {
+      const nx = xOf(tile) + DX8[k]!;
+      const ny = yOf(tile) + DY8[k]!;
+      if (nx < 1 || ny < 1 || nx >= SIZE - 1 || ny >= SIZE - 1) continue;
+      const n = ny * SIZE + nx;
+      if (queued[n] || !ok(n) || dist2(n, best) > 25) continue;
+      queued[n] = 1;
+      heap.push(level(n), n);
+    }
+  }
+  for (const n of tiles) {
+    let inner = true;
+    for (let k = 0; k < 8; k++) if (!inTarn[(yOf(n) + DY8[k]!) * SIZE + xOf(n) + DX8[k]!]) inner = false;
+    g.terrain[n] = inner || n === best ? T.deep : T.shallows;
     g.water[n] = WATER.tarn;
-  });
+    g.feature[n] = F.none;
+  }
+  return best;
 }
 
 /** Every set piece, in order. Returns the first problem, or null. */

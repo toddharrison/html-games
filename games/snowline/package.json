@@ -16,6 +16,7 @@
     "check:browser": "node scripts/check-browser.mjs",
     "shots": "node scripts/shots.mjs",
     "inspect": "node scripts/inspect.ts",
+    "places": "node scripts/places.mjs",
     "tour": "node scripts/tour.mjs",
     "bot": "node scripts/bot.ts"
   },

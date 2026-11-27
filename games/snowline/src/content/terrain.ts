@@ -141,6 +141,8 @@ export const FLAG = {
   pocket: 8,
   /** Cleared by an old avalanche. */
   avalanche: 16,
+  /** Glacier ice (the rest of `T.snow` is snowpack). */
+  glacier: 32,
 } as const;
 
 /** Water bodies, for the valley's dealt water rule (SPEC 7.3). */

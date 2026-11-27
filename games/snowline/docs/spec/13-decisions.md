@@ -28,6 +28,17 @@
 | The forward wreck looks like a crash: two tiles, broken and scattered. | 6.3 |
 | The tutorial is the survivor's own thoughts, with a how-to line under each (can be turned off). | 12.2 |
 | Only what really comes back within a run regrows (fallen wood and driftwood sooner after a hard wind); a tree's limbs, bark, and lichen, a deadfall's wood and punk, and loose stones are used up for good after a few takes. | 6.7, 7.4, 8.2 |
+| The tail wreckage lies on a ledge under the rim when there's room: the rim's headwall is its back wall, cliffs flank it, and a thin lip below gives way in the slide. Its outline is ragged, never a ring. | 6.3, 10 |
+| Game trails run at any angle (walked toward where the animal is going, pulled taut where the ground allows) and bend only where the ground makes them; still four-way tiles underfoot, drawn as one slanting line. | 6.3 |
+| Deadfall lies at every angle and length; in a recent burn the trunks are charred and lie mostly one way, blown down by the prevailing westerly. | 6.3, 12.1 |
+| A glacier has a forefield: bare rubble round it, a boulder ridge and then treeless open ground in front, so forest never runs up to the ice. Glacier ice is drawn blue-white with crevasses across its flow and dirty edges, unlike snowfields. | 6.3, 12.1 |
+| Every ground's outline is a smooth, wandering curve, never the tile grid (only the falls and the overhang floor keep square tiles). Marsh lies in patches of ten tiles or more and is drawn as a wet meadow (sedge, small pools), not dark squares. | 6.3, 12.1 |
+| Valleys differ in kind, not just in which way they face: where the ice stopped (the lake near the middle or well off to one side), how the trough bends, one to four side glaciers, sometimes a confluence of two great glaciers, sometimes a rock step with an upper lake, an outlet that may dog-leg; the crash as often by a side stream as by the main river. | 6.2, 6.3 |
+| Most lakes have islands: knobs of rock with a rocky shore, a little sand, and pines. | 6.3 |
+| Rocks are rounded, weathered masses shaded like the ground (boulders in all sizes, mostly small; crags as jointed buttresses), not sharp blocky ledges. A cliff is a rock face with buttresses along its open edge, not a crag on every tile. Fewer boulders. | 6.8, 12.1 |
+| Aspens are slim white trees with upright, airy crowns, about 80% of a conifer's height (grown spruce and fir stand over them); green in late summer, each grove turning gold together, then thinning. | 6.5, 12.1 |
+| Plant patches grow as clumps and drifts (each new plant beside another, now and then a seedling further off), drawn off-centre and either way round, never in rows. | 6.3, 6.8 |
+| The tarn landmark is a real tarn: one the ice left, or water filling the deepest small hollow on open high ground, shaped by it; never a stamped disc, never in the rim's margin. | 6.3 |
 
 **2026-11-25.**
 

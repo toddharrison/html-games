@@ -17,7 +17,7 @@ import { gradeAt } from './grade.ts';
 import { PALETTE } from './palette.ts';
 import { buildAtlas, rh, type Atlas } from './tiles.ts';
 import { Ground } from './ground.ts';
-import { aspen, conifer, log, rockMass, snag, stunted, type Tall } from './flora.ts';
+import { type AspenLeaf, LOG_SIZE, aspen, boulder, conifer, crag, log, snag, stunted, type Tall } from './flora.ts';
 import { WRECK_W, crashScar, forwardWreck, tailWreck } from './wreck.ts';
 import { LooseArt } from './looseArt.ts';
 import { L, isTracks } from '../content/loose.ts';
@@ -28,7 +28,7 @@ import { perlin } from '../sim/worldgen/noise.ts';
 
 /** Each dealt stone's look in an outcrop: body and mark (content/decks.ts STONES order). */
 const STONE_LOOK: [string, string][] = [
-  ['#2e323c', '#5d6a96'],
+  ['#3e4350', '#6d7aa6'],
   ['#6f736f', '#a9aea8'],
   ['#8a4a32', '#c4552b'],
   ['#8f8f88', '#e9ece6'],
@@ -83,6 +83,8 @@ export class Renderer {
   private readonly tall = new Map<string, Tall>();
   /** Per tile: a rock's size (rockMass), bigger where rocks crowd into a formation. */
   private rockSize = new Uint8Array(0);
+  /** Seeds the field that says when each aspen grove turns. */
+  private groveSeed = 0;
   /** The forward wreck: its left tile, how many tiles wide, which way it lies, and the scar under it. */
   private wreck: { x: number; y: number; wide: number; mirror: boolean; scar: HTMLCanvasElement; ox: number; oy: number } | null = null;
   private clouds: HTMLCanvasElement | null = null;
@@ -103,6 +105,7 @@ export class Renderer {
   setWorld(world: World): void {
     this.world = world;
     this.ground = new Ground(world, hashString(`${world.genSeed}/look`)[0]);
+    this.groveSeed = hashString(`${world.genSeed}/groves`)[0];
     const n = world.size;
     this.treeSize = new Uint8Array(n * n);
     this.rockSize = new Uint8Array(n * n);
@@ -144,9 +147,9 @@ export class Renderer {
               if (nf === F.boulder || nf === F.outcrop || nf === F.overhang || world.terrain[n2] === T.cliff) near++;
             }
           const r = rh(x, y, 74);
-          let size = near >= 3 ? 3 : near >= 1 ? 2 : r < 0.45 ? 1 : 0;
-          if (near >= 1 && r < 0.25) size--;
-          if (f === F.outcrop) size = Math.max(2, size);
+          // Boulders come in all sizes, mostly small; an outcrop is a crag, bigger where rock crowds round it.
+          let size = f === F.boulder ? (r < 0.4 ? 0 : r < 0.75 ? 1 : r < 0.93 ? 2 : 3) : near >= 3 ? 3 : 2;
+          if (f === F.boulder && near >= 3 && size < 3) size++;
           this.rockSize[i] = Math.max(0, Math.min(3, size));
         }
         if (world.band[i] === 0) {
@@ -173,23 +176,35 @@ export class Renderer {
     return { x, y, px, py };
   }
 
-  private tree(kind: number, size: number, v: number): Tall {
-    const key = `${kind}:${size}:${v}`;
+  private tree(kind: number, size: number, v: number, leaf: AspenLeaf = 0): Tall {
+    const key = `${kind}:${size}:${v}:${leaf}`;
     let t = this.trees.get(key);
     if (!t) {
-      t = kind === F.aspen ? aspen(size, v) : kind === F.stunted ? stunted(v) : conifer(size, v);
+      t = kind === F.aspen ? aspen(size, v, leaf) : kind === F.stunted ? stunted(v) : conifer(size, v);
       this.trees.set(key, t);
     }
     return t;
   }
 
-  /** A rock formation of a size; `stone` is a dealt stone's look, -1 plain grey rock, -2 a boulder's weathered grey. */
+  /**
+   * An aspen's leaves on a day: green from late summer, then gold, then thinning. Each grove is one clone
+   * and turns together (a smooth field), higher ones sooner, from about day 8 to day 26.
+   */
+  private aspenLeaf(world: World, tx: number, ty: number, day: number): AspenLeaf {
+    const turn = 8 + (perlin(this.groveSeed, tx / 9, ty / 9) + 0.7) * 10 - world.band[idx(tx, ty)]! * 2;
+    return day < turn ? 0 : day < turn + 5 ? 1 : day < turn + 22 ? 2 : 3;
+  }
+
+  /**
+   * A rock of a size: a boulder (`stone` -2, weathered grey), or a crag (-1 plain grey rock for cliffs and
+   * the overhang, or a dealt stone's look for an outcrop). `v` is the variant, 0–5.
+   */
   private rock(size: number, stone: number, v: number): Tall {
     const key = `rock:${size}:${stone}:${v}`;
     let r = this.tall.get(key);
     if (!r) {
-      const [body, mark] = stone === -2 ? ['#7f7c71', '#4f4d47'] : stone < 0 ? ['#5f666c', '#3b4350'] : (STONE_LOOK[stone] ?? STONE_LOOK[1]!);
-      r = rockMass(size, v, body, mark);
+      const [body, mark] = stone === -2 ? ['#858277', '#5b5850'] : stone < 0 ? ['#6f7472', '#4a4f52'] : (STONE_LOOK[stone] ?? STONE_LOOK[1]!);
+      r = stone === -2 ? boulder(size, v, body, mark) : crag(size, v, body, mark);
       this.tall.set(key, r);
     }
     return r;
@@ -239,14 +254,28 @@ export class Renderer {
     return t;
   }
 
-  private logArt(v: number): HTMLCanvasElement {
-    const key = `log:${v}`;
+  /**
+   * The deadfall on a tile, and where its canvas's corner goes relative to the tile's. In a recent burn
+   * the dead trunks came down in the prevailing westerly, so they lie mostly one way, roots to the west;
+   * anywhere else they fell every which way. Trunks are different lengths and lie off-centre, often
+   * reaching into the next tile.
+   */
+  private logArt(world: World, tx: number, ty: number): { art: HTMLCanvasElement; dx: number; dy: number } {
+    const age = world.age[idx(tx, ty)]!;
+    const burnt = age > 0 && age < 20;
+    const r = rh(tx, ty, 80);
+    const angle = burnt ? (r < 0.5 ? 1 : r < 0.7 ? 0 : r < 0.9 ? 2 : 15) % 8 : Math.floor(r * 8);
+    const len = 12 + Math.floor(rh(tx, ty, 81) * 4) * 4;
+    const v = Math.floor(rh(tx, ty, 82) * 3);
+    const key = `log:${angle}:${len}:${burnt ? 1 : 0}:${v}`;
     let b = this.boulders.get(key);
     if (!b) {
-      b = log(v);
+      b = log(angle, len, burnt, v);
       this.boulders.set(key, b);
     }
-    return b;
+    const dx = 8 - LOG_SIZE / 2 + Math.floor(rh(tx, ty, 83) * 7) - 3;
+    const dy = 9 - LOG_SIZE / 2 + Math.floor(rh(tx, ty, 84) * 5) - 2;
+    return { art: b, dx, dy };
   }
 
   /** The sun's direction and the length of shadows (SPEC 12.1: long at dawn and dusk), or null at night. */
@@ -288,6 +317,7 @@ export class Renderer {
     const wind = weatherNow(state, world).wind;
     const sway = (x: number, y: number) => Math.round(Math.sin(timeMs / (900 - wind * 400) + x * 0.9 + y * 0.43) * (0.55 + wind * 1.6));
     const sun = this.sun(state);
+    const day = clock(state.tick).day;
     const shadows: [number, number, number, number][] = [];
     const survivorPx = Math.round(cam.px * TILE) - cam.x;
     const survivorPy = Math.round(cam.py * TILE) - cam.y;
@@ -318,15 +348,20 @@ export class Renderer {
         }
         const f = state.arc.felled[i] ? F.log : world.feature[i]!;
         if (!f) {
-          // Cliffs and the rim are rock walls: drawn as formations, bigger where the wall is deep.
+          // Cliffs and the rim are rock: the face is the ground (ground.ts); buttresses stand along its
+          // open edge, most of the way, and here and there a big one back on the rim.
           const tt = world.terrain[i];
           if ((tt === T.cliff || tt === T.headwall) && !arcOpens(state, world, i)) {
-            let near = 0;
+            let open = false;
             for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
               const n = world.terrain[idx(Math.max(0, Math.min(world.size - 1, tx + dx)), Math.max(0, Math.min(world.size - 1, ty + dy)))];
-              if (n === T.cliff || n === T.headwall) near++;
+              if (n !== T.cliff && n !== T.headwall) open = true;
             }
-            const r = this.rock(Math.min(3, 1 + (near >= 2 ? 1 : 0) + (tt === T.headwall ? 1 : 0)), -1, Math.floor(rh(tx, ty, 75) * 3));
+            const roll = rh(tx, ty, 77);
+            if (open ? roll > 0.7 : tt !== T.headwall || roll > 0.12) continue;
+            const big = rh(tx, ty, 78);
+            const size = !open ? 3 : tt === T.headwall ? (big < 0.5 ? 2 : 3) : big < 0.45 ? 1 : big < 0.85 ? 2 : 3;
+            const r = this.rock(size, -1, Math.floor(rh(tx, ty, 75) * 6));
             const left = sx + 8 - Math.floor(r.c.width / 2);
             const top = sy + 16 - r.c.height;
             const behind = prow < ty && survivorPx + 12 > left + 3 && survivorPx + 4 < left + r.c.width - 3 && survivorPy + 14 > top && survivorPy < sy;
@@ -340,7 +375,7 @@ export class Renderer {
         }
         if (f === F.conifer || f === F.aspen || f === F.stunted) {
           const size = this.treeSize[i]!;
-          const t = this.tree(f, size, Math.floor(rh(tx, ty, 73) * 3));
+          const t = this.tree(f, size, Math.floor(rh(tx, ty, 73) * 3), f === F.aspen ? this.aspenLeaf(world, tx, ty, day) : 0);
           const left = sx + 8 - Math.floor(t.c.width / 2);
           const top = sy + 16 - t.c.height;
           const h = t.c.height;
@@ -406,8 +441,10 @@ export class Renderer {
         const v3 = Math.floor(rh(tx, ty, 75) * 3);
         if (f === F.boulder || f === F.outcrop || f === F.overhang) {
           const size = f === F.overhang ? 3 : this.rockSize[i]!;
-          const r = this.rock(size, f === F.boulder ? -2 : f === F.overhang ? -1 : world.data[i]!, v3);
-          standUp(r, sx + 8 + (rh(tx, ty, 76) < 0.5 ? 0 : 1), false, r.c.width - 2);
+          const r = this.rock(size, f === F.boulder ? -2 : f === F.overhang ? -1 : world.data[i]!, Math.floor(rh(tx, ty, 75) * 6));
+          // Boulders sit anywhere on their tile, and either way round.
+          const ox = f === F.boulder ? Math.floor(rh(tx, ty, 79) * 5) - 2 : rh(tx, ty, 76) < 0.5 ? 0 : 1;
+          standUp(r, sx + 8 + ox, f === F.boulder && rh(tx, ty, 80) < 0.5, r.c.width - 2);
           continue;
         }
         if (f === F.snag) {
@@ -426,12 +463,27 @@ export class Renderer {
         if (ty > y1) continue;
         // A picked-over patch looks thin until it comes back.
         const bare = (f === F.plant || f === F.herb || f === F.bush) && (state.regrow[i] ?? 0) > state.tick;
-        const v = Math.floor(rh(tx, ty, 76) * 3);
-        const art = f === F.log ? this.logArt(v) : this.atlas.feature(f, world.data[i]!);
+        if (f === F.log) {
+          const lg = this.logArt(world, tx, ty);
+          layer.push(() => g.drawImage(lg.art, sx + lg.dx, sy + lg.dy));
+          continue;
+        }
+        const art = this.atlas.feature(f, world.data[i]!);
         if (f === F.arch) shadows.push([sx + 8, sy + 15, 12, 14]);
+        // Bushes and plants grow where they took root, not on a grid: off-centre, and either way round.
+        const grows = f === F.plant || f === F.herb || f === F.bush;
+        const ox = grows ? Math.floor(rh(tx, ty, 85) * 7) - 3 : 0;
+        const oy = grows ? Math.floor(rh(tx, ty, 86) * 5) - 2 : 0;
+        const flip = grows && rh(tx, ty, 87) < 0.5;
         layer.push(() => {
           if (bare) g.globalAlpha = 0.4;
-          g.drawImage(art, sx, sy);
+          if (flip) {
+            g.save();
+            g.translate(sx + ox + TILE, sy + oy);
+            g.scale(-1, 1);
+            g.drawImage(art, 0, 0);
+            g.restore();
+          } else g.drawImage(art, sx + ox, sy + oy);
           g.globalAlpha = 1;
         });
       }

@@ -9,7 +9,7 @@
 import { T, WATER } from '../../content/terrain.ts';
 import { hash2f, makeRng, nextFloat, nextRange, pick, type RngState } from '../rng.ts';
 import { SIZE } from '../world.ts';
-import { type Gen, xOf, yOf } from './gen.ts';
+import { type Gen, tilesWhere, xOf, yOf } from './gen.ts';
 import { DX8, DY8, N, TileHeap, bfs, forNeighbours4 } from './grid.ts';
 import { fbm, perlin } from './noise.ts';
 
@@ -17,6 +17,8 @@ export const MIN_LAKE = 600;
 /** The lake's size the moraine is raised or lowered toward, in tiles. */
 const LAKE_TARGET = [1500, 3000] as const;
 const MIN_STREAM = 30;
+/** How often a lake has islands (one to three knobs of rock). */
+const ISLAND_CHANCE = 0.92;
 /** A channel: at least this much rain (tiles' worth, more up high) drains through the tile. */
 const CHANNEL = 600;
 /** Raindrops for the erosion, per tile of the map. */
@@ -377,7 +379,7 @@ function receivers(filled: Float64Array, wander?: number): Int32Array {
  * hollows then drain; deep ones keep a smaller pool.
  */
 const BREACH = 0.2;
-function breach(h: Float64Array, keep: number): void {
+function breach(h: Float64Array, keep: readonly number[]): void {
   const { filled } = fill(h);
   const rec = receivers(filled);
   const seen = new Uint8Array(N);
@@ -391,7 +393,7 @@ function breach(h: Float64Array, keep: number): void {
     let spared = false;
     while (queue.length) {
       const c = queue.pop()!;
-      if (c === keep) spared = true;
+      if (keep.includes(c)) spared = true;
       if (h[c]! < h[low]!) low = c;
       forNeighbours4(c, (n) => {
         if (!seen[n] && flooded(n)) {
@@ -439,16 +441,30 @@ export function shapeValley(g: Gen): string | null {
   // The valley's line: the main glacier from its head under the high side down to its snout, then the
   // river on out through the rim. The land is laid out from it: low along the line, falling from the head
   // to the gorge, rising to the ridges either side.
-  const head: [number, number] = [C + hx * 96 + px * (nextFloat(rng) - 0.5) * 50, C + hy * 96 + py * (nextFloat(rng) - 0.5) * 50];
-  const end: [number, number] = [C - hx * 30 + px * (nextFloat(rng) - 0.5) * 40, C - hy * 30 + py * (nextFloat(rng) - 0.5) * 40];
-  const mainLine = iceLine(rng, w, head, end, 26, 72);
+  // Each valley is its own: how far up the ice began and how far down it reached (so the lake lies near
+  // the middle or well off to one side), how much the trough bends, and how broad the ice was.
+  const headOut = 84 + nextFloat(rng) * 14;
+  const snoutAt = 5 + nextFloat(rng) * 55;
+  const head: [number, number] = [C + hx * headOut + px * (nextFloat(rng) - 0.5) * 70, C + hy * headOut + py * (nextFloat(rng) - 0.5) * 70];
+  const end: [number, number] = [C - hx * snoutAt + px * (nextFloat(rng) - 0.5) * 70, C - hy * snoutAt + py * (nextFloat(rng) - 0.5) * 70];
+  const mainLine = iceLine(rng, w, head, end, 12 + nextFloat(rng) * 28, 72);
+  const breadth = 0.8 + nextFloat(rng) * 0.4;
+  // Some valleys had two great glaciers meeting (a confluence); some have a rock step across the trough
+  // with a lake held behind it, above the main one.
+  const confluence = nextFloat(rng) < 0.3;
+  const stepAt = nextFloat(rng) < 0.35 ? 0.35 + nextFloat(rng) * 0.2 : -1;
   const fx = end[0] - mainLine.x[64]!;
   const fy = end[1] - mainLine.y[64]!;
   const fl = Math.sqrt(fx * fx + fy * fy) || 1;
   const snoutR = 27;
   const outStart: [number, number] = [end[0] + (fx / fl) * snoutR * 1.35, end[1] + (fy / fl) * snoutR * 1.35];
-  // On down the valley until well past the map's edge, bending toward the low side.
-  const outEnd: [number, number] = [outStart[0] + ((fx / fl) * 0.6 - hx * 0.4) * 200, outStart[1] + ((fy / fl) * 0.6 - hy * 0.4) * 200];
+  // On down the valley until well past the map's edge, bending toward the low side, and in some valleys
+  // turning hard to one side (a dog-leg) where the river found its way out.
+  const turn = (nextFloat(rng) - 0.5) * 1.4;
+  const outEnd: [number, number] = [
+    outStart[0] + ((fx / fl) * 0.6 - hx * 0.4 + px * turn) * 200,
+    outStart[1] + ((fy / fl) * 0.6 - hy * 0.4 + py * turn) * 200,
+  ];
   const outLine = iceLine(rng, w, outStart, outEnd, 14, 40);
   const axis: Line = { x: [...mainLine.x, ...outLine.x], y: [...mainLine.y, ...outLine.y] };
 
@@ -474,7 +490,7 @@ export function shapeValley(g: Gen): string | null {
   for (let k = 0; k < 72; k++) {
     const t = k / 71;
     main.bed.push(surface(main.x[k]!, main.y[k]!) - 0.1 - 0.1 * bump((t - 0.8) / 0.24));
-    main.half.push(14 + 10 * t);
+    main.half.push((14 + 10 * t) * breadth);
   }
   // Keep the bed falling down the valley, apart from the gouge above the snout.
   for (let k = 1; k < 72; k++) if (k / 71 < 0.6) main.bed[k] = Math.min(main.bed[k]!, main.bed[k - 1]! - 0.001);
@@ -486,29 +502,33 @@ export function shapeValley(g: Gen): string | null {
   const cirques: [number, number, number, number, number][] = [[head[0], head[1], 20, ...towards(head[0], head[1], mainLine.x[6]!, mainLine.y[6]!)]];
   carveCirque(h, head[0], head[1], 20, main.bed[0]! - 0.04);
   carveIce(h, main);
-  const sides = nextRange(rng, 2, 3);
+  // Side glaciers, one to four, from cirques on either flank, joining high above the main bed (hanging
+  // valleys). At a confluence the first is a second great glacier, joining nearly level.
+  const sides = nextRange(rng, 1, 4);
   for (let k = 0; k < sides; k++) {
-    const t = 0.2 + nextFloat(rng) * 0.45;
-    const sign = k % 2 === 0 ? 1 : -1;
+    const big = confluence && k === 0;
+    const t = big ? 0.3 + nextFloat(rng) * 0.25 : 0.15 + nextFloat(rng) * 0.55;
+    const sign = nextFloat(rng) < 0.5 ? 1 : -1;
     const jx = lerpAt(main.x, t);
     const jy = lerpAt(main.y, t);
-    const reach = 58 + nextFloat(rng) * 30;
+    const reach = big ? 72 + nextFloat(rng) * 24 : 50 + nextFloat(rng) * 38;
     let sx = jx + px * sign * reach + hx * (10 + nextFloat(rng) * 26);
     let sy = jy + py * sign * reach + hy * (10 + nextFloat(rng) * 26);
-    sx = Math.max(16, Math.min(SIZE - 17, sx));
-    sy = Math.max(16, Math.min(SIZE - 17, sy));
+    sx = Math.max(18, Math.min(SIZE - 19, sx));
+    sy = Math.max(18, Math.min(SIZE - 19, sy));
     const line = iceLine(rng, w, [sx, sy], [jx, jy], 12, 40);
-    const hang = 0.07 + nextFloat(rng) * 0.06;
+    const hang = big ? 0.01 + nextFloat(rng) * 0.02 : 0.07 + nextFloat(rng) * 0.06;
     const junctionBed = lerpAt(main.bed, t) + hang;
     const startBed = Math.max(junctionBed + 0.06, surface(sx, sy) - 0.16);
     const ice: Ice = { ...line, bed: [], half: [] };
     for (let q = 0; q < 40; q++) {
       const u = q / 39;
       ice.bed.push(startBed + (junctionBed - startBed) * u);
-      ice.half.push(7 + 4 * u);
+      ice.half.push(big ? (10 + 5 * u) * breadth : 7 + 4 * u);
     }
-    cirques.push([sx, sy, 12, ...towards(sx, sy, line.x[4]!, line.y[4]!)]);
-    carveCirque(h, sx, sy, 12, startBed - 0.03);
+    const r = big ? 16 : 12;
+    cirques.push([sx, sy, r, ...towards(sx, sy, line.x[4]!, line.y[4]!)]);
+    carveCirque(h, sx, sy, r, startBed - 0.03);
     carveIce(h, ice);
   }
 
@@ -569,6 +589,23 @@ export function shapeValley(g: Gen): string | null {
     }
   }
 
+  // The rock step: a bar of hard rock the ice rode over, across the trough, and the basin it gouged behind
+  // it. Laid after the erosion, like the knobs, so the bar stands.
+  if (stepAt > 0) {
+    const box = boxOf(main, 30);
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        if (!nearBox(box, x, y)) continue;
+        const { d, t } = nearestOn(main, x + 0.5, y + 0.5);
+        const half = lerpAt(main.half, t);
+        if (d > half * 1.05) continue;
+        const i = y * SIZE + x;
+        // The bar, and the basin the ice gouged out behind it.
+        const lift = 0.12 * bump((t - stepAt) / 0.03) - 0.07 * bump((t - stepAt + 0.09) / 0.07);
+        h[i] = h[i]! + lift * (1 - smooth01((d - half * 0.8) / (half * 0.25)));
+      }
+    }
+  }
 
   // 4. Water. Fill; the lake is the filled hollow behind the moraine. Raise or lower the moraine until
   // the lake is a good size (the ice left what it left; this picks which valley we're looking at).
@@ -585,8 +622,25 @@ export function shapeValley(g: Gen): string | null {
     return best;
   };
   // Streams cut down through what dams the side hollows, so most drain; only the lake's basin is spared.
-  // What's left of a hollow fills in later (a bog, or a tarn up high).
-  for (let pass = 0; pass < 3; pass++) breach(h, lowestNear());
+  // What's left of a hollow fills in later (a bog, or a tarn up high). The basin behind a rock step is
+  // spared too: it holds the upper lake.
+  const upperLow = (): number => {
+    if (stepAt < 0) return -1;
+    let best = -1;
+    const box = boxOf(main, 2);
+    for (let y = 0; y < SIZE; y++) {
+      for (let x = 0; x < SIZE; x++) {
+        if (!nearBox(box, x, y)) continue;
+        const { d, t } = nearestOn(main, x + 0.5, y + 0.5);
+        if (t < stepAt - 0.2 || t > stepAt - 0.02 || d > lerpAt(main.half, t) * 0.6) continue;
+        const i = y * SIZE + x;
+        if (best < 0 || h[i]! < h[best]!) best = i;
+      }
+    }
+    return best;
+  };
+  for (let pass = 0; pass < 3; pass++) breach(h, [lowestNear(), upperLow()]);
+  const upper = upperLow();
   let filled: Float64Array = new Float64Array(N);
   let order: Int32Array = new Int32Array(N);
   let lake: Int32Array = new Int32Array(N);
@@ -606,6 +660,50 @@ export function shapeValley(g: Gen): string | null {
     for (let i = 0; i < N; i++) h[i] = h[i]! + moraine[i]! * step;
   }
   if (size < MIN_LAKE) return `lake too small (${size})`;
+
+  // Islands: knobs of hard rock the ice rode over without wearing down, standing out of the water. Most
+  // lakes have one to three, well out from the shore and apart from each other.
+  if (nextFloat(rng) < ISLAND_CHANCE) {
+    const toShore = bfs(
+      tilesWhere((i) => lake[i]! < 0),
+      () => true,
+      false,
+      12,
+    );
+    const spots: number[] = [];
+    for (let i = 0; i < N; i++) if (lake[i]! >= 0 && toShore[i]! >= 3) spots.push(i);
+    const want = 1 + Math.floor(nextFloat(rng) * 3);
+    const placed: number[] = [];
+    for (let k = 0; k < want * 8 && placed.length < want && spots.length; k++) {
+      const c = spots[Math.floor(nextFloat(rng) * spots.length)]!;
+      if (placed.some((p) => (xOf(p) - xOf(c)) * (xOf(p) - xOf(c)) + (yOf(p) - yOf(c)) * (yOf(p) - yOf(c)) < 144)) continue;
+      // As big as the water round it allows, so its ragged edge never reaches the shore (that would be a point, not an island).
+      const r = Math.min(2 + nextFloat(rng) * 2.5, (toShore[c]! - 1.5) / 1.45);
+      if (r < 1.5) continue;
+      placed.push(c);
+      const level = filled[c]!;
+      const reach = Math.ceil(r * 1.45);
+      for (let dy = -reach; dy <= reach; dy++) {
+        for (let dx = -reach; dx <= reach; dx++) {
+          const x = xOf(c) + dx;
+          const y = yOf(c) + dy;
+          if (x < 0 || y < 0 || x >= SIZE || y >= SIZE) continue;
+          // A ragged knob: its edge wanders with the rock, highest in the middle.
+          const rr = r * (1 + perlin((w + 512) | 0, x / 3, y / 3) * 0.6);
+          const d = Math.sqrt(dx * dx + dy * dy);
+          if (d >= rr) continue;
+          const i = y * SIZE + x;
+          h[i] = Math.max(h[i]!, level + 0.006 + (1 - d / rr) * 0.035);
+        }
+      }
+    }
+    if (placed.length) {
+      ({ filled, order } = fill(h));
+      lake = bfs([lowestNear()], (i) => filled[i]! > h[i]!);
+      size = 0;
+      for (let i = 0; i < N; i++) if (lake[i]! >= 0) size++;
+    }
+  }
 
   // Other hollows: high ones are tarns; the rest are filled in (bogs, for the ground to come).
   const lakeSeed = lowestNear();
@@ -635,7 +733,8 @@ export function shapeValley(g: Gen): string | null {
       });
     }
     const high = top > lakeLevel + 0.3;
-    if (high && members.length >= 5 && members.length <= 140 && deep > 0.006) for (const m of members) tarn[m] = 1;
+    const upperLake = upper >= 0 && members.includes(upper) && members.length >= 40 && members.length <= 1200 && deep > 0.01;
+    if (upperLake || (high && members.length >= 5 && members.length <= 140 && deep > 0.006)) for (const m of members) tarn[m] = 1;
     else {
       // Filled level: sediment and peat. A deep one is a bog that holds water in spring.
       for (const m of members) {
@@ -718,9 +817,12 @@ export function shapeValley(g: Gen): string | null {
   for (let i = 0; i < N; i++) if (!isLake[i] && rec[i]! >= 0 && isLake[rec[i]!] && acc[i]! >= CHANNEL) inflows.push(i);
   inflows.sort((a, b) => acc[b]! - acc[a]! || a - b);
   if (inflows.length < 2) return 'fewer than two streams reach the lake';
-  const mouthA = inflows[0]!;
-  const mouthB = inflows.find((i) => (xOf(i) - xOf(mouthA)) * (xOf(i) - xOf(mouthA)) + (yOf(i) - yOf(mouthA)) * (yOf(i) - yOf(mouthA)) >= 400) ?? -1;
+  let mouthA = inflows[0]!;
+  let mouthB = inflows.find((i) => (xOf(i) - xOf(mouthA)) * (xOf(i) - xOf(mouthA)) + (yOf(i) - yOf(mouthA)) * (yOf(i) - yOf(mouthA)) >= 400) ?? -1;
   if (mouthB < 0) return 'no second stream apart from the first';
+  // Stream A is the one the survivor comes down beside: as often the side stream as the main river, so
+  // the crash isn't always at the lake's head.
+  if (nextFloat(rng) < 0.5) [mouthA, mouthB] = [mouthB, mouthA];
   // Which mouth each channel tile drains to (memo: -2 unknown, -1 none).
   const goesTo = new Int32Array(N).fill(-2);
   const trace = (i: number): number => {

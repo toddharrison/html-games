@@ -5,7 +5,7 @@
 import { BAND, F, FLAG, T, WATER } from '../../content/terrain.ts';
 import { hash2f, makeRng, nextFloat, nextInt } from '../rng.ts';
 import { type Gen, UNSET, tilesWhere, xOf, yOf } from './gen.ts';
-import { DX4, DX8, DY4, DY8, N, bfs, forNeighbours4 } from './grid.ts';
+import { DX4, DX8, DY4, DY8, N, bfs, floodFill, forNeighbours4 } from './grid.ts';
 import { fbm, perlin } from './noise.ts';
 import { SIZE } from '../world.ts';
 
@@ -29,6 +29,16 @@ function scatter(seed: number, x: number, y: number, salt: number, density: numb
 }
 
 const clamp = (v: number, lo: number, hi: number) => (v < lo ? lo : v > hi ? hi : v);
+
+/** How far from a glacier its forefield reaches, in tiles (downhill of the ice; two all round). */
+const FOREFIELD = 7;
+/** The smallest patch of marsh that stays marsh; smaller ones dry back into meadow. */
+const MIN_MARSH = 10;
+/** Land cut off by water and smaller than this (tiles) is an island. */
+const ISLAND_MAX = 150;
+/** `forefield` results that aren't a ground: not near the ice, or open ground in front of it. */
+const NOT_FORE = -1;
+const OPEN_FORE = -2;
 
 export function coverGround(g: Gen): void {
   const w = g.word;
@@ -71,6 +81,46 @@ export function coverGround(g: Gen): void {
     moisture[i] = 0.42 + runoff * 0.6 + fbm((w + 101) | 0, x / 38, y / 38, 4) * 0.3 - dw / 60 - sunny[i]! * 0.12 + (g.bog[i] ? 0.4 : 0);
   }
 
+  // The ground the ice has just let go of: within a step or two of a glacier all round, bare rubble (its
+  // lateral and end moraines); in front of it, downhill, a ridge of boulders where the ice stood longest,
+  // then raw ground where grass and willow scrub are only starting. No trees grow on any of it yet.
+  const fromIce = new Int32Array(N).fill(-1);
+  const iceElev = new Float64Array(N);
+  {
+    const q: number[] = [];
+    for (let i = 0; i < N; i++) {
+      if (g.snow[i] !== 2) continue;
+      fromIce[i] = 0;
+      iceElev[i] = g.elev[i]!;
+      g.flags[i] = g.flags[i]! | FLAG.glacier;
+      q.push(i);
+    }
+    for (let h = 0; h < q.length; h++) {
+      const c = q[h]!;
+      if (fromIce[c]! >= FOREFIELD) continue;
+      for (let d = 0; d < 8; d++) {
+        const nx = xOf(c) + DX8[d]!;
+        const ny = yOf(c) + DY8[d]!;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+        const n = ny * SIZE + nx;
+        if (fromIce[n] !== -1) continue;
+        fromIce[n] = fromIce[c]! + 1;
+        iceElev[n] = iceElev[c]!;
+        q.push(n);
+      }
+    }
+  }
+  const fore = new Uint8Array(N);
+  const forefield = (i: number): number => {
+    if (fromIce[i]! <= 0 || g.reserved[i]) return NOT_FORE;
+    const d = fromIce[i]! + perlin((w + 130) | 0, xOf(i) / 4, yOf(i) / 4) * 1.6;
+    const below = g.elev[i]! < iceElev[i]! - 1;
+    if (d <= 2.2) return T.talus;
+    if (below && d <= 4) return T.boulders;
+    if (below && d <= FOREFIELD) return OPEN_FORE;
+    return NOT_FORE;
+  };
+
   for (let i = 0; i < N; i++) {
     if (g.terrain[i] !== UNSET) continue;
     const x = xOf(i);
@@ -81,8 +131,12 @@ export function coverGround(g: Gen): void {
     const underCliff = fromCliff[i]! >= 0 && fromCliff[i]! <= 2;
     const patchy = perlin((w + 202) | 0, x / 14, y / 14) + perlin((w + 203) | 0, x / 5, y / 5) * 0.3;
     let t: number;
+    const ff = forefield(i);
     if (g.snow[i]) t = T.snow;
-    else {
+    else if (ff >= 0) {
+      t = ff;
+      fore[i] = 1;
+    } else {
       switch (g.band[i]) {
         case BAND.floor:
           if (g.bog[i]) t = m > 0.9 ? T.marsh : T.reeds;
@@ -113,6 +167,11 @@ export function coverGround(g: Gen): void {
           else if (m > 0.75 && sl < 4) t = T.highMeadow; // alpine meadow where meltwater runs
           else t = patchy > 0.15 ? T.rock : T.talus;
       }
+      // Ground the ice left lately is open: grass and willow, no forest yet.
+      if (ff === OPEN_FORE) {
+        fore[i] = 1;
+        if (t === T.forest) t = g.band[i]! >= BAND.subalpine ? T.highMeadow : T.meadow;
+      }
     }
     g.terrain[i] = t;
   }
@@ -124,7 +183,7 @@ export function coverGround(g: Gen): void {
       for (let x = 1; x < SIZE - 1; x++) {
         const i = y * SIZE + x;
         const t = was[i]!;
-        if (t !== T.forest && t !== T.meadow && t !== T.highMeadow && t !== T.scrub) continue;
+        if (fore[i] || (t !== T.forest && t !== T.meadow && t !== T.highMeadow && t !== T.scrub)) continue;
         let same = 0;
         const other = [0, 0, 0, 0];
         const kinds = [T.forest, T.meadow, T.highMeadow, T.scrub];
@@ -138,6 +197,71 @@ export function coverGround(g: Gen): void {
         let bk = -1;
         for (let k = 0; k < 4; k++) if (kinds[k] !== t && (bk < 0 || other[k]! > other[bk]!)) bk = k;
         if (bk >= 0 && other[bk]! >= 4) g.terrain[i] = kinds[bk]!;
+      }
+    }
+  }
+
+  // Wet ground lies in patches, not flecks: a hollow or a seep spreads into the ground round it. Twice,
+  // grass with most of its neighbours marsh goes marsh too; then any patch of marsh too small to be a
+  // real wet meadow dries back into whatever ground is round it, from its edge in.
+  for (let pass = 0; pass < 2; pass++) {
+    const was = g.terrain.slice();
+    for (let y = 1; y < SIZE - 1; y++) {
+      for (let x = 1; x < SIZE - 1; x++) {
+        const i = y * SIZE + x;
+        if (was[i] !== T.meadow || fore[i] || g.reserved[i]) continue;
+        let wet = 0;
+        for (let d = 0; d < 8; d++) if (was[(y + DY8[d]!) * SIZE + x + DX8[d]!] === T.marsh) wet++;
+        if (wet >= 5) g.terrain[i] = T.marsh;
+      }
+    }
+  }
+  {
+    const seen = new Uint8Array(N);
+    for (let i = 0; i < N; i++) {
+      if (seen[i] || g.terrain[i] !== T.marsh) continue;
+      const patch = floodFill(i, (n) => g.terrain[n] === T.marsh, seen);
+      if (patch.length >= MIN_MARSH) continue;
+      const dry = [T.meadow, T.forest, T.reeds, T.highMeadow, T.scrub, T.sand];
+      let left = patch;
+      while (left.length) {
+        const next: number[] = [];
+        const was = g.terrain.slice();
+        for (const n of left) {
+          const counts = [0, 0, 0, 0, 0, 0];
+          for (let d = 0; d < 8; d++) {
+            const nx = xOf(n) + DX8[d]!;
+            const ny = yOf(n) + DY8[d]!;
+            if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+            const k = dry.indexOf(was[ny * SIZE + nx] as (typeof dry)[number]);
+            if (k >= 0) counts[k]!++;
+          }
+          let best = 0;
+          for (let k = 1; k < dry.length; k++) if (counts[k]! > counts[best]!) best = k;
+          if (counts[best]) g.terrain[n] = dry[best]!;
+          else next.push(n);
+        }
+        // Nothing dry beside what's left (all water and rock): it becomes meadow.
+        if (next.length === left.length) for (const n of next) g.terrain[n] = T.meadow;
+        left = next.length === left.length ? [] : next;
+      }
+    }
+  }
+
+  // Islands are knobs of rock: a rocky shore with a little sand in the coves, and pines on top.
+  {
+    const seen = new Uint8Array(N);
+    const land = (n: number) => g.water[n] === WATER.none && g.terrain[n] !== T.headwall;
+    for (let i = 0; i < N; i++) {
+      if (seen[i] || !land(i)) continue;
+      const isle = floodFill(i, land, seen);
+      if (isle.length >= ISLAND_MAX || isle.some((n) => g.reserved[n])) continue;
+      for (const n of isle) {
+        let shore = false;
+        forNeighbours4(n, (m) => {
+          if (!land(m)) shore = true;
+        });
+        g.terrain[n] = shore ? (hash2f(w, xOf(n), yOf(n), 13) < 0.65 ? T.boulders : T.sand) : T.forest;
       }
     }
   }
@@ -289,27 +413,29 @@ export function coverGround(g: Gen): void {
         else if (fromOpen[i]! <= 2 && h(3) < 0.08) f = F.bush;
         break;
       case T.meadow:
-        if (g.band[i] !== BAND.floor && scatter(w, x, y, 5, ridgeRocks(0.4, 0))) f = F.boulder;
+        if (g.band[i] !== BAND.floor && scatter(w, x, y, 5, ridgeRocks(0.25, 0))) f = F.boulder;
         else if (h(1) < (g.band[i] === BAND.floor ? floorMeadow : hillMeadow)(x, y)) f = tree(x, y, m);
         else if (h(3) < (copse(x, y) > 0.15 ? 0.08 : 0.025)) f = F.bush; // roses round the copses
         break;
       case T.highMeadow:
-        if (scatter(w, x, y, 5, ridgeRocks(0.5, 0.005))) f = F.boulder;
+        if (scatter(w, x, y, 5, ridgeRocks(0.3, 0.005))) f = F.boulder;
         else if (scatter(w, x, y, 4, krummholz(0.01))) f = F.stunted;
         else if (h(3) < 0.035) f = F.bush;
         break;
       case T.scrub:
-        if (scatter(w, x, y, 5, ridgeRocks(0.55, 0.02))) f = F.boulder;
+        if (scatter(w, x, y, 5, ridgeRocks(0.35, 0.015))) f = F.boulder;
         else if (scatter(w, x, y, 4, krummholz(0.06))) f = F.stunted;
         else if (h(3) < 0.06) f = F.bush;
         break;
       case T.boulders:
-        if (scatter(w, x, y, 5, ridgeRocks(0.6, 0.2))) f = F.boulder;
+        if (scatter(w, x, y, 5, ridgeRocks(0.45, 0.14))) f = F.boulder;
         break;
       case T.talus:
-        if (scatter(w, x, y, 5, ridgeRocks(0.45, 0.03))) f = F.boulder;
+        if (scatter(w, x, y, 5, ridgeRocks(0.3, 0.03))) f = F.boulder;
         break;
     }
+    // On ground the ice left lately, only rocks and the first shrubs; trees haven't reached it yet.
+    if (fore[i] && f !== F.boulder && f !== F.bush) f = F.none;
     g.feature[i] = f;
   }
 }

@@ -5,7 +5,7 @@ import { VIEWPOINT_REVEAL } from '../../content/balance.ts';
 import { type Gen, dist2, tilesWhere } from './gen.ts';
 import { hash2f } from '../rng.ts';
 import { perlin } from './noise.ts';
-import { N, bfs, cheapestPath, forNeighbours4 } from './grid.ts';
+import { N, bfs, cheapestPath, forNeighbours4, line4 } from './grid.ts';
 import { MIN_LAKE } from './geology.ts';
 
 /** Drinkable, wadeable water: where trails lead. */
@@ -53,6 +53,41 @@ export function layTrails(g: Gen): void {
       if (!FEATURES[g.feature[i]!]!.fixed) g.feature[i] = F.none;
     }
   };
+  /** What walking these tiles in turn costs (a diagonal step √2 times as much), or Infinity. */
+  const walkCost = (tiles: readonly number[], from = 0, to = tiles.length - 1) => {
+    let c = 0;
+    for (let k = from + 1; k <= to && c < Infinity; k++) {
+      const a = tiles[k - 1]!;
+      const b = tiles[k]!;
+      const diag = Math.abs(b - a) !== 1 && Math.abs(b - a) !== 256;
+      c += cost(a, b) * (diag ? 1.4142135623730951 : 1);
+    }
+    return c;
+  };
+  /**
+   * An eight-way route pulled taut, then laid as four-way tiles: from each bend, on to the farthest point
+   * of the route that a straight line reaches for about the same effort. Animals walk toward where
+   * they're going, not along the grid, so a trail runs at any angle and bends only where the ground
+   * makes it (SPEC 6.3 step 7).
+   */
+  const taut = (route: number[]): number[] => {
+    const out = [route[0]!];
+    let i = 0;
+    while (i < route.length - 1) {
+      let j = Math.min(route.length - 1, i + 24);
+      for (; j > i + 1; j--) {
+        const line = line4(route[i]!, route[j]!);
+        const dx = (route[j]! % 256) - (route[i]! % 256);
+        const dy = Math.floor(route[j]! / 256) - Math.floor(route[i]! / 256);
+        // A four-way line takes |dx| + |dy| steps to cover the straight distance; scale it to compare.
+        const straight = (walkCost(line) * Math.sqrt(dx * dx + dy * dy)) / (Math.abs(dx) + Math.abs(dy));
+        if (straight <= walkCost(route, i, j) * 1.06) break;
+      }
+      out.push(...line4(route[i]!, route[j]!).slice(1));
+      i = j;
+    }
+    return out;
+  };
   const water = (i: number) => drinkable(g, i);
   const open = (i: number) => TERRAIN[g.terrain[i]!]!.passable && g.water[i] === WATER.none && !FEATURES[g.feature[i]!]!.blocks;
   /**
@@ -94,8 +129,9 @@ export function layTrails(g: Gen): void {
     pts.push(b);
     const out: number[] = [];
     for (let j = 0; j + 1 < pts.length; j++) {
-      const leg = cheapestPath(pts[j]!, cost, (i) => i === pts[j + 1]);
-      if (!leg) return null;
+      const route = cheapestPath(pts[j]!, cost, (i) => i === pts[j + 1], true);
+      if (!route) return null;
+      const leg = taut(route);
       out.push(...(j ? leg.slice(1) : leg));
     }
     return out;

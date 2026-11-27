@@ -15,6 +15,7 @@ import { idx } from './world.ts';
 import { fishMinute, fishTick } from './fish.ts';
 import { noticeMinute } from './notice.ts';
 import { thinkMinute } from './thoughts.ts';
+import { notebookMinute } from './notebook.ts';
 
 type Hook = (s: GameState, w: World, events: SimEvent[]) => void;
 
@@ -37,6 +38,7 @@ export function minuteHooks(s: GameState, w: World, events: SimEvent[]): void {
   fishMinute(s, w);
   noticeMinute(s, w, events);
   thinkMinute(s, w, events);
+  notebookMinute(s);
   for (const h of MINUTE) h(s, w, events);
 }
 

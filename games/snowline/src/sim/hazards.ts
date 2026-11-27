@@ -3,7 +3,7 @@
 
 import { HAZARD_TEXT } from '../content/hazardText.ts';
 import { who } from '../content/messages.ts';
-import { BAND, F, T } from '../content/terrain.ts';
+import { BAND, F, FLAG, T } from '../content/terrain.ts';
 import { WEATHER_TEXT } from '../content/weatherText.ts';
 import type { ItemActionDef } from './actionKit.ts';
 import { addCondition, hasCondition, treat } from './body.ts';
@@ -125,6 +125,17 @@ export function stepHazards(s: GameState, w: World, tile: number, ev: SimEvent[]
       s.memory['glasses-broken'] = 1;
       say(s, HAZARD_TEXT.glasses(wh), ev);
     }
+  }
+  // A fallen tree across a stream: in the dark, or worn out, a foot can go wrong, and into the water.
+  if (w.flags[tile]! & FLAG.bridge) {
+    const slip = (dark ? 0.08 : 0) + (s.vitals.rest < 20 ? 0.05 : 0);
+    if (slip > 0 && chance(s.rng.health, slip)) {
+      s.player.wet = 100;
+      s.vitals.warmth = Math.max(0, s.vitals.warmth - 8);
+      s.vitals.morale = Math.max(0, s.vitals.morale - 4);
+      say(s, HAZARD_TEXT.offLog(wh), ev);
+    }
+    return;
   }
   if (s.protagonist.trait === 'poor-swimmer' && (t === T.stream || t === T.shallows) && chance(s.rng.health, 0.03)) {
     s.player.wet = 100;

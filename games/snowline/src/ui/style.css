@@ -446,101 +446,229 @@ button:focus-visible,
   flex-direction: column;
 }
 
-.journal .tabs {
+/* The kid's notebook (journal): the same paper, rules, margin, and hand as the kid's map
+   (render/kidMap.ts), pencil and a little colour, index tabs along the top, a page slightly askew. */
+.notebook {
+  --paper: #efe6cc;
+  --pencil: #3f392f;
+  --faint: #7a705e;
+  --red-pen: #b23a2e;
+  --green-pen: #3f6f2e;
+  /* One line of the ruled paper, the same for every size of writing on it, so all of it sits on the lines. */
+  --rule: calc(var(--k) * 7px * var(--text));
+  font-family: 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', 'Comic Neue', cursive;
+  color: var(--pencil);
+  text-align: left;
+  max-width: none;
+  padding: 0;
+  transform: rotate(-0.4deg);
+}
+
+.notebook .tabs {
   display: flex;
-  gap: 0.3em;
+  gap: 0.25em;
+  padding-left: 2.4em;
 }
 
-.journal .tabs button {
+.notebook .tabs button {
   min-width: 0;
-  padding: 0.2em 0.8em;
+  padding: 0.2em 0.9em 0.3em;
+  font: inherit;
+  color: var(--pencil);
+  border: none;
+  border-radius: 0.4em 0.4em 0 0;
+  background: #d9cfae;
+  box-shadow: inset 0 -0.15em 0 rgba(0, 0, 0, 0.12);
 }
 
-.journal .tabs button.on {
-  border-color: var(--warm);
-  color: var(--warm);
+.notebook .tabs button:nth-child(1) { background: #e9d58f; }
+.notebook .tabs button:nth-child(2) { background: #b9d2e3; }
+.notebook .tabs button:nth-child(3) { background: #c9dfb0; }
+.notebook .tabs button:nth-child(4) { background: #ecc0b3; }
+
+.notebook .tabs button.on {
+  transform: translateY(0.15em);
+  box-shadow: none;
+  font-weight: bold;
 }
 
-.journal .page {
+.notebook .page {
   flex: 1;
   overflow: auto;
-  margin-top: 0.5em;
-  font-size: 0.85em;
+  margin: 0;
+  padding: var(--rule) 1.2em var(--rule) 3.4em;
+  font-size: 0.82em;
+  line-height: var(--rule);
+  background-color: var(--paper);
+  background-image:
+    linear-gradient(90deg, transparent 2.6em, rgba(200, 80, 80, 0.5) 2.6em, rgba(200, 80, 80, 0.5) calc(2.6em + 1px), transparent calc(2.6em + 1px)),
+    repeating-linear-gradient(transparent 0, transparent calc(var(--rule) - 1px), rgba(110, 150, 190, 0.35) calc(var(--rule) - 1px), rgba(110, 150, 190, 0.35) var(--rule));
+  background-attachment: local;
+  background-position: 0 calc(var(--rule) * -0.25);
+  box-shadow: 0 0 2em rgba(0, 0, 0, 0.6);
+  scrollbar-color: rgba(90, 80, 60, 0.4) transparent;
 }
 
-.journal h3 {
-  margin: 0.8em 0 0.2em;
-  font-size: 1em;
-  font-weight: normal;
-  letter-spacing: 0.05em;
-  color: var(--warm);
-}
-
-.journal .count {
+.notebook .keys {
   color: var(--dim);
-  font-size: 0.85em;
+  font-family: ui-serif, Georgia, serif;
+  margin: 1em 0 0;
+  transform: rotate(0.4deg);
 }
 
-.journal table {
+.notebook .page * {
+  line-height: var(--rule);
+}
+
+.notebook .page p {
+  margin: 0;
+}
+
+.notebook .page .keys {
+  color: var(--faint);
+  font-family: inherit;
+  margin: 0;
+  transform: none;
+}
+
+.notebook h3 {
+  margin: var(--rule) 0 0;
+  font-size: 1.15em;
+  font-weight: bold;
+  line-height: var(--rule);
+  color: var(--pencil);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.15em;
+}
+
+.notebook h3:first-child {
+  margin-top: 0;
+}
+
+.notebook .count {
+  color: var(--faint);
+  font-size: 0.8em;
+  font-weight: normal;
+  display: inline-block;
+  margin-left: 0.5em;
+}
+
+.notebook .empty {
+  color: var(--faint);
+  font-style: normal;
+}
+
+.notebook table {
   border-collapse: collapse;
 }
 
-.journal td {
-  padding: 0.1em 0.8em 0.1em 0;
+.notebook td {
+  padding: 0 1em 0 0;
   vertical-align: top;
 }
 
-.journal tr.unknown .status {
-  color: var(--dim);
+.notebook tr.unknown .status {
+  color: var(--faint);
 }
 
-.journal tr.suspected .status {
-  font-style: italic;
+.notebook tr.suspected .status {
+  color: var(--pencil);
 }
 
-.journal tr.known .status {
-  color: #d9c9a4;
+.notebook tr.good .status {
+  color: var(--green-pen);
+  text-decoration: underline;
 }
 
-.journal .how {
-  color: var(--dim);
+.notebook tr.bad .status {
+  color: var(--red-pen);
+  font-weight: bold;
+  text-decoration: underline wavy;
+}
+
+.notebook .how {
+  color: var(--faint);
   font-size: 0.85em;
 }
 
 .deck {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3em 0.8em;
+  gap: 0 0.9em;
   font-size: 0.8em;
-  color: var(--dim);
+  color: var(--faint);
 }
 
 .deck .some {
-  color: #c9bb94;
+  color: var(--pencil);
 }
 
 .deck .done {
   text-decoration: line-through;
 }
 
-.journal .log p {
-  margin: 0.15em 0;
+/* The diary: a heading for each stretch of a day, the entries under it. */
+.notebook .log .when {
+  color: var(--faint);
+  font-size: 0.9em;
+  text-decoration: underline;
+  margin-top: var(--rule);
 }
 
-.journal .log .when {
-  color: var(--dim);
-  font-size: 0.85em;
+.notebook .log .when:first-child {
+  margin-top: 0;
 }
 
-.journal .bar {
+.notebook .body .bar {
   display: inline-block;
-  height: 0.5em;
-  background: var(--warm);
-  opacity: 0.6;
+  height: 0.6em;
+  vertical-align: middle;
+  background: repeating-linear-gradient(-55deg, var(--pencil) 0 1px, transparent 1px 4px);
+  border: 1px solid var(--pencil);
+  border-radius: 2px;
 }
 
-.journal .body td:nth-child(3) {
+.notebook .body td:nth-child(3) {
   width: 12em;
+}
+
+.notebook ul {
+  margin: 0;
+  padding-left: 1.2em;
+}
+
+/* Water damage (sim/notebook.ts): tide marks where the water dried, writing from before a soaking
+   smudged or washed half away, and the page darker while it's still damp. */
+.notebook .page {
+  position: relative;
+}
+
+.notebook .page.damp {
+  background-color: #e0d4af;
+}
+
+.notebook .stain {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(150, 120, 70, 0.07) 72%, rgba(128, 98, 52, 0.32) 90%, rgba(128, 98, 52, 0) 100%);
+  transform: rotate(-12deg);
+}
+
+.notebook .smudged {
+  filter: blur(0.55px);
+  color: #55607a;
+  text-shadow: 0 0.18em 0.25em rgba(70, 80, 115, 0.35);
+}
+
+.notebook .washed {
+  filter: blur(1.3px);
+  opacity: 0.4;
+}
+
+.notebook li b {
+  text-decoration: underline;
 }
 
 .select {

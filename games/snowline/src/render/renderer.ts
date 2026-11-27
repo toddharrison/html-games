@@ -17,7 +17,7 @@ import { gradeAt } from './grade.ts';
 import { PALETTE } from './palette.ts';
 import { buildAtlas, rh, type Atlas } from './tiles.ts';
 import { Ground } from './ground.ts';
-import { type AspenLeaf, CONIFER_VARIANTS, type ConiferForm, LOG_SIZE, aspen, boulder, conifer, crag, log, stunted, type Tall } from './flora.ts';
+import { type AspenLeaf, CONIFER_VARIANTS, type ConiferForm, LOG_SIZE, aspen, boulder, conifer, crag, log, spanLog, stunted, type Tall } from './flora.ts';
 import { bearDen, bonePile, carcass, rockArch, tallSnag } from './landmarks.ts';
 import { WRECK_W, crashScar, forwardWreck, tailWreck } from './wreck.ts';
 import { type Fall, type FallsArt, faceOn, fallsArt, findFalls } from './falls.ts';
@@ -380,6 +380,24 @@ export class Renderer {
     // The scar the crash ploughed, flat on the ground under everything that stands.
     const wr = this.wreck;
     if (wr) g.drawImage(wr.scar, wr.x * TILE - cam.x + wr.ox, wr.y * TILE - cam.y + wr.oy);
+    // Fallen trees across the streams, flat on the ground under everything that stands.
+    for (const b of world.bridges ?? []) {
+      const across = (b.len + 1) * TILE + 4;
+      const x0 = (b.x - b.dx) * TILE + (b.dx ? 6 : 8) - cam.x;
+      const y0 = (b.y - b.dy) * TILE + (b.dy ? 6 : 9) - cam.y;
+      if (x0 > SCREEN_W + 40 || y0 > SCREEN_H + 40 || x0 + across < -40 || y0 + across < -40) continue;
+      const v = (b.x * 7 + b.y) % 3;
+      const art = this.boulders.get(`span:${b.len}:${v}`) ?? spanLog(across, v);
+      this.boulders.set(`span:${b.len}:${v}`, art);
+      if (b.dx) g.drawImage(art, x0, y0 - 7);
+      else {
+        g.save();
+        g.translate(x0 + 7, y0);
+        g.rotate(Math.PI / 2);
+        g.drawImage(art, 0, 0);
+        g.restore();
+      }
+    }
 
     const wind = weatherNow(state, world).wind;
     const sway = (x: number, y: number) => Math.round(Math.sin(timeMs / (900 - wind * 400) + x * 0.9 + y * 0.43) * (0.55 + wind * 1.6));

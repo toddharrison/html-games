@@ -226,6 +226,11 @@ function icon(g: CanvasRenderingContext2D, kind: string, x: number, y: number, s
     case 'dam':
       for (let k = -2; k <= 2; k++) ln([[x + k * 3 - 2, y - 4], [x + k * 3 + 2, y + 4]], '#6b5236', 1.4);
       break;
+    case 'log':
+      ln([[x - 11, y + 1], [x + 11, y - 1]], '#6b5236', 4);
+      ln([[x - 11, y + 1], [x + 11, y - 1]], '#8a6a44', 1.5);
+      ln([[x - 12, y - 3], [x - 11, y + 5]], '#3a2c20', 1.6);
+      break;
     case 'carcass':
     case 'x':
       ln([[x - 6, y - 6], [x + 6, y + 6]], RED, 2);
@@ -539,6 +544,12 @@ export function drawKidMap(g: CanvasRenderingContext2D, state: GameState, world:
   world.viewpoints.forEach((v, i) => {
     if (state.viewpoints[i]) put('lookout', v.x, v.y, 'lookout');
   });
+  // Fallen trees across the streams, seen: a way over without getting wet.
+  for (const b of world.bridges ?? []) {
+    const mx = b.x + (b.dx * (b.len - 1)) / 2;
+    const my = b.y + (b.dy * (b.len - 1)) / 2;
+    if (seen(Math.round(mx), Math.round(my))) put('log', Math.round(mx), Math.round(my), 'log bridge (stay dry!)', '#6b5236', 14);
+  }
   // Rocks that spark, once a stone from them has.
   const sx = world.sparkOutcrop.x;
   const sy = world.sparkOutcrop.y;

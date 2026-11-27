@@ -49,6 +49,10 @@
 | Free walking over the grid is being tried, behind one switch (Q46). | 5.2 |
 | A cliff is where the ground steps down to the lower band, not into a gully within its own band; water falls only where the stream itself drops (fed from above, going on below), never on a bank beside it. | 6.3 |
 | The map is the kid's own sketch: not to scale, only what's been seen and learned, labelled in their words, "me" only near a known place; it updates as soon as something is seen. The accurate map is kept for debugging only. | 6.4 |
+| The journal is the kid's notebook, in the same paper and hand as their map; the diary says when by the part of the day (the time only with a watch). | 8.1, 12.1 |
+| The diary is in the first person and the kid's own words, not the narration's; thoughts without quotes. | 8.1, 12.2 |
+| The notebook gets wet when the kid does (wading, a fall in, rain without shelter): each soaking leaves a tide mark, time soaked leaves damage that never mends, and what was written before smudges or washes out. The map stays dry. | 8.1, 12.1 |
+| Fallen trees lie across the streams (up to a dozen, near trees, where trails cross first, one near the start): a dry way over, slower, and slippery in the dark or when worn out. | 6.3 |
 | The bear's den is a cave: a mound of rock about three tiles wide with a dark mouth wide enough for a bear, the spoil heaped in front. The cougar's lair and the marmots' burrows stay small. | 6.3, 9, 12.1 |
 
 **2026-11-25.**

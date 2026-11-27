@@ -48,6 +48,7 @@ export function flatWorld(): World {
     age: new Uint8Array(n),
     trails: new Uint8Array(n),
     trailLines: [],
+    bridges: [],
   };
 }
 

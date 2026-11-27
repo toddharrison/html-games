@@ -4,7 +4,7 @@
 import { CORNER_EASE, FOOT_HALF_H, FOOT_HALF_W, SUB, TAP_TICKS, TICKS_PER_MINUTE, VIEWPOINT_REACH, VIEWPOINT_REVEAL } from '../content/balance.ts';
 import { ITEMS, itemDef } from '../content/items.ts';
 import { MSG, who } from '../content/messages.ts';
-import { T } from '../content/terrain.ts';
+import { FLAG, T } from '../content/terrain.ts';
 import { startAction, startUse, workTask } from './actions.ts';
 import { bodyMinute, slowFactor } from './body.ts';
 import { resolvePending, spoil } from './food.ts';
@@ -254,8 +254,10 @@ function entered(state: GameState, world: World, events: SimEvent[]): void {
   const to = idx(p.x, p.y);
   state.stats.distance++;
   const t = world.terrain[to]!;
-  if (t === T.shallows) p.wet = 100;
-  else if (t === T.stream || t === T.gravel) p.wet = Math.max(p.wet, 60);
+  // On a fallen tree across the stream, feet stay dry (worldgen bridges.ts).
+  const onLog = world.flags[to]! & FLAG.bridge;
+  if (!onLog && t === T.shallows) p.wet = 100;
+  else if (!onLog && (t === T.stream || t === T.gravel)) p.wet = Math.max(p.wet, 60);
   events.push({ type: 'step', x: p.x, y: p.y, terrain: t });
   state.memory['last-step'] = state.tick;
   stepHazards(state, world, to, events);

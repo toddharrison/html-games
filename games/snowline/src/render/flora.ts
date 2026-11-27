@@ -264,6 +264,44 @@ export function aspen(size: number, v: number, leaf: AspenLeaf = 0): Tall {
   return { c, crown: Math.ceil(top + ry * 2) };
 }
 
+/**
+ * A fallen tree lying across a stream, `len` pixels from its root plate (left) to its broken top
+ * (right): grey-brown bark, lit along the top, dark beneath, moss in patches, a few snapped branch
+ * stubs, and the root plate tipped up at the butt. Flat on the ground; the survivor walks on it.
+ */
+export function spanLog(len: number, v: number): HTMLCanvasElement {
+  const H = 14;
+  const [c, g] = canvas(len + 6, H);
+  const mid = 7;
+  for (let x = 4; x < len; x++) {
+    const t = (x - 4) / (len - 4);
+    const r = 3.6 - t * 1.3 + Math.sin(x * 0.7 + v) * 0.15;
+    for (let y = Math.round(mid - r); y <= Math.round(mid + r); y++) {
+      const u = (y - mid) / r;
+      let col = u < -0.55 ? '#9b8566' : u < 0.1 ? '#6e5a44' : u < 0.6 ? '#53432f' : '#33291d';
+      if (rh(x, y, 700 + v) < 0.12) col = '#3e3224';
+      if (u < 0 && rh(x >> 2, v, 701) < 0.3 && rh(x, y, 702) < 0.6) col = '#5f7440';
+      px(g, x, y, col);
+    }
+    // Bark ridges along it.
+    if (x % 5 === v % 5) px(g, x, mid, '#47392a');
+  }
+  // The root plate at the butt, tipped up: dark earth and roots.
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < 6; x++) {
+      const d = Math.hypot((x - 3) / 3, (y - mid) / 6.5);
+      if (d < 1) px(g, x, y, d > 0.75 ? '#2c2219' : rh(x, y, 703 + v) < 0.3 ? '#5b4630' : '#3d2f22');
+    }
+  }
+  // Snapped branch stubs, and a splintered top.
+  for (const [x, up] of [[Math.round(len * 0.35), -1], [Math.round(len * 0.6), 1], [Math.round(len * 0.8), -1]] as const) {
+    px(g, x, mid + up * 4, '#53432f');
+    px(g, x + 1, mid + up * 5, '#53432f');
+  }
+  for (let y = mid - 2; y <= mid + 2; y++) px(g, len + (y % 2), y, '#9b8566');
+  return c;
+}
+
 /** The deadfall canvas is this square; the trunk is centred in it. */
 export const LOG_SIZE = 40;
 

@@ -25,7 +25,7 @@ import {
 } from '../content/balance.ts';
 import { CONDITIONS, type ConditionId } from '../content/conditions.ts';
 import { MSG, who } from '../content/messages.ts';
-import { T } from '../content/terrain.ts';
+import { FLAG, T } from '../content/terrain.ts';
 import { say } from './log.ts';
 import type { Condition, GameState, SimEvent } from './state.ts';
 import { clock } from './time.ts';
@@ -143,7 +143,8 @@ export function bodyMinute(s: GameState, w: World, ctx: MinuteContext, events: S
   if (fire > 0) v.warmth = clamp(v.warmth + FIRE_WARMTH * fire);
 
   // Drying out: by a fire, in the sun, or slowly anywhere out of the rain.
-  if (w.terrain[here] !== T.shallows && w.terrain[here] !== T.stream && !weather.wetting) {
+  const inWater = (w.terrain[here] === T.shallows || w.terrain[here] === T.stream) && !(w.flags[here]! & FLAG.bridge);
+  if (!inWater && !weather.wetting) {
     const dry = fire > 0 ? DRYING.fire : clock(s.tick).hour >= 8 && clock(s.tick).hour < 19 ? DRYING.day : DRYING.night;
     p.wet = Math.max(0, p.wet - dry);
   } else if (weather.wetting && shelter.rain < 0.5) {

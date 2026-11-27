@@ -55,8 +55,8 @@ export const GOLDENS: Golden[] = [
       // A click: walk to a tile by the route the simulation finds (SPEC 5.2).
       { t: 10500, c: 'goto', x: 150, y: 175, onto: true, action: null, at: 'front' },
     ]).sort((a, b) => a.t - b.t),
-    worldHash: 'e23772e7',
-    stateHash: '323c26e8',
+    worldHash: 'ba0804cf',
+    stateHash: '06b37d88',
   },
   {
     // Another valley: a debug fire after dark, a walk through the night, and a teleport back to the start.
@@ -78,8 +78,8 @@ export const GOLDENS: Golden[] = [
       { t: 11000, c: 'debug-teleport', x: 144, y: 144 },
       ...walk([[3, 12000, 800]]),
     ],
-    worldHash: '4c2a66db',
-    stateHash: 'fe35395a',
+    worldHash: 'e23c937b',
+    stateHash: 'e2fec11f',
   },
 ];
 

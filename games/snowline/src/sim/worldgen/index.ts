@@ -4,6 +4,7 @@
 import type { Rules } from '../rules.ts';
 import { SIZE, type World } from '../world.ts';
 import { coverGround } from './cover.ts';
+import { layLogBridges } from './bridges.ts';
 import { layTrails, validate } from './finish.ts';
 import { type Gen, newGen, pt } from './gen.ts';
 import { placeSetPieces } from './setpieces.ts';
@@ -37,6 +38,7 @@ export function tryGenerate(genSeed: string, rules: Rules): { gen: Gen; problems
     if (problem) return { gen: g, problems: [problem] };
   }
   layTrails(g);
+  layLogBridges(g);
   return { gen: g, problems: validate(g) };
 }
 
@@ -87,5 +89,6 @@ function toWorld(seed: string, g: Gen, attempts: number, failures: string[]): Wo
     age: g.age,
     trails: g.trailBy,
     trailLines: g.trailLines,
+    bridges: g.bridges,
   };
 }

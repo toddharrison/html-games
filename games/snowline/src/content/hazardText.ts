@@ -13,6 +13,7 @@ export const HAZARD_TEXT = {
   fall: (w: Who) => `The ground shifted underfoot. ${w.name} fell hard and turned an ankle.`,
   glasses: (w: Who) => `${w.Their} glasses were broken in the fall.`,
   slipped: (w: Who) => `${w.name} slipped and went under, came up gasping in the icy water.`,
+  offLog: (w: Who) => `A foot went wrong on the wet log, and ${w.name} went into the stream.`,
   slip: (w: Who) => `Too tired to be careful, ${w.name} let the blade glance off and cut ${w.them}self.`,
   herbWorked: (_w: Who, plant: string, use: string) =>
     use === 'stomach' ? `The ${plant} settled the cramping stomach.` : use === 'wound' ? `The ${plant} drew the sting out of the wound.` : `Rubbed with the ${plant}, the insects kept off.`,

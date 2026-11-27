@@ -22,6 +22,8 @@ export const BASE_STEP_TICKS = 6;
 export const CLIMB_PER_TICK = 2;
 /** The most ticks a climb adds to one step. */
 export const MAX_CLIMB_TICKS = 6;
+/** Ticks a step along a fallen tree across a stream takes (careful, but dry). */
+export const LOG_STEP_TICKS = 9;
 
 /**
  * Free walking (prototype, SPEC 5.2): the survivor walks over the tile grid in any of eight directions

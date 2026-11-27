@@ -3,7 +3,7 @@
 import { FEATURES, T, WATER } from '../../content/terrain.ts';
 import { hashString, makeRng, type RngState } from '../rng.ts';
 import type { Rules } from '../rules.ts';
-import { SIZE, type Landmark, type Patch, type Point, type Territory } from '../world.ts';
+import { SIZE, type Bridge, type Landmark, type Patch, type Point, type Territory } from '../world.ts';
 import { N } from './grid.ts';
 
 /** Terrain not yet assigned. */
@@ -37,6 +37,8 @@ export interface Gen {
   trailBy: Uint8Array;
   /** Each trail's bend points (World.trailLines). */
   trailLines: number[][];
+  /** Fallen trees across the streams (World.bridges). */
+  bridges: Bridge[];
   /** Years since each tile's forest last burned (cover.ts's fire history): 255 old growth, 0 no forest. */
   age: Uint8Array;
   /** The lake's outlet, from the spill point down to the rim. */
@@ -87,6 +89,7 @@ export function newGen(genSeed: string, rules: Rules): Gen {
     age: new Uint8Array(N),
     trailBy: new Uint8Array(N),
     trailLines: [],
+    bridges: [],
     high: { x: 0, y: -1 },
     lakeSize: 0,
     streamA: [],

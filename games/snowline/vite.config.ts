@@ -27,7 +27,7 @@ export default defineConfig({
     include: ['tests/**/*.test.ts'],
     environment: 'node',
     // A real valley takes about a second to make (its geology and history are simulated), and tests that
-    // build several run alongside each other.
-    testTimeout: 20000,
+    // build several run alongside each other. CI runs about 2.5x slower than a laptop.
+    testTimeout: 40000,
   },
 });

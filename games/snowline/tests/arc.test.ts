@@ -13,7 +13,7 @@ import { canEnter, step } from '../src/sim/step.ts';
 import { ALL } from '../src/sim/weather.ts';
 import { idx, type World } from '../src/sim/world.ts';
 import { playBot } from '../src/tools/bot.ts';
-import { runTo, startScenario } from '../src/tools/runner.ts';
+import { runTo } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
 
 const MIN = 10;
@@ -31,8 +31,10 @@ const fresh = (s: GameState) => (s.vitals = { health: 100, hydration: 100, nutri
 
 describe('flights (SPEC 10)', () => {
   it('two or three search flights in days 2–10, and late ones from day 40', () => {
+    // The flights are planned from the run's own events stream: a flat world does as well as a real
+    // valley, without generating one (four took 25 s on CI).
     for (const seed of ['a', 'b', 'c', 'd']) {
-      const { state } = startScenario({ seed, protagonist: 0, commands: [], ticks: 0 });
+      const state = newGame(seed, candidate(seed, 0), flatWorld(), dealRules(seed));
       const search = state.arc.flights.filter((f) => !f.late);
       const late = state.arc.flights.filter((f) => f.late);
       expect(search.length).toBeGreaterThanOrEqual(2);

@@ -55,8 +55,9 @@ export function commandHooks(s: GameState, w: World, cmd: Command, events: SimEv
  * rockslide's gap after the storm), true blocks one; null leaves the map's answer.
  */
 export function blockedBySystems(s: GameState, w: World, x: number, y: number): boolean | null {
-  // A fire is not walked through, nor a big animal.
+  // A fire is not walked through (nor one laid ready to light), nor a big animal.
   if (s.fires.some((f) => f.x === x && f.y === y)) return true;
+  if (s.builds.some((b) => b.kind === 'fire-lay' && b.x === x && b.y === y)) return true;
   const a = animalAt(s, x, y);
   if (a && blocks(a)) return true;
   if (arcOpens(s, w, idx(x, y))) return false;

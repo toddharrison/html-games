@@ -4,7 +4,8 @@
 
 - The simulation runs at a fixed **20 ticks per second**.
 - **10 ticks = 1 game minute**, so 1 game hour is 30 real seconds and 1 game day is 12 real minutes. The ratio is a single constant.
-- Sleeping, resting, and long tasks fast-forward by running ticks faster (never by skipping them), so results are identical at any speed.
+- Sleeping, resting, and tasks fast-forward by running ticks faster (never by skipping them), so results are identical at any speed. A task runs at 8× (decided 2026-11-26), so most take under a second; anything the player should see (an animal, a thought, the weather turning) drops it back to normal speed for the rest of that task.
+- The crash is at 11:00 on day 1 (decided 2026-11-26; it was 14:30), leaving most of a day of light to find water, gather, and get a fire going.
 - The run starts in late summer. Temperatures fall week by week and the snowline creeps down the mountain (6.5). Snow reaches the lake around day 60 and makes survival close to impossible; this is the soft time limit. Winter play is out of scope for v1.
 
 ### 5.2 Real-time on a grid

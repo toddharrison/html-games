@@ -45,6 +45,14 @@ const OBVIOUS = [
   'weir-take',
   'snare-take',
   'cache-take',
+  // A laid fire: finish laying it, then light it the best way to hand.
+  'lay-fire',
+  'fire-match',
+  'fire-embers',
+  'fire-sparks',
+  'fire-drill',
+  // A rock: strike it to see what it does (offered only until that's known), then pry a piece loose.
+  'strike-outcrop',
 ];
 const WATCHING = new Set(['watch-fish', 'look-tracks', 'look-den', 'watch', 'examine-cause']);
 
@@ -57,6 +65,7 @@ const BUILD_NAMES: Record<string, string> = {
   cache: 'the hanging cache',
   weir: 'the weir',
   signal: 'the signal pile',
+  'fire-lay': 'a fire, laid but not lit',
   snare: 'a snare',
 };
 

@@ -18,9 +18,24 @@ export interface Ingredient {
   d?: number;
 }
 
+/**
+ * What a thing is for, as the kid would put it: the Make panel groups everything by these (SPEC 8.2).
+ * In the order the panel shows them.
+ */
+export const NEEDS = {
+  warm: 'To keep warm tonight',
+  shelter: 'Somewhere to stay, out of the wet',
+  water: 'Water',
+  food: 'Something to eat',
+  carry: 'Tools and things to carry',
+  found: 'So someone finds me',
+} as const;
+export type Need = keyof typeof NEEDS;
+
 export interface RecipeDef {
   id: string;
   label: string;
+  need: Need;
   /** The technique that unlocks it; none means anyone can. */
   technique?: string;
   inputs: Ingredient[];
@@ -37,12 +52,13 @@ export interface RecipeDef {
 }
 
 export const RECIPES: readonly RecipeDef[] = [
-  { id: 'cord', label: 'Twist cord', technique: 'cord', inputs: [{ k: 'fibre', n: 3 }], work: 'fibre', minutes: 20, out: { k: 'cord', n: 1 }, fail: 0.2 },
-  { id: 'sharp-stick', label: 'Sharpen a stick', technique: 'sharpen', inputs: [{ k: 'stick', n: 1 }], steel: true, work: 'fine', minutes: 10, out: { k: 'sharp-stick', n: 1 } },
-  { id: 'spear', label: 'Split a fish spear', technique: 'spear', inputs: [{ k: 'sharp-stick', n: 1 }, { k: 'cord', n: 1 }], steel: true, work: 'fine', minutes: 30, out: { k: 'spear', n: 1 }, fail: 0.25 },
-  { id: 'hard-spear', label: 'Harden the spear in the fire', technique: 'fire-harden', inputs: [{ k: 'spear', n: 1 }], fire: true, work: 'plain', minutes: 40, out: { k: 'hard-spear', n: 1 } },
+  { id: 'cord', need: 'carry', label: 'Twist cord', technique: 'cord', inputs: [{ k: 'fibre', n: 3 }], work: 'fibre', minutes: 20, out: { k: 'cord', n: 1 }, fail: 0.2 },
+  { id: 'sharp-stick', need: 'carry', label: 'Sharpen a stick', technique: 'sharpen', inputs: [{ k: 'stick', n: 1 }], steel: true, work: 'fine', minutes: 10, out: { k: 'sharp-stick', n: 1 } },
+  { id: 'spear', need: 'food', label: 'Split a fish spear', technique: 'spear', inputs: [{ k: 'sharp-stick', n: 1 }, { k: 'cord', n: 1 }], steel: true, work: 'fine', minutes: 30, out: { k: 'spear', n: 1 }, fail: 0.25 },
+  { id: 'hard-spear', need: 'food', label: 'Harden the spear in the fire', technique: 'fire-harden', inputs: [{ k: 'spear', n: 1 }], fire: true, work: 'plain', minutes: 40, out: { k: 'hard-spear', n: 1 } },
   {
     id: 'bow-drill',
+    need: 'warm',
     label: 'Make a bow drill',
     technique: 'bow-drill',
     inputs: [{ k: 'stick', n: 2 }, { k: 'cord', n: 1 }, { k: 'firewood', n: 1 }],
@@ -53,19 +69,20 @@ export const RECIPES: readonly RecipeDef[] = [
     fail: 0.3,
     keepsWood: true,
   },
-  { id: 'bark-vessel', label: 'Fold a bark vessel', technique: 'bark-vessel', inputs: [{ k: 'bark', n: 2 }, { k: 'stick', n: 1 }], work: 'fine', minutes: 25, out: { k: 'bark-vessel', n: 1 }, fail: 0.2 },
-  { id: 'basket', label: 'Stitch a bark basket', technique: 'basket', inputs: [{ k: 'bark', n: 3 }, { k: 'cord', n: 2 }], work: 'fibre', minutes: 60, out: { k: 'basket', n: 1 }, fail: 0.2 },
-  { id: 'snare', label: 'Tie snares', technique: 'snare', inputs: [{ k: 'cord', n: 1 }, { k: 'stick', n: 1 }], work: 'fibre', minutes: 20, out: { k: 'snare', n: 2 } },
-  { id: 'bow', label: 'Make a bow', technique: 'bow', inputs: [{ k: 'stick', n: 2 }, { k: 'cord', n: 2 }], steel: true, work: 'wood', minutes: 90, out: { k: 'bow', n: 1 }, fail: 0.3 },
-  { id: 'arrows', label: 'Make arrows', technique: 'bow', inputs: [{ k: 'stick', n: 2 }, { k: 'feathers', n: 2 }], steel: true, fire: true, work: 'fine', minutes: 45, out: { k: 'arrows', n: 3 } },
-  { id: 'splint', label: 'Bind a splint', technique: 'splint', inputs: [{ k: 'stick', n: 2 }, { k: 'cord', n: 1 }], work: 'plain', minutes: 15, out: { k: 'splint', n: 1 } },
-  { id: 'warm-layers', label: 'Make warm layers', technique: 'warm-layers', inputs: [{ k: 'hide', n: 2 }, { k: 'tinder', n: 4, d: 0 }, { k: 'cord', n: 2 }], work: 'fibre', minutes: 120, out: { k: 'warm-layers', n: 1 } },
+  { id: 'bark-vessel', need: 'water', label: 'Fold a bark vessel', technique: 'bark-vessel', inputs: [{ k: 'bark', n: 2 }, { k: 'stick', n: 1 }], work: 'fine', minutes: 25, out: { k: 'bark-vessel', n: 1 }, fail: 0.2 },
+  { id: 'basket', need: 'carry', label: 'Stitch a bark basket', technique: 'basket', inputs: [{ k: 'bark', n: 3 }, { k: 'cord', n: 2 }], work: 'fibre', minutes: 60, out: { k: 'basket', n: 1 }, fail: 0.2 },
+  { id: 'snare', need: 'food', label: 'Tie snares', technique: 'snare', inputs: [{ k: 'cord', n: 1 }, { k: 'stick', n: 1 }], work: 'fibre', minutes: 20, out: { k: 'snare', n: 2 } },
+  { id: 'bow', need: 'food', label: 'Make a bow', technique: 'bow', inputs: [{ k: 'stick', n: 2 }, { k: 'cord', n: 2 }], steel: true, work: 'wood', minutes: 90, out: { k: 'bow', n: 1 }, fail: 0.3 },
+  { id: 'arrows', need: 'food', label: 'Make arrows', technique: 'bow', inputs: [{ k: 'stick', n: 2 }, { k: 'feathers', n: 2 }], steel: true, fire: true, work: 'fine', minutes: 45, out: { k: 'arrows', n: 3 } },
+  { id: 'splint', need: 'carry', label: 'Bind a splint', technique: 'splint', inputs: [{ k: 'stick', n: 2 }, { k: 'cord', n: 1 }], work: 'plain', minutes: 15, out: { k: 'splint', n: 1 } },
+  { id: 'warm-layers', need: 'warm', label: 'Make warm layers', technique: 'warm-layers', inputs: [{ k: 'hide', n: 2 }, { k: 'tinder', n: 4, d: 0 }, { k: 'cord', n: 2 }], work: 'fibre', minutes: 120, out: { k: 'warm-layers', n: 1 } },
 ];
 
 /** Camp improvements (SPEC 7.6): built on the tile the survivor stands on, or (fire and tree ones) faces. */
 export interface BuildDef {
   id: string;
   label: string;
+  need: Need;
   technique?: string;
   inputs: Ingredient[];
   minutes: number;
@@ -74,14 +91,14 @@ export interface BuildDef {
 }
 
 export const BUILDS: readonly BuildDef[] = [
-  { id: 'lean-to', label: 'Build a lean-to', inputs: [{ k: 'stick', n: 8 }, { k: 'boughs', n: 4 }], minutes: 90, at: 'here' },
-  { id: 'bed', label: 'Lay a bough bed', inputs: [{ k: 'boughs', n: 4 }], minutes: 30, at: 'here' },
-  { id: 'wall', label: 'Weave a wall and door', technique: 'walls', inputs: [{ k: 'stick', n: 6 }, { k: 'cord', n: 1 }], minutes: 120, at: 'here' },
-  { id: 'reflector', label: 'Ring the fire with reflector stones', inputs: [{ k: 'stone', n: 3 }], minutes: 30, at: 'fire' },
-  { id: 'woodpile', label: 'Build a covered woodpile', inputs: [{ k: 'stick', n: 4 }, { k: 'bark', n: 2 }], minutes: 45, at: 'here' },
-  { id: 'cache', label: 'Rig a hanging food cache', technique: 'cache', inputs: [{ k: 'cord', n: 2 }], minutes: 40, at: 'tree' },
-  { id: 'weir', label: 'Build a fish weir of stones', technique: 'weir', inputs: [{ k: 'stone', n: 6 }], minutes: 120, at: 'water' },
-  { id: 'signal', label: 'Build a signal fire pile', technique: 'signal', inputs: [{ k: 'firewood', n: 6 }, { k: 'boughs', n: 4 }], minutes: 60, at: 'open' },
+  { id: 'lean-to', need: 'shelter', label: 'Build a lean-to', inputs: [{ k: 'stick', n: 8 }, { k: 'boughs', n: 4 }], minutes: 90, at: 'here' },
+  { id: 'bed', need: 'shelter', label: 'Lay a bough bed', inputs: [{ k: 'boughs', n: 4 }], minutes: 30, at: 'here' },
+  { id: 'wall', need: 'shelter', label: 'Weave a wall and door', technique: 'walls', inputs: [{ k: 'stick', n: 6 }, { k: 'cord', n: 1 }], minutes: 120, at: 'here' },
+  { id: 'reflector', need: 'warm', label: 'Ring the fire with reflector stones', inputs: [{ k: 'stone', n: 3 }], minutes: 30, at: 'fire' },
+  { id: 'woodpile', need: 'shelter', label: 'Build a covered woodpile', inputs: [{ k: 'stick', n: 4 }, { k: 'bark', n: 2 }], minutes: 45, at: 'here' },
+  { id: 'cache', need: 'food', label: 'Rig a hanging food cache', technique: 'cache', inputs: [{ k: 'cord', n: 2 }], minutes: 40, at: 'tree' },
+  { id: 'weir', need: 'food', label: 'Build a fish weir of stones', technique: 'weir', inputs: [{ k: 'stone', n: 6 }], minutes: 120, at: 'water' },
+  { id: 'signal', need: 'found', label: 'Build a signal fire pile', technique: 'signal', inputs: [{ k: 'firewood', n: 6 }, { k: 'boughs', n: 4 }], minutes: 60, at: 'open' },
 ];
 
 /**

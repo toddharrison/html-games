@@ -12,6 +12,7 @@ import { availableActions, frontTile, itemActions } from '../sim/actions.ts';
 import { canSee } from '../sim/actionKit.ts';
 import { warning } from '../sim/animals.ts';
 import { craftOptions } from '../sim/craft.ts';
+import { fireSiteProblem, layAt, layReady } from '../sim/fire.ts';
 import { count, has } from '../sim/inventory.ts';
 import { ROWS, fact } from '../sim/knowledge.ts';
 import { describeTemper } from '../sim/newGame.ts';
@@ -365,16 +366,21 @@ export class Bot {
       }
       return null;
     }
-    // Face an open neighbour and light.
+    // A fire laid beside: finish laying it, then light it.
     for (let d = 0; d < 4; d++) {
-      const nx = x + DX[d]!;
-      const ny = y + DY[d]!;
-      const t = idx(nx, ny);
-      const tt = w.terrain[t]!;
-      if (!TERRAIN[tt]!.passable || TERRAIN[tt]!.water || w.feature[t] !== F.none) continue;
+      const t = idx(x + DX[d]!, y + DY[d]!);
+      if (!layAt(s, t)) continue;
       if (s.player.facing !== d) return [{ c: 'face', dir: d as Dir }];
-      const light = availableActions(s, w).find((o) => o.action.startsWith('fire-') && o.tile === t);
-      return light ? [{ c: 'act', action: light.action, tile: t }] : null;
+      const opts = availableActions(s, w).filter((o) => o.tile === t && !o.spent);
+      const next = opts.find((o) => o.action === 'lay-fire' && !layReady(layAt(s, t)!)) ?? opts.find((o) => o.action.startsWith('fire-'));
+      return next ? [{ c: 'act', action: next.action, tile: t }] : null;
+    }
+    // Else lay one on an open neighbour (as the Make page does: the action is started by name).
+    for (let d = 0; d < 4; d++) {
+      const t = idx(x + DX[d]!, y + DY[d]!);
+      if (fireSiteProblem(s, w, t)) continue;
+      if (s.player.facing !== d) return [{ c: 'face', dir: d as Dir }];
+      return [{ c: 'act', action: 'fire-site', tile: t }];
     }
     return null;
   }

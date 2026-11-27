@@ -33,6 +33,12 @@ export function fact(s: GameState, row: Row, i: number): Fact | null {
   return s.known.facts.find((f) => f.key === key(row, i)) ?? null;
 }
 
+/** The dealt thing of a row the survivor knows to have this outcome (its index), or -1. */
+export function knownWith(s: GameState, row: Row, value: string): number {
+  const f = s.known.facts.find((x) => x.key.startsWith(`${row}:`) && x.level === 'known' && x.value === value);
+  return f ? Number(f.key.split(':')[1]) : -1;
+}
+
 export function knows(s: GameState, row: Row, i: number): boolean {
   return fact(s, row, i)?.level === 'known';
 }

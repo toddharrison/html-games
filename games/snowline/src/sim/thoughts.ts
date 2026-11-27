@@ -4,10 +4,11 @@
 // apply again, a while later. Reads the state; writes only `memory` (`thought:<id>` counts and
 // `thought-at`), the log, and a `thought` event for the screen.
 
-import { BEAR_TRAIL_THOUGHT, FIRST_THOUGHTS, FULL_THOUGHT, RETURNING_THOUGHTS, type ThoughtText } from '../content/thoughtText.ts';
+import { BEAR_TRAIL_THOUGHT, FIRE_THOUGHTS, FIRST_THOUGHTS, FULL_THOUGHT, RETURNING_THOUGHTS, type ThoughtText } from '../content/thoughtText.ts';
 import { L } from '../content/loose.ts';
 import { T, TRAIL_BY } from '../content/terrain.ts';
-import { has } from './inventory.ts';
+import { count, has } from './inventory.ts';
+import { fact, knownWith } from './knowledge.ts';
 import { say } from './log.ts';
 import { recall, remember } from './memory.ts';
 import type { GameState, SimEvent } from './state.ts';
@@ -55,16 +56,35 @@ const sheltered = (s: GameState, w: World) =>
   w.terrain[idx(s.player.x, s.player.y)] === T.shelter || s.builds.some((b) => b.kind === 'lean-to' && Math.abs(b.x - s.player.x) + Math.abs(b.y - s.player.y) <= 1);
 const evening = (s: GameState) => day(s) > 1 || hour(s) >= 17;
 
-/** The first evening, in order. A step is skipped once done; the chain waits on the first one not done whose time hasn't come. */
+/** The survivor knows a spark-stone; and carries a piece of one. */
+const knowsSparkStone = (s: GameState) => knownWith(s, 'stone', 'sparks') >= 0;
+const carriesSparkStone = (s: GameState) => s.inventory.some((it) => it.k === 'stone' && it.d !== undefined && fact(s, 'stone', it.d)?.value === 'sparks');
+const laid = (s: GameState) => s.builds.some((b) => b.kind === 'fire-lay');
+const canLightSomehow = (s: GameState) => carriesSparkStone(s) || has(s, 'matches') || has(s, 'ember-pouch');
+const enoughToLay = (s: GameState) => has(s, 'tinder') && count(s, 'stick') >= 2;
+
+/** The first day, in order. A step is skipped once done; the chain waits on the first one not done whose time hasn't come. */
 const FIRST: Step[] = [
+  { id: 'cold', when: () => true, done: (s) => thought(s, 'cold') || firesLit(s) }, // the reason for everything after: done once thought
   { id: 'water', when: () => true, done: (s) => s.drinks.length > 0 || s.vitals.hydration >= 95 },
-  { id: 'look', when: () => true, done: (s) => thought(s, 'look') }, // only a nudge: done once thought
-  { id: 'gather', when: () => true, done: (s) => (has(s, 'tinder') && has(s, 'stick')) || firesLit(s) },
-  { id: 'fire', when: (s) => has(s, 'tinder'), done: firesLit },
+  { id: 'gather', when: () => true, done: (s) => enoughToLay(s) || laid(s) || firesLit(s) },
+  { id: 'fire', when: (s) => has(s, 'tinder') || has(s, 'stick'), done: (s) => knowsSparkStone(s) || canLightSomehow(s) || firesLit(s) },
+  { id: 'lay', when: (s) => enoughToLay(s) && canLightSomehow(s), done: (s) => laid(s) || firesLit(s) },
   { id: 'shelter', when: evening, done: (s, w) => slept(s) || sheltered(s, w), urgent: true },
   { id: 'dark', when: (s) => day(s) > 1 || hour(s) >= 20, done: slept, urgent: true },
   { id: 'food', when: (s) => s.vitals.nutrition < 75 || day(s) > 1, done: (s) => s.stats.meals > 0 || s.known.facts.some((f) => f.key.startsWith('plant:')), urgent: true },
 ];
+
+/** What the kid makes of each step toward the first fire, latest first; each once. */
+const FIRE_REACTIONS: { id: keyof typeof FIRE_THOUGHTS; when: (s: GameState) => boolean }[] = [
+  { id: 'lit', when: firesLit },
+  { id: 'noCatch', when: (s) => !firesLit(s) && recall(s, 'fire-fails') > 0 },
+  { id: 'laid', when: (s) => !firesLit(s) && canLightSomehow(s) && s.builds.some((b) => b.kind === 'fire-lay' && (b.items ?? []).some((i) => i.k === 'tinder')) },
+  { id: 'carrying', when: (s) => !firesLit(s) && !laid(s) && carriesSparkStone(s) },
+  { id: 'sparked', when: (s) => !firesLit(s) && knowsSparkStone(s) && !carriesSparkStone(s) },
+];
+/** A reaction waits only this long after the last thought (ticks: 10 game minutes). */
+const REACT_GAP = 100;
 
 const RETURNING: { id: keyof typeof RETURNING_THOUGHTS; when: (s: GameState) => boolean }[] = [
   { id: 'thirsty', when: (s) => s.vitals.hydration < 30 },
@@ -91,7 +111,17 @@ export function thinkMinute(s: GameState, w: World, events: SimEvent[]): void {
   if (s.tick < FIRST_AT) return;
   // A warning doesn't wait its turn: on a bear's trail with its prints in sight, say so now.
   if (onBearTrail(s, w) && s.tick - (s.memory['thought-last:bear-trail'] ?? -BEAR_GAP) >= BEAR_GAP) return think(s, 'bear-trail', BEAR_TRAIL_THOUGHT, events);
-  if (s.tick - (s.memory['thought-at'] ?? -THOUGHT_GAP) < THOUGHT_GAP) return;
+  const since = s.tick - (s.memory['thought-at'] ?? -THOUGHT_GAP);
+  // What just happened comes before the next idea: an insight is the moment to say what it means.
+  if (since >= REACT_GAP) {
+    const r = FIRE_REACTIONS.find((x) => !thought(s, x.id) && x.when(s));
+    if (r) {
+      // Only the latest: the earlier steps it passed are no longer news.
+      for (const x of FIRE_REACTIONS.slice(FIRE_REACTIONS.indexOf(r) + 1)) s.memory[`thought:${x.id}`] = 1;
+      return think(s, r.id, FIRE_THOUGHTS[r.id], events);
+    }
+  }
+  if (since < THOUGHT_GAP) return;
 
   let waiting = false;
   for (const step of FIRST) {

@@ -6,8 +6,8 @@ export const TICKS_PER_SECOND = 20;
 /** Ticks per game minute. A game hour is 30 real seconds; a game day 12 real minutes. */
 export const TICKS_PER_MINUTE = 10;
 export const MINUTES_PER_DAY = 1440;
-/** The crash happens in the afternoon of day 1. */
-export const START_MINUTE = 14 * 60 + 30;
+/** The crash happens late in the morning of day 1, leaving most of a day of light (2026-11-26: was 14:30). */
+export const START_MINUTE = 11 * 60;
 
 /** The valley is a square of this many tiles a side (SPEC 6.1). */
 export const MAP_SIZE = 256;

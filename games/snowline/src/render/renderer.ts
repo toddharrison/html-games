@@ -19,6 +19,7 @@ import { buildAtlas, rh, type Atlas } from './tiles.ts';
 import { Ground } from './ground.ts';
 import { type AspenLeaf, CONIFER_VARIANTS, type ConiferForm, LOG_SIZE, aspen, boulder, conifer, crag, log, spanLog, stunted, type Tall } from './flora.ts';
 import { bearDen, bonePile, carcass, rockArch, tallSnag } from './landmarks.ts';
+import { drawLay, drawLayGhost } from './fireArt.ts';
 import { WRECK_W, crashScar, forwardWreck, tailWreck } from './wreck.ts';
 import { type Fall, type FallsArt, faceOn, fallsArt, findFalls } from './falls.ts';
 import { LooseArt } from './looseArt.ts';
@@ -357,7 +358,15 @@ export class Renderer {
     return { dx, len: 0.35 + 1.4 * Math.abs(dx) ** 1.6, alpha };
   }
 
-  draw(state: GameState, alpha: number, timeMs: number, hover?: { x: number; y: number } | null, mark?: { x: number; y: number } | null): Camera {
+  draw(
+    state: GameState,
+    alpha: number,
+    timeMs: number,
+    hover?: { x: number; y: number } | null,
+    mark?: { x: number; y: number } | null,
+    /** Where a fire would be laid, while choosing (drawn over the light, so it shows at night). */
+    ghost?: { x: number; y: number; ok: boolean } | null,
+  ): Camera {
     const world = this.world;
     const g = this.g;
     const cam = this.camera(state, alpha);
@@ -636,6 +645,7 @@ export class Renderer {
     this.mist(state, cam, timeMs, x0, y0, x1, y1);
     this.light(state, cam, timeMs);
     this.ground.warm(cam.x, cam.y, SCREEN_W, SCREEN_H, snow);
+    if (ghost) drawLayGhost(g, ghost.x * TILE - cam.x, ghost.y * TILE - cam.y, ghost.ok);
     return cam;
   }
 
@@ -686,7 +696,10 @@ export class Renderer {
       const bx = bd.x * TILE - cam.x;
       const by = bd.y * TILE - cam.y;
       layer.push(() => {
-        if (bd.kind === 'reflector') {
+        if (bd.kind === 'fire-lay') {
+          const items = bd.items ?? [];
+          drawLay(g, bx, by, { tinder: items.some((i) => i.k === 'tinder'), sticks: items.filter((i) => i.k === 'stick').reduce((n, i) => n + i.n, 0), wood: items.some((i) => i.k === 'firewood') });
+        } else if (bd.kind === 'reflector') {
           g.fillStyle = PALETTE.fog;
           for (const [sx, sy] of [[0, 4], [0, 9], [14, 4], [14, 9], [4, 0], [10, 0]] as const) g.fillRect(bx + sx, by + sy, 2, 2);
         } else g.drawImage(this.atlas.sprite(bd.kind), bx, by);

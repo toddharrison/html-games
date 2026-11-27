@@ -1,9 +1,7 @@
-// Menu contents that come from the simulation: what to rest for, and what can be made.
+// Menu contents that come from the simulation: what to rest for. (What can be made is the Make page, ui/make.ts.)
 
-import { craftOptions } from '../sim/craft.ts';
 import type { GameState } from '../sim/state.ts';
 import { clock } from '../sim/time.ts';
-import type { World } from '../sim/world.ts';
 
 export interface RestOption {
   label: string;
@@ -25,13 +23,4 @@ export function restOptions(s: GameState): RestOption[] {
     { label: 'Sleep until first light', minutes: until(s, 5, 45), awake: false },
     { label: 'Sleep until the sun is up', minutes: until(s, 7, 30), awake: false },
   ];
-}
-
-export function craftMenu(s: GameState, w: World, run: (recipe: string, label: string) => void) {
-  return craftOptions(s, w).map((o) => ({
-    label: o.label,
-    hint: o.missing ? `needs ${o.missing}` : `${o.minutes} min`,
-    disabled: !!o.missing,
-    run: () => run(o.recipe, o.label),
-  }));
 }

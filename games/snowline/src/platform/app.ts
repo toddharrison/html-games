@@ -18,7 +18,14 @@ import { decodeRun } from '../sim/runCode.ts';
 import type { GameState, SimEvent } from '../sim/state.ts';
 import { clock } from '../sim/time.ts';
 import { runTo, stateHash, valley } from '../tools/runner.ts';
-import { craftMenu, restOptions } from '../ui/actionsUi.ts';
+import { restOptions } from '../ui/actionsUi.ts';
+import { makePage } from '../ui/make.ts';
+import { insightText } from '../ui/insight.ts';
+import type { MakeEntry } from '../sim/craft.ts';
+import { fireSiteProblem } from '../sim/fire.ts';
+import { standFor } from '../sim/reach.ts';
+import { idx } from '../sim/world.ts';
+import { DX4, DY4 } from '../sim/worldgen/grid.ts';
 import { DebugPanel } from '../ui/debug.ts';
 import { h } from '../ui/dom.ts';
 import { Hud } from '../ui/hud.ts';
@@ -37,10 +44,17 @@ import { download, parseReplay, toReplay } from './replay.ts';
 import { deleteRun, loadRun, migrate, parseSave, restore, saveRun, toRecord, type SaveRecord } from './saves.ts';
 import { Loop, Session } from './session.ts';
 
-type Modal = 'title' | 'loading' | 'select' | 'map' | 'pause' | 'menu' | 'journal' | 'summary' | 'settings' | null;
+type Modal = 'title' | 'loading' | 'select' | 'map' | 'pause' | 'menu' | 'journal' | 'make' | 'summary' | 'settings' | null;
 
 /** Game minutes pass this many times faster while the survivor sleeps (SPEC 5.1: by running ticks). */
 const SLEEP_SPEED = 90;
+/** Game minutes pass this many times faster while the survivor is busy with a task (SPEC 5.1). */
+const TASK_SPEED = 8;
+/** Events that drop a fast-forwarded task back to normal speed for the rest of it: the player should see them. */
+const STEADY_ON = new Set<SimEvent['type']>(['animal', 'thought', 'storm', 'slide', 'aircraft', 'sick', 'weather', 'lightning', 'notice', 'over']);
+
+/** The tile the survivor faces. */
+const faced = (st: GameState) => ({ x: st.player.x + DX4[st.player.facing]!, y: st.player.y + DY4[st.player.facing]! });
 
 export class App {
   private readonly stage = h('div', { class: 'stage' });
@@ -58,6 +72,12 @@ export class App {
   private menu: ListMenu | null = null;
   private journalTab: JournalTab = 'notes';
   private speed = 1;
+  /** Something happened during the current task, so it runs at normal speed until it ends. */
+  private steadied = false;
+  /** Choosing where to lay a fire (from the Make page): the tile under the mouse shows a preview. */
+  private placing = false;
+  /** The Make page's entries, for its number keys. */
+  private makeEntries: MakeEntry[] = [];
   private scale = 1;
   private hover: { x: number; y: number } | null = null;
   /** The mouse in stage pixels, for the label beside it. */
@@ -290,10 +310,15 @@ export class App {
   private onEvents(events: SimEvent[]): void {
     playEvents(events, this.sound, this.session?.state);
     for (const e of events) {
+      if (e.type === 'task-start') this.steadied = false;
+      else if (STEADY_ON.has(e.type)) this.steadied = true;
       if (e.type === 'viewpoint') {
         this.hud.say([e.index === 0 ? TEXT.viewpointKnoll : e.index === 1 ? TEXT.viewpointWreck : TEXT.viewpoint]);
       } else if (e.type === 'thought') {
         this.hud.think(e.text, this.hints ? e.hint : '');
+      } else if (e.type === 'discovery' && this.session) {
+        const card = insightText(this.session.state, e.key);
+        if (card) this.hud.insight(card);
       } else if (e.type === 'sleep') {
         this.autosave();
       } else if (e.type === 'lightning') {
@@ -308,11 +333,11 @@ export class App {
     const s = this.session;
     if (!s) return;
     const st = s.state;
-    this.loop.speed = (this.speed || 1) * (st.sleep ? SLEEP_SPEED : 1);
+    this.loop.speed = (this.speed || 1) * (st.sleep ? SLEEP_SPEED : st.task && !this.steadied ? TASK_SPEED : 1);
     this.stage.classList.toggle('asleep', !!st.sleep && !st.sleep.awake);
     this.updateLook(st);
     const mark = this.look && this.modal === null && (this.look.primary || this.look.options.length) ? { x: this.look.x, y: this.look.y } : null;
-    this.camera = this.renderer.draw(st, alpha, now, this.debug && !this.debug.el.hidden ? this.hover : null, mark);
+    this.camera = this.renderer.draw(st, alpha, now, this.debug && !this.debug.el.hidden ? this.hover : null, this.placing ? null : mark, this.ghost(st));
     this.hud.update(st, this.taskLabel);
     this.debug?.update(s, this.hover, now);
     this.sound.update(this.modal === null || this.modal === 'menu' ? st : null, s.world, this.loop.speed);
@@ -332,6 +357,14 @@ export class App {
     if (this.modal === 'menu' && this.menu) {
       if (a === 'pause') this.setModal(null);
       else this.menu.key(a);
+      return;
+    }
+    if (this.modal === 'make') {
+      if (a === 'pause' || a === 'craft') this.setModal(null);
+      else if (a.startsWith('slot')) {
+        const e = this.makeEntries[Number(a.slice(4)) - 1];
+        if (e && (!e.missing || e.where === 'placed')) this.chooseMake(e);
+      }
       return;
     }
     if (this.modal === 'journal') {
@@ -355,13 +388,20 @@ export class App {
       if (a === 'act' || a === 'confirm' || a === 'pause' || a === 'rest') s.queue({ c: 'wake' });
       return;
     }
+    if (this.placing) {
+      if (a === 'pause' || a === 'craft') return this.stopPlacing();
+      if (a === 'act' || a === 'confirm') {
+        const at = faced(s.state);
+        return this.place(at.x, at.y);
+      }
+    }
     switch (a) {
       case 'act':
         return this.openActions();
       case 'inventory':
         return this.openInventory();
       case 'craft':
-        return this.openCraft();
+        return this.openMake();
       case 'journal':
         return this.openJournal();
       case 'rest':
@@ -423,6 +463,14 @@ export class App {
       this.lookKey = key;
       this.look = hv && s ? lookAt(st, s.world, hv.x, hv.y) : null;
       const l = this.look;
+      if (this.placing && hv && s) {
+        const why = this.placeProblem(hv.x, hv.y);
+        this.canvas.dataset.cursor = why ? 'none' : 'hand';
+        this.tip.hidden = false;
+        (this.tip.firstChild as HTMLElement).textContent = why ? `Not here: ${why}` : 'Lay the fire here';
+        (this.tip.lastChild as HTMLElement).textContent = 'click to choose · Esc to stop';
+        return;
+      }
       this.canvas.dataset.cursor = l ? l.cursor : 'none';
       this.tip.hidden = !l;
       if (l) {
@@ -453,6 +501,10 @@ export class App {
     if (!s || this.modal !== null || s.state.over) return;
     if (s.state.sleep) {
       s.queue({ c: 'wake' });
+      return;
+    }
+    if (this.placing) {
+      if (this.hover) this.place(this.hover.x, this.hover.y);
       return;
     }
     this.lookKey = '';
@@ -525,13 +577,55 @@ export class App {
     );
   }
 
-  private openCraft(): void {
+  private openMake(): void {
     const s = this.session!;
-    const items = craftMenu(s.state, s.world, (recipe, label) => {
-      this.taskLabel = label;
-      s.queue({ c: 'craft', recipe });
-    });
-    this.openList('Make what?', items, items.length ? undefined : 'Nothing comes to mind yet.');
+    const { el, entries } = makePage(s.state, s.world, (e) => this.chooseMake(e));
+    this.makeEntries = entries;
+    this.setModal('make', el);
+  }
+
+  private chooseMake(e: MakeEntry): void {
+    const s = this.session!;
+    this.setModal(null);
+    if (e.where === 'placed') {
+      this.placing = true;
+      this.lookKey = '';
+      this.hud.say(['Where should the fire go? Somewhere open, near where I sleep.'], 4000);
+      return;
+    }
+    this.taskLabel = e.label;
+    s.queue({ c: 'craft', recipe: e.id });
+  }
+
+  private stopPlacing(): void {
+    this.placing = false;
+    this.lookKey = '';
+  }
+
+  /** Why a fire can't be laid at (x, y), or null. */
+  private placeProblem(x: number, y: number): string | null {
+    const s = this.session!;
+    const why = fireSiteProblem(s.state, s.world, idx(x, y));
+    if (why) return why;
+    return standFor(s.state, s.world, x, y) ? null : "can't get beside it";
+  }
+
+  private ghost(st: GameState): { x: number; y: number; ok: boolean } | null {
+    if (!this.placing || this.modal !== null) return null;
+    const at = this.hover ?? faced(st);
+    return { ...at, ok: !this.placeProblem(at.x, at.y) };
+  }
+
+  /** Lay a fire at (x, y): walk beside it, clear the spot, and put in what's carried. */
+  private place(x: number, y: number): void {
+    const why = this.placeProblem(x, y);
+    if (why) {
+      this.hud.say([`Not there: ${why}.`], 2000);
+      return;
+    }
+    this.stopPlacing();
+    this.taskLabel = 'Clearing a spot and laying a fire';
+    this.session!.queue({ c: 'goto', x, y, onto: false, action: 'fire-site', at: 'front' });
   }
 
   private openRest(): void {

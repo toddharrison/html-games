@@ -15,6 +15,7 @@ import { idx, type World } from '../src/sim/world.ts';
 import { playBot } from '../src/tools/bot.ts';
 import { runTo } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
+import { START_MINUTE } from '../src/content/balance.ts';
 
 const MIN = 10;
 const DAY = 14400;
@@ -40,7 +41,7 @@ describe('flights (SPEC 10)', () => {
       expect(search.length).toBeGreaterThanOrEqual(2);
       expect(search.length).toBeLessThanOrEqual(3);
       for (const f of search) {
-        const day = Math.floor((f.t / 10 + 14 * 60 + 30) / 1440) + 1;
+        const day = Math.floor((f.t / 10 + START_MINUTE) / 1440) + 1;
         expect(day).toBeGreaterThanOrEqual(2);
         expect(day).toBeLessThanOrEqual(10);
       }

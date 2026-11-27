@@ -11,13 +11,13 @@ import { F, T, TERRAIN } from '../content/terrain.ts';
 import { type ActionDef, type ItemActionDef, frontTile, receive } from './actionKit.ts';
 import { itemName, waterRisk } from './food.ts';
 import { count, giveOrDrop, has, slotOf, take, takeFromSlot } from './inventory.ts';
-import { fact, knowsTechnique, learn, learnTechnique, lookName } from './knowledge.ts';
+import { fact, knownWith, knowsTechnique, learn, learnTechnique, lookName } from './knowledge.ts';
 import { say } from './log.ts';
 import { remember } from './memory.ts';
 import { chance } from './rng.ts';
 import { level, practise } from './skills.ts';
 import { burning, fireNear } from './surroundings.ts';
-import type { Fire, GameState, SimEvent } from './state.ts';
+import type { Build, Fire, GameState, Item, SimEvent } from './state.ts';
 import { technique } from '../content/insights.ts';
 import { clock } from './time.ts';
 import { idx, type World } from './world.ts';
@@ -41,14 +41,114 @@ export function steelTool(s: GameState): string | null {
   return null;
 }
 
-/** Open ground a fire can be laid on. */
-function fireGround(s: GameState, w: World, tile: number): boolean {
+/**
+ * Why a fire can't be laid on this tile, in a few words, or null if it can (SPEC 8.3). The Make panel's
+ * placing shows the reason; the survivor stands beside the spot to lay it, never on it.
+ */
+export function fireSiteProblem(s: GameState, w: World, tile: number): string | null {
   const t = w.terrain[tile]!;
-  if (!TERRAIN[t]!.passable || TERRAIN[t]!.water || t === T.scree || t === T.snow) return false;
-  if (w.feature[tile] !== F.none) return false;
+  if (TERRAIN[t]!.water) return 'not on the water';
+  if (!TERRAIN[t]!.passable) return "can't get there";
+  if (t === T.snow) return 'not on snow';
+  if (t === T.scree) return 'too loose and stony';
+  if (w.feature[tile] !== F.none) return "something's in the way";
   const { x, y } = xy(tile);
-  if (s.player.x === x && s.player.y === y) return false;
-  return !fireAt(s, tile) && !s.builds.some((b) => b.x === x && b.y === y && b.kind !== 'signal');
+  if (fireAt(s, tile)) return "there's a fire there";
+  if (s.builds.some((b) => b.x === x && b.y === y)) return "there's something there";
+  if (s.stashes.some((st) => st.x === x && st.y === y && st.items.length)) return 'things are lying there';
+  return null;
+}
+
+/** A fire laid but not lit (SPEC 8.3): a ring of stones that tinder, kindling, and wood are put into. */
+const LAY = 'fire-lay';
+/** Sticks a laid fire needs for kindling. */
+export const LAY_STICKS = 2;
+
+export function layAt(s: GameState, tile: number): Build | null {
+  const { x, y } = xy(tile);
+  return s.builds.find((b) => b.kind === LAY && b.x === x && b.y === y) ?? null;
+}
+
+/** What is in a laid fire. */
+export function layParts(b: Build): { tinder: Item | null; sticks: number; wood: Item | null } {
+  const items = b.items ?? [];
+  return {
+    tinder: items.find((i) => i.k === 'tinder') ?? null,
+    sticks: items.filter((i) => i.k === 'stick').reduce((n, i) => n + i.n, 0),
+    wood: items.find((i) => i.k === 'firewood') ?? null,
+  };
+}
+
+/** Tinder and kindling are in: it can be lit. Wood is better but not needed. */
+export function layReady(b: Build): boolean {
+  const p = layParts(b);
+  return p.tinder !== null && p.sticks >= LAY_STICKS;
+}
+
+/** The firewood slot to lay: a wood known to burn long first, then any not known to be poor. */
+function bestWood(s: GameState): number {
+  let best = -1;
+  let score = -1;
+  s.inventory.forEach((it, i) => {
+    if (it.k !== 'firewood') return;
+    const v = fact(s, 'wood', it.d ?? 0)?.value;
+    const sc = v === 'long-burning' ? 3 : v === 'quick' || v === 'smoky' ? 1 : 2;
+    if (sc > score) {
+      score = sc;
+      best = i;
+    }
+  });
+  return best;
+}
+
+/** What the survivor carries that the laid fire still lacks, as the kid would ask for it (none: ''). */
+function layLacks(b: Build): string {
+  const p = layParts(b);
+  const lack: string[] = [];
+  if (!p.tinder) lack.push('something dry for tinder');
+  if (p.sticks < LAY_STICKS) lack.push(LAY_STICKS - p.sticks === 1 ? 'one more stick' : 'a couple of sticks');
+  return lack.join(' and ');
+}
+
+/** Put what's carried into the laid fire: tinder, kindling, a piece of wood. Returns what went in. */
+function layIn(s: GameState, b: Build, ev: SimEvent[]): string[] {
+  const p = layParts(b);
+  b.items ??= [];
+  const put: string[] = [];
+  if (!p.tinder) {
+    const slot = bestTinder(s);
+    if (slot >= 0) {
+      const d = s.inventory[slot]!.d;
+      takeFromSlot(s, slot, 1);
+      b.items.push({ k: 'tinder', n: 1, ...(d !== undefined ? { d } : {}) });
+      put.push(d !== undefined ? `some ${lookName('tinder', d)}` : 'some tinder');
+    }
+  }
+  const sticks = Math.min(LAY_STICKS - p.sticks, count(s, 'stick'));
+  if (sticks > 0) {
+    take(s, 'stick', sticks);
+    const st = b.items.find((i) => i.k === 'stick');
+    if (st) st.n += sticks;
+    else b.items.push({ k: 'stick', n: sticks });
+    put.push(sticks === 1 ? 'a stick' : `${sticks} sticks`);
+  }
+  if (!p.wood) {
+    const slot = bestWood(s);
+    if (slot >= 0) {
+      const d = s.inventory[slot]!.d ?? 0;
+      takeFromSlot(s, slot, 1);
+      b.items.push({ k: 'firewood', n: 1, d });
+      put.push(`a piece of ${lookName('wood', d)}`);
+    }
+  }
+  if (put.length) say(s, FIRE_MSG.laid(who(s.protagonist), put, layReady(b)), ev);
+  return put;
+}
+
+/** Something to put into the laid fire is carried: tinder or sticks it lacks, or wood if it has none. */
+function canLayIn(s: GameState, b: Build): boolean {
+  const p = layParts(b);
+  return (!p.tinder && bestTinder(s) >= 0) || (p.sticks < LAY_STICKS && has(s, 'stick')) || (!p.wood && has(s, 'firewood'));
 }
 
 /** The tinder slot to use: the one most likely to catch, as far as the survivor knows. */
@@ -67,11 +167,6 @@ function bestTinder(s: GameState): number {
   return best;
 }
 
-/** Fuel to start with: two sticks, or one piece of firewood. */
-function hasKindling(s: GameState): boolean {
-  return count(s, 'stick') >= 2 || count(s, 'firewood') >= 1;
-}
-
 /** A known spark-stone that the survivor carries, or -1. */
 function sparkStone(s: GameState): number {
   for (const it of s.inventory) if (it.k === 'stone' && it.d !== undefined && fact(s, 'stone', it.d)?.value === 'sparks') return it.d;
@@ -80,20 +175,34 @@ function sparkStone(s: GameState): number {
 
 type Method = 'sparks' | 'embers' | 'drill' | 'match';
 
-function canLight(s: GameState, m: Method): boolean {
-  if (bestTinder(s) < 0 && m !== 'match') return false;
-  if (!hasKindling(s)) return false;
-  if (m === 'sparks') return sparkStone(s) >= 0 && steelTool(s) !== null;
+/** The survivor knows of this way to light a fire, so the laid fire offers it (greyed until it can be done). */
+function knowsOf(s: GameState, m: Method): boolean {
+  if (m === 'sparks') return steelTool(s) !== null; // every kid has heard that steel on the right rock sparks
   if (m === 'embers') return has(s, 'ember-pouch');
-  if (m === 'drill') return has(s, 'bow-drill');
-  return has(s, 'matches') && bestTinder(s) >= 0;
+  if (m === 'drill') return has(s, 'bow-drill') || knowsTechnique(s, 'bow-drill');
+  return has(s, 'matches');
+}
+
+/** Why this laid fire can't be lit this way yet, as the kid would put it, or null if it can. */
+function lightProblem(s: GameState, b: Build, m: Method): string | null {
+  if (!layReady(b)) return `needs ${layLacks(b)} first`;
+  if (m === 'sparks') {
+    if (sparkStone(s) >= 0) return null;
+    const known = knownWith(s, 'stone', 'sparks');
+    if (known >= 0) return `need a piece of the ${lookName('stone', known)}`;
+    return 'need a stone that sparks: strike rocks to find one';
+  }
+  if (m === 'drill' && !has(s, 'bow-drill')) return 'need a bow drill';
+  return null;
 }
 
 /** Try to light a fire on `tile` (SPEC 8.3). A skill check that gets easier with practice. */
 function light(s: GameState, _w: World, tile: number, m: Method, ev: SimEvent[]): void {
   const wh = who(s.protagonist);
-  const slot = bestTinder(s);
-  const tinder = s.inventory[slot]!.d!;
+  const lay = layAt(s, tile);
+  if (!lay || lightProblem(s, lay, m)) return;
+  const parts = layParts(lay);
+  const tinder = parts.tinder!.d ?? 0;
   const outcome = s.rules.tinders[tinder]!;
   let p = TINDER_CATCH[outcome]!;
   if (m === 'sparks') p *= TOOL_WORK[steelTool(s) ?? 'multitool']!.sparks;
@@ -115,8 +224,9 @@ function light(s: GameState, _w: World, tile: number, m: Method, ev: SimEvent[])
   if (m === 'embers') take(s, 'ember-pouch', 1);
   if (m === 'match') take(s, 'matches', 1);
   practise(s, 'firecraft', 1.5);
+  // The tinder burns away either way: a failed try needs more put in.
+  lay.items = (lay.items ?? []).filter((i) => i !== parts.tinder);
   if (!chance(s.rng['skill-checks'], Math.min(0.95, p))) {
-    takeFromSlot(s, slot, 1);
     remember(s, 'fire-fails');
     const n = remember(s, `tinder-fail:${tinder}`);
     say(s, FIRE_MSG.wouldNotCatch(wh, lookName('tinder', tinder)), ev);
@@ -124,18 +234,9 @@ function light(s: GameState, _w: World, tile: number, m: Method, ev: SimEvent[])
     else if (n >= 2 && !fact(s, 'tinder', tinder)) learn(s, 'tinder', tinder, 'suspected', 'fails', 'it would not catch', ev);
     return;
   }
-  takeFromSlot(s, slot, 1);
-  let fuel = 0;
-  let wood = -1;
-  if (count(s, 'firewood') >= 1) {
-    const fw = s.inventory.find((i) => i.k === 'firewood')!;
-    wood = fw.d ?? 0;
-    take(s, 'firewood', 1, fw.d);
-    fuel = WOOD_BURN[s.rules.woods[wood]!]!;
-  } else {
-    take(s, 'stick', 2);
-    fuel = STICK_BURN * 2;
-  }
+  const wood = parts.wood ? (parts.wood.d ?? 0) : -1;
+  const fuel = parts.sticks * STICK_BURN + (wood >= 0 ? WOOD_BURN[s.rules.woods[wood]!]! : 0);
+  s.builds = s.builds.filter((b) => b !== lay);
   const { x, y } = xy(tile);
   s.fires.push({ x, y, fuel, coals: 0, banked: false, smoke: 0, signal: false });
   s.fires.sort((a, b) => a.y - b.y || a.x - b.x);
@@ -278,7 +379,8 @@ const METHOD_LABEL: Record<Method, string> = {
 function lightAction(m: Method, minutes: number): ActionDef {
   return {
     id: `fire-${m}`,
-    offer: (s, w, t, front) => (front && fireGround(s, w, t) && canLight(s, m) ? METHOD_LABEL[m] : null),
+    offer: (s, _w, t, front) => (front && layAt(s, t) && knowsOf(s, m) ? METHOD_LABEL[m] : null),
+    spent: (s, _w, t) => lightProblem(s, layAt(s, t)!, m),
     minutes,
     skill: 'firecraft',
     done: (s, w, t, ev) => light(s, w, t, m, ev),
@@ -286,13 +388,60 @@ function lightAction(m: Method, minutes: number): ActionDef {
 }
 
 export const FIRE_ACTIONS: ActionDef[] = [
+  {
+    // Placed from the Make panel (it offers no menu row of its own): clear a spot, ring it, put in what's carried.
+    id: 'fire-site',
+    unlisted: true,
+    offer: (s, w, t, front) => (front && !fireSiteProblem(s, w, t) ? 'Clear a spot and lay a fire' : null),
+    minutes: 4,
+    done: (s, _w, t, ev) => {
+      const { x, y } = xy(t);
+      const b: Build = { kind: LAY, x, y, items: [] };
+      s.builds.push(b);
+      s.builds.sort((a, c) => a.y - c.y || a.x - c.x || (a.kind < c.kind ? -1 : 1));
+      say(s, FIRE_MSG.ringed(who(s.protagonist)), ev);
+      layIn(s, b, ev);
+    },
+  },
+  {
+    id: 'lay-fire',
+    offer: (s, _w, t) => {
+      const b = layAt(s, t);
+      if (!b) return null;
+      const p = layParts(b);
+      if (layReady(b)) return !p.wood && has(s, 'firewood') ? 'Put a piece of wood in the fire' : null;
+      return 'Lay the fire';
+    },
+    spent: (s, _w, t) => {
+      const b = layAt(s, t)!;
+      return canLayIn(s, b) ? null : `needs ${layLacks(b)}`;
+    },
+    minutes: 2,
+    done: (s, _w, t, ev) => {
+      const b = layAt(s, t);
+      if (b) layIn(s, b, ev);
+    },
+  },
+  {
+    id: 'unlay-fire',
+    offer: (s, _w, t) => (layAt(s, t) ? 'Take the laid fire apart' : null),
+    minutes: 2,
+    done: (s, _w, t, ev) => {
+      const b = layAt(s, t);
+      if (!b) return;
+      for (const it of b.items ?? []) giveOrDrop(s, it.k, it.n, it.d);
+      s.builds = s.builds.filter((x) => x !== b);
+      say(s, FIRE_MSG.unlaid(who(s.protagonist)), ev);
+    },
+  },
   lightAction('match', 3),
   lightAction('embers', 8),
   lightAction('sparks', 15),
   lightAction('drill', 45),
   {
     id: 'strike-outcrop',
-    offer: (s, w, t) => (isOutcrop(w, t) && steelTool(s) ? `Strike the ${lookName('stone', w.data[t]!)} with the ${itemDef(steelTool(s)!).name}` : null),
+    // Only until the stone is known: striking it again would tell nothing new.
+    offer: (s, w, t) => (isOutcrop(w, t) && steelTool(s) && !fact(s, 'stone', w.data[t]!) ? `Strike the ${lookName('stone', w.data[t]!)} with the ${itemDef(steelTool(s)!).name}` : null),
     minutes: 3,
     done: (s, w, t, ev) => strike(s, w.data[t]!, ev),
   },

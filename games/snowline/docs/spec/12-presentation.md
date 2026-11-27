@@ -45,7 +45,9 @@ A scrolling message log in short, plain, past-tense sentences carries much of th
 
 Tone (decided 2026-11-25): suitable for ages 10 and up. The pilot's death is implied in the opening text and never shown. Despair is expressed through morale and the message log, never through self-harm.
 
-**Thoughts are the tutorial** (decided 2026-11-26). There is no separate tutorial: the survivor thinks what a kid alone out here would think next, in their own voice, first person and present tense ("My mouth is so dry. First thing: a drink."), shown in the middle of the screen and kept in the log in quotes. Under each, smaller and plainly, is how to do it ("Click the water to drink, or face it and press E."); the settings can turn those lines off. The first evening's thoughts come in order, each once, and wait for the player to act before the next idea (water; what's around; things for a fire; striking rock for a spark; shelter as the sun gets low; staying put in the dark; food and which berries are safe), though evening and dark come on time. Later, thirst, hunger, cold, and tiredness come back as thoughts when they bite, no more than every few hours, and the first full pockets once. Never two thoughts within half an hour of game time.
+**Thoughts are the tutorial** (decided 2026-11-26). There is no separate tutorial: the survivor thinks what a kid alone out here would think next, in their own voice, first person and present tense ("My mouth is so dry. First thing: a drink."), shown in the middle of the screen and kept in the log in quotes. Under each, smaller and plainly, is how to do it ("Click the water to drink, or face it and press E."); the settings can turn those lines off. The first day's thoughts come in order, each once, and wait for the player to act before the next idea, though evening and dark come on time. **The cold leads** (decided 2026-11-26): the kid sees the snow on the peaks and knows tonight will be cold, so the first thought is a fire before dark; then water; what a fire needs (something dry that catches, little sticks, bigger wood); striking rock for a spark; laying the fire once there's enough; shelter as the sun gets low; staying put in the dark; food and which berries are safe. Each step toward the first fire gets the kid's reaction soon after it happens, ahead of the chain, and only the latest (sparks off a rock: take a piece; carrying it: find a spot; laid with a light at hand: sparks into the dry stuff; it won't catch: try other tinder; lit). Thoughts are the largest text on screen, just above the kid.
+
+**Insights on notebook slips** (decided 2026-11-26). When the kid works something out (a technique, or a fact about this valley, known or suspected), a slip of the notebook's paper in the kid's hand shows below the kid for a few seconds: "New idea!" or "Now I know" or "I think...", what it is, how it was learned, and what it adds to Make. Several queue one after another. Later, thirst, hunger, cold, and tiredness come back as thoughts when they bite, no more than every few hours, and the first full pockets once. Never two thoughts within half an hour of game time.
 
 Hunting and butchering are abstract but clear (decided 2026-11-25). Nothing graphic is drawn: an action, a sound, and an item. But the game does not hide what is being done. The action is named for what it is (kill, skin, gut, pluck), and the message log says it plainly: "She skinned and gutted the hare."
 
@@ -62,11 +64,12 @@ Music: earlier drafts had none during play. The reference's mood owes a lot to i
 | WASD or arrows | Move |
 | E or Space | Interact with the faced tile |
 | 1–8 | Use or equip inventory slot |
-| I, C, J, M | Inventory, craft, journal, map |
+| I, C, J, M | Inventory, Make (a notebook page, 8.2), journal, map |
 | R | Rest or sleep (choose duration) |
 | Esc | Pause and settings |
 | Mouse over | Names what is under the cursor; the cursor shows a hand (something to do) or an eye (something to watch) |
 | Click | Walk to it and do the obvious thing: gather it, watch it, drink, or just walk there (5.2) |
 | Right-click | A small menu at the cursor of everything that can be done there |
+| Placing (from Make) | A see-through preview under the mouse (or on the faced tile), green where it can go and red with the reason where not; click or E to place, Esc to stop |
 
 The mouse and the keyboard work together (decided 2026-11-26): nothing needs the mouse, and the keyboard keeps every action. Keys are remappable. Condition icons differ in shape as well as colour. A setting reduces lightning flashes. Text size is adjustable.

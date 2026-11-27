@@ -21,7 +21,7 @@ The spec is split **one file per section** in [spec/](spec/), so a session reads
 | 11 | [spec/11-technical.md](spec/11-technical.md) | Stack, **layers (11.2)**, **determinism (11.3)**, testing, debug, saves, performance | Any code change that touches `sim/` (CLAUDE.md has the short form) |
 | 12 | [spec/12-presentation.md](spec/12-presentation.md) | **Art and the beauty pass (12.1)**, text, audio, **controls with the mouse (12.4)** | Rendering, UI, sound |
 | 13.1 | [spec/13-decisions.md](spec/13-decisions.md) | Every decision, dated, newest first | Checking why something is the way it is |
-| 13.2 | [spec/13-questions.md](spec/13-questions.md) | Open questions Q19 on, each with the option taken | Raising a question (next number: Q46) or answering one |
+| 13.2 | [spec/13-questions.md](spec/13-questions.md) | Open questions Q19 on, each with the option taken | Raising a question (next number: Q48) or answering one |
 | 14 | [spec/14-milestones.md](spec/14-milestones.md) | M0–M7 and what "done" means | Planning |
 | 15 | [spec/15-references.md](spec/15-references.md) | Inspirations, games to look at, technical and art references | Rarely |
 

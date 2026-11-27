@@ -9,23 +9,27 @@ export interface ThoughtText {
   hint?: string;
 }
 
-/** The first evening, in order: each comes once, when the one before is done or passed. */
+/** The first day, in order: each comes once, when the one before is done or passed. */
 export const FIRST_THOUGHTS = {
+  cold: {
+    text: "There's snow up on those peaks. It's going to be cold tonight. Really cold. I need a fire before dark.",
+    hint: 'C opens Make: what you know how to make, and what each thing needs. A fire is first.',
+  },
   water: {
     text: 'My mouth is so dry. First thing: a drink. The lake is right there.',
     hint: 'Click the water to drink, or face it and press E.',
   },
-  look: {
-    text: "Okay. Breathe. What's around here that I could use?",
-    hint: 'Hover over things to see what they are. Right-click for everything you could do with one.',
-  },
   gather: {
-    text: "It's going to be cold tonight. If I could make a fire... I'd need dry grass, twigs, bigger wood.",
-    hint: 'Click things on the ground to pick them up. I shows what you are carrying.',
+    text: "A fire needs something dry that'll catch, little sticks, then bigger wood. There's stuff all over the ground.",
+    hint: 'Hover over things to see what they are; click to pick them up. Make (C) shows what the fire still needs.',
   },
   fire: {
-    text: 'Some rocks spark if you hit them with steel. I should try the rocks around here.',
-    hint: 'Strike an outcrop with your tool, or carry a stone and strike it from your pockets (I). C shows what you can make.',
+    text: 'How do I light it without matches? Some rocks spark if you hit them with steel. I could try the rocks around here.',
+    hint: 'Click a rock outcrop to strike it with your tool.',
+  },
+  lay: {
+    text: "I've got enough to start one. I should pick a good spot, out in the open, and lay it.",
+    hint: 'Make (C), then A fire: choose where it goes.',
   },
   shelter: {
     text: "The sun's getting low. I need somewhere out of the wind for the night. Under rock, or in the trees.",
@@ -37,6 +41,33 @@ export const FIRST_THOUGHTS = {
   food: {
     text: "I'm getting hungry. There were berries... but I don't know which ones are safe.",
     hint: 'Taste a little and wait, or watch whether the birds eat them. J keeps your notes on what you learn.',
+  },
+} satisfies Record<string, ThoughtText>;
+
+/**
+ * What the kid makes of something that just happened while making fire: each comes once, soon after,
+ * ahead of the first day's chain (an insight is the moment to say what it means).
+ */
+export const FIRE_THOUGHTS = {
+  sparked: {
+    text: "Sparks! If I take a piece of this rock with me, and get the sparks into something dry... that's a fire.",
+    hint: 'Click the rock again to pry a piece loose. Then Make (C), A fire.',
+  },
+  carrying: {
+    text: 'Got a piece of the sparking rock. Now somewhere to light it.',
+    hint: 'Make (C), then A fire: click where to lay it.',
+  },
+  laid: {
+    text: 'Okay. Tinder, sticks. Now the sparks, right down into the dry stuff, and blow gently.',
+    hint: 'Click the laid fire to light it.',
+  },
+  noCatch: {
+    text: "It won't catch. Maybe that stuff's no good, or not dry enough. I'll try something else.",
+    hint: 'A failed try burns the tinder: lay in more. Different tinders catch differently here.',
+  },
+  lit: {
+    text: "I did it. I actually did it. Fire. I'm not going to freeze tonight.",
+    hint: 'Keep it fed: put sticks and wood on it before it burns down.',
   },
 } satisfies Record<string, ThoughtText>;
 

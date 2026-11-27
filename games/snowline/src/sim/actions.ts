@@ -241,6 +241,7 @@ export function availableActions(s: GameState, w: World): ActionOption[] {
   const front = frontTile(s);
   for (const t of targets(s)) {
     for (const a of ACTIONS) {
+      if (a.unlisted) continue;
       const label = a.offer(s, w, t, t === front);
       if (!label) continue;
       if (out.some((o) => o.action === a.id && o.label === label)) continue;

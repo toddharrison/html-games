@@ -1,7 +1,7 @@
 // The survivor's thoughts (SPEC 12.2): the tutorial as what the kid thinks next.
 
 import { describe, expect, it } from 'vitest';
-import { BEAR_TRAIL_THOUGHT, FIRST_THOUGHTS, RETURNING_THOUGHTS } from '../src/content/thoughtText.ts';
+import { BEAR_TRAIL_THOUGHT, FIRE_THOUGHTS, FIRST_THOUGHTS, RETURNING_THOUGHTS } from '../src/content/thoughtText.ts';
 import { L } from '../src/content/loose.ts';
 import { T, TRAIL_BY, WATER } from '../src/content/terrain.ts';
 import { give } from '../src/sim/inventory.ts';
@@ -12,6 +12,7 @@ import type { GameState, SimEvent } from '../src/sim/state.ts';
 import { step } from '../src/sim/step.ts';
 import { idx, type World } from '../src/sim/world.ts';
 import { calm, flatWorld } from './sample.ts';
+import { START_MINUTE } from '../src/content/balance.ts';
 
 const MIN = 10;
 const FRONT = idx(128, 129);
@@ -36,21 +37,21 @@ function live(s: GameState, w: World, minutes: number, keepWell = true): { text:
 }
 
 describe('thoughts (SPEC 12.2)', () => {
-  it('the first is about water, once the opening words have faded, and it says how', () => {
+  it('the first is the cold coming: the snow on the peaks means a fire before dark, and it says how', () => {
     const { state, world } = setup();
-    const t = live(state, world, 40);
-    expect(t[0]?.text).toBe(FIRST_THOUGHTS.water.text);
-    expect(t[0]?.hint).toMatch(/press E/);
+    const t = live(state, world, 25);
+    expect(t[0]?.text).toBe(FIRST_THOUGHTS.cold.text);
+    expect(t[0]?.hint).toMatch(/Make/);
     expect(t[0]!.tick).toBeGreaterThanOrEqual(200);
-    expect(state.log.some((l) => l.text === `“${FIRST_THOUGHTS.water.text}”`)).toBe(true);
+    expect(state.log.some((l) => l.text === `“${FIRST_THOUGHTS.cold.text}”`)).toBe(true);
   });
 
-  it('waits for the player before the next idea, then moves on after a drink', () => {
+  it('then water, and waits for the player before the next idea, then moves on after a drink', () => {
     const { state, world } = setup();
-    expect(live(state, world, 90).map((t) => t.text)).toEqual([FIRST_THOUGHTS.water.text]);
+    expect(live(state, world, 90).map((t) => t.text)).toEqual([FIRST_THOUGHTS.cold.text, FIRST_THOUGHTS.water.text]);
     step(state, world, [{ t: state.tick, c: 'act', action: 'drink', tile: FRONT }]);
     const next = live(state, world, 60);
-    expect(next[0]?.text).toBe(FIRST_THOUGHTS.look.text);
+    expect(next[0]?.text).toBe(FIRST_THOUGHTS.gather.text);
   });
 
   it('carrying tinder brings the idea of striking rock for a fire', () => {
@@ -65,7 +66,7 @@ describe('thoughts (SPEC 12.2)', () => {
 
   it('evening brings shelter, and dark brings caution, even with the first ideas not yet acted on', () => {
     const { state, world } = setup();
-    const texts = live(state, world, 6 * 60).map((t) => t.text);
+    const texts = live(state, world, 20 * 60 + 30 - START_MINUTE).map((t) => t.text); // until 20:30
     expect(texts).toContain(FIRST_THOUGHTS.shelter.text);
     expect(texts).toContain(FIRST_THOUGHTS.dark.text);
   });
@@ -102,5 +103,20 @@ describe('thoughts (SPEC 12.2)', () => {
     const { state, world } = setup();
     step(state, world, [{ t: 0, c: 'sleep', minutes: 120, awake: false }]);
     expect(live(state, world, 100)).toEqual([]);
+  });
+
+  it('says what each step toward the first fire means, soon after it, and only the latest', () => {
+    const { state, world } = setup();
+    state.vitals.hydration = 100;
+    live(state, world, 30);
+    // Sparks off a rock: take a piece of it.
+    state.known.facts.push({ key: 'stone:1', level: 'known', value: 'sparks', how: 'test', tick: state.tick });
+    expect(live(state, world, 15).map((t) => t.text)).toContain(FIRE_THOUGHTS.sparked.text);
+    // Lit before the kid said anything about laying it: only the fire itself is news.
+    state.memory['fires-lit'] = 1;
+    const later = live(state, world, 15).map((t) => t.text);
+    expect(later).toContain(FIRE_THOUGHTS.lit.text);
+    expect(later).not.toContain(FIRE_THOUGHTS.laid.text);
+    expect(live(state, world, 60).map((t) => t.text)).not.toContain(FIRE_THOUGHTS.laid.text);
   });
 });

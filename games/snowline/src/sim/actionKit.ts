@@ -38,6 +38,8 @@ export interface ActionDef {
   skill?: SkillId;
   /** Needs daylight or firelight to do. */
   needsLight?: boolean;
+  /** Started only by a command that names it (placing from the Make panel), never offered in a menu or by a click. */
+  unlisted?: boolean;
   done(s: GameState, w: World, tile: number, events: SimEvent[]): void;
 }
 

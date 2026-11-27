@@ -4,8 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { F, T, WATER } from '../src/content/terrain.ts';
 import { availableActions } from '../src/sim/actions.ts';
 import { sleepQuality } from '../src/sim/body.ts';
-import { craftOptions } from '../src/sim/craft.ts';
-import { strikeSnag } from '../src/sim/fire.ts';
+import { craftOptions, makeBook } from '../src/sim/craft.ts';
+import { fireSiteProblem, layAt, layParts, layReady, strikeSnag } from '../src/sim/fire.ts';
 import { SUPPLY } from '../src/content/balance.ts';
 import { count, give } from '../src/sim/inventory.ts';
 import { fact, knowsTechnique } from '../src/sim/knowledge.ts';
@@ -90,10 +90,66 @@ function sparksReady(tinder: 'catches' | 'slow' | 'fails') {
   return { state, world };
 }
 
+/** Try once to light the laid fire in front this way, laying it first (again, after a failed try burns the tinder). */
+function tryLight(s: GameState, w: World, m: 'sparks' | 'drill' | 'embers' | 'match'): void {
+  if (!layAt(s, FRONT)) act(s, w, 'fire-site', FRONT);
+  else if (!layReady(layAt(s, FRONT)!)) act(s, w, 'lay-fire', FRONT);
+  act(s, w, `fire-${m}`, FRONT);
+}
+
+describe('laying a fire (SPEC 8.3)', () => {
+  it('is placed only by name (the Make page), clears a spot, and puts in what is carried', () => {
+    const { state, world } = sparksReady('catches');
+    give(state, 'firewood', 1, 2);
+    expect(availableActions(state, world).some((a) => a.action === 'fire-site')).toBe(false);
+    act(state, world, 'fire-site', FRONT);
+    const lay = layAt(state, FRONT)!;
+    expect(layParts(lay)).toMatchObject({ sticks: 2 });
+    expect(layParts(lay).tinder?.d).toBe(0);
+    expect(layParts(lay).wood?.d).toBe(2);
+    expect(count(state, 'stick')).toBe(6);
+    expect(count(state, 'firewood')).toBe(0);
+    // A laid fire isn't walked through.
+    step(state, world, [{ t: state.tick, c: 'move', dir: 2 }]);
+    for (let k = 0; k < 20; k++) step(state, world, []);
+    expect(state.player.y).toBe(128);
+  });
+
+  it('says why a spot will not do', () => {
+    const { state, world } = setup({ edit: (w) => ((w.terrain[FRONT] = T.shallows), (w.water[FRONT] = WATER.lake)) });
+    expect(fireSiteProblem(state, world, FRONT)).toBe('not on the water');
+    expect(fireSiteProblem(state, world, idx(130, 130))).toBeNull();
+  });
+
+  it('a laid fire waits for tinder and sticks, and can be taken apart again', () => {
+    const { state, world } = setup();
+    act(state, world, 'fire-site', FRONT);
+    const lay = availableActions(state, world).find((a) => a.action === 'lay-fire');
+    expect(lay?.spent).toBe('needs something dry for tinder and a couple of sticks');
+    give(state, 'tinder', 1, 0);
+    give(state, 'stick', 2);
+    act(state, world, 'lay-fire', FRONT);
+    expect(layReady(layAt(state, FRONT)!)).toBe(true);
+    act(state, world, 'unlay-fire', FRONT);
+    expect(layAt(state, FRONT)).toBeNull();
+    expect(count(state, 'stick')).toBe(2);
+    expect(count(state, 'tinder', 0)).toBe(1);
+  });
+
+  it('burns the sticks and wood laid in it once lit', () => {
+    const { state, world } = sparksReady('catches');
+    give(state, 'firewood', 1, 2);
+    state.rules.woods[2] = 'long-burning';
+    for (let k = 0; k < 8 && state.fires.length === 0; k++) tryLight(state, world, 'sparks');
+    expect(state.fires[0]!.fuel).toBeGreaterThan(2 * 12 + 100);
+    expect(layAt(state, FRONT)).toBeNull();
+  });
+});
+
 describe('fire by sparks', () => {
   it('lights in a few tries with tinder that catches, and the tinder becomes known', () => {
     const { state, world } = sparksReady('catches');
-    for (let k = 0; k < 8 && state.fires.length === 0; k++) act(state, world, 'fire-sparks', FRONT);
+    for (let k = 0; k < 8 && state.fires.length === 0; k++) tryLight(state, world, 'sparks');
     expect(state.fires).toHaveLength(1);
     expect(fact(state, 'tinder', 0)).toMatchObject({ level: 'known', value: 'catches' });
     expect(state.memory['fires-lit']).toBe(1);
@@ -101,15 +157,20 @@ describe('fire by sparks', () => {
 
   it('never lights with tinder that fails, and learns that it fails', () => {
     const { state, world } = sparksReady('fails');
-    for (let k = 0; k < 6 && count(state, 'tinder') > 0; k++) act(state, world, 'fire-sparks', FRONT);
+    for (let k = 0; k < 6 && count(state, 'tinder') > 0; k++) tryLight(state, world, 'sparks');
     expect(state.fires).toHaveLength(0);
     expect(fact(state, 'tinder', 0)).toMatchObject({ level: 'known', value: 'fails' });
   });
 
-  it('is not offered without a known spark-stone', () => {
+  it('is offered on a laid fire, but greyed out with why, until a spark-stone is known and carried', () => {
     const { state, world } = sparksReady('catches');
     state.known.facts = [];
-    expect(availableActions(state, world).some((a) => a.action === 'fire-sparks')).toBe(false);
+    act(state, world, 'fire-site', FRONT);
+    const o = () => availableActions(state, world).find((a) => a.action === 'fire-sparks');
+    expect(o()?.spent).toBe('need a stone that sparks: strike rocks to find one');
+    state.known.facts.push({ key: 'stone:0', level: 'known', value: 'sparks', how: 'test', tick: 0 });
+    state.inventory = state.inventory.filter((i) => i.k !== 'stone');
+    expect(o()?.spent).toMatch(/^need a piece of the /);
   });
 });
 
@@ -120,7 +181,7 @@ describe('fire by bow drill and by captured embers', () => {
       give(state, 'bow-drill', 1, 3);
       give(state, 'tinder', 6, 0);
       give(state, 'stick', 8);
-      for (let k = 0; k < 6 && state.fires.length === 0; k++) act(state, world, 'fire-drill', FRONT);
+      for (let k = 0; k < 6 && state.fires.length === 0; k++) tryLight(state, world, 'drill');
       expect(state.fires.length > 0).toBe(right);
       expect(fact(state, 'wood', 3)?.value).toBe(right ? 'drill' : 'not for the drill');
     }
@@ -338,5 +399,33 @@ describe('reflection (SPEC 8.1)', () => {
       state.vitals.hydration = state.vitals.nutrition = 100;
     }
     expect(knowsTechnique(state, 'cord')).toBe(true);
+  });
+});
+
+describe('the Make page (SPEC 8.2)', () => {
+  it('starts with the fire, then what is known, grouped by need', () => {
+    const { state, world } = setup();
+    const book = makeBook(state, world);
+    expect(book[0]).toMatchObject({ id: 'fire', need: 'warm', where: 'placed', missing: '' });
+    const needs = book.map((e) => e.need);
+    const order = ['warm', 'shelter', 'water', 'food', 'carry', 'found'];
+    expect([...needs].sort((a, b) => order.indexOf(a) - order.indexOf(b))).toEqual(needs);
+    // Only what the kid knows: no cord before the technique.
+    expect(book.some((e) => e.id === 'cord')).toBe(false);
+    state.known.techniques.push('cord');
+    expect(makeBook(state, world).some((e) => e.id === 'cord')).toBe(true);
+  });
+
+  it("names the fire's parts as what they should be until this valley's ones are known", () => {
+    const { state, world } = setup();
+    const fire = () => makeBook(state, world)[0]!;
+    expect(fire().parts.filter((p) => p.unknown).map((p) => p.name)).toEqual(['something dry that catches a spark', 'wood that burns well', 'a rock that sparks on steel']);
+    state.known.facts.push(
+      { key: 'tinder:0', level: 'known', value: 'catches', how: 'test', tick: 0 },
+      { key: 'wood:1', level: 'known', value: 'long-burning', how: 'test', tick: 0 },
+      { key: 'stone:2', level: 'known', value: 'sparks', how: 'test', tick: 0 },
+    );
+    expect(fire().parts.some((p) => p.unknown)).toBe(false);
+    expect(fire().parts.map((p) => p.name)[3]).toMatch(/^a piece of the /);
   });
 });

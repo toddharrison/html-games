@@ -2,6 +2,18 @@
 
 ### 13.1 Decided
 
+**2026-11-26, after the second playtest.** Time went too fast to do anything, fire was too hard to work out, and the craft list and right-click building felt arbitrary. The art was liked.
+
+| Decision | Where it shows up |
+|---|---|
+| Tasks fast-forward at 8×, dropping back to normal speed when anything worth seeing happens. | 5.1 |
+| The crash is at 11:00, not 14:30. | 5.1 |
+| The cold leads the first day: the kid sees snow on the peaks and wants a fire before dark. Thoughts are the biggest text on screen, and each step toward the first fire gets the kid's reaction. | 12.2 |
+| Insights show on a slip of notebook paper: what was worked out, how, and what it adds to Make. | 12.2 |
+| Make (C) is a notebook page with pictures, grouped by need in the kid's words, showing only what the kid knows; a part not yet identified in this valley is written as what it should be, with a question mark. | 8.2, 12.4 |
+| A fire is chosen in Make, placed with a preview, laid (ring, tinder, kindling, wood), then clicked to light, every known way listed with what's missing. The other builds follow after this slice (Q28). | 8.3, 12.4; Q28 |
+| Interfaces use the kid's notebook style where it makes sense. | 8.2, 12.2 |
+
 **2026-11-26, after the first playtest (draft 6).** The game was fun but too menu-driven and visually flat.
 
 | Decision | Where it shows up |

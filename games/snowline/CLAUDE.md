@@ -12,7 +12,7 @@ This game is one workspace in the html-games monorepo. The repo-wide rules (layo
 
 ## Source of truth
 - **The spec ([docs/SPEC.md](docs/SPEC.md) and [docs/spec/](docs/spec/))** is the design. [README.md](README.md) is a short public summary; if they disagree, the spec wins. Update the README when a spec change affects its summary.
-- A design decision made in conversation goes into the section file it changes and a dated row in `docs/spec/13-decisions.md`. Open questions are in `docs/spec/13-questions.md` (the next one is Q47). Keep each spec file about one thing (the index says how).
+- A design decision made in conversation goes into the section file it changes and a dated row in `docs/spec/13-decisions.md`. Open questions are in `docs/spec/13-questions.md` (the next one is Q48). Keep each spec file about one thing (the index says how).
 
 ## Status
 - **M0–M6 are built** and were playtested once (2026-11-26). **M7, "seeing and touching" (SPEC 14), is in progress, slice first:** see [docs/TODO.md](docs/TODO.md).

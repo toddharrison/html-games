@@ -16,6 +16,7 @@ import { idx, type World } from '../src/sim/world.ts';
 import { migrate, restore, toRecord } from '../src/platform/saves.ts';
 import { runTo, stateHash } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
+import { START_MINUTE } from '../src/content/balance.ts';
 
 const MIN = 10;
 const DAY = 14400;
@@ -273,7 +274,7 @@ describe('floor foods (SPEC 6.6: always the same)', () => {
 
   it('nothing to forage in the dark', () => {
     const { state, world } = setup((w) => (w.terrain[FRONT] = T.reeds));
-    state.tick = (24 * 60 - 14 * 60 - 30) * MIN; // midnight
+    state.tick = (24 * 60 - START_MINUTE) * MIN; // midnight
     step(state, world, [{ t: state.tick, c: 'act', action: 'dig-cattail', tile: FRONT }]);
     expect(state.task).toBeNull();
   });

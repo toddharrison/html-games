@@ -17,6 +17,7 @@ import { ALL, snowBand, weatherAt } from '../src/sim/weather.ts';
 import { idx, type World } from '../src/sim/world.ts';
 import { runTo, startScenario } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
+import { START_MINUTE } from '../src/content/balance.ts';
 
 const MIN = 10;
 const DAY = 14400;
@@ -49,7 +50,7 @@ function animal(s: GameState, kind: Animal['kind'], x: number, y: number): Anima
 
 /** Set the time to a given hour on the current day. */
 function at(s: GameState, hour: number): void {
-  const now = (s.tick / 10 + 14 * 60 + 30) % 1440;
+  const now = (s.tick / 10 + START_MINUTE) % 1440;
   let delta = hour * 60 - now;
   if (delta < 0) delta += 1440;
   s.tick += Math.round(delta) * 10;

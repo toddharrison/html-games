@@ -56,7 +56,7 @@ export const GOLDENS: Golden[] = [
       { t: 10500, c: 'goto', x: 150, y: 175, onto: true, action: null, at: 'front' },
     ]).sort((a, b) => a.t - b.t),
     worldHash: 'ba0804cf',
-    stateHash: '4fd41a24',
+    stateHash: 'f3a7e866',
   },
   {
     // Another valley: a debug fire after dark, a walk through the night, and a teleport back to the start.
@@ -79,7 +79,7 @@ export const GOLDENS: Golden[] = [
       ...walk([[3, 12000, 800]]),
     ],
     worldHash: 'e23c937b',
-    stateHash: '738a07f9',
+    stateHash: '0e027a30',
   },
 ];
 

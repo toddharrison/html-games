@@ -21,6 +21,7 @@ import { step } from '../src/sim/step.ts';
 import { idx, type World } from '../src/sim/world.ts';
 import { runTo, startScenario } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
+import { START_MINUTE } from '../src/content/balance.ts';
 
 const MIN = 10;
 
@@ -181,7 +182,7 @@ describe('trout in the water (SPEC 7.4)', () => {
     state.player.y = state.player.fromY = 131;
     for (let k = 0; k < 3; k++) {
       state.fish = [{ id: k + 1, x: 129, y: 132, hx: 129, hy: 132, t: 1e6, spook: 0 }];
-      state.tick += 14400 - ((state.tick + 14 * 600 + 300) % 14400) + 12 * 600;
+      state.tick += 14400 - ((state.tick + START_MINUTE * 10) % 14400) + 12 * 600;
       run(state, world, [{ c: 'act', action: 'watch-fish', tile: idx(128, 131) }], 200);
     }
     expect(knowsTechnique(state, 'aim-low')).toBe(true);

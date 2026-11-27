@@ -203,7 +203,7 @@ The survivor walks over the tile grid instead of stepping tile to tile; the worl
 ### Time, daylight, sight, and viewpoints
 `M1` · `27fbb89` · `playtest: pending` · SPEC §5.1, §6.4
 
-- `src/sim/time.ts`: 10 ticks a minute; the run starts at 14:30 on day 1 (`START_MINUTE`). Daylight 0–100 from an hourly table (`DAYLIGHT` in `src/content/balance.ts`): light from about 06:00, dark by 21:00.
+- `src/sim/time.ts`: 10 ticks a minute; the run starts at 11:00 on day 1 (`START_MINUTE`; 14:30 until 2026-11-26). Daylight 0–100 from an hourly table (`DAYLIGHT` in `src/content/balance.ts`): light from about 06:00, dark by 21:00.
 - Sight: 14 tiles by day down to 2 at night (`sightRadius`); a fire lights 6. What's in sight is marked explored (a bitset in `GameState.explored`). The renderer's darkness uses the same circles (`sightCircles`), so the picture never shows more than the survivor can see.
 - Viewpoints: standing within a tile of one reveals 30 tiles round it, once, with a line of text (the signal knoll and the wreckage view have their own).
 
@@ -247,6 +247,22 @@ Trees are two to three tiles tall (`CONIFER` and `ASPEN` sizes in `src/render/fl
 `thinkMinute` (`src/sim/thoughts.ts`, run each game minute from `minuteHooks`) gives at most one thought per half hour of game time (`THOUGHT_GAP`), none in the first 20 minutes (`FIRST_AT`) or asleep. The first evening's steps (`FIRST`: water, look, gather, fire, shelter, dark, food) come once each, skipped once done; a step thought but not done holds back the next non-urgent one for two game hours (`PATIENCE`); shelter, dark, and food are urgent and come on time. Then the first full pockets once, and thirst, hunger, cold, and tiredness whenever they bite, at most every 8 game hours each (`RETURN_GAP`). Words in `src/content/thoughtText.ts`. A thought is a log line in quotes and a `thought` event; the HUD shows it as the caption with the how-to line under it (`Hud.think`), which settings can turn off (`Prefs.hints`).
 - Memory keys: `thought:<id>` (count), `thought-last:<id>` and `thought-at` (ticks), `thought:slept`.
 - **Gotcha:** a step's `done` must become true when the player has done the thing, or it holds the chain back for `PATIENCE` each time; a nudge with nothing to do (`look`) counts as done once thought.
+
+### Tasks fast-forward
+`M7` · `uncommitted` · `playtest: pending` · SPEC §5.1
+
+`App.onFrame` (`src/platform/app.ts`) runs the loop at `TASK_SPEED` (8) while `state.task` is set, as it runs `SLEEP_SPEED` while asleep: ticks run faster, never skipped, so replays and hashes don't change. An event in `STEADY_ON` (an animal, a thought, a storm, a slide, an aircraft, sickness, the weather, lightning, a notice) sets `steadied`, and the rest of that task runs at normal speed; `task-start` clears it. Platform only.
+
+### Thoughts up front, and the fire reactions
+`M7` · `uncommitted` · `playtest: pending` · SPEC §12.2
+
+The first day's chain (`FIRST` in `src/sim/thoughts.ts`, text in `content/thoughtText.ts`) now starts with `cold` (the snow on the peaks: a fire before dark), then `water`, `gather` (what a fire needs), `fire` (striking rock; due once tinder or a stick is carried), `lay` (enough to lay one and a way to light it), then shelter, dark, food as before; `look` folded into `gather`'s hint. `FIRE_REACTIONS` (`FIRE_THOUGHTS`: `sparked`, `carrying`, `laid`, `noCatch`, `lit`) come ahead of the chain once `REACT_GAP` (10 game minutes) has passed since the last thought; only the latest that applies is said, and the earlier ones are marked thought. The caption sits at 22% from the top, thought text 1.4em (`style.css`, the M7 block at the end).
+- **Gotcha:** `laid` waits for a way to light (a carried spark-stone, matches, or embers); without one it would tell the kid to strike sparks they can't make.
+
+### Insight slips
+`M7` · `uncommitted` · `playtest: pending` · SPEC §12.2, §8.1
+
+On a `discovery` event the app asks `insightText` (`src/ui/insight.ts`) for a card: a technique gives "New idea!", its name, its text, and the recipes it adds to Make; a fact gives "Now I know" or "I think...", "The <look> <what it means>" (`MEANS`, else the raw value), and how it was learned. `Hud.insight` queues them and shows each on a slip of notebook paper below the kid for 6.5 s. UI only.
 
 ### Title, HUD, map, pause, check page
 `M0`/`M1` · `27fbb89` · `playtest: pending` · SPEC §11.1, §6.4, §12.1
@@ -393,10 +409,16 @@ R offers: rest an hour (awake), sleep three hours, sleep until first light, slee
 
 ## 14. Fire
 
+### Laying a fire
+`M7` · `uncommitted` · `playtest: pending` · SPEC §8.3, §12.4
+
+A laid fire is a build, `fire-lay` (`LAY` in `src/sim/fire.ts`), whose `items` hold its tinder, sticks, and wood (`layParts`; ready to light with tinder and `LAY_STICKS` (2) sticks, `layReady`). `fire-site` (unlisted: only the Make page's placing or the bot start it) needs open ground (`fireSiteProblem`: not water, snow, scree, a feature, a fire, a build, or things lying there), rings the spot, and puts in what's carried (`layIn`: the best-known tinder, up to two sticks, the best-known wood). `lay-fire` adds what's missing, greyed with what's still needed; `unlay-fire` gives it all back. The light actions (`fire-sparks`, `-match`, `-embers`, `-drill`) are offered on a laid fire for each way the kid knows of (`knowsOf`: sparks whenever a steel tool is carried), greyed with `lightProblem`. Lighting burns the laid tinder whether it catches or not; a fire that catches gets the sticks (12 min each) and the wood (`WOOD_BURN`), and the lay is gone. A laid fire blocks walking (`blockedBySystems`). Drawn by `drawLay` (`render/fireArt.ts`): scraped earth, a stone ring, a tinder nest, a tent of sticks, a split log. Clicking does the obvious thing (`OBVIOUS` in `ui/look.ts`: lay, then light by match, embers, sparks, drill); `strike-outcrop` is offered only until that stone is known, so the next click on it pries a piece loose. The bot lays and lights the same way (`tendFire`).
+- **Gotcha:** lighting no longer works on open ground from the pockets; every fire starts as a laid one. The signal pile still lights from the pockets (`canIgnite` in `arc.ts`).
+
 ### Three routes to fire
 `M3` · `fa5ba50` · `playtest: pending` · SPEC §8.3, §6.6
 
-`src/sim/fire.ts`. Facing open ground with tinder and kindling (2 sticks or a piece of firewood), E offers each way the survivor can light it:
+`src/sim/fire.ts`. **Since M7 a fire is laid first and lit from the laid fire ("Laying a fire" above).** The ways to light it:
 - **Sparks:** strike any outcrop (or a carried stone) with the steel tool first (`strike`): the dealt spark-stone throws sparks (known, and the *sparks* technique by accident), others flake to an edge, crumble, or do nothing (all known). Then *Light a fire with sparks* needs a known spark-stone carried. The multi-tool throws poor sparks (`TOOL_WORK.sparks`).
 - **Captured fire:** `strikeSnag` makes the lightning-split snag smoulder for 6 hours (the weather calls it, M4); with bark, *Take embers from the smouldering snag* gives embers in bark (and the *carry-embers* technique), which die after 4 hours.
 - **Bow drill:** made from 2 sticks, cord, and a piece of firewood (whose wood it keeps); works only if that wood is the dealt drill wood. A wrong one "only smoked" (the wood becomes *not for the drill*, suspected then known). Tiring.
@@ -418,10 +440,16 @@ R offers: rest an hour (awake), sleep three hours, sleep until first light, slee
 `src/sim/materials.ts`. **Since M7, everything gathered by hand comes from loose things on the ground (§25): sticks, driftwood, plant fibre, dry grass, seed fluff, plain stones, pine cones, feathers; the ground-type actions (*Gather sticks*, *Pull dry grass*, *Gather driftwood*, *Pull plant fibre*, *Gather seed fluff*, *Gather pine nuts*) are gone.** What stays here is work on a tree, log, or outcrop: firewood cut from conifers (resinous wood), aspens (white-barked), stunted trees (grey twisted) with the steel tool; broken from deadfall (red-barked). Green boughs and bark (conifer, aspen). Tinders from features: shredded inner bark (aspen, needs steel), hanging grey lichen (trees above the valley floor), punk wood (deadfall). Wood and tinder rows appear in the notes when gathered (`WOOD_SOURCE`, `TINDER_SOURCE` in `src/content/recipes.ts`).
 - **Tools differ** (`TOOL_WORK`): the hatchet cuts wood fastest and is clumsy at fine work; the knife is the reverse and best with fibre; the multi-tool is middling at everything and poor at sparks.
 
+### The Make page
+`M7` · `uncommitted` · `playtest: pending` · SPEC §8.2, §12.4
+
+C opens `makePage` (`src/ui/make.ts`), a notebook page (the journal's `.notebook` styles) listing `makeBook` (`src/sim/craft.ts`): the fire first (`fireEntry`), then every known recipe and build, grouped by `need` (`NEEDS` in `content/recipes.ts`, in the kid's words, in that order). Each entry has a picture (loose-thing art by item, `DRAWN_AS`; the fire is `drawLay`) and its parts with icons, green and ticked when carried, red with a question mark when `unknown`. The fire's parts name this valley's things once known: a tinder known to catch, a wood known to burn long, a piece of the known spark-stone; until then "something dry that catches a spark", "wood that burns well", "a rock that sparks on steel". Number keys pick the first nine. Choosing the fire starts placing; anything else is crafted or built as before. `craftMenu` is gone.
+- **Placing** (`App.placing`): the tile under the mouse (or the faced one) shows `drawLayGhost` (`render/fireArt.ts`), drawn after the light so it shows at night; the tip says "Lay the fire here" or "Not here: <reason>" (`fireSiteProblem`, or no stand beside it). Click or E queues a `goto` with `fire-site`; Esc or C stops.
+
 ### Crafting and camp improvements
 `M3` · `fa5ba50` · `playtest: pending` · SPEC §8.2, §7.6
 
-C lists what the survivor knows how to make (`craftOptions` in `src/sim/craft.ts`), greyed with what's missing. Recipes (`RECIPES`): cord (fibre), sharpened stick (known from the start), fish spear, fire-hardened spear (at a fire), bow drill, bark vessel, basket (+4 slots), and, for M4, snares, bow, arrows, splint, warm layers. Some fail at low crafting skill, spoiling the materials. Builds (`BUILDS`): lean-to (shelter anywhere), bough bed, woven wall and door (technique), reflector stones round a faced fire, covered woodpile, hanging cache on a faced tree (technique; hang and take down food, `src/sim/camp.ts`), signal fire pile (technique; lit in M5).
+`craftOptions` (`src/sim/craft.ts`) is what the survivor knows how to make, with what's missing; the Make page (above) shows it. Recipes (`RECIPES`): cord (fibre), sharpened stick (known from the start), fish spear, fire-hardened spear (at a fire), bow drill, bark vessel, basket (+4 slots), and, for M4, snares, bow, arrows, splint, warm layers. Some fail at low crafting skill, spoiling the materials. Builds (`BUILDS`): lean-to (shelter anywhere), bough bed, woven wall and door (technique), reflector stones round a faced fire, covered woodpile, hanging cache on a faced tree (technique; hang and take down food, `src/sim/camp.ts`), signal fire pile (technique; lit in M5).
 - Shelter (`shelterAt` in `src/sim/surroundings.ts`): the overhang floor (rain 0.8, wind 0.25), a lean-to (rain 0.6), a wall (+wind, +security, +insulation), a bed (insulation, and sleep quality). Sleep quality (`sleepQuality`) reads them; the light sleeper needs security.
 - **Gotcha:** improvements belong to the camp tile, not to tiles of their own (Q28).
 

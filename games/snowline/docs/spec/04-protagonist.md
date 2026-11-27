@@ -23,15 +23,17 @@ The roster includes boys and girls in equal numbers. This spec says "the survivo
 
 Backgrounds give a start, not a permanent advantage; every protagonist can learn everything.
 
-| Background | Head start |
-|---|---|
-| Scout | Firecraft level 1; already knows how to make cord |
-| Angler | Fishing level 1 |
-| Hunter's kid | Hunting level 1; animals notice them later |
-| Farm kid | Crafting level 1; heavy work costs less rest |
-| Runner | Moving costs less rest; better in cold water |
-| Reader | More frequent reflection hints; steadier morale |
-| City kid | No head start, but skills rise faster. The hard mode. |
+| Background | Head start | Knows from the start (decided 2026-11-27) |
+|---|---|---|
+| Scout | Firecraft level 1 | Tinder and kindling, sparks off steel, the bow drill, cord, a bough bed |
+| Angler | Fishing level 1 | A fish spear; aiming below the fish |
+| Hunter's kid | Hunting level 1; animals notice them later | Snares, kindling, hanging food from bears |
+| Farm kid | Crafting level 1; heavy work costs less rest | A covered woodpile, a splint |
+| Runner | Moving costs less rest; better in cold water | A splint |
+| Reader | More frequent reflection hints; steadier morale | The most, from books: tinder and kindling, sparks off steel, reflector stones, bark vessels, boiling with hot stones, a fish weir, a signal fire |
+| City kid | No head start, but skills rise faster. The hard mode. | Only what any kid knows |
+
+What any 12–15-year-old knows, whatever their background: that a fire needs something to burn and a way to light it, a shelter of branches (a lean-to), and a sharpened stick. Everything else is a technique (8.1), known from a background or learned in the valley.
 
 | Trait | Complication |
 |---|---|

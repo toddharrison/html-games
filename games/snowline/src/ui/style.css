@@ -1122,3 +1122,156 @@ button:focus-visible,
   color: var(--faint);
   font-size: 0.8em;
 }
+
+/* ---- M7: the kid's inventory, sketches, and menus as notebook slips (SPEC 12.4) ---- */
+
+/* What I've got: a notebook page like Make, each thing sketched in pencil beside the kid's note. */
+.pack {
+  width: 80%;
+  height: 84%;
+  display: flex;
+  flex-direction: column;
+}
+
+.pack .thing {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6em;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  line-height: var(--rule);
+  background: none;
+  border: none;
+  border-radius: 0.3em;
+}
+
+.pack button.thing {
+  cursor: pointer;
+}
+
+.pack button.thing:hover,
+.pack button.thing:focus-visible {
+  background: rgba(233, 213, 143, 0.45);
+  outline: none;
+}
+
+.pack .num {
+  width: 1em;
+  flex: none;
+  color: var(--faint);
+  font-size: 0.8em;
+}
+
+/* Pencil on the page: the sketch sits on the paper rather than over it. */
+canvas.sketch {
+  flex: none;
+  width: calc(var(--rule) * 2.5);
+  height: calc(var(--rule) * 2.5);
+  mix-blend-mode: multiply;
+  transform: rotate(-2deg);
+}
+
+.pack .thing:nth-child(even) canvas.sketch {
+  transform: rotate(1.5deg);
+}
+
+.pack .what {
+  display: flex;
+  flex-direction: column;
+}
+
+.pack .count {
+  color: var(--faint);
+  font-weight: normal;
+}
+
+.pack .fresh {
+  color: var(--red-pen);
+  font-weight: normal;
+  font-size: 0.85em;
+}
+
+.pack .note {
+  font-size: 0.85em;
+}
+
+.pack .how {
+  color: var(--faint);
+  font-size: 0.75em;
+}
+
+.pack .found:not(.known):not(.suspected) .note {
+  color: var(--faint);
+}
+
+/* The Make page's pictures are sketches too. */
+.make canvas.sketch {
+  width: calc(var(--rule) * 2);
+  height: calc(var(--rule) * 2);
+}
+
+/* In play, a menu is a slip torn from the notebook: its paper, its rules, the kid's hand. */
+.panel.slip {
+  --rule: 1.45em;
+  font-family: 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', 'Comic Neue', cursive;
+  color: #3f392f;
+  background-color: #efe6cc;
+  background-image: repeating-linear-gradient(transparent 0, transparent calc(var(--rule) - 1px), rgba(110, 150, 190, 0.35) calc(var(--rule) - 1px), rgba(110, 150, 190, 0.35) var(--rule));
+  border: none;
+  box-shadow: 0 0.2em 1.2em rgba(0, 0, 0, 0.55);
+  transform: rotate(-0.8deg);
+  line-height: var(--rule);
+}
+
+.panel.slip h2 {
+  color: #b23a2e;
+  text-decoration: underline;
+  font-size: 1em;
+  line-height: var(--rule);
+  margin-bottom: 0;
+}
+
+.panel.slip .menu-list li {
+  padding: 0 0.4em;
+  line-height: var(--rule);
+}
+
+.panel.slip .menu-list li.on {
+  border-left-color: #b23a2e;
+  background: rgba(233, 213, 143, 0.6);
+}
+
+.panel.slip .menu-list li.disabled,
+.panel.slip .menu-list .key,
+.panel.slip .menu-list .hint,
+.panel.slip .keys,
+.panel.slip .empty {
+  color: #7a705e;
+}
+
+.panel.context.slip h2 {
+  color: #7a705e;
+}
+
+/* The name of what's under the mouse: a scrap of the same paper, pencilled. */
+.tip {
+  color: #3f392f;
+  background: rgba(239, 230, 204, 0.94);
+  border-left: none;
+  box-shadow: 0 0.1em 0.5em rgba(0, 0, 0, 0.45);
+  font-family: 'Comic Sans MS', 'Chalkboard SE', 'Marker Felt', 'Comic Neue', cursive;
+  transform: rotate(-1deg);
+}
+
+.tip .do {
+  color: #7a705e;
+}
+
+.make canvas.sketch {
+  image-rendering: auto;
+  mix-blend-mode: multiply;
+}

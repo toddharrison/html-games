@@ -301,7 +301,7 @@ export function workTask(s: GameState, w: World, events: SimEvent[]): void {
   if (task.left > 0) return;
   s.task = null;
   if (task.action.startsWith('craft:')) {
-    finishCraft(s, w, task.action.slice(6), task.tile, events);
+    finishCraft(s, w, task.action.slice(6), events);
   } else if (task.action.startsWith('item:')) {
     const a = ITEM_ACTIONS.find((x) => x.id === task.action.slice(5));
     if (a && a.offer(s, w, task.slot)) a.done(s, w, task.slot, events);

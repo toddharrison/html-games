@@ -45,6 +45,8 @@ const OBVIOUS = [
   'weir-take',
   'snare-take',
   'cache-take',
+  // A build begun: bring what it needs, and build it once that's everything.
+  'site-work',
   // A laid fire: finish laying it, then light it the best way to hand.
   'lay-fire',
   'fire-match',
@@ -86,7 +88,10 @@ export function nameAt(s: GameState, w: World, x: number, y: number): string {
   if (fire) return burning(fire) ? 'the fire' : fire.coals > 0 ? 'the embers' : 'a cold fire';
   const st = s.stashes.find((t) => t.x === x && t.y === y);
   if (st?.items.length) return st.items.map((it) => itemName(s, it)).join(', ');
-  const b = s.builds.find((bd) => bd.x === x && bd.y === y);
+  // A build begun is named first: it's what the spot needs next.
+  const here = s.builds.filter((bd) => bd.x === x && bd.y === y);
+  const b = here.find((bd) => bd.kind.startsWith('site:')) ?? here[0];
+  if (b?.kind.startsWith('site:')) return `${BUILD_NAMES[b.kind.slice(5)] ?? b.kind.slice(5)}, not finished`;
   if (b) return BUILD_NAMES[b.kind] ?? b.kind;
   const l = looseAt(s, w, i);
   if (l) {

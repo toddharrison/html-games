@@ -78,27 +78,33 @@ export const RECIPES: readonly RecipeDef[] = [
   { id: 'warm-layers', need: 'warm', label: 'Make warm layers', technique: 'warm-layers', inputs: [{ k: 'hide', n: 2 }, { k: 'tinder', n: 4, d: 0 }, { k: 'cord', n: 2 }], work: 'fibre', minutes: 120, out: { k: 'warm-layers', n: 1 } },
 ];
 
-/** Camp improvements (SPEC 7.6): built on the tile the survivor stands on, or (fire and tree ones) faces. */
+/**
+ * Camp improvements (SPEC 7.6, 8.2): chosen in Make, placed with a preview, and built from beside the spot
+ * out of what's carried; what's missing can be brought later (it stands as a site until then).
+ */
 export interface BuildDef {
   id: string;
   label: string;
   need: Need;
+  /** The technique that unlocks it; none means any kid knows it. */
   technique?: string;
   inputs: Ingredient[];
   minutes: number;
-  /** Built where: 'here' (the camp spot), 'fire' (the faced fire), 'tree' (the faced tree), 'open' (faced open ground). */
+  /** Goes where: 'here' (a camp spot, slept on), 'fire' (round a fire), 'tree', 'open' (open ground), 'water' (the shallows). */
   at: 'here' | 'fire' | 'tree' | 'open' | 'water';
+  /** What the kid thinks while choosing where it goes. */
+  ask: string;
 }
 
 export const BUILDS: readonly BuildDef[] = [
-  { id: 'lean-to', need: 'shelter', label: 'Build a lean-to', inputs: [{ k: 'stick', n: 8 }, { k: 'boughs', n: 4 }], minutes: 90, at: 'here' },
-  { id: 'bed', need: 'shelter', label: 'Lay a bough bed', inputs: [{ k: 'boughs', n: 4 }], minutes: 30, at: 'here' },
-  { id: 'wall', need: 'shelter', label: 'Weave a wall and door', technique: 'walls', inputs: [{ k: 'stick', n: 6 }, { k: 'cord', n: 1 }], minutes: 120, at: 'here' },
-  { id: 'reflector', need: 'warm', label: 'Ring the fire with reflector stones', inputs: [{ k: 'stone', n: 3 }], minutes: 30, at: 'fire' },
-  { id: 'woodpile', need: 'shelter', label: 'Build a covered woodpile', inputs: [{ k: 'stick', n: 4 }, { k: 'bark', n: 2 }], minutes: 45, at: 'here' },
-  { id: 'cache', need: 'food', label: 'Rig a hanging food cache', technique: 'cache', inputs: [{ k: 'cord', n: 2 }], minutes: 40, at: 'tree' },
-  { id: 'weir', need: 'food', label: 'Build a fish weir of stones', technique: 'weir', inputs: [{ k: 'stone', n: 6 }], minutes: 120, at: 'water' },
-  { id: 'signal', need: 'found', label: 'Build a signal fire pile', technique: 'signal', inputs: [{ k: 'firewood', n: 6 }, { k: 'boughs', n: 4 }], minutes: 60, at: 'open' },
+  { id: 'lean-to', need: 'shelter', label: 'Build a lean-to', inputs: [{ k: 'stick', n: 8 }, { k: 'boughs', n: 4 }], minutes: 90, at: 'here', ask: 'Where should it go? Somewhere flat, out of the wind.' },
+  { id: 'bed', need: 'shelter', label: 'Lay a bough bed', technique: 'bough-bed', inputs: [{ k: 'boughs', n: 4 }], minutes: 30, at: 'here', ask: "Where will I sleep? Under the lean-to, or the overhang." },
+  { id: 'wall', need: 'shelter', label: 'Weave a wall and door', technique: 'walls', inputs: [{ k: 'stick', n: 6 }, { k: 'cord', n: 1 }], minutes: 120, at: 'here', ask: 'Round where I sleep.' },
+  { id: 'reflector', need: 'warm', label: 'Ring the fire with reflector stones', technique: 'reflector', inputs: [{ k: 'stone', n: 3 }], minutes: 30, at: 'fire', ask: 'Which fire?' },
+  { id: 'woodpile', need: 'shelter', label: 'Build a covered woodpile', technique: 'woodpile', inputs: [{ k: 'stick', n: 4 }, { k: 'bark', n: 2 }], minutes: 45, at: 'here', ask: 'Somewhere near the fire.' },
+  { id: 'cache', need: 'food', label: 'Rig a hanging food cache', technique: 'cache', inputs: [{ k: 'cord', n: 2 }], minutes: 40, at: 'tree', ask: 'Which tree? Away from where I sleep.' },
+  { id: 'weir', need: 'food', label: 'Build a fish weir of stones', technique: 'weir', inputs: [{ k: 'stone', n: 6 }], minutes: 120, at: 'water', ask: 'Where in the shallows?' },
+  { id: 'signal', need: 'found', label: 'Build a signal fire pile', technique: 'signal', inputs: [{ k: 'firewood', n: 6 }, { k: 'boughs', n: 4 }], minutes: 60, at: 'open', ask: 'Somewhere open, where it can be seen from the air.' },
 ];
 
 /**

@@ -6,6 +6,9 @@ export const FIRE_MSG = {
   firstFire: (w: Who) => `The tinder caught. A thread of smoke, a flicker, then flame. ${w.name} had fire.`,
   lit: (w: Who, slow: boolean) => (slow ? `The tinder smoked a long time before it caught, but ${w.name} had a fire going.` : `${w.name} got a fire going.`),
   wouldNotCatch: (w: Who, tinder: string) => `${w.name} tried to light the ${tinder}, but it would not catch.`,
+  noTinder: (w: Who, sparks: boolean) =>
+    sparks ? `The sparks fell on the sticks and died. Nothing caught. It needed something finer, something dry, to catch first.` : `The sticks blackened and wouldn't take. ${w.name} needed something finer, something dry, to catch first.`,
+  flaredOut: (w: Who, tinder: string) => `The ${tinder} caught, flared up, and was gone in a breath. Nothing bigger had caught from it. ${w.name} needed small sticks on it.`,
   drillSmoked: (w: Who, wood: string) => `${w.name} worked the bow drill until ${w.their} arms burned. The ${wood} only smoked; no coal came.`,
   woodBurned: (_w: Who, wood: string, outcome: string) =>
     outcome === 'long-burning'
@@ -45,6 +48,10 @@ export const CRAFT_MSG = {
   made: (w: Who, thing: string) => `${w.name} made ${thing}.`,
   failed: (w: Who, thing: string) => `${w.name} tried to make ${thing}, but it came apart. The materials were spoiled.`,
   built: (w: Who, thing: string) => `${w.name} finished: ${thing}.`,
+  begun: (w: Who, thing: string) => `${w.name} marked out a spot for the ${thing}.`,
+  putIn: (w: Who, put: string[], thing: string, lacks: string) =>
+    `${w.name} put ${put.length > 1 ? `${put.slice(0, -1).join(', ')} and ${put[put.length - 1]}` : put[0]} into the ${thing}. It still needed ${lacks}.`,
+  undone: (w: Who, thing: string) => `${w.name} took the ${thing} apart again.`,
   gathered: (w: Who, n: number, thing: string) => `${w.name} gathered ${n} ${thing}.`,
   cut: (w: Who, n: number, thing: string, tool: string) => `${w.name} cut ${n} ${thing} with the ${tool}.`,
   noTool: (w: Who) => `${w.name} needed something sharp for that.`,

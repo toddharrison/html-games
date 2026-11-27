@@ -50,7 +50,7 @@ Every protagonist begins with one of three steel tools. It never wears out, but 
 
 ### 7.6 Shelter and camp
 
-A shelter site has four ratings: rain cover, wind cover, insulation, and security. The rock overhang starts with good rain cover and little else. Improvements, built in stages from gathered materials:
+A shelter site has four ratings: rain cover, wind cover, insulation, and security. The rock overhang starts with good rain cover and little else. Improvements, built in stages from gathered materials. Every build works the way a fire is laid (8.2, 8.3; decided 2026-11-27): chosen in Make, placed with a preview, then the kid walks beside the spot, marks it out, and puts in what they carry. If that's everything, it's built then and there; if not, it stands as a site, drawn faint and firming up as its parts go in, until the rest is brought (click it) or it's taken apart again. A storm takes a site the way it takes the thing it would have been. Camp builds (lean-to, bed, wall, woodpile) share the spot slept on; reflector stones go round a fire, a cache on a tree, a weir in the shallows, the signal pile on open ground:
 
 - Woven wall and door (wind, security)
 - Bough bed (insulation, sleep quality)

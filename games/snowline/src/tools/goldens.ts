@@ -79,7 +79,7 @@ export const GOLDENS: Golden[] = [
       ...walk([[3, 12000, 800]]),
     ],
     worldHash: 'e23c937b',
-    stateHash: '0e027a30',
+    stateHash: 'da5b671b',
   },
 ];
 

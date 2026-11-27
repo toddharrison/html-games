@@ -6,12 +6,10 @@
 //   ?check=1        the golden replay check page (platform/check.ts)
 
 import { SCREEN_H, SCREEN_W, TILE } from '../content/balance.ts';
-import { itemDef } from '../content/items.ts';
 import { TEXT } from '../content/text.ts';
 import { Renderer } from '../render/renderer.ts';
 import { availableActions, itemActions } from '../sim/actions.ts';
 import { itemName } from '../sim/food.ts';
-import { carryLimit, load, maxSlots } from '../sim/inventory.ts';
 import { candidate, type Protagonist } from '../sim/protagonist.ts';
 import { DEFAULT_SEED } from '../sim/newGame.ts';
 import { decodeRun } from '../sim/runCode.ts';
@@ -20,9 +18,11 @@ import { clock } from '../sim/time.ts';
 import { runTo, stateHash, valley } from '../tools/runner.ts';
 import { restOptions } from '../ui/actionsUi.ts';
 import { makePage } from '../ui/make.ts';
+import { packPage, type PackTab } from '../ui/pack.ts';
 import { insightText } from '../ui/insight.ts';
 import type { MakeEntry } from '../sim/craft.ts';
 import { fireSiteProblem } from '../sim/fire.ts';
+import { buildDef, buildSiteProblem } from '../sim/craft.ts';
 import { standFor } from '../sim/reach.ts';
 import { idx } from '../sim/world.ts';
 import { DX4, DY4 } from '../sim/worldgen/grid.ts';
@@ -44,7 +44,7 @@ import { download, parseReplay, toReplay } from './replay.ts';
 import { deleteRun, loadRun, migrate, parseSave, restore, saveRun, toRecord, type SaveRecord } from './saves.ts';
 import { Loop, Session } from './session.ts';
 
-type Modal = 'title' | 'loading' | 'select' | 'map' | 'pause' | 'menu' | 'journal' | 'make' | 'summary' | 'settings' | null;
+type Modal = 'title' | 'loading' | 'select' | 'map' | 'pause' | 'menu' | 'journal' | 'make' | 'pack' | 'summary' | 'settings' | null;
 
 /** Game minutes pass this many times faster while the survivor sleeps (SPEC 5.1: by running ticks). */
 const SLEEP_SPEED = 90;
@@ -71,11 +71,12 @@ export class App {
   private modal: Modal = null;
   private menu: ListMenu | null = null;
   private journalTab: JournalTab = 'notes';
+  private packTab: PackTab = 'carrying';
   private speed = 1;
   /** Something happened during the current task, so it runs at normal speed until it ends. */
   private steadied = false;
   /** Choosing where to lay a fire (from the Make page): the tile under the mouse shows a preview. */
-  private placing = false;
+  private placing: MakeEntry | null = null;
   /** The Make page's entries, for its number keys. */
   private makeEntries: MakeEntry[] = [];
   private scale = 1;
@@ -359,6 +360,14 @@ export class App {
       else this.menu.key(a);
       return;
     }
+    if (this.modal === 'pack') {
+      if (a === 'pause' || a === 'inventory') this.setModal(null);
+      else if (a === 'left' || a === 'right') {
+        this.packTab = this.packTab === 'carrying' ? 'found' : 'carrying';
+        this.openInventory();
+      } else if (a.startsWith('slot') && this.packTab === 'carrying') this.openItem(Number(a.slice(4)) - 1);
+      return;
+    }
     if (this.modal === 'make') {
       if (a === 'pause' || a === 'craft') this.setModal(null);
       else if (a.startsWith('slot')) {
@@ -428,6 +437,8 @@ export class App {
       },
       note ?? 'Number keys, or arrows and Enter · Esc to close',
     );
+    // In play, a menu is a slip torn from the kid's notebook.
+    this.menu.el.classList.add('slip');
     if (at) {
       // A small menu beside the cursor, kept on the screen.
       const el = this.menu.el;
@@ -467,7 +478,7 @@ export class App {
         const why = this.placeProblem(hv.x, hv.y);
         this.canvas.dataset.cursor = why ? 'none' : 'hand';
         this.tip.hidden = false;
-        (this.tip.firstChild as HTMLElement).textContent = why ? `Not here: ${why}` : 'Lay the fire here';
+        (this.tip.firstChild as HTMLElement).textContent = why ? `Not here: ${why}` : this.placing.id === 'fire' ? 'Lay the fire here' : `${this.placing.label} here`;
         (this.tip.lastChild as HTMLElement).textContent = 'click to choose · Esc to stop';
         return;
       }
@@ -562,18 +573,17 @@ export class App {
 
   private openInventory(): void {
     const s = this.session!;
-    const inv = s.state.inventory;
-    this.openList(
-      `Carrying (${load(s.state).toFixed(1)} of ${carryLimit(s.state)})`,
-      inv.map((it, i) => {
-        const food = itemDef(it.k).food;
-        return {
-          label: `${itemName(s.state, it)}${it.n > 1 ? ` ×${it.n}` : ''}`,
-          hint: food && food.spoils && it.t !== undefined ? freshness(s.state.tick - it.t, food.spoils) : '',
-          run: () => this.openItem(i),
-        };
-      }),
-      `${inv.length} of ${maxSlots(s.state)} places · 1–9 to use · Esc to close`,
+    this.setModal(
+      'pack',
+      packPage(
+        s.state,
+        this.packTab,
+        (slot) => this.openItem(slot),
+        (t) => {
+          this.packTab = t;
+          this.openInventory();
+        },
+      ),
     );
   }
 
@@ -588,9 +598,9 @@ export class App {
     const s = this.session!;
     this.setModal(null);
     if (e.where === 'placed') {
-      this.placing = true;
+      this.placing = e;
       this.lookKey = '';
-      this.hud.say(['Where should the fire go? Somewhere open, near where I sleep.'], 4000);
+      this.hud.say([e.id === 'fire' ? 'Where should the fire go? Somewhere open, near where I sleep.' : buildDef(e.id.slice(6))!.ask], 4000);
       return;
     }
     this.taskLabel = e.label;
@@ -598,34 +608,37 @@ export class App {
   }
 
   private stopPlacing(): void {
-    this.placing = false;
+    this.placing = null;
     this.lookKey = '';
   }
 
-  /** Why a fire can't be laid at (x, y), or null. */
+  /** Why what's being placed can't go at (x, y), or null. */
   private placeProblem(x: number, y: number): string | null {
     const s = this.session!;
-    const why = fireSiteProblem(s.state, s.world, idx(x, y));
+    const e = this.placing!;
+    const tile = idx(x, y);
+    const why = e.id === 'fire' ? fireSiteProblem(s.state, s.world, tile) : buildSiteProblem(s.state, s.world, buildDef(e.id.slice(6))!, tile);
     if (why) return why;
     return standFor(s.state, s.world, x, y) ? null : "can't get beside it";
   }
 
-  private ghost(st: GameState): { x: number; y: number; ok: boolean } | null {
+  private ghost(st: GameState): { x: number; y: number; ok: boolean; kind: string } | null {
     if (!this.placing || this.modal !== null) return null;
     const at = this.hover ?? faced(st);
-    return { ...at, ok: !this.placeProblem(at.x, at.y) };
+    return { ...at, ok: !this.placeProblem(at.x, at.y), kind: this.placing.id.replace(/^build:/, '') };
   }
 
-  /** Lay a fire at (x, y): walk beside it, clear the spot, and put in what's carried. */
+  /** Place it at (x, y): walk beside the spot, set it out, and put in what's carried (building it, if that's everything). */
   private place(x: number, y: number): void {
+    const e = this.placing!;
     const why = this.placeProblem(x, y);
     if (why) {
       this.hud.say([`Not there: ${why}.`], 2000);
       return;
     }
     this.stopPlacing();
-    this.taskLabel = 'Clearing a spot and laying a fire';
-    this.session!.queue({ c: 'goto', x, y, onto: false, action: 'fire-site', at: 'front' });
+    this.taskLabel = e.id === 'fire' ? 'Clearing a spot and laying a fire' : e.label;
+    this.session!.queue({ c: 'goto', x, y, onto: false, action: e.id === 'fire' ? 'place:fire' : `place:${e.id.slice(6)}`, at: 'front' });
   }
 
   private openRest(): void {
@@ -731,9 +744,3 @@ export class App {
 }
 
 /** How fresh food is, in words. */
-function freshness(ageTicks: number, spoilsMinutes: number): string {
-  const left = spoilsMinutes - ageTicks / 10;
-  if (left < 240) return 'going off';
-  if (left < 1440) return 'eat soon';
-  return 'fresh';
-}

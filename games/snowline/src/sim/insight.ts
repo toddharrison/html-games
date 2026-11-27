@@ -16,8 +16,11 @@ import { clock } from './time.ts';
 
 /** When each technique is ripe for reflection: what the survivor has seen or done. In priority order. */
 const RIPE: [string, (s: GameState) => boolean][] = [
+  ['kindling', (s) => recall(s, 'fire-fails') >= 1],
   ['tinder-nest', (s) => recall(s, 'fire-fails') >= 2],
   ['cord', (s) => has(s, 'fibre')],
+  ['bough-bed', (s) => recall(s, 'slept-on-ground') >= 1],
+  ['reflector', (s) => recall(s, 'fire-at-night') >= 1],
   ['bow-drill', (s) => knowsTechnique(s, 'cord') && clock(s.tick).day >= 3 && recall(s, 'fires-lit') === 0],
   ['bark-vessel', (s) => has(s, 'bark')],
   ['spear', (s) => has(s, 'sharp-stick') || recall(s, 'shallows') >= 2],
@@ -25,6 +28,7 @@ const RIPE: [string, (s: GameState) => boolean][] = [
   ['carry-embers', (s) => recall(s, 'fires-lit') >= 2],
   ['hot-stones', (s) => knowsTechnique(s, 'bark-vessel') && recall(s, 'fires-lit') >= 1],
   ['walls', (s) => recall(s, 'slept-sheltered') >= 2],
+  ['woodpile', (s) => recall(s, 'fires-lit') >= 2 && clock(s.tick).day >= 3],
   ['fire-harden', (s) => (has(s, 'spear') || has(s, 'sharp-stick')) && recall(s, 'fires-lit') >= 1],
   ['basket', (s) => has(s, 'bark') && knowsTechnique(s, 'cord') && recall(s, 'full') >= 1],
   ['smoking', (s) => recall(s, 'spoiled') >= 1 && recall(s, 'fires-lit') >= 1],

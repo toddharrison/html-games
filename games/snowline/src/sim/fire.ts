@@ -17,6 +17,7 @@ import { remember } from './memory.ts';
 import { chance } from './rng.ts';
 import { level, practise } from './skills.ts';
 import { burning, fireNear } from './surroundings.ts';
+import type { MakePart } from './craft.ts';
 import type { Build, Fire, GameState, Item, SimEvent } from './state.ts';
 import { technique } from '../content/insights.ts';
 import { clock } from './time.ts';
@@ -101,12 +102,52 @@ function bestWood(s: GameState): number {
   return best;
 }
 
-/** What the survivor carries that the laid fire still lacks, as the kid would ask for it (none: ''). */
-function layLacks(b: Build): string {
+/** The kid knows what tinder is for: from their background, a failure, or a tinder that caught. */
+const knowsTinder = (s: GameState) => knowsTechnique(s, 'tinder-nest') || knownWith(s, 'tinder', 'catches') >= 0;
+
+/**
+ * A fire's parts as the kid would write them (SPEC 8.2, 8.3): a thing they've found by its look; a thing they
+ * know is needed but not which one here with a question mark; and, where they don't know what's needed at
+ * all, only what it's for ("something to burn?", "a way to start a fire?"). A discovery is never given away.
+ */
+export function fireParts(s: GameState): MakePart[] {
+  const tinder = knownWith(s, 'tinder', 'catches');
+  const wood = knownWith(s, 'wood', 'long-burning');
+  const kindling = knowsTechnique(s, 'kindling');
+  const parts: MakePart[] = [
+    tinder >= 0
+      ? { k: 'tinder', n: 1, have: count(s, 'tinder', tinder), name: lookName('tinder', tinder) }
+      : knowsTinder(s)
+        ? { k: 'tinder', n: 1, have: count(s, 'tinder'), name: 'tinder that catches', unknown: true }
+        : { k: 'tinder', n: 1, have: count(s, 'tinder'), name: 'something dry to get it going', unknown: true },
+    kindling
+      ? { k: 'stick', n: LAY_STICKS, have: count(s, 'stick'), name: 'sticks for kindling' }
+      : { k: 'stick', n: LAY_STICKS, have: count(s, 'stick'), name: 'something to burn', unknown: true },
+  ];
+  // Wood that keeps it going is something a kid thinks of once they know a fire is built up from small to big.
+  if (wood >= 0) parts.push({ k: 'firewood', n: 1, have: count(s, 'firewood', wood), name: lookName('wood', wood), optional: true });
+  else if (kindling) parts.push({ k: 'firewood', n: 1, have: count(s, 'firewood'), name: 'wood that burns well', unknown: true, optional: true });
+  parts.push(starter(s));
+  return parts;
+}
+
+/** The way to light it, as far as the kid knows one: what they carry first, then what they know of. */
+function starter(s: GameState): MakePart {
+  if (has(s, 'matches')) return { k: 'matches', n: 1, have: count(s, 'matches'), name: 'a match' };
+  if (has(s, 'ember-pouch')) return { k: 'ember-pouch', n: 1, have: 1, name: 'embers' };
+  if (has(s, 'bow-drill')) return { k: 'bow-drill', n: 1, have: 1, name: 'the bow drill' };
+  const stone = knownWith(s, 'stone', 'sparks');
+  if (stone >= 0) return { k: 'stone', n: 1, have: count(s, 'stone', stone), name: `a piece of the ${lookName('stone', stone)}` };
+  if (knowsTechnique(s, 'sparks')) return { k: 'stone', n: 1, have: 0, name: 'a rock that sparks on steel', unknown: true };
+  return { k: 'stone', n: 1, have: 0, name: 'a way to start a fire', unknown: true };
+}
+
+/** What the laid fire still lacks, in the kid's words (none: ''). */
+function layLacks(s: GameState, b: Build): string {
   const p = layParts(b);
   const lack: string[] = [];
-  if (!p.tinder) lack.push('something dry for tinder');
-  if (p.sticks < LAY_STICKS) lack.push(LAY_STICKS - p.sticks === 1 ? 'one more stick' : 'a couple of sticks');
+  if (!p.tinder) lack.push(knowsTinder(s) ? 'tinder' : 'something dry to get it going');
+  if (p.sticks < LAY_STICKS) lack.push(!knowsTechnique(s, 'kindling') ? 'something to burn' : LAY_STICKS - p.sticks === 1 ? 'one more stick' : 'a couple of sticks');
   return lack.join(' and ');
 }
 
@@ -175,22 +216,27 @@ function sparkStone(s: GameState): number {
 
 type Method = 'sparks' | 'embers' | 'drill' | 'match';
 
-/** The survivor knows of this way to light a fire, so the laid fire offers it (greyed until it can be done). */
+const METHODS: readonly Method[] = ['match', 'embers', 'sparks', 'drill'];
+
+/**
+ * The survivor knows of this way to light a fire, so the laid fire offers it (greyed until it can be done).
+ * Sparks off steel are a discovery (striking a rock), unless the kid's background taught them.
+ */
 function knowsOf(s: GameState, m: Method): boolean {
-  if (m === 'sparks') return steelTool(s) !== null; // every kid has heard that steel on the right rock sparks
+  if (m === 'sparks') return steelTool(s) !== null && (knowsTechnique(s, 'sparks') || sparkStone(s) >= 0);
   if (m === 'embers') return has(s, 'ember-pouch');
   if (m === 'drill') return has(s, 'bow-drill') || knowsTechnique(s, 'bow-drill');
   return has(s, 'matches');
 }
 
-/** Why this laid fire can't be lit this way yet, as the kid would put it, or null if it can. */
+/** Why this laid fire can't be lit this way yet, as the kid would put it, or null if it can. It can be tried with anything in it. */
 function lightProblem(s: GameState, b: Build, m: Method): string | null {
-  if (!layReady(b)) return `needs ${layLacks(b)} first`;
+  if (!b.items?.length) return 'nothing in it yet';
   if (m === 'sparks') {
     if (sparkStone(s) >= 0) return null;
     const known = knownWith(s, 'stone', 'sparks');
     if (known >= 0) return `need a piece of the ${lookName('stone', known)}`;
-    return 'need a stone that sparks: strike rocks to find one';
+    return 'need a rock that sparks on steel';
   }
   if (m === 'drill' && !has(s, 'bow-drill')) return 'need a bow drill';
   return null;
@@ -202,28 +248,24 @@ function light(s: GameState, _w: World, tile: number, m: Method, ev: SimEvent[])
   const lay = layAt(s, tile);
   if (!lay || lightProblem(s, lay, m)) return;
   const parts = layParts(lay);
-  const tinder = parts.tinder!.d ?? 0;
+  if (m === 'drill' && !drillWorks(s, ev)) return;
+  if (m === 'embers') take(s, 'ember-pouch', 1);
+  if (m === 'match') take(s, 'matches', 1);
+  practise(s, 'firecraft', 1.5);
+  if (!parts.tinder) {
+    // Sticks and wood alone won't take a spark or a match: it needs something finer first.
+    remember(s, 'fire-fails');
+    say(s, FIRE_MSG.noTinder(wh, m === 'sparks'), ev);
+    learnTechnique(s, 'tinder-nest', technique('tinder-nest').learned, ev);
+    return;
+  }
+  const tinder = parts.tinder.d ?? 0;
   const outcome = s.rules.tinders[tinder]!;
   let p = TINDER_CATCH[outcome]!;
   if (m === 'sparks') p *= TOOL_WORK[steelTool(s) ?? 'multitool']!.sparks;
   if (m === 'embers') p = Math.min(0.95, p * 1.4 + 0.2);
   if (m === 'match') p = Math.min(0.97, p * 1.5 + 0.3);
-  if (m === 'drill') {
-    const it = s.inventory.find((i) => i.k === 'bow-drill')!;
-    const right = s.rules.woods[it.d ?? 0] === 'drill';
-    s.vitals.rest = Math.max(0, s.vitals.rest - 10);
-    if (!right) {
-      say(s, FIRE_MSG.drillSmoked(wh, lookName('wood', it.d ?? 0)), ev);
-      const n = remember(s, `drill-fail:${it.d}`);
-      learn(s, 'wood', it.d ?? 0, n >= 2 ? 'known' : 'suspected', 'not for the drill', 'the bow drill only smoked', ev);
-      practise(s, 'firecraft', 1);
-      return;
-    }
-  }
   if (outcome !== 'fails') p += 0.07 * level(s, 'firecraft') + (knowsTechnique(s, 'tinder-nest') ? 0.15 : 0);
-  if (m === 'embers') take(s, 'ember-pouch', 1);
-  if (m === 'match') take(s, 'matches', 1);
-  practise(s, 'firecraft', 1.5);
   // The tinder burns away either way: a failed try needs more put in.
   lay.items = (lay.items ?? []).filter((i) => i !== parts.tinder);
   if (!chance(s.rng['skill-checks'], Math.min(0.95, p))) {
@@ -232,6 +274,14 @@ function light(s: GameState, _w: World, tile: number, m: Method, ev: SimEvent[])
     say(s, FIRE_MSG.wouldNotCatch(wh, lookName('tinder', tinder)), ev);
     if (outcome === 'fails' && n >= 2) learn(s, 'tinder', tinder, 'known', 'fails', 'it would never catch', ev);
     else if (n >= 2 && !fact(s, 'tinder', tinder)) learn(s, 'tinder', tinder, 'suspected', 'fails', 'it would not catch', ev);
+    return;
+  }
+  if (parts.sticks < LAY_STICKS) {
+    // It caught, flared, and was gone: nothing small enough to catch from it.
+    remember(s, 'fire-fails');
+    learn(s, 'tinder', tinder, 'known', outcome, 'it caught', ev);
+    say(s, FIRE_MSG.flaredOut(wh, lookName('tinder', tinder)), ev);
+    learnTechnique(s, 'kindling', technique('kindling').learned, ev);
     return;
   }
   const wood = parts.wood ? (parts.wood.d ?? 0) : -1;
@@ -243,11 +293,24 @@ function light(s: GameState, _w: World, tile: number, m: Method, ev: SimEvent[])
   const first = !s.memory['fires-lit'];
   remember(s, 'fires-lit');
   learn(s, 'tinder', tinder, 'known', outcome, 'it caught', ev);
+  learnTechnique(s, 'kindling', technique('kindling').learned, ev);
   if (m === 'drill') learn(s, 'wood', s.inventory.find((i) => i.k === 'bow-drill')?.d ?? 0, 'known', 'drill', 'the bow drill made a coal', ev);
   say(s, first ? FIRE_MSG.firstFire(wh) : FIRE_MSG.lit(wh, outcome === 'slow'), ev);
   s.vitals.morale = Math.min(100, s.vitals.morale + (first ? 20 : 4));
   ev.push({ type: 'fire-lit', x, y });
   if (wood >= 0) burnWood(s, wood);
+}
+
+/** The bow drill makes a coal only from the right wood; the wrong one smokes, and teaches that. */
+function drillWorks(s: GameState, ev: SimEvent[]): boolean {
+  const it = s.inventory.find((i) => i.k === 'bow-drill')!;
+  s.vitals.rest = Math.max(0, s.vitals.rest - 10);
+  if (s.rules.woods[it.d ?? 0] === 'drill') return true;
+  say(s, FIRE_MSG.drillSmoked(who(s.protagonist), lookName('wood', it.d ?? 0)), ev);
+  const n = remember(s, `drill-fail:${it.d}`);
+  learn(s, 'wood', it.d ?? 0, n >= 2 ? 'known' : 'suspected', 'not for the drill', 'the bow drill only smoked', ev);
+  practise(s, 'firecraft', 1);
+  return false;
 }
 
 /** Wood put on a fire teaches what it does, once it has burned a while (a pending lesson). */
@@ -390,7 +453,7 @@ function lightAction(m: Method, minutes: number): ActionDef {
 export const FIRE_ACTIONS: ActionDef[] = [
   {
     // Placed from the Make panel (it offers no menu row of its own): clear a spot, ring it, put in what's carried.
-    id: 'fire-site',
+    id: 'place:fire',
     unlisted: true,
     offer: (s, w, t, front) => (front && !fireSiteProblem(s, w, t) ? 'Clear a spot and lay a fire' : null),
     minutes: 4,
@@ -414,7 +477,7 @@ export const FIRE_ACTIONS: ActionDef[] = [
     },
     spent: (s, _w, t) => {
       const b = layAt(s, t)!;
-      return canLayIn(s, b) ? null : `needs ${layLacks(b)}`;
+      return canLayIn(s, b) ? null : `needs ${layLacks(s, b)}`;
     },
     minutes: 2,
     done: (s, _w, t, ev) => {
@@ -433,6 +496,14 @@ export const FIRE_ACTIONS: ActionDef[] = [
       s.builds = s.builds.filter((x) => x !== b);
       say(s, FIRE_MSG.unlaid(who(s.protagonist)), ev);
     },
+  },
+  {
+    // A laid fire and no way the kid knows of to light it: the row says so, in the kid's words.
+    id: 'fire-light',
+    offer: (s, _w, t, front) => (front && layAt(s, t) && !METHODS.some((m) => knowsOf(s, m)) ? 'Light the fire' : null),
+    spent: () => 'I need a way to start it',
+    minutes: 1,
+    done: () => {},
   },
   lightAction('match', 3),
   lightAction('embers', 8),

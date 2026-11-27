@@ -1,6 +1,6 @@
 // A fire laid but not lit (SPEC 8.3, 12.1): a ring of stones, then each part as it goes in: a nest of
-// tinder, a little tent of sticks, a split piece of wood leaning on them. Drawn in the world, as the
-// see-through preview while placing one, and as the fire's picture on the Make page.
+// tinder, a little tent of sticks, a split piece of wood leaning on them. Drawn in the world and, through
+// buildArt.ts, as the preview while placing one and the fire's picture on the Make page.
 
 import { PALETTE } from './palette.ts';
 
@@ -47,17 +47,4 @@ export function drawLay(g: G, x: number, y: number, lay: LayLook): void {
     px(g, x + 3, y + 12, '#c9a676', 1, 2);
     px(g, x + 4, y + 12, '#8a6a48', 4, 1);
   }
-}
-
-/** The preview while choosing where a fire goes: the ring, see-through, tinted by whether it can go there. */
-export function drawLayGhost(g: G, x: number, y: number, ok: boolean): void {
-  g.save();
-  g.globalAlpha = 0.6;
-  drawLay(g, x, y, { tinder: true, sticks: 2, wood: false });
-  g.globalAlpha = 0.35;
-  px(g, x, y, ok ? '#7fd06a' : '#e0563f', 16, 16);
-  g.restore();
-  g.strokeStyle = ok ? 'rgba(160,230,140,0.9)' : 'rgba(240,110,90,0.9)';
-  g.lineWidth = 1;
-  g.strokeRect(x + 0.5, y + 0.5, 15, 15);
 }

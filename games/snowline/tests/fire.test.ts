@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { F, T, WATER } from '../src/content/terrain.ts';
 import { availableActions } from '../src/sim/actions.ts';
 import { sleepQuality } from '../src/sim/body.ts';
-import { craftOptions, makeBook } from '../src/sim/craft.ts';
+import { buildDef, buildSiteProblem, craftOptions, makeBook } from '../src/sim/craft.ts';
 import { fireSiteProblem, layAt, layParts, layReady, strikeSnag } from '../src/sim/fire.ts';
 import { SUPPLY } from '../src/content/balance.ts';
 import { count, give } from '../src/sim/inventory.ts';
@@ -92,7 +92,7 @@ function sparksReady(tinder: 'catches' | 'slow' | 'fails') {
 
 /** Try once to light the laid fire in front this way, laying it first (again, after a failed try burns the tinder). */
 function tryLight(s: GameState, w: World, m: 'sparks' | 'drill' | 'embers' | 'match'): void {
-  if (!layAt(s, FRONT)) act(s, w, 'fire-site', FRONT);
+  if (!layAt(s, FRONT)) act(s, w, 'place:fire', FRONT);
   else if (!layReady(layAt(s, FRONT)!)) act(s, w, 'lay-fire', FRONT);
   act(s, w, `fire-${m}`, FRONT);
 }
@@ -101,8 +101,8 @@ describe('laying a fire (SPEC 8.3)', () => {
   it('is placed only by name (the Make page), clears a spot, and puts in what is carried', () => {
     const { state, world } = sparksReady('catches');
     give(state, 'firewood', 1, 2);
-    expect(availableActions(state, world).some((a) => a.action === 'fire-site')).toBe(false);
-    act(state, world, 'fire-site', FRONT);
+    expect(availableActions(state, world).some((a) => a.action === 'place:fire')).toBe(false);
+    act(state, world, 'place:fire', FRONT);
     const lay = layAt(state, FRONT)!;
     expect(layParts(lay)).toMatchObject({ sticks: 2 });
     expect(layParts(lay).tinder?.d).toBe(0);
@@ -123,9 +123,12 @@ describe('laying a fire (SPEC 8.3)', () => {
 
   it('a laid fire waits for tinder and sticks, and can be taken apart again', () => {
     const { state, world } = setup();
-    act(state, world, 'fire-site', FRONT);
-    const lay = availableActions(state, world).find((a) => a.action === 'lay-fire');
-    expect(lay?.spent).toBe('needs something dry for tinder and a couple of sticks');
+    act(state, world, 'place:fire', FRONT);
+    const lay = () => availableActions(state, world).find((a) => a.action === 'lay-fire');
+    // In the words of a kid who doesn't know yet what a fire is built from; then of one who does.
+    expect(lay()?.spent).toBe('needs something dry to get it going and something to burn');
+    state.known.techniques.push('tinder-nest', 'kindling');
+    expect(lay()?.spent).toBe('needs tinder and a couple of sticks');
     give(state, 'tinder', 1, 0);
     give(state, 'stick', 2);
     act(state, world, 'lay-fire', FRONT);
@@ -162,15 +165,41 @@ describe('fire by sparks', () => {
     expect(fact(state, 'tinder', 0)).toMatchObject({ level: 'known', value: 'fails' });
   });
 
-  it('is offered on a laid fire, but greyed out with why, until a spark-stone is known and carried', () => {
+  it('is offered on a laid fire only once the kid knows of sparks, greyed out with why until a spark-stone is carried', () => {
     const { state, world } = sparksReady('catches');
     state.known.facts = [];
-    act(state, world, 'fire-site', FRONT);
-    const o = () => availableActions(state, world).find((a) => a.action === 'fire-sparks');
-    expect(o()?.spent).toBe('need a stone that sparks: strike rocks to find one');
+    act(state, world, 'place:fire', FRONT);
+    const o = (id: string) => availableActions(state, world).find((a) => a.action === id);
+    // Sparks off steel are a discovery: before it, the kid only knows they need a way to start it.
+    expect(o('fire-sparks')).toBeUndefined();
+    expect(o('fire-light')?.spent).toBe('I need a way to start it');
+    state.known.techniques.push('sparks');
+    expect(o('fire-light')).toBeUndefined();
+    expect(o('fire-sparks')?.spent).toBe('need a rock that sparks on steel');
     state.known.facts.push({ key: 'stone:0', level: 'known', value: 'sparks', how: 'test', tick: 0 });
     state.inventory = state.inventory.filter((i) => i.k !== 'stone');
-    expect(o()?.spent).toMatch(/^need a piece of the /);
+    expect(o('fire-sparks')?.spent).toMatch(/^need a piece of the /);
+  });
+
+  it('teaches what a fire is built from by what goes wrong', () => {
+    const { state, world } = sparksReady('catches');
+    state.inventory = state.inventory.filter((i) => i.k !== 'tinder');
+    act(state, world, 'place:fire', FRONT);
+    act(state, world, 'fire-sparks', FRONT);
+    expect(state.fires, 'sticks alone will not take a spark').toHaveLength(0);
+    expect(knowsTechnique(state, 'tinder-nest')).toBe(true);
+    act(state, world, 'unlay-fire', FRONT);
+    // Tinder and nothing to catch from it: it flares and is gone.
+    state.inventory = state.inventory.filter((i) => i.k !== 'stick');
+    give(state, 'tinder', 8, 0);
+    state.rules.tinders[0] = 'catches';
+    for (let k = 0; k < 10 && !knowsTechnique(state, 'kindling'); k++) {
+      if (!layAt(state, FRONT)) act(state, world, 'place:fire', FRONT);
+      else act(state, world, 'lay-fire', FRONT);
+      act(state, world, 'fire-sparks', FRONT);
+    }
+    expect(state.fires).toHaveLength(0);
+    expect(knowsTechnique(state, 'kindling')).toBe(true);
   });
 });
 
@@ -354,32 +383,66 @@ describe('the tool chain (SPEC 8.2)', () => {
 });
 
 describe('camp (SPEC 7.6)', () => {
+  /** Sleep quality on the tile in front. */
+  const sleepThere = (s: GameState, w: World) => {
+    s.player.y = 129;
+    const q = sleepQuality(s, w);
+    s.player.y = 128;
+    return q;
+  };
+
   it('a bough bed and a wall make for better sleep', () => {
-    const { state, world } = setup({ edit: (w) => (w.terrain[HERE] = T.shelter) });
-    const before = sleepQuality(state, world);
+    const { state, world } = setup({ edit: (w) => (w.terrain[FRONT] = T.shelter) });
+    const before = sleepThere(state, world);
+    state.known.techniques.push('bough-bed', 'walls');
     give(state, 'boughs', 4);
-    craft(state, world, 'build:bed');
-    state.known.techniques.push('walls');
+    act(state, world, 'place:bed', FRONT);
     give(state, 'stick', 6);
     give(state, 'cord', 1);
-    craft(state, world, 'build:wall');
+    act(state, world, 'place:wall', FRONT);
     expect(state.builds.map((b) => b.kind).sort()).toEqual(['bed', 'wall']);
-    expect(sleepQuality(state, world)).toBeGreaterThan(before);
+    expect(sleepThere(state, world)).toBeGreaterThan(before);
   });
 
-  it('a lean-to is shelter away from the overhang', () => {
+  it('a lean-to goes up as a site, from what is brought to it, and can be taken apart', () => {
     const { state, world } = setup();
-    give(state, 'stick', 8);
+    expect(availableActions(state, world).some((a) => a.action === 'place:lean-to'), 'placed only from Make').toBe(false);
+    give(state, 'stick', 4);
+    act(state, world, 'place:lean-to', FRONT);
+    expect(state.builds).toEqual([{ kind: 'site:lean-to', x: 128, y: 129, items: [{ k: 'stick', n: 4 }] }]);
+    const work = () => availableActions(state, world).find((a) => a.action === 'site-work' && a.tile === FRONT)!;
+    expect(work().spent).toBe('needs 4 sticks, 4 green boughs');
+    give(state, 'stick', 4);
     give(state, 'boughs', 4);
-    craft(state, world, 'build:lean-to');
-    expect(state.builds[0]?.kind).toBe('lean-to');
+    expect(work().label).toBe('Build a lean-to');
+    act(state, world, 'site-work', FRONT);
+    expect(state.builds).toEqual([{ kind: 'lean-to', x: 128, y: 129 }]);
+    expect(count(state, 'stick') + count(state, 'boughs')).toBe(0);
+  });
+
+  it('a site taken apart gives back what went in', () => {
+    const { state, world } = setup();
+    give(state, 'boughs', 2);
+    act(state, world, 'place:lean-to', FRONT);
+    act(state, world, 'site-undo', FRONT);
+    expect(state.builds).toEqual([]);
+    expect(count(state, 'boughs')).toBe(2);
+  });
+
+  it('says why a build will not go somewhere', () => {
+    const { state, world } = setup({ edit: (w) => (w.terrain[FRONT] = T.shelter) });
+    const def = (id: string) => buildDef(id)!;
+    expect(buildSiteProblem(state, world, def('lean-to'), FRONT)).toBe('the overhang is shelter already');
+    expect(buildSiteProblem(state, world, def('bed'), FRONT)).toBeNull();
+    expect(buildSiteProblem(state, world, def('reflector'), FRONT)).toBe('it goes round a fire');
+    expect(buildSiteProblem(state, world, def('cache'), FRONT)).toBe('it hangs from a tree');
   });
 
   it('food hung in the cache comes back down', () => {
     const { state, world } = setup({ edit: (w) => (w.feature[FRONT] = F.conifer) });
     state.known.techniques.push('cache');
     give(state, 'cord', 2);
-    craft(state, world, 'build:cache');
+    act(state, world, 'place:cache', FRONT);
     give(state, 'pine-nuts', 4);
     act(state, world, 'cache-store', FRONT);
     expect(count(state, 'pine-nuts')).toBe(0);
@@ -403,6 +466,18 @@ describe('reflection (SPEC 8.1)', () => {
 });
 
 describe('the Make page (SPEC 8.2)', () => {
+  it('starts with what any kid knows, and more from some backgrounds', () => {
+    const book = (background: string) => {
+      const { state, world } = setup({ who: { background } });
+      return makeBook(state, world).map((e) => e.id);
+    };
+    expect(book('city')).toEqual(['fire', 'build:lean-to', 'sharp-stick']);
+    expect(book('scout')).toEqual(expect.arrayContaining(['bow-drill', 'build:bed', 'cord']));
+    expect(book('hunter')).toEqual(expect.arrayContaining(['snare', 'build:cache']));
+    expect(book('reader')).toEqual(expect.arrayContaining(['build:reflector', 'build:signal', 'build:weir', 'bark-vessel']));
+    expect(book('reader').length).toBeGreaterThan(book('scout').length);
+  });
+
   it('starts with the fire, then what is known, grouped by need', () => {
     const { state, world } = setup();
     const book = makeBook(state, world);
@@ -416,16 +491,20 @@ describe('the Make page (SPEC 8.2)', () => {
     expect(makeBook(state, world).some((e) => e.id === 'cord')).toBe(true);
   });
 
-  it("names the fire's parts as what they should be until this valley's ones are known", () => {
+  it("names the fire's parts only as far as the kid knows them: what they're for, what they are, then which one here", () => {
     const { state, world } = setup();
     const fire = () => makeBook(state, world)[0]!;
-    expect(fire().parts.filter((p) => p.unknown).map((p) => p.name)).toEqual(['something dry that catches a spark', 'wood that burns well', 'a rock that sparks on steel']);
+    const unknown = () => fire().parts.filter((p) => p.unknown).map((p) => p.name);
+    expect(unknown()).toEqual(['something dry to get it going', 'something to burn', 'a way to start a fire']);
+    state.known.techniques.push('tinder-nest', 'kindling', 'sparks');
+    expect(unknown()).toEqual(['tinder that catches', 'wood that burns well', 'a rock that sparks on steel']);
     state.known.facts.push(
       { key: 'tinder:0', level: 'known', value: 'catches', how: 'test', tick: 0 },
       { key: 'wood:1', level: 'known', value: 'long-burning', how: 'test', tick: 0 },
       { key: 'stone:2', level: 'known', value: 'sparks', how: 'test', tick: 0 },
     );
     expect(fire().parts.some((p) => p.unknown)).toBe(false);
+    expect(fire().parts.map((p) => p.name)[1]).toBe('sticks for kindling');
     expect(fire().parts.map((p) => p.name)[3]).toMatch(/^a piece of the /);
   });
 });

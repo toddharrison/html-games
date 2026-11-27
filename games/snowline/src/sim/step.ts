@@ -90,7 +90,9 @@ export function wake(s: GameState, w: World, text: string, events: SimEvent[]): 
   say(s, text, events);
   events.push({ type: 'wake' });
   if (slept >= 180 * TICKS_PER_MINUTE) {
-    if (shelterAt(s, w, s.player.x, s.player.y).rain > 0.5) remember(s, 'slept-sheltered');
+    const sh = shelterAt(s, w, s.player.x, s.player.y);
+    if (sh.rain > 0.5) remember(s, 'slept-sheltered');
+    if (!sh.bed) remember(s, 'slept-on-ground');
     reflect(s, events);
   }
 }

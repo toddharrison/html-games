@@ -49,7 +49,8 @@ try {
   await b.key('ArrowDown', 700);
   await b.key('KeyE');
   await shot('act');
-  await b.key('Escape');
+  // E opens what's on offer, if anything is: close it (an Esc with nothing open would pause).
+  if (await b.evaluate("!!document.querySelector('.menu-list')")) await b.key('Escape');
   await consoleCmd('give plant 0 3');
   await consoleCmd('give plant 3 2');
   await consoleCmd('give crayfish -1 2');
@@ -57,12 +58,11 @@ try {
   await sleep(600);
   await b.key('KeyI');
   await shot('inventory');
-  await b.key('Escape');
-  const slot = await b.evaluate("document.querySelectorAll('.hud').length && 0");
-  void slot;
-  // Taste the first plant: find its slot from the inventory menu's order.
-  await b.key('KeyI');
-  const idx = await b.evaluate("[...document.querySelectorAll('.menu-list li .label')].findIndex((l) => l.textContent.includes('berries') || l.textContent.includes('bulbs') || l.textContent.includes('greens') || l.textContent.includes('fungus') || l.textContent.includes('mushrooms'))");
+  await b.key('ArrowRight');
+  await shot('inventory-found');
+  await b.key('ArrowLeft');
+  // Taste the first plant: find its slot from the inventory page's order.
+  const idx = await b.evaluate("[...document.querySelectorAll('.pack .thing .what b')].findIndex((l) => /berries|bulbs|greens|fungus|mushrooms/.test(l.textContent))");
   await b.key(`Digit${idx + 1}`);
   await shot('item');
   await b.key('Digit2');
@@ -104,10 +104,17 @@ try {
   await sleep(600);
   await b.key('KeyC');
   await shot('craft');
-  await b.evaluate("[...document.querySelectorAll('.make .entry')].find((l) => l.textContent.includes('bough bed')).click()");
+  // Every build is placed the same way: choose it, see where it would go, place it in front.
+  await b.evaluate("[...document.querySelectorAll('.make .entry')].find((l) => l.textContent.includes('lean-to')).click()");
+  await sleep(300);
+  await shot('placing-lean-to');
+  await b.key('KeyE');
   await speed(16);
-  await sleep(1500);
+  await sleep(2500);
   await speed(1);
+  // Turn away from the lean-to before laying the fire.
+  await b.key('ArrowLeft');
+  await sleep(150);
   // Lay a fire from the Make page: choose it, see where it would go, place it in front, then the laid fire's menu.
   await consoleCmd('give tinder 0 2');
   await consoleCmd('give stick -1 2');
@@ -124,7 +131,7 @@ try {
   await b.key('KeyE');
   await shot('laid-fire');
   await b.key('Escape');
-  // The bed used the boughs, which frees a place for firewood (the fire then offers more than one thing).
+  // The lean-to used the boughs, which frees a place for firewood (the fire then offers more than one thing).
   await consoleCmd('give firewood 2 3');
   await b.evaluate("[...document.querySelectorAll('.debug button')].find((x) => x.textContent === 'test fire here').click()");
   await hideDebug();

@@ -11,10 +11,10 @@ import { F, T, TERRAIN } from '../content/terrain.ts';
 import { availableActions, frontTile, itemActions } from '../sim/actions.ts';
 import { canSee } from '../sim/actionKit.ts';
 import { warning } from '../sim/animals.ts';
-import { craftOptions } from '../sim/craft.ts';
+import { siteAt } from '../sim/craft.ts';
 import { fireSiteProblem, layAt, layReady } from '../sim/fire.ts';
 import { count, has } from '../sim/inventory.ts';
-import { ROWS, fact } from '../sim/knowledge.ts';
+import { ROWS, fact, knowsTechnique } from '../sim/knowledge.ts';
 import { describeTemper } from '../sim/newGame.ts';
 import type { Protagonist } from '../sim/protagonist.ts';
 import type { Command, Dir, GameState } from '../sim/state.ts';
@@ -372,7 +372,9 @@ export class Bot {
       if (!layAt(s, t)) continue;
       if (s.player.facing !== d) return [{ c: 'face', dir: d as Dir }];
       const opts = availableActions(s, w).filter((o) => o.tile === t && !o.spent);
-      const next = opts.find((o) => o.action === 'lay-fire' && !layReady(layAt(s, t)!)) ?? opts.find((o) => o.action.startsWith('fire-'));
+      // Light it only once it's all in: a try with something missing only burns the tinder (it would teach the bot nothing it uses).
+      const ready = layReady(layAt(s, t)!);
+      const next = ready ? opts.find((o) => o.action.startsWith('fire-')) : opts.find((o) => o.action === 'lay-fire');
       return next ? [{ c: 'act', action: next.action, tile: t }] : null;
     }
     // Else lay one on an open neighbour (as the Make page does: the action is started by name).
@@ -380,7 +382,7 @@ export class Bot {
       const t = idx(x + DX[d]!, y + DY[d]!);
       if (fireSiteProblem(s, w, t)) continue;
       if (s.player.facing !== d) return [{ c: 'face', dir: d as Dir }];
-      return [{ c: 'act', action: 'fire-site', tile: t }];
+      return [{ c: 'act', action: 'place:fire', tile: t }];
     }
     return null;
   }
@@ -389,16 +391,18 @@ export class Bot {
     const s = this.s;
     const w = this.w;
     const hasBed = s.builds.some((b) => b.kind === 'bed' && idx(b.x, b.y) === camp);
-    if (hasBed) return null;
+    if (hasBed || !knowsTechnique(s, 'bough-bed')) return null;
     if (count(s, 'boughs') < 4) {
       if (!(has(s, 'hatchet') || has(s, 'knife') || has(s, 'multitool'))) return null;
       const cut = this.act('boughs', frontTile(s));
       if (cut) return cut;
       return this.goAdjacentTo('boughs', (i) => w.feature[i] === F.conifer, 4000);
     }
-    if (idx(s.player.x, s.player.y) !== camp) return this.go('camp', (i) => i === camp, 65536);
-    const bed = craftOptions(s, w).find((o) => o.recipe === 'build:bed');
-    return bed && !bed.missing ? [{ c: 'craft', recipe: 'build:bed' }] : null;
+    // Built like any build: from beside the spot, facing it.
+    const go = this.goAdjacentTo('camp-side', (i) => i === camp, 65536);
+    if (go) return go;
+    if (frontTile(s) !== camp) return null;
+    return [{ c: 'act', action: siteAt(s, camp) ? 'site-work' : 'place:bed', tile: camp }];
   }
 
   /** Pick up a loose thing meeting `test` on the faced tile or this one, if there is one. */

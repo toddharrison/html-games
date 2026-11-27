@@ -64,12 +64,14 @@ Music: earlier drafts had none during play. The reference's mood owes a lot to i
 | WASD or arrows | Move |
 | E or Space | Interact with the faced tile |
 | 1–8 | Use or equip inventory slot |
-| I, C, J, M | Inventory, Make (a notebook page, 8.2), journal, map |
+| I, C, J, M | What I've got (a notebook page: what I'm carrying, what I've found), Make (a notebook page, 8.2), journal, map |
 | R | Rest or sleep (choose duration) |
 | Esc | Pause and settings |
 | Mouse over | Names what is under the cursor; the cursor shows a hand (something to do) or an eye (something to watch) |
 | Click | Walk to it and do the obvious thing: gather it, watch it, drink, or just walk there (5.2) |
 | Right-click | A small menu at the cursor of everything that can be done there |
 | Placing (from Make) | A see-through preview under the mouse (or on the faced tile), green where it can go and red with the reason where not; click or E to place, Esc to stop |
+
+**The kid's notebook for everything in play** (decided 2026-11-27). The inventory (I) is a page of the kid's notebook, an inventory they keep: what they're carrying, each thing as a pencil sketch with a line in their words and what they've learned about it ("It throws sparks off steel!", "I don't know what it does yet.", "eat soon"); and on a second tab, everything they've found in the valley that can be picked up (plants, remedies, stones, woods, tinder), sketched the same way with what they know. Make (8.2) uses the same sketches. The small menus in play (what can be done here, an item's uses, rest) are slips torn from the notebook, and the name beside the cursor is a scrap of the same paper. The pause menu and settings are outside the story and stay as they are. Sketches are drawn in code (`render/sketch.ts`): a few wobbly graphite strokes gone over twice, with coloured pencil where colour is the point (berries, embers, a red cross).
 
 The mouse and the keyboard work together (decided 2026-11-26): nothing needs the mouse, and the keyboard keeps every action. Keys are remappable. Condition icons differ in shape as well as colour. A setting reduces lightning flashes. Text size is adjustable.

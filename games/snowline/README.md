@@ -16,7 +16,7 @@ There is no magic, no monsters, and no levelling up. The survivor gets better at
 - **A valley with height.** One procedurally generated valley per seed, rising from the lake through forest and high meadow to bare rock. Higher is colder, windier, and steeper, and the view from the top shows you the map.
 - **Fire, three ways.** Sparks, embers carried from a lightning strike, or a bow drill. Once you have it, fire is warmth, cooked food, safe water, light, and a signal, and it has to be fed and kept out of the rain.
 - **Nature is indifferent.** Weather and animals follow their own schedules. Jays steal your food, pack rats steal your gear, and an elk charges because you walked into its space. There is no combat: you hunt by stealth and survive danger by reading the warning signs.
-- **A different survivor every run.** A boy or girl of 12 to 15, with a background that gives a small head start, a trait that complicates things, and one of three starting tools: a hatchet, a sheath knife, or a multi-tool.
+- **A different survivor every run.** A boy or girl of 12 to 15, with a background that gives a small head start and decides what they already know how to make, a trait that complicates things, and one of three starting tools: a hatchet, a sheath knife, or a multi-tool.
 - **Rescue is the way out.** Light a signal fire when a search plane passes, or wait for the storm that opens a route to the wreckage high on the mountain and climb to its emergency beacon.
 - **Same seed, same story.** The same seed, survivor, and inputs always play out the same way, so a run can be shared and replayed.
 

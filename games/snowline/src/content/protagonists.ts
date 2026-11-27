@@ -29,13 +29,28 @@ export interface BackgroundDef {
 }
 
 export const BACKGROUNDS: readonly BackgroundDef[] = [
-  { id: 'scout', name: 'Scout', blurb: 'Knows a little firecraft: cord, and the bow drill.', mods: { skills: { firecraft: 1 }, techniques: ['cord', 'bow-drill'], fact: 'wood' } },
-  { id: 'angler', name: 'Angler', blurb: 'Has fished every summer they can remember.', mods: { skills: { fishing: 1 }, fact: 'water' } },
-  { id: 'hunter', name: "Hunter's kid", blurb: 'Grew up tracking. Animals notice them later.', mods: { skills: { hunting: 1 }, fact: 'temper' } },
-  { id: 'farm', name: 'Farm kid', blurb: 'Good with tools; heavy work costs less rest.', mods: { skills: { crafting: 1 }, heavyWorkRest: 0.8, fact: 'plant' } },
-  { id: 'runner', name: 'Runner', blurb: 'Moving costs less rest; better in cold water.', mods: { moveRest: 0.8, coldWater: 0.8, fact: 'stone' } },
-  { id: 'reader', name: 'Reader', blurb: 'Read every survival book in the library. Steadier.', mods: { reflection: 1.5, morale: 1.1, fact: 'remedy' } },
-  { id: 'city', name: 'City kid', blurb: 'No head start, but learns faster. The hard way.', mods: { skillGain: 1.3 } },
+  {
+    id: 'scout',
+    name: 'Scout',
+    blurb: 'Knows firecraft: tinder and kindling, sparks off steel, the bow drill. Cord, and a bough bed.',
+    mods: { skills: { firecraft: 1 }, techniques: ['cord', 'bow-drill', 'tinder-nest', 'kindling', 'sparks', 'bough-bed'], fact: 'wood' },
+  },
+  { id: 'angler', name: 'Angler', blurb: 'Has fished every summer they can remember: knows a fish spear, and to aim below the fish.', mods: { skills: { fishing: 1 }, techniques: ['spear', 'aim-low'], fact: 'water' } },
+  {
+    id: 'hunter',
+    name: "Hunter's kid",
+    blurb: 'Grew up tracking and at camp fires: knows snares, kindling, and hanging food from bears. Animals notice them later.',
+    mods: { skills: { hunting: 1 }, techniques: ['snare', 'kindling', 'cache'], fact: 'temper' },
+  },
+  { id: 'farm', name: 'Farm kid', blurb: 'Good with tools; heavy work costs less rest. Keeps firewood dry, and knows a splint.', mods: { skills: { crafting: 1 }, techniques: ['woodpile', 'splint'], heavyWorkRest: 0.8, fact: 'plant' } },
+  { id: 'runner', name: 'Runner', blurb: 'Moving costs less rest; better in cold water. Knows how to splint a hurt ankle.', mods: { techniques: ['splint'], moveRest: 0.8, coldWater: 0.8, fact: 'stone' } },
+  {
+    id: 'reader',
+    name: 'Reader',
+    blurb: 'Read every survival book in the library, and knows the most, but has done none of it. Steadier.',
+    mods: { techniques: ['tinder-nest', 'kindling', 'sparks', 'reflector', 'bark-vessel', 'hot-stones', 'weir', 'signal'], reflection: 1.5, morale: 1.1, fact: 'remedy' },
+  },
+  { id: 'city', name: 'City kid', blurb: 'Knows only what any kid knows, but learns faster. The hard way.', mods: { skillGain: 1.3 } },
 ];
 
 export interface TraitDef {

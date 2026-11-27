@@ -145,8 +145,10 @@ function storm(s: GameState, w: World, ev: SimEvent[]): void {
   const wh = who(s.protagonist);
   s.arc.stormHit = true;
   const fragile = ['lean-to', 'wall', 'bed', 'woodpile', 'signal', 'snare'];
-  const lost = s.builds.filter((b) => fragile.includes(b.kind)).map((b) => b.kind);
-  s.builds = s.builds.filter((b) => !fragile.includes(b.kind));
+  // A site half-built goes the same way as the thing it would have been.
+  const isFragile = (kind: string) => fragile.includes(kind.replace(/^site:/, ''));
+  const lost = s.builds.filter((b) => isFragile(b.kind)).map((b) => b.kind.replace(/^site:/, ''));
+  s.builds = s.builds.filter((b) => !isFragile(b.kind));
   for (const f of s.fires) {
     if (!f.banked || chance(r, 0.6)) {
       f.fuel = 0;

@@ -2,6 +2,16 @@
 
 ### 13.1 Decided
 
+**2026-11-27, builds, what a kid knows, and the notebook.** The user asked for every build to work like the fire, for starting recipes to come from the kid's background, for recipe parts not to give discoveries away, and for the inventory to be the kid's own sketched notebook page.
+
+| Decision | Where it shows up |
+|---|---|
+| Every build is chosen in Make, placed with a preview, and built from beside the spot out of what's carried; what's missing leaves a site to bring the rest to (or take apart). | 7.6, 8.2; Q28 |
+| Any kid knows a fire, a lean-to, and a sharp stick; each background adds what it would teach (the reader the most); everything else is learned. A bough bed, reflector stones, and a covered woodpile are techniques now, learned by reflection (a night on the bare ground; an hour by a fire at night; a few fires and days). | 4.2, 8.1; Q47 |
+| A recipe part is named only as far as the kid knows it: by its look once found, "which one here?" when the kind is known, else only what it's for ("a way to start a fire?"). No count, tick, or picture gives an unknown part away. | 8.2 |
+| Sparks are offered on a laid fire only once the kid knows of them. A laid fire can be tried with anything in it; what goes wrong teaches tinder and kindling. | 8.3 |
+| The inventory is a notebook page (carrying, and found) with pencil sketches and the kid's notes; Make uses the sketches; menus in play are notebook slips; the cursor's label is a paper scrap. | 12.4 |
+
 **2026-11-26, after the second playtest.** Time went too fast to do anything, fire was too hard to work out, and the craft list and right-click building felt arbitrary. The art was liked.
 
 | Decision | Where it shows up |

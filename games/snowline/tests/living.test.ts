@@ -326,7 +326,7 @@ describe('illness, injury, remedies (SPEC 7.7)', () => {
     at(state, 1);
     state.vitals.rest = 15;
     for (let k = 0; k < 80 && !state.conditions.some((c) => c.id === 'sprain'); k++) {
-      runTo(state, world, [{ t: state.tick, c: 'move', dir: (k % 4) as 0 }, { t: state.tick + 1, c: 'halt' }], state.tick + 40);
+      runTo(state, world, [{ t: state.tick, c: 'move', dir: (k % 4) as 0 }, { t: state.tick + 12, c: 'halt' }], state.tick + 40);
     }
     expect(state.conditions.some((c) => c.id === 'sprain')).toBe(true);
   });

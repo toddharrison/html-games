@@ -11,6 +11,8 @@
 
 Movement is real-time and grid-snapped. The survivor moves one tile per step; a step takes 6 ticks on open ground and more on rough or steep terrain, when injured, or when carrying a heavy load. Actions (chop, drink, craft) take a set number of ticks and can be interrupted. The game pauses in menus.
 
+**Being tried (2026-11-26, Q46): free walking.** The survivor walks over the grid in any of eight directions (two keys walk on a slant) at the speed of the ground underfoot, and stops against what blocks, sliding along it; the world, what the survivor is on, and "the tile in front" stay on tiles. A tap walks a little. If it's kept, this section is rewritten for it.
+
 A click on something in view (12.4) sends the survivor to it: they walk a path to the tile beside it, face it, and do what was asked. The walk is a command to the simulation (`goto`), found and followed inside it, so replays stay exact; a direction key or Esc cancels it.
 
 ### 5.3 Arc of a run

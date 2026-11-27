@@ -86,5 +86,6 @@ function toWorld(seed: string, g: Gen, attempts: number, failures: string[]): Wo
     loose: scatterLoose(g),
     age: g.age,
     trails: g.trailBy,
+    trailLines: g.trailLines,
   };
 }

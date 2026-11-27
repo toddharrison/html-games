@@ -4,6 +4,7 @@
 // slots (S skin, H hair, C clothes, P trousers) filled from the protagonist's looks.
 
 import { PALETTE as P } from './palette.ts';
+import { mix } from './tiles.ts';
 
 export interface SpriteDef {
   legend: Record<string, string>;
@@ -580,115 +581,120 @@ export const ANIMAL_SPRITES: Record<string, SpriteDef> = {
   },
 };
 
-/** The survivor, facing south, north, and east (west is east mirrored), in two walking frames each. */
+/**
+ * The survivor, facing south, north, and east (west is east mirrored), in two walking frames each, and
+ * asleep. Lit from the upper left: H/l/h hair, mid/lit/shade; S/s skin and its shade; e eyes; C/d/c
+ * clothes, mid/lit/shade, z the jacket's zip; P/p trousers and their shade; b boots. The atlas adds a
+ * dark outline round the figure.
+ */
 const PERSON_ROWS: Record<string, string[]> = {
   south0: [
     '................',
-    '......HHHH......',
-    '.....HHHHHH.....',
-    '.....HSSSSH.....',
-    '.....SkSSkS.....',
-    '.....SSSSSS.....',
-    '......SSSS......',
-    '....CCCCCCCC....',
-    '...CCCCCCCCCC...',
-    '...SCCCCCCCCS...',
-    '...SCCCCCCCCS...',
-    '....CCCCCCCC....',
-    '.....PPPPPP.....',
-    '.....PP..PP.....',
-    '.....PP..PP.....',
-    '.....kk..kk.....',
+    '......lHHh......',
+    '.....lHHHHh.....',
+    '.....HSSSSh.....',
+    '.....SeSSeS.....',
+    '.....sSSSSs.....',
+    '......sSSs......',
+    '....dCCzzCCc....',
+    '...dCCCzCCCCc...',
+    '...dCCCzCCCCc...',
+    '...SCCCzCCCcS...',
+    '....cCCCCCCc....',
+    '.....PPPPPp.....',
+    '.....Pp..Pp.....',
+    '.....Pp..Pp.....',
+    '.....bb..bb.....',
   ],
   south1: [
     '................',
-    '......HHHH......',
-    '.....HHHHHH.....',
-    '.....HSSSSH.....',
-    '.....SkSSkS.....',
-    '.....SSSSSS.....',
-    '......SSSS......',
-    '....CCCCCCCC....',
-    '...CCCCCCCCCC...',
-    '...SCCCCCCCCS...',
-    '....CCCCCCCCS...',
-    '....CCCCCCCC....',
-    '.....PPPPPP.....',
-    '.....PP..PP.....',
-    '....PP....PP....',
-    '....kk....kk....',
+    '......lHHh......',
+    '.....lHHHHh.....',
+    '.....HSSSSh.....',
+    '.....SeSSeS.....',
+    '.....sSSSSs.....',
+    '......sSSs......',
+    '....dCCzzCCc....',
+    '...dCCCzCCCCc...',
+    '...dCCCzCCCCc...',
+    '....CCCzCCCcS...',
+    '....cCCCCCCc....',
+    '.....PPPPPp.....',
+    '.....Pp..Pp.....',
+    '....Pp....Pp....',
+    '....bb....bb....',
   ],
   north0: [
     '................',
-    '......HHHH......',
-    '.....HHHHHH.....',
-    '.....HHHHHH.....',
-    '.....HHHHHH.....',
-    '.....SHHHHS.....',
-    '......SSSS......',
-    '....CCCCCCCC....',
-    '...CCCCCCCCCC...',
-    '...SCCCCCCCCS...',
-    '...SCCCCCCCCS...',
-    '....CCCCCCCC....',
-    '.....PPPPPP.....',
-    '.....PP..PP.....',
-    '.....PP..PP.....',
-    '.....kk..kk.....',
+    '......lHHh......',
+    '.....lHHHHh.....',
+    '.....HHHHHh.....',
+    '.....lHHHHh.....',
+    '.....hHHHhh.....',
+    '......sSSs......',
+    '....dCCCCCCc....',
+    '...dCCCCCCCCc...',
+    '...dCCCCCCCCc...',
+    '...SCCCCCCCcS...',
+    '....cCCCCCCc....',
+    '.....PPPPPp.....',
+    '.....Pp..Pp.....',
+    '.....Pp..Pp.....',
+    '.....bb..bb.....',
   ],
   north1: [
     '................',
-    '......HHHH......',
-    '.....HHHHHH.....',
-    '.....HHHHHH.....',
-    '.....HHHHHH.....',
-    '.....SHHHHS.....',
-    '......SSSS......',
-    '....CCCCCCCC....',
-    '...CCCCCCCCCC...',
-    '...SCCCCCCCCS...',
-    '...SCCCCCCCC....',
-    '....CCCCCCCC....',
-    '.....PPPPPP.....',
-    '.....PP..PP.....',
-    '....PP....PP....',
-    '....kk....kk....',
+    '......lHHh......',
+    '.....lHHHHh.....',
+    '.....HHHHHh.....',
+    '.....lHHHHh.....',
+    '.....hHHHhh.....',
+    '......sSSs......',
+    '....dCCCCCCc....',
+    '...dCCCCCCCCc...',
+    '...dCCCCCCCCc...',
+    '...SCCCCCCCc....',
+    '....cCCCCCCc....',
+    '.....PPPPPp.....',
+    '.....Pp..Pp.....',
+    '....Pp....Pp....',
+    '....bb....bb....',
   ],
   east0: [
     '................',
-    '......HHHH......',
-    '.....HHHHHH.....',
-    '.....HHHSSS.....',
-    '.....HHSSkS.....',
-    '.....HSSSSSS....',
-    '......SSSS......',
-    '.....CCCCCC.....',
-    '....CCCCCCCC....',
-    '....CCCCCCSS....',
-    '....CCCCCC......',
-    '.....CCCCC......',
-    '.....PPPPP......',
-    '.....PP.PP......',
-    '.....PP..PP.....',
-    '.....kk..kk.....',
+    '......lHHh......',
+    '.....lHHHHH.....',
+    '.....HHHHSS.....',
+    '.....HHSSeSS....',
+    '.....hHsSSSs....',
+    '......sSSs......',
+    '.....dCCCCc.....',
+    '....dCCCCCCc....',
+    '....dCCdCCCc....',
+    '....cCCSCCc.....',
+    '.....cCCCCc.....',
+    '.....PPPPp......',
+    '.....Pp.Pp......',
+    '.....Pp..Pp.....',
+    '.....bb..bbb....',
   ],
   east1: [
     '................',
-    '......HHHH......',
-    '.....HHHHHH.....',
-    '.....HHHSSS.....',
-    '.....HHSSkS.....',
-    '.....HSSSSSS....',
-    '......SSSS......',
-    '.....CCCCCC.....',
-    '....CCCCCCCC....',
-    '...SCCCCCCC.....',
-    '....CCCCCC......',
-    '.....CCCCC......',
-    '.....PPPPP......',
-    '.....PPPP.......',
-    '......PP........',
-    '......kk........',
+    '......lHHh......',
+    '.....lHHHHH.....',
+    '.....HHHHSS.....',
+    '.....HHSSeSS....',
+    '.....hHsSSSs....',
+    '......sSSs......',
+    '.....dCCCCc.....',
+    '....dCCCCCCc....',
+    '...SdCCCCCCc....',
+    '....cCCCCCc.....',
+    '.....cCCCCc.....',
+    '.....PPPPp......',
+    '.....PPPp.......',
+    '......Pp........',
+    '......bbb.......',
   ],
   asleep: [
     '................',
@@ -699,10 +705,10 @@ const PERSON_ROWS: Record<string, string[]> = {
     '................',
     '................',
     '................',
-    '..HHH...........',
-    '.HHSSSCCCCCCPPPk',
-    '.HSSSSCCCCCCPPPk',
-    '..HSS.CCCCCC....',
+    '..lHH...........',
+    '.lHHSsdCCCCcPPpb',
+    '.hHSSsCCCCCcPPpb',
+    '..hsS.cccccc....',
     '................',
     '................',
     '................',
@@ -727,29 +733,50 @@ export interface Looks {
 export function personSprite(looks: Looks, pose: 'south' | 'north' | 'east' | 'asleep', frame: number): SpriteDef {
   const key = pose === 'asleep' ? 'asleep' : `${pose}${frame}`;
   const rows = PERSON_ROWS[key]!.map((r) => r.split(''));
-  const set = (x: number, y: number) => {
-    if (rows[y]?.[x] !== undefined && (rows[y]![x] === '.' || rows[y]![x] === 'S')) rows[y]![x] = 'H';
+  // Hair over what's there: `soft` only over empty pixels and skin, otherwise over anything.
+  const set = (x: number, y: number, c = 'H', soft = true) => {
+    const at = rows[y]?.[x];
+    if (at !== undefined && (!soft || at === '.' || at === 'S' || at === 's')) rows[y]![x] = c;
   };
   if (pose !== 'asleep') {
     if (looks.hairStyle === 1) {
-      for (let y = 2; y <= 7; y++) {
-        if (pose === 'east') set(5, y);
+      // Long: down past the shoulders either side (behind, from the side), the outer edge in shade.
+      for (let y = 2; y <= 8; y++) {
+        if (pose === 'east') set(4, y, y > 6 ? 'h' : 'H'), set(5, y, 'H');
         else {
-          set(4, y);
-          set(11, y);
+          set(4, y, 'H');
+          set(11, y, 'h');
         }
       }
+      if (pose === 'north') for (let y = 6; y <= 8; y++) for (let x = 5; x <= 10; x++) set(x, y, x > 8 ? 'h' : 'H', false);
     } else if (looks.hairStyle === 2) {
-      if (pose === 'north') for (let y = 5; y <= 8; y++) set(7, y), set(8, y);
-      else if (pose === 'east') for (let y = 3; y <= 6; y++) set(4, y);
+      // Tied back: a tail down the back, or behind the head from the side.
+      if (pose === 'north') for (let y = 5; y <= 9; y++) set(7, y, 'H', false), set(8, y, 'h', false);
+      else if (pose === 'east') {
+        for (let y = 3; y <= 6; y++) set(4, y, y > 4 ? 'h' : 'H');
+        set(3, 5, 'h');
+      }
     }
   }
+  const skin = SKIN[looks.skin] ?? SKIN[0]!;
+  const hair = HAIR[looks.hair] ?? HAIR[0]!;
+  const shirt = SHIRT[looks.shirt] ?? SHIRT[0]!;
+  const pants = PANTS[looks.pants] ?? PANTS[0]!;
   return {
     legend: {
-      S: SKIN[looks.skin] ?? SKIN[0]!,
-      H: HAIR[looks.hair] ?? HAIR[0]!,
-      C: SHIRT[looks.shirt] ?? SHIRT[0]!,
-      P: PANTS[looks.pants] ?? PANTS[0]!,
+      S: skin,
+      s: mix(skin, '#3a2418', 0.28),
+      e: '#1d1817',
+      H: hair,
+      h: mix(hair, '#0b0908', 0.4),
+      l: mix(hair, '#fff4e0', 0.28),
+      C: shirt,
+      c: mix(shirt, '#14121c', 0.38),
+      d: mix(shirt, '#ffffff', 0.22),
+      z: mix(shirt, '#14121c', 0.55),
+      P: pants,
+      p: mix(pants, '#0e0d12', 0.38),
+      b: '#3a2b20',
       k: P.ink,
     },
     rows: rows.map((r) => r.join('')),

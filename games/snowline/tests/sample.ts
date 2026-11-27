@@ -47,6 +47,7 @@ export function flatWorld(): World {
     loose: new Uint8Array(n),
     age: new Uint8Array(n),
     trails: new Uint8Array(n),
+    trailLines: [],
   };
 }
 

@@ -1,7 +1,7 @@
 // One simulation tick (SPEC 5): step(state, world, commands) -> events. It mutates `state` in place and
 // reads nothing but its arguments.
 
-import { TICKS_PER_MINUTE, VIEWPOINT_REACH, VIEWPOINT_REVEAL } from '../content/balance.ts';
+import { CORNER_EASE, FOOT_HALF_H, FOOT_HALF_W, SUB, TAP_TICKS, TICKS_PER_MINUTE, VIEWPOINT_REACH, VIEWPOINT_REVEAL } from '../content/balance.ts';
 import { ITEMS, itemDef } from '../content/items.ts';
 import { MSG, who } from '../content/messages.ts';
 import { T } from '../content/terrain.ts';
@@ -105,10 +105,40 @@ function apply(state: GameState, world: World, cmd: Command, events: SimEvent[])
       p.route = null;
       p.intent = cmd.dir;
       p.queued = cmd.dir;
+      if (state.walk === 'free') {
+        p.vx = DX[cmd.dir];
+        p.vy = DY[cmd.dir];
+        p.nudge = TAP_TICKS;
+      }
       break;
     case 'halt':
       p.intent = -1;
+      if (state.walk === 'free') p.vx = p.vy = 0;
       break;
+    case 'walk': {
+      if (state.sleep && !state.sleep.awake) break;
+      const dx = Math.sign(cmd.dx);
+      const dy = Math.sign(cmd.dy);
+      if (dx || dy) {
+        if (state.sleep) state.sleep = null;
+        if (state.task) state.task = null;
+        p.route = null;
+      }
+      if (state.walk !== 'free') {
+        // On the grid, walking is stepping toward the direction last pressed.
+        if (cmd.dir >= 0 && (dx || dy)) p.intent = p.queued = cmd.dir;
+        else p.intent = -1;
+        break;
+      }
+      p.vx = dx;
+      p.vy = dy;
+      p.intent = dx || dy ? cmd.dir : -1;
+      if (cmd.dir >= 0 && (dx || dy)) {
+        p.queued = cmd.dir;
+        p.nudge = TAP_TICKS;
+      }
+      break;
+    }
     case 'face':
       if (state.sleep && !state.sleep.awake) break;
       p.facing = cmd.dir;
@@ -146,6 +176,10 @@ function apply(state: GameState, world: World, cmd: Command, events: SimEvent[])
       p.x = p.fromX = cmd.x;
       p.y = p.fromY = cmd.y;
       p.stepLeft = p.stepTotal = 0;
+      if (state.walk === 'free') {
+        p.fx = p.lastFx = cmd.x * SUB + SUB / 2;
+        p.fy = p.lastFy = cmd.y * SUB + SUB / 2;
+      }
       state.task = null;
       events.push({ type: 'teleport' });
       reveal(state);
@@ -175,6 +209,7 @@ function apply(state: GameState, world: World, cmd: Command, events: SimEvent[])
 }
 
 function movePlayer(state: GameState, world: World, events: SimEvent[]): boolean {
+  if (state.walk === 'free') return moveFree(state, world, events);
   const p = state.player;
   if (p.stepLeft > 0) p.stepLeft--;
   if (p.stepLeft > 0) return true;
@@ -209,15 +244,218 @@ function movePlayer(state: GameState, world: World, events: SimEvent[]): boolean
   p.stepTotal = ticks;
   p.stepLeft = ticks;
   p.bumped = false;
+  entered(state, world, events);
+  return true;
+}
+
+/** What comes of setting foot on a new tile (the survivor's x, y): counted, wet feet, hazards, sight. */
+function entered(state: GameState, world: World, events: SimEvent[]): void {
+  const p = state.player;
+  const to = idx(p.x, p.y);
   state.stats.distance++;
   const t = world.terrain[to]!;
   if (t === T.shallows) p.wet = 100;
   else if (t === T.stream || t === T.gravel) p.wet = Math.max(p.wet, 60);
-  events.push({ type: 'step', x: nx, y: ny, terrain: t });
+  events.push({ type: 'step', x: p.x, y: p.y, terrain: t });
   state.memory['last-step'] = state.tick;
   stepHazards(state, world, to, events);
   reveal(state);
   visitViewpoints(state, world, events);
+}
+
+// ---- Free walking (prototype, SPEC 5.2) ----
+
+/** Does the survivor's footprint fit with their feet at (fx, fy): every tile under it open (bar the one they stand on). */
+function fits(state: GameState, world: World, fx: number, fy: number): boolean {
+  const p = state.player;
+  const x0 = Math.floor((fx - FOOT_HALF_W) / SUB);
+  const x1 = Math.floor((fx + FOOT_HALF_W - 1) / SUB);
+  const y0 = Math.floor((fy - FOOT_HALF_H) / SUB);
+  const y1 = Math.floor((fy + FOOT_HALF_H - 1) / SUB);
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (x === p.x && y === p.y && x === Math.floor(fx / SUB) && y === Math.floor(fy / SUB)) continue;
+      if (!canEnter(state, world, x, y)) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Move the feet `speed` along (vx, vy), one axis at a time, as far as each goes: so walking into a wall
+ * at a slant slides along it. Walking straight into the edge of a corner eases round it.
+ */
+function slide(state: GameState, world: World, vx: number, vy: number, speed: number): void {
+  const p = state.player;
+  if (vx) {
+    let k = speed;
+    while (k > 0 && !fits(state, world, p.fx! + vx * k, p.fy!)) k--;
+    if (k > 0) p.fx! += vx * k;
+    else if (!vy) ease(state, world, 1, vx, speed);
+  }
+  if (vy) {
+    let k = speed;
+    while (k > 0 && !fits(state, world, p.fx!, p.fy! + vy * k)) k--;
+    if (k > 0) p.fy! += vy * k;
+    else if (!vx) ease(state, world, 0, vy, speed);
+  }
+}
+
+/** Blocked going along one axis: if a small shift across would clear the corner, make it (toward the nearer side). */
+function ease(state: GameState, world: World, along: 0 | 1, dir: number, speed: number): void {
+  const p = state.player;
+  for (let d = 1; d <= CORNER_EASE; d++) {
+    for (const sgn of [-1, 1]) {
+      const ok = along === 1 ? fits(state, world, p.fx! + dir * speed, p.fy! + sgn * d) : fits(state, world, p.fx! + sgn * d, p.fy! + dir * speed);
+      if (!ok) continue;
+      const k = Math.min(speed, d);
+      if (along === 1 && fits(state, world, p.fx!, p.fy! + sgn * k)) p.fy! += sgn * k;
+      else if (along === 0 && fits(state, world, p.fx! + sgn * k, p.fy!)) p.fx! += sgn * k;
+      return;
+    }
+  }
+}
+
+/**
+ * Where a route wants to go next, as a way on each axis (-1, 0, 1), or null (arrived, or waiting for a
+ * new way). Toward the next tile's centre; if the step after turns, cutting the corner toward it.
+ */
+function steer(state: GameState, world: World, events: SimEvent[], strict: boolean): [number, number] | null {
+  const p = state.player;
+  const r = p.route!;
+  if (r.path.length === 0) {
+    arrive(state, world, events);
+    return null;
+  }
+  const d = r.path[0]!;
+  const nx = p.x + DX[d];
+  const ny = p.y + DY[d];
+  if (!canEnter(state, world, nx, ny)) {
+    const again = r.tries < 3 ? planRoute(state, world, r.tx, r.ty, r.onto) : null;
+    if (!again || again.length === 0) {
+      p.route = null;
+      if (again) arrive(state, world, events);
+      return null;
+    }
+    r.path = again;
+    r.tries++;
+    return null;
+  }
+  let gx = nx * SUB + SUB / 2;
+  let gy = ny * SUB + SUB / 2;
+  const e = r.path[1];
+  if (!strict && e !== undefined && (e & 1) !== (d & 1) && canEnter(state, world, nx + DX[e], ny + DY[e]) && canEnter(state, world, p.x + DX[e], p.y + DY[e])) {
+    gx += (DX[e] * SUB * 3) / 8;
+    gy += (DY[e] * SUB * 3) / 8;
+  }
+  const dx = gx - p.fx!;
+  const dy = gy - p.fy!;
+  const dead = SUB / 10;
+  const v: [number, number] = [Math.abs(dx) > dead ? Math.sign(dx) : 0, Math.abs(dy) > dead ? Math.sign(dy) : 0];
+  if (!v[0] && !v[1]) return [DX[d], DY[d]];
+  return v;
+}
+
+/** On a new tile while following a route: one step of it done, or off it (slid round something), so find the way again. */
+function followed(state: GameState, world: World, fromX: number, fromY: number): void {
+  const p = state.player;
+  const r = p.route;
+  if (!r || !r.path.length) return;
+  const d = r.path[0]!;
+  if (fromX + DX[d] === p.x && fromY + DY[d] === p.y) {
+    r.path.shift();
+    return;
+  }
+  const e = r.path[1];
+  if (e !== undefined && fromX + DX[d] + DX[e] === p.x && fromY + DY[d] + DY[e] === p.y) {
+    r.path.splice(0, 2);
+    return;
+  }
+  const again = planRoute(state, world, r.tx, r.ty, r.onto);
+  if (again) r.path = again;
+  else p.route = null;
+}
+
+/**
+ * Free walking: the survivor's feet move over the grid in any of eight directions, at the speed of the
+ * ground underfoot (a tile in a grid step's ticks), and stop against anything that blocks. Entering a
+ * new tile does all a step did.
+ */
+function moveFree(state: GameState, world: World, events: SimEvent[]): boolean {
+  const p = state.player;
+  if (p.fx === undefined || p.fy === undefined) {
+    p.fx = p.x * SUB + SUB / 2;
+    p.fy = p.y * SUB + SUB / 2;
+  }
+  p.lastFx = p.fx;
+  p.lastFy = p.fy;
+  p.stepLeft = p.stepTotal = 0;
+  if (state.sleep || state.task) return false;
+  let vx = p.vx ?? 0;
+  let vy = p.vy ?? 0;
+  if (!vx && !vy && (p.nudge ?? 0) > 0 && p.queued >= 0) {
+    vx = DX[p.queued as Dir];
+    vy = DY[p.queued as Dir];
+  }
+  if (p.nudge) p.nudge--;
+  if (!p.nudge) p.queued = -1;
+  let routed = false;
+  if (!vx && !vy && p.route) {
+    const v = steer(state, world, events, false);
+    if (!v) return false;
+    [vx, vy] = v;
+    routed = true;
+  }
+  if (!vx && !vy) return false;
+  // Face the way walked; on a slant, keep facing whichever of its two ways the survivor already was.
+  const ns: Dir = vy < 0 ? 0 : 2;
+  const ew: Dir = vx > 0 ? 1 : 3;
+  const face: Dir = vx && vy ? (p.facing === ns || p.facing === ew ? p.facing : ew) : vy ? ns : ew;
+  if (face !== p.facing) p.bumped = false;
+  p.facing = face;
+  // The speed: a tile in the ticks a grid step onto the tile ahead would take; √2 slower on a slant.
+  const here = idx(p.x, p.y);
+  const ax = p.x + vx;
+  const ay = p.y + vy;
+  const ahead = inBounds(ax, ay) && canEnter(state, world, ax, ay) ? idx(ax, ay) : here;
+  let ticks = stepTicks(world, here, ahead) * slowFactor(state);
+  if (load(state) > carryLimit(state) * 0.8) ticks *= 1.3;
+  let speed = Math.max(1, Math.round(SUB / Math.max(1, ticks)));
+  if (vx && vy) speed = Math.max(1, Math.round((speed * 181) / 256));
+  const [bx, by] = [p.fx, p.fy];
+  slide(state, world, vx, vy, speed);
+  if (routed && p.fx === bx && p.fy === by) {
+    // Cutting the corner caught on something: head for the next tile's centre instead.
+    const v = steer(state, world, events, true);
+    if (v) slide(state, world, v[0], v[1], speed);
+  }
+  if (p.fx === bx && p.fy === by) {
+    const fx = p.x + DX[face];
+    const fy = p.y + DY[face];
+    if (!p.bumped) {
+      events.push({ type: 'bump', x: fx, y: fy });
+      if (animalAt(state, fx, fy)?.kind === 'porcupine' && !state.conditions.some((c) => c.id === 'quills')) {
+        addCondition(state, 'quills', 60);
+        say(state, ANIMAL_TEXT.quills(who(state.protagonist)), events);
+      }
+    }
+    p.bumped = true;
+    return false;
+  }
+  p.bumped = false;
+  const tx = Math.floor(p.fx / SUB);
+  const ty = Math.floor(p.fy / SUB);
+  if (tx !== p.x || ty !== p.y) {
+    const [fromX, fromY] = [p.x, p.y];
+    p.fromX = fromX;
+    p.fromY = fromY;
+    p.x = tx;
+    p.y = ty;
+    // A new tile this tick: what watches for a step starting (fish) sees one.
+    p.stepLeft = p.stepTotal = 1;
+    followed(state, world, fromX, fromY);
+    entered(state, world, events);
+  }
   return true;
 }
 

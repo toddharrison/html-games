@@ -2,6 +2,7 @@
 // back to the one still held. Every other key becomes a named action for the UI. Keys are remappable:
 // the bindings live in settings (`snowline/keys`).
 
+import { FREE_WALK } from '../content/balance.ts';
 import type { Dir } from '../sim/state.ts';
 import { settings } from '../ui/dom.ts';
 import type { CommandBody } from './session.ts';
@@ -86,7 +87,7 @@ export class Input {
 
   /** Let go of everything (a menu opened, or the window lost focus). */
   release(): void {
-    if (this.held.length) this.command({ c: 'halt' });
+    if (this.held.length) this.command(FREE_WALK ? { c: 'walk', dx: 0, dy: 0, dir: -1 } : { c: 'halt' });
     this.held = [];
   }
 
@@ -106,7 +107,8 @@ export class Input {
       if (e.repeat) return;
       this.held = this.held.filter((d) => d !== dir);
       this.held.push(dir);
-      this.command({ c: 'move', dir });
+      if (FREE_WALK) this.walk();
+      else this.command({ c: 'move', dir });
       return;
     }
     // Out of play, let Space and Enter press the focused button.
@@ -121,7 +123,15 @@ export class Input {
     const dir = a ? MOVES[a] : undefined;
     if (dir === undefined || !this.held.includes(dir)) return;
     this.held = this.held.filter((d) => d !== dir);
+    if (FREE_WALK) return this.walk();
     const top = this.held[this.held.length - 1];
     this.command(top === undefined ? { c: 'halt' } : { c: 'move', dir: top });
+  }
+
+  /** Free walking: every direction held at once, so two keys walk on a slant; the last pressed is the way to face. */
+  private walk(): void {
+    const has = (d: Dir) => (this.held.includes(d) ? 1 : 0);
+    const top = this.held[this.held.length - 1];
+    this.command({ c: 'walk', dx: has(1) - has(3), dy: has(2) - has(0), dir: top ?? -1 });
   }
 }

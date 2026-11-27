@@ -1,7 +1,7 @@
 // Unit tests for movement, sight, and viewpoints, on a hand-built flat world.
 
 import { describe, expect, it } from 'vitest';
-import { BASE_STEP_TICKS, START_MINUTE, TICKS_PER_MINUTE, VIEWPOINT_REVEAL } from '../src/content/balance.ts';
+import { BASE_STEP_TICKS, FOOT_HALF_W, START_MINUTE, SUB, TICKS_PER_MINUTE, VIEWPOINT_REVEAL } from '../src/content/balance.ts';
 import { F, FLAG, T } from '../src/content/terrain.ts';
 import { newGame } from '../src/sim/newGame.ts';
 import { candidate } from '../src/sim/protagonist.ts';
@@ -12,10 +12,10 @@ import { idx, stepTicks, type World } from '../src/sim/world.ts';
 import { runTo } from '../src/tools/runner.ts';
 import { flatWorld } from './sample.ts';
 
-function setup(edit?: (w: World) => void): { state: GameState; world: World } {
+function setup(edit?: (w: World) => void, walk?: 'grid' | 'free'): { state: GameState; world: World } {
   const world = flatWorld();
   edit?.(world);
-  return { state: newGame('flat', candidate('flat', 0), world, dealRules('flat')), world };
+  return { state: newGame('flat', candidate('flat', 0), world, dealRules('flat'), walk), world };
 }
 
 function run(state: GameState, world: World, commands: Command[], ticks: number): SimEvent[] {
@@ -24,9 +24,71 @@ function run(state: GameState, world: World, commands: Command[], ticks: number)
   return events;
 }
 
+describe('free walking (SPEC 5.2, prototype)', () => {
+  const feet = (s: GameState): [number, number] => [s.player.fx!, s.player.fy!];
+
+  it('walks a tile in the ticks a grid step takes, smoothly, and the tile under the feet is where the survivor is', () => {
+    const { state, world } = setup(undefined, 'free');
+    const [x0] = feet(state);
+    run(state, world, [{ t: 0, c: 'walk', dx: 1, dy: 0, dir: 1 }], 3);
+    expect(feet(state)[0]! - x0, 'half a tile in 3 ticks').toBeGreaterThan(SUB / 2 - 10);
+    expect(state.player.x, 'from the centre, half a tile is over the edge onto the next').toBe(129);
+    run(state, world, [], BASE_STEP_TICKS * 5 - 3);
+    expect(state.player.x).toBe(133);
+    expect(state.player.facing).toBe(1);
+  });
+
+  it('walks on a slant with two keys, as fast overall, so slower along each axis', () => {
+    const { state, world } = setup(undefined, 'free');
+    const [x0, y0] = feet(state);
+    run(state, world, [{ t: 0, c: 'walk', dx: 1, dy: 1, dir: 2 }], 30);
+    const [x1, y1] = feet(state);
+    expect(x1! - x0!).toBe(y1! - y0!);
+    expect(Math.hypot(x1! - x0!, y1! - y0!) / 30).toBeCloseTo(SUB / BASE_STEP_TICKS, -1);
+    expect(state.player.facing, 'faces the key pressed last').toBe(2);
+  });
+
+  it('stops at what blocks, slides along it on a slant, and bumps once', () => {
+    const { state, world } = setup((w) => {
+      for (let y = 120; y < 140; y++) w.feature[idx(130, y)] = F.thicket;
+    }, 'free');
+    const events = run(state, world, [{ t: 0, c: 'walk', dx: 1, dy: 0, dir: 1 }], 40);
+    expect(state.player.x).toBe(129);
+    expect(feet(state)[0]! + FOOT_HALF_W, 'up against the thicket').toBe(130 * SUB);
+    expect(events.filter((e) => e.type === 'bump')).toHaveLength(1);
+    run(state, world, [{ t: state.tick, c: 'walk', dx: 1, dy: 1, dir: 2 }], 30);
+    expect(state.player.x, 'still against it').toBe(129);
+    expect(state.player.y, 'slid along it').toBeGreaterThan(130);
+  });
+
+  it('a tap walks a little, less than a tile', () => {
+    const { state, world } = setup(undefined, 'free');
+    const [x0] = feet(state);
+    run(state, world, [{ t: 0, c: 'walk', dx: -1, dy: 0, dir: 3 }, { t: 0, c: 'walk', dx: 0, dy: 0, dir: -1 }], 20);
+    const moved = x0! - feet(state)[0]!;
+    expect(moved).toBeGreaterThan(0);
+    expect(moved).toBeLessThan(SUB);
+  });
+
+  it('a click walks there over the grid, on a slant where it can, and faces it', () => {
+    const { state, world } = setup(undefined, 'free');
+    run(state, world, [{ t: 0, c: 'goto', x: 134, y: 133, onto: false, action: null, at: 'front' }], 80);
+    expect(state.player.route).toBeNull();
+    const { x, y, facing } = state.player;
+    expect(Math.abs(x - 134) + Math.abs(y - 133)).toBe(1);
+    expect([x + [0, 1, 0, -1][facing]!, y + [-1, 0, 1, 0][facing]!]).toEqual([134, 133]);
+  });
+
+  it('a move command walks one way until halted (as the bot and old replays send)', () => {
+    const { state, world } = setup(undefined, 'free');
+    run(state, world, [{ t: 0, c: 'move', dir: 2 }, { t: BASE_STEP_TICKS * 3, c: 'halt' }], 30);
+    expect(state.player.y).toBe(131);
+  });
+});
+
 describe('movement', () => {
-  it('a step on open ground takes 6 ticks', () => {
-    const { state, world } = setup();
+  it('a step on open ground takes 6 ticks (on the grid)', () => {
+    const { state, world } = setup(undefined, 'grid');
     run(state, world, [{ t: 0, c: 'move', dir: 1 }], 1);
     expect(state.player.x).toBe(129);
     expect(state.player.stepTotal).toBe(BASE_STEP_TICKS);
@@ -47,8 +109,8 @@ describe('movement', () => {
     expect(state.player.x).toBe(127);
   });
 
-  it('a tap during a step is taken when the step ends', () => {
-    const { state, world } = setup();
+  it('a tap during a step is taken when the step ends (on the grid)', () => {
+    const { state, world } = setup(undefined, 'grid');
     run(state, world, [{ t: 0, c: 'move', dir: 1 }, { t: 1, c: 'halt' }, { t: 2, c: 'move', dir: 2 }, { t: 3, c: 'halt' }], 30);
     expect([state.player.x, state.player.y]).toEqual([129, 129]);
   });

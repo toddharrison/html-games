@@ -9,6 +9,11 @@ import { DX4, DX8, DY4, DY8, N, bfs, floodFill, forNeighbours4 } from './grid.ts
 import { fbm, perlin } from './noise.ts';
 import { SIZE } from '../world.ts';
 
+/** How far (tiles) a high gully's wet spreads on flat ground. */
+const SWALE = 2.6;
+/** The smallest patch of high meadow up high; smaller ones go to the ground round them. */
+const MIN_HIGH_MEADOW = 8;
+
 /**
  * True if tile (x, y) wins the scatter for `salt`: its hash is under its density, and lowest among the
  * four neighbours that are also under theirs. Two winners are never side by side, so a stand of trees or a
@@ -67,6 +72,7 @@ export function coverGround(g: Gen): void {
   const slope = new Float64Array(N);
   const sunny = new Float64Array(N);
   const moisture = new Float64Array(N);
+  const runoff = new Float64Array(N);
   for (let i = 0; i < N; i++) {
     const x = xOf(i);
     const y = yOf(i);
@@ -77,8 +83,34 @@ export function coverGround(g: Gen): void {
     // Rising to the north faces the slope south, into the sun.
     sunny[i] = clamp(-gy / 6, -1, 1);
     const dw = fromWater[i]! < 0 ? 80 : fromWater[i]!;
-    const runoff = clamp((Math.sqrt(g.flow[i]!) - 1.6) / 7, 0, 1) * (slope[i]! < 2 ? 1 : 2 / slope[i]!);
-    moisture[i] = 0.42 + runoff * 0.6 + fbm((w + 101) | 0, x / 38, y / 38, 4) * 0.3 - dw / 60 - sunny[i]! * 0.12 + (g.bog[i] ? 0.4 : 0);
+    runoff[i] = clamp((Math.sqrt(g.flow[i]!) - 1.6) / 7, 0, 1) * (slope[i]! < 2 ? 1 : 2 / slope[i]!);
+    moisture[i] = 0.42 + runoff[i]! * 0.6 + fbm((w + 101) | 0, x / 38, y / 38, 4) * 0.3 - dw / 60 - sunny[i]! * 0.12 + (g.bog[i] ? 0.4 : 0);
+  }
+
+  // Up high, where the ground is thin, water running down a gully wets a swale, not a single line of
+  // tiles: wider where the ground is flat, narrower where it's steep, its edges ragged. So above the
+  // forest, ground is chosen by this spread-out moisture (`highWet`), and a trickle through the scrub
+  // makes a green swale that comes and goes rather than a ribbon one tile wide.
+  const highWet = new Float64Array(N);
+  for (let i = 0; i < N; i++) {
+    if (g.band[i]! < BAND.subalpine) continue;
+    const x = xOf(i);
+    const y = yOf(i);
+    let swale = 0;
+    for (let dy = -3; dy <= 3; dy++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+        const n = ny * SIZE + nx;
+        if (!runoff[n]) continue;
+        // How far the wet reaches from this tile of the gully: up to SWALE where it's flat, about a tile where it's steep.
+        const reach = 1.2 + clamp(1 - slope[n]! / 9, 0, 1) * (SWALE - 1.2);
+        const d = Math.sqrt(dx * dx + dy * dy) + perlin((w + 104) | 0, x / 2.5, y / 2.5) * 0.9;
+        if (d < reach) swale = Math.max(swale, runoff[n]! * (1 - (d / reach) * 0.5));
+      }
+    }
+    highWet[i] = moisture[i]! - runoff[i]! * 0.6 + swale * 0.6;
   }
 
   // The ground the ice has just let go of: within a step or two of a glacier all round, bare rubble (its
@@ -154,18 +186,22 @@ export function coverGround(g: Gen): void {
           else if (sunny[i]! > 0.45 && sl > 5 && m < 0.45) t = T.meadow; // dry grassy slopes facing the sun
           else t = T.forest;
           break;
-        case BAND.subalpine:
+        case BAND.subalpine: {
+          const m = highWet[i]!;
           if (underCliff) t = T.talus;
           else if (sl > 12) t = T.boulders;
           else if (m > 0.7 || g.bog[i]) t = T.highMeadow;
           else if (sunny[i]! < -0.2 && m > 0.45 && patchy < 0.25) t = T.forest; // fir on the shady side, up to the treeline
           else t = patchy > 0.22 ? T.boulders : m > 0.5 ? T.highMeadow : T.scrub;
           break;
-        default:
+        }
+        default: {
+          const m = highWet[i]!;
           if (underCliff) t = T.talus;
           else if (sl > 9) t = T.rock;
           else if (m > 0.75 && sl < 4) t = T.highMeadow; // alpine meadow where meltwater runs
           else t = patchy > 0.15 ? T.rock : T.talus;
+        }
       }
       // Ground the ice left lately is open: grass and willow, no forest yet.
       if (ff === OPEN_FORE) {
@@ -197,6 +233,42 @@ export function coverGround(g: Gen): void {
         let bk = -1;
         for (let k = 0; k < 4; k++) if (kinds[k] !== t && (bk < 0 || other[k]! > other[bk]!)) bk = k;
         if (bk >= 0 && other[bk]! >= 4) g.terrain[i] = kinds[bk]!;
+      }
+    }
+  }
+
+  // High meadow lies in swales and patches, never strands or flecks: a tile of it up high that isn't part
+  // of some two-by-two block of it, or is in a patch under MIN_HIGH_MEADOW tiles, goes to the commonest
+  // ground round it.
+  {
+    const small = new Uint8Array(N);
+    const seen = new Uint8Array(N);
+    const high = (i: number) => g.terrain[i] === T.highMeadow && g.band[i]! >= BAND.subalpine && !fore[i];
+    for (let i = 0; i < N; i++) {
+      if (seen[i] || !high(i)) continue;
+      const part = floodFill(i, high, seen);
+      if (part.length < MIN_HIGH_MEADOW) for (const k of part) small[k] = 1;
+    }
+    const was = g.terrain.slice();
+    const hm = (x: number, y: number) => was[y * SIZE + x] === T.highMeadow;
+    for (let y = 1; y < SIZE - 1; y++) {
+      for (let x = 1; x < SIZE - 1; x++) {
+        const i = y * SIZE + x;
+        if (was[i] !== T.highMeadow || fore[i] || g.band[i]! < BAND.subalpine) continue;
+        let block = false;
+        for (const [ox, oy] of [[0, 0], [-1, 0], [0, -1], [-1, -1]] as const) {
+          if (hm(x + ox, y + oy) && hm(x + ox + 1, y + oy) && hm(x + ox, y + oy + 1) && hm(x + ox + 1, y + oy + 1)) block = true;
+        }
+        if (block && !small[i]) continue;
+        const count = new Map<number, number>();
+        for (let d = 0; d < 8; d++) {
+          const n = was[(y + DY8[d]!) * SIZE + x + DX8[d]!]!;
+          if (n === T.scrub || n === T.boulders || n === T.talus || n === T.rock || n === T.forest) count.set(n, (count.get(n) ?? 0) + 1);
+        }
+        // The commonest, ties to the first in this fixed order (never by the map's iteration order).
+        let best = -1;
+        for (const k of [T.scrub, T.forest, T.boulders, T.talus, T.rock]) if ((count.get(k) ?? 0) > (best < 0 ? 0 : count.get(best)!)) best = k;
+        if (best >= 0) g.terrain[i] = best;
       }
     }
   }

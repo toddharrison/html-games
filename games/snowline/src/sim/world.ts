@@ -75,6 +75,11 @@ export interface World {
   loose: Uint8Array;
   /** Whose game trail each tile is (TRAIL_BY: 0 none, 1 elk, 2 bear, 3 cougar), from worldgen layTrails. */
   trails: Uint8Array;
+  /**
+   * Each game trail's route as its bend points (tile indices), in order: the straight runs it was laid
+   * along. For drawing it as one line; which tiles show a worn path is `FLAG.trail`.
+   */
+  trailLines: number[][];
   /** Years since the forest on each tile last burned (255: older than that; 0: no forest), from its fire history (SPEC 6.3). */
   age: Uint8Array;
 }

@@ -333,7 +333,21 @@ export function buildAtlas(): Atlas {
           g.fillRect(4, 14, 8, 2);
         }
         const pose = dir === -1 ? 'asleep' : dir === 0 ? 'north' : dir === 2 ? 'south' : 'east';
-        paint(g, personSprite(who.looks, pose, frame), 0, 0, {}, dir === 3);
+        // The figure on its own canvas, then a dark outline round it, so the survivor
+        // reads against any ground; then the figure over the shadow.
+        const fig = makeCanvas(S, S);
+        const fg = fig.getContext('2d')!;
+        paint(fg, personSprite(who.looks, pose, frame), 0, 0, {}, dir === 3);
+        const d = fg.getImageData(0, 0, S, S).data;
+        const solid = (x: number, y: number) => x >= 0 && y >= 0 && x < S && y < S && d[(y * S + x) * 4 + 3]! > 0;
+        g.fillStyle = 'rgba(22,18,16,0.85)';
+        for (let y = 0; y < S; y++) {
+          for (let x = 0; x < S; x++) {
+            if (solid(x, y)) continue;
+            if (solid(x - 1, y) || solid(x + 1, y) || solid(x, y - 1) || solid(x, y + 1)) g.fillRect(x, y, 1, 1);
+          }
+        }
+        g.drawImage(fig, 0, 0);
         people.set(key, c);
       }
       return c;

@@ -1,4 +1,4 @@
-// Trees, the snag, and rock formations in sizes (SPEC 6.8, 12.1): drawn in code, a few variants of each size, built once
+// Trees and rock formations in sizes (SPEC 6.8, 12.1): drawn in code, a few variants of each size, built once
 // into canvases. Tall ones rise above their tile; the renderer anchors each at its tile's foot.
 
 import { rh } from './tiles.ts';
@@ -9,14 +9,14 @@ export interface Tall {
   crown: number;
 }
 
-function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+export function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
   return [c, c.getContext('2d')!];
 }
 
-function px(g: CanvasRenderingContext2D, x: number, y: number, col: string, w = 1, h = 1): void {
+export function px(g: CanvasRenderingContext2D, x: number, y: number, col: string, w = 1, h = 1): void {
   g.fillStyle = col;
   g.fillRect(x, y, w, h);
 }
@@ -30,37 +30,138 @@ const CONIFER: [number, number][] = [
   [44, 11.6],
 ];
 
-export function conifer(size: number, v: number, palette: 'green' | 'grey' = 'green'): Tall {
-  const [H, half] = CONIFER[size]!;
-  const trunk = size === 0 ? 2 : 4;
-  const W = 28;
-  const [c, g] = canvas(W, H + trunk + 1);
-  const cx = 13.5;
-  const dark = palette === 'grey' ? '#26362a' : '#1d3222';
-  const mid = palette === 'grey' ? '#344536' : '#26422b';
-  const lit = palette === 'grey' ? '#4a5c48' : '#3a5d3e';
-  const shine = palette === 'grey' ? '#62705a' : '#52784f';
-  const shadow = '#132017';
-  px(g, Math.floor(cx) - 1, H - 1, '#4a3a2b', 2, trunk + 1);
-  px(g, Math.floor(cx), H - 1, '#6b5440', 1, trunk);
-  const tier = size <= 1 ? 3 : 4;
-  for (let r = 0; r < H; r++) {
-    const env = ((r + 1) / H) * half;
-    const pos = r % tier;
-    const hw = Math.max(0.6, env * (0.6 + 0.4 * (pos / (tier - 1))));
-    const x0 = Math.round(cx - hw);
-    const x1 = Math.round(cx + hw);
-    for (let x = x0; x < x1; x++) {
-      const edge = x === x0 || x === x1 - 1;
-      if (edge && rh(x, r, 90 + v) < 0.35 && r > 1) continue;
-      const side = (x - cx) / Math.max(1, hw);
-      let col = side < -0.25 ? lit : side > 0.35 ? dark : mid;
-      if (pos === tier - 1 && r < H - 1) col = side > -0.4 ? shadow : mid;
-      if (side < -0.3 && rh(x, r, 93 + v) < 0.18) col = shine;
-      px(g, x, r, col);
+/** Which conifer: 0 spruce (a full, drooping cone), 1 fir (a narrow dark spire), 2 pine (a tall clear trunk, an open tufted crown). */
+export type ConiferForm = 0 | 1 | 2;
+/** Variants of each form at each size. */
+export const CONIFER_VARIANTS = 4;
+
+/** Needles by form: shadow, dark, mid, lit, shine. */
+const NEEDLES: Record<ConiferForm, [string, string, string, string, string]> = {
+  0: ['#122019', '#1c3125', '#26412f', '#385b43', '#4c7355'],
+  1: ['#0f1c16', '#18291f', '#213829', '#30503a', '#41664a'],
+  2: ['#152014', '#22341e', '#30462a', '#455f35', '#5a7642'],
+};
+/** Bark by form: dark, mid, lit. */
+const BARK: Record<ConiferForm, [string, string, string]> = {
+  0: ['#3b2f25', '#5b4a3a', '#7a6650'],
+  1: ['#3e3a35', '#5e5952', '#7f7a70'],
+  2: ['#3e2b1f', '#654634', '#836049'],
+};
+
+/**
+ * A conifer of a size and form; `v` (0 to CONIFER_VARIANTS - 1) picks how this one grew: a lean, one side
+ * fuller, tiers ragged and of different depths, now and then a gap where a branch broke, a broken top
+ * on an old one, a shade lighter or darker. Bigger trees stand on a bare trunk (a pine on a tall one),
+ * flared at the roots.
+ */
+export function conifer(size: number, v: number, form: ConiferForm = 0): Tall {
+  const r = (salt: number) => rh(size * 5 + form, v, 400 + salt);
+  const [H0, half0] = CONIFER[size]!;
+  const total = H0 + (size === 0 ? 3 : 5);
+  // How much bare trunk shows below the crown.
+  const bare = size === 0 ? 1 : form === 2 && size >= 2 ? Math.round(total * (size === 2 ? 0.2 : 0.28) + r(1) * 4) : size >= 3 ? 4 + Math.floor(r(1) * 4) : size === 2 ? 3 : 2;
+  const C = total - bare;
+  const half = half0 * (form === 1 ? 0.66 : form === 2 ? 0.9 : 1) * (0.88 + r(2) * 0.22);
+  const W = 30;
+  const [c, g] = canvas(W, total);
+  const base = 14.5;
+  const tint = 0.9 + r(3) * 0.2;
+  const [shadow, dark, mid, lit, shine] = NEEDLES[form].map((col) => shade(col, tint)) as [string, string, string, string, string];
+  const [bDark, bMid, bLit] = BARK[form];
+  // The trunk: up from the roots into the crown, lit on the left, in shade just under the crown.
+  const tw = size === 0 ? 1 : size <= 2 ? 2 : 3;
+  const tx = Math.round(base - tw / 2);
+  for (let y = Math.max(0, C - (form === 2 ? C * 0.6 : 4)); y < total; y++) {
+    for (let k = 0; k < tw; k++) {
+      let col = k === 0 && tw > 1 ? bLit : k === tw - 1 ? bDark : bMid;
+      if (y < C + 2) col = k === 0 && tw > 1 ? bMid : bDark;
+      if (rh(k, y, 410 + v) < 0.12) col = bDark;
+      px(g, tx + k, Math.floor(y), col);
     }
   }
-  return { c, crown: Math.floor(H * 0.6) };
+  if (size >= 2) {
+    px(g, tx - 1, total - 1, bMid);
+    px(g, tx + tw, total - 1, bDark);
+  }
+  const lean = (r(4) - 0.5) * (size >= 2 ? 3 : 1.5);
+  const fullL = 0.85 + r(5) * 0.25;
+  const fullR = 0.85 + r(6) * 0.25;
+  const cxAt = (row: number) => base + lean * (1 - row / C) * (1 - row / C);
+  const brokenTop = size >= 3 && r(7) < 0.1 ? 2 + Math.floor(r(8) * 2) : 0;
+  if (form === 2 && size >= 2) {
+    // A pine's crown: narrow and a little rounded, dense tufts of needles on short upswept branches,
+    // uneven at the edges, gaps here and there showing the trunk.
+    const top = 1;
+    const cy = top + (C - top) * 0.5;
+    const rx = half * 0.62;
+    const ry = (C - top) * 0.52;
+    for (let b = 0; b < 3 + size; b++) {
+      const side = b % 2 ? 1 : -1;
+      const y0 = Math.round(cy + ry * (r(20 + b) * 0.8 - 0.2));
+      const len = rx * (0.4 + r(30 + b) * 0.4);
+      for (let k = 0; k < len; k++) px(g, Math.round(cxAt(y0) + side * k), Math.round(y0 - k * 0.5), bDark);
+    }
+    const tufts = 10 + size * 7;
+    for (let b = 0; b < tufts; b++) {
+      const a = r(40 + b) * 6.283;
+      const d = Math.sqrt(r(70 + b));
+      const bx = cxAt(cy) + Math.cos(a) * d * rx * (Math.cos(a) < 0 ? fullL : fullR);
+      const by = cy + Math.sin(a) * d * ry;
+      const br = 1.4 + r(100 + b) * 1.3;
+      for (let y = Math.floor(by - br); y <= by + br; y++) {
+        for (let x = Math.floor(bx - br); x <= bx + br; x++) {
+          const dx = x + 0.5 - bx;
+          const dy = y + 0.5 - by;
+          if (dx * dx + dy * dy > br * br || y < 0 || y >= C + 1) continue;
+          const light = (dx + dy) / br + ((bx - base) / rx + (by - cy) / ry) * 0.7;
+          let col = light < -0.7 ? lit : light > 0.6 ? dark : mid;
+          if (light > 1.1) col = shadow;
+          if (light < -0.7 && rh(x, y, 420 + v) < 0.15) col = shine;
+          px(g, x, y, col);
+        }
+      }
+    }
+    return { c, crown: Math.floor(C * 0.7) };
+  }
+  // Spruce and fir: tiers of drooping branches, deeper lower down, the fir's narrower and its top a spire.
+  const tiers: [number, number][] = [];
+  for (let y = brokenTop; y < C; ) {
+    const depth = Math.max(2, Math.round((size <= 1 ? 2.5 : 3) + (y / C) * 2 + (r(200 + tiers.length) - 0.5) * 2));
+    tiers.push([y, Math.min(depth, C - y)]);
+    y += depth;
+  }
+  const exp = form === 1 ? 1.25 : 1;
+  tiers.forEach(([y0, depth], t) => {
+    // Now and then a branch broke off: this tier is short on one side.
+    const gap = size >= 2 && t > 1 && r(240 + t) < 0.14 ? (r(260 + t) < 0.5 ? -1 : 1) : 0;
+    for (let row = y0; row < y0 + depth; row++) {
+      const along = (row + 1) / C;
+      const env = half * along ** exp;
+      const pos = depth > 1 ? (row - y0) / (depth - 1) : 1;
+      const droop = 0.5 + 0.5 * pos;
+      const ragged = 1 + (r(280 + t) - 0.5) * 0.3;
+      const cx = cxAt(row);
+      const hl = Math.max(0.6, env * droop * fullL * ragged * (gap < 0 ? 0.45 : 1));
+      const hr = Math.max(0.6, env * droop * fullR * ragged * (gap > 0 ? 0.45 : 1));
+      const x0 = Math.round(cx - hl);
+      const x1 = Math.round(cx + hr);
+      for (let x = x0; x < x1; x++) {
+        const edge = x === x0 || x === x1 - 1;
+        if (edge && rh(x, row, 90 + v + form * 7) < 0.4 && row > 1) continue;
+        const side = (x + 0.5 - cx) / Math.max(1, x < cx ? hl : hr);
+        let col = side < -0.3 ? lit : side > 0.35 ? dark : mid;
+        // The underside of each tier in shadow, the trunk side darkest.
+        if (pos === 1 && row < C - 1) col = side > -0.45 ? shadow : mid;
+        if (side < -0.35 && rh(x, row, 93 + v + form * 7) < 0.2) col = shine;
+        px(g, x, row, col);
+      }
+    }
+  });
+  if (brokenTop) {
+    // The top snapped off long ago: a grey spike of dead wood above the live crown.
+    for (let y = 0; y < brokenTop + 1; y++) px(g, Math.round(cxAt(y)) - (y > 0 ? 1 : 0), y, y === 0 ? '#9a9890' : '#6e6a62', y > 0 ? 2 : 1, 1);
+  }
+  return { c, crown: Math.floor(C * 0.6) };
 }
 
 export function stunted(v: number): Tall {
@@ -233,32 +334,8 @@ function shade(hex: string, f: number): string {
   return `rgb(${ch(16)},${ch(8)},${ch(0)})`;
 }
 
-/** The split snag: a tall dead trunk, grey and bare, split at the top and scorched down one side. */
-export function snag(v: number): Tall {
-  const H = 38 + (v % 2) * 4;
-  const [c, g] = canvas(20, H);
-  const cx = 9;
-  for (let y = 6; y < H; y++) {
-    const w = y > H - 4 ? 4 : y > H * 0.5 ? 3 : 2;
-    for (let k = 0; k < w; k++) px(g, cx - (w >> 1) + k, y, k === 0 ? '#b3b4ab' : k === w - 1 ? '#5e625f' : '#8f979a');
-    // The lightning's scorch, down the right side.
-    if (y > 10 && y < H - 6 && rh(y, v, 170) < 0.7) px(g, cx + (w >> 1) - (w > 2 ? 1 : 0), y, '#2a2a28');
-  }
-  // The split: two forks leaning apart, jagged ends.
-  for (let k = 0; k < 7; k++) {
-    px(g, cx - 1 - Math.floor(k / 2), 6 - k, '#a3a59d');
-    px(g, cx + 1 + Math.floor(k / 3), 6 - k, '#6e726c');
-  }
-  // Dead branch stubs.
-  for (const [y, d, len] of [[14, -1, 3], [20, 1, 4], [27, -1, 2], [31, 1, 2]] as const) {
-    for (let k = 1; k <= len; k++) px(g, cx + d * (k + 1), y - Math.floor(k / 2), '#7d827d');
-  }
-  px(g, cx - 3, H - 1, '#4a4c48', 7, 1);
-  return { c, crown: 0 };
-}
-
 /** One rounded mass of a rock: centre, half-width, half-height, and how square its shoulders are (2 round, 4+ blocky). */
-interface Lump {
+export interface Lump {
   cx: number;
   cy: number;
   rx: number;
@@ -281,7 +358,7 @@ const BAYER = [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5];
  * shaded edge, grain, specks of the stone's own mark, and lichen on the lit tops. `joints` adds the
  * upright cracks of a crag.
  */
-function paintRock(W: number, H: number, lumps: Lump[], body: string, mark: string, v: number, joints: number): HTMLCanvasElement {
+export function paintRock(W: number, H: number, lumps: Lump[], body: string, mark: string, v: number, joints: number): HTMLCanvasElement {
   const [c, g] = canvas(W, H);
   const tones = [shade(body, 0.42), shade(body, 0.62), shade(body, 0.82), body, shade(body, 1.22), shade(body, 1.45)];
   const order = lumps.map((_, k) => k).sort((a, b) => lumps[a]!.cy + lumps[a]!.ry - (lumps[b]!.cy + lumps[b]!.ry) || a - b);

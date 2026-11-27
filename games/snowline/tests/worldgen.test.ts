@@ -38,8 +38,8 @@ describe('world generation sample', () => {
       {
         "genSeed": "first-light",
         "start": {
-          "x": 122,
-          "y": 140,
+          "x": 124,
+          "y": 141,
         },
       }
     `);

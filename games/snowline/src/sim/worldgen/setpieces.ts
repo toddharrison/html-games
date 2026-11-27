@@ -524,15 +524,45 @@ function carveAvalanche(g: Gen, top: number): void {
   }
 }
 
+/** The most tiles a tarn the ice left can have and still be the tarn landmark (geology's own limit). */
+const TARN_MAX = 140;
+
 /**
- * The tarn landmark: a tarn the ice left (geology's), if the valley has one; otherwise water lying in
- * the deepest little hollow on open high ground, filled from its lowest point up, so it takes the
- * hollow's shape. Deep where it's water all round, shallows at its edge. Returns a tile of it, or -1.
+ * The tarn landmark: a tarn the ice left (geology's: high and small, not an upper lake), if the valley
+ * has one; otherwise water lying in the deepest little hollow on open high ground, filled from its
+ * lowest point up, so it takes the hollow's shape. Deep where it's water all round, shallows at its
+ * edge. Returns a tile of it, or -1.
  */
 function placeTarn(g: Gen): number {
   // Never in the rim's margin, where the ground climbs into the headwall and may be out of reach.
   const inland = (i: number, d: number) => Math.min(xOf(i), yOf(i), SIZE - 1 - xOf(i), SIZE - 1 - yOf(i)) >= d;
-  const natural = tilesWhere((i) => g.water[i] === WATER.tarn && inland(i, 10));
+  // A tarn the ice left: small and high. An upper lake behind a rock step is WATER.tarn too, but it lies
+  // on the trough floor and is no tarn to look at.
+  const body = new Int32Array(N).fill(-1);
+  const bodies: { size: number; high: boolean }[] = [];
+  for (let s = 0; s < N; s++) {
+    if (g.water[s] !== WATER.tarn || body[s]! >= 0) continue;
+    const k = bodies.length;
+    const part = [s];
+    body[s] = k;
+    let high = false;
+    for (let h = 0; h < part.length; h++) {
+      const i = part[h]!;
+      if (g.band[i]! >= BAND.subalpine) high = true;
+      for (let d = 0; d < 8; d += 2) {
+        const nx = xOf(i) + DX8[d]!;
+        const ny = yOf(i) + DY8[d]!;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+        const n = ny * SIZE + nx;
+        if (g.water[n] === WATER.tarn && body[n]! < 0) {
+          body[n] = k;
+          part.push(n);
+        }
+      }
+    }
+    bodies.push({ size: part.length, high });
+  }
+  const natural = tilesWhere((i) => g.water[i] === WATER.tarn && inland(i, 10) && bodies[body[i]!]!.high && bodies[body[i]!]!.size <= TARN_MAX);
   if (natural.length) return pick(g.rng, natural);
   const ok = (i: number) =>
     g.band[i]! >= BAND.subalpine && inland(i, 12) && isOpenLand(g, i) && !g.reserved[i] && !(g.feature[i] !== F.none && FEATURES[g.feature[i]!]!.fixed);

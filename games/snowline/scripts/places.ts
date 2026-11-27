@@ -69,8 +69,9 @@ add('avalanche', best((i) => (w.flags[i]! & FLAG.avalanche ? 1 : 0)));
 add('game-trail', best((i) => (w.trails[i] ? 1 : 0), (i) => w.trails[i] !== 0));
 const dens = new Map<number, { x: number; y: number }>();
 for (let i = 0; i < S * S; i++) if (w.feature[i] === F.den && !dens.has(w.data[i]!)) dens.set(w.data[i]!, { x: i % S, y: Math.floor(i / S) });
-for (const [kind, p] of [...dens].sort((a, b) => a[0] - b[0])) add(`den-${kind}`, { x: p.x, y: p.y + 1 });
+// The survivor stands a little below a den or landmark, so it isn't hidden behind them.
+for (const [kind, p] of [...dens].sort((a, b) => a[0] - b[0])) add(`den-${kind}`, { x: p.x, y: p.y + 2 });
 const seen = new Set<string>();
-for (const l of w.landmarks) if (!seen.has(l.kind)) (seen.add(l.kind), add(`landmark-${l.kind}`, l));
+for (const l of w.landmarks) if (!seen.has(l.kind)) (seen.add(l.kind), add(`landmark-${l.kind}`, { x: l.x, y: l.y + 2 }));
 
 console.log(JSON.stringify(places));

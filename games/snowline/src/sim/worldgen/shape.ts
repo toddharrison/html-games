@@ -70,6 +70,9 @@ export function cutBands(g: Gen): void {
   }
 }
 
+/** Water a stream can run on into or out of. */
+const isWet = (t: number) => t === T.stream || t === T.gravel || t === T.waterfall || t === T.shallows || t === T.deep;
+
 /**
  * Step 3's second half: a cliff wherever a subalpine or alpine tile meets a lower band (a waterfall
  * where a stream crosses), then a few scramble routes through each cliff band. Floor to forest is
@@ -83,14 +86,26 @@ export function raiseCliffs(g: Gen): string | null {
     // A cliff where the ground steps down to a lower band steeply; a gentle band edge is an open slope.
     let lower = false;
     let drop = 0;
+    // The drop is to the lower band only: a bank above a gully cut into the same band is no cliff (and a
+    // stream's corner tile on that bank no waterfall, beside the stream that runs on level).
     forNeighbours4(i, (n) => {
-      if (g.terrain[n] === T.headwall) return;
-      if (g.band[n]! < b) lower = true;
+      if (g.terrain[n] === T.headwall || g.band[n]! >= b) return;
+      lower = true;
       drop = Math.max(drop, g.elev[i]! - g.elev[n]!);
     });
     if (!lower || drop < CLIFF_DROP) continue;
     if (g.terrain[i] === T.stream) {
-      g.terrain[i] = T.waterfall;
+      // Falling water only where the stream itself drops: water feeding this tile from level or above,
+      // and water going on below it in the lower band, a cliff's drop lower. A corner tile laid on the
+      // bank beside a stream that runs on level is neither; and a stream tile is never made a cliff.
+      let fed = false;
+      let falls = false;
+      forNeighbours4(i, (n) => {
+        if (!isWet(g.terrain[n]!)) return;
+        if (g.elev[n]! >= g.elev[i]! - 1) fed = true;
+        if (g.band[n]! < b && g.elev[i]! - g.elev[n]! >= CLIFF_DROP) falls = true;
+      });
+      if (fed && falls) g.terrain[i] = T.waterfall;
     } else {
       g.terrain[i] = T.cliff;
       cliffClass[i] = b;

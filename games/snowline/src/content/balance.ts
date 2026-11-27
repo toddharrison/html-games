@@ -23,6 +23,22 @@ export const CLIMB_PER_TICK = 2;
 /** The most ticks a climb adds to one step. */
 export const MAX_CLIMB_TICKS = 6;
 
+/**
+ * Free walking (prototype, SPEC 5.2): the survivor walks over the tile grid in any of eight directions
+ * instead of stepping tile to tile. The world, and what the survivor is "on", stay on tiles. False puts
+ * every new run back on grid steps.
+ */
+export const FREE_WALK = true;
+/** A position in free walking is in 1/256ths of a tile. */
+export const SUB = 256;
+/** The survivor's footprint, half its width and half its depth (1/256ths of a tile): about 10 by 6 pixels. */
+export const FOOT_HALF_W = 80;
+export const FOOT_HALF_H = 48;
+/** A tap of a direction key walks at least this many ticks. */
+export const TAP_TICKS = 3;
+/** How far round a corner the survivor is eased when they walk into its edge (1/256ths of a tile, about 4 px). */
+export const CORNER_EASE = 64;
+
 /** How far the survivor sees, in tiles: by day, and at night with no light (SPEC 6.4). */
 export const DAY_SIGHT = 14;
 export const NIGHT_SIGHT = 2;

@@ -1,6 +1,6 @@
 // Starting a run (SPEC 4.3, 5.4): a run is the world seed plus the protagonist.
 
-import { MAP_SIZE } from '../content/balance.ts';
+import { FREE_WALK, MAP_SIZE, SUB } from '../content/balance.ts';
 import { DANGER_ANIMALS, PLANTS, REMEDIES, STONES, WOODS } from '../content/decks.ts';
 import { START_FACT, who } from '../content/messages.ts';
 import { BACKGROUNDS } from '../content/protagonists.ts';
@@ -30,7 +30,7 @@ export function buildValley(seed: string): { rules: Rules; world: World } {
 }
 
 /** A fresh run on a generated valley, at the start of day 1. */
-export function newGame(seed: string, protagonist: Protagonist, world: World, rules: Rules): GameState {
+export function newGame(seed: string, protagonist: Protagonist, world: World, rules: Rules, walk: 'grid' | 'free' = FREE_WALK ? 'free' : 'grid'): GameState {
   const { x, y } = world.start;
   const bg = BACKGROUNDS.find((b) => b.id === protagonist.background);
   const state: GameState = {
@@ -39,7 +39,23 @@ export function newGame(seed: string, protagonist: Protagonist, world: World, ru
     protagonist,
     tick: 0,
     rng: makeStreams(seed),
-    player: { x, y, facing: 2, fromX: x, fromY: y, stepLeft: 0, stepTotal: 0, intent: -1, queued: -1, bumped: false, wet: 0, route: null },
+    player: {
+      x,
+      y,
+      facing: 2,
+      fromX: x,
+      fromY: y,
+      stepLeft: 0,
+      stepTotal: 0,
+      intent: -1,
+      queued: -1,
+      bumped: false,
+      wet: 0,
+      route: null,
+      ...(walk === 'free' ? { fx: x * SUB + SUB / 2, fy: y * SUB + SUB / 2, lastFx: x * SUB + SUB / 2, lastFy: y * SUB + SUB / 2, vx: 0, vy: 0, nudge: 0 } : {}),
+    },
+    // Only a free-walking run says so: a grid run's state is as it always was.
+    ...(walk === 'free' ? { walk } : {}),
     // Shaken, a little thirsty, and it has been a while since breakfast.
     vitals: { health: 92, hydration: 70, nutrition: 72, rest: 68, warmth: 80, morale: 42 },
     conditions: [],

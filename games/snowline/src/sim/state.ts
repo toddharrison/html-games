@@ -32,6 +32,18 @@ export interface PlayerState {
   wet: number;
   /** Where a click sent the survivor (SPEC 5.2), or null. */
   route: Route | null;
+  /**
+   * Free walking only (`GameState.walk` 'free'): where the survivor's feet are, in 1/256ths of a tile
+   * (`x`, `y` are the tile under them), and where they were a tick ago (for the renderer); the way held
+   * (-1, 0, or 1 on each axis); ticks a tap still walks (in the `queued` direction).
+   */
+  fx?: number;
+  fy?: number;
+  lastFx?: number;
+  lastFy?: number;
+  vx?: number;
+  vy?: number;
+  nudge?: number;
 }
 
 /**
@@ -193,6 +205,8 @@ export interface GameState {
   /** The play-time random streams. (The world and deal streams are used up at generation.) */
   rng: Record<StreamName, RngState>;
   player: PlayerState;
+  /** How the survivor moves: 'grid', a step at a time from tile to tile, or 'free', over the grid (SPEC 5.2). Absent is 'grid'. */
+  walk?: 'grid' | 'free';
   vitals: Vitals;
   conditions: Condition[];
   inventory: Item[];
@@ -245,6 +259,8 @@ export interface GameState {
 export type Command =
   | { t: number; c: 'move'; dir: Dir }
   | { t: number; c: 'halt' }
+  /** Free walking: the way held on each axis (-1, 0, 1), and the direction last pressed (for facing), or -1. */
+  | { t: number; c: 'walk'; dx: number; dy: number; dir: Dir | -1 }
   | { t: number; c: 'face'; dir: Dir }
   | { t: number; c: 'act'; action: string; tile: number }
   | { t: number; c: 'use'; action: string; slot: number }

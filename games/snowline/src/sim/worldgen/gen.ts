@@ -35,6 +35,8 @@ export interface Gen {
   snow: Uint8Array;
   /** Whose game trail each tile is (TRAIL_BY in content/terrain.ts). */
   trailBy: Uint8Array;
+  /** Each trail's bend points (World.trailLines). */
+  trailLines: number[][];
   /** Years since each tile's forest last burned (cover.ts's fire history): 255 old growth, 0 no forest. */
   age: Uint8Array;
   /** The lake's outlet, from the spill point down to the rim. */
@@ -84,6 +86,7 @@ export function newGen(genSeed: string, rules: Rules): Gen {
     snow: new Uint8Array(N),
     age: new Uint8Array(N),
     trailBy: new Uint8Array(N),
+    trailLines: [],
     high: { x: 0, y: -1 },
     lakeSize: 0,
     streamA: [],

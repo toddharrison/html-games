@@ -9,6 +9,7 @@ import { BAND, F, FLAG, T, TERRAIN } from '../content/terrain.ts';
 import { perlin } from '../sim/worldgen/noise.ts';
 import { idx, type World } from '../sim/world.ts';
 import { PALETTE, TERRAIN_COLOR, rgb } from './palette.ts';
+import { findFalls } from './falls.ts';
 import { rh } from './tiles.ts';
 
 const TILE = 16;
@@ -19,8 +20,8 @@ const MAX_CHUNKS = 28;
 
 type RGB = [number, number, number];
 
-/** Grounds whose tiles keep their exact squares: the falls and the overhang's floor. */
-const HARD = new Set<number>([T.waterfall, T.shelter]);
+/** Grounds whose tiles keep their exact squares: the overhang's floor. */
+const HARD = new Set<number>([T.shelter]);
 
 const C = (hex: string): RGB => rgb(hex);
 const BASE: RGB[] = TERRAIN_COLOR.map((k) => C(PALETTE[k]));
@@ -45,6 +46,14 @@ const STREAM = C('#3a6a74');
 const FOAM = C('#a9c6bf');
 const SNOW = C('#e9ece6');
 const PATH = C('#7d6c52');
+const ICE = C('#b4ccd6');
+const ICE_BAND = C('#8fadbb');
+const ICE_DIRT = C('#8a877d');
+const ICE_FACE = C('#6f8f9e');
+const FIRN = C('#e6ecec');
+/** Falling water's colour between its white streaks, and the wet rock of its ledges and banks. */
+const FALL_WATER = C('#4c8890');
+const FALL_ROCK = C('#3a4244');
 const WET: RGB = [52, 50, 40];
 
 function lerp(a: RGB, b: RGB, t: number): RGB {
@@ -66,6 +75,24 @@ export class Ground {
   private readonly ice: Float32Array;
   private readonly flowX: Float32Array;
   private readonly flowY: Float32Array;
+  /**
+   * Glacier ice per tile: how many tiles in from its edge (`iceIn`, 1 at the edge, up to 8); how far up
+   * its own glacier it lies (`iceUp`, 0 at the snout, 1 at the top); how steep it is there (`iceSteep`,
+   * relative to that glacier's typical slope).
+   */
+  private readonly iceIn: Float32Array;
+  private readonly iceUp: Float32Array;
+  private readonly iceSteep: Float32Array;
+  /** Meltwater runnels on the bare ice: per tile, the pixels (x, y within the tile) they cross. */
+  private readonly runnels = new Map<number, number[]>();
+  /** Game trails as lines: per tile, the smoothed segments (world pixels x0, y0, x1, y1) near it. */
+  private readonly trailSegs = new Map<number, number[]>();
+  /** Per tile, 1 where the worn path shows (FLAG.trail); read smoothly, it thins the line out at the ends. */
+  private readonly tread: Float32Array;
+  /** The way the water runs on each tile of a waterfall. */
+  private readonly fallDir: Map<number, [number, number]>;
+  /** Ice caves where meltwater comes out: per ice tile, the side (0 south, 1 east, 2 west, 3 north). */
+  private readonly portals = new Map<number, number>();
 
   constructor(world: World, seed: number) {
     this.w = world;
@@ -78,9 +105,17 @@ export class Ground {
     this.ice = new Float32Array(n);
     this.flowX = new Float32Array(n);
     this.flowY = new Float32Array(n);
+    this.iceIn = new Float32Array(n);
+    this.iceUp = new Float32Array(n);
+    this.iceSteep = new Float32Array(n);
+    this.fallDir = findFalls(world).dir;
+    this.tread = new Float32Array(n);
+    for (let i = 0; i < n; i++) this.tread[i] = world.flags[i]! & FLAG.trail ? 1 : 0;
+    for (const line of world.trailLines ?? []) this.indexTrail(line);
     for (let i = 0; i < n; i++) {
       this.ice[i] = world.flags[i]! & FLAG.glacier ? 1 : 0;
     }
+    const slope = new Float32Array(n);
     for (let y = 0; y < SIZE; y++) {
       for (let x = 0; x < SIZE; x++) {
         // Downhill over a few tiles, so the crevasses don't jump at each tile's edge.
@@ -90,8 +125,10 @@ export class Ground {
         const len = Math.hypot(gx, gy);
         this.flowX[idx(x, y)] = len ? gx / len : 0;
         this.flowY[idx(x, y)] = len ? gy / len : 1;
+        slope[idx(x, y)] = len;
       }
     }
+    this.measureIce(slope);
     // Water depth: steps from the nearest dry tile, by a breadth-first walk.
     const q: number[] = [];
     for (let i = 0; i < n; i++) {
@@ -122,6 +159,209 @@ export class Ground {
         this.shade[i] = Math.max(-0.18, Math.min(0.18, d * 0.045));
         this.mood[i] = Math.max(0, Math.min(1, 0.5 + perlin(seed + 11, x / 11, y / 11) * 0.9 + perlin(seed + 12, x / 4, y / 4) * 0.35));
         this.bright[i] = perlin(seed + 13, x / 5, y / 5) * 0.09 + perlin(seed + 14, x / 2.2, y / 2.2) * 0.03;
+      }
+    }
+  }
+
+  /** Each glacier's shape for drawing: depth in from its edge, height up it, and where it steepens. */
+  private measureIce(slope: Float32Array): void {
+    const n = SIZE * SIZE;
+    const ice = this.ice;
+    // Depth in from the edge: a breadth-first walk in from every ice tile that touches open ground.
+    const q: number[] = [];
+    for (let i = 0; i < n; i++) {
+      if (!ice[i]) continue;
+      const x = i % SIZE;
+      const y = (i - x) / SIZE;
+      let edge = false;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx >= 0 && ny >= 0 && nx < SIZE && ny < SIZE && !ice[idx(nx, ny)]) edge = true;
+      }
+      this.iceIn[i] = edge ? 1 : 99;
+      if (edge) q.push(i);
+    }
+    for (let h = 0; h < q.length; h++) {
+      const i = q[h]!;
+      const x = i % SIZE;
+      const y = (i - x) / SIZE;
+      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+        const nx = x + dx;
+        const ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+        const j = idx(nx, ny);
+        if (ice[j] && this.iceIn[j]! > this.iceIn[i]! + 1) {
+          this.iceIn[j] = this.iceIn[i]! + 1;
+          q.push(j);
+        }
+      }
+    }
+    for (let i = 0; i < n; i++) if (ice[i]) this.iceIn[i] = Math.min(8, this.iceIn[i]!);
+    // Each glacier on its own: how far up it a tile lies, and its slope against the glacier's median.
+    const seen = new Uint8Array(n);
+    for (let s = 0; s < n; s++) {
+      if (!ice[s] || seen[s]) continue;
+      const part = [s];
+      seen[s] = 1;
+      for (let h = 0; h < part.length; h++) {
+        const i = part[h]!;
+        const x = i % SIZE;
+        const y = (i - x) / SIZE;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+          const j = idx(nx, ny);
+          if (ice[j] && !seen[j]) {
+            seen[j] = 1;
+            part.push(j);
+          }
+        }
+      }
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (const i of part) {
+        lo = Math.min(lo, this.w.elev[i]!);
+        hi = Math.max(hi, this.w.elev[i]!);
+      }
+      const slopes = part.map((i) => slope[i]!).sort((a, b) => a - b);
+      const median = Math.max(1, slopes[Math.floor(slopes.length / 2)]!);
+      for (const i of part) {
+        this.iceUp[i] = hi > lo ? (this.w.elev[i]! - lo) / (hi - lo) : 0.5;
+        this.iceSteep[i] = slope[i]! / median;
+      }
+      // The way the ice flows: down the slope of the ice round about (a plane fitted to the ice within
+      // five tiles), not off its sides, where the ground falls away to the rock.
+      for (const i of part) {
+        const x = i % SIZE;
+        const y = (i - x) / SIZE;
+        let gx = 0;
+        let gy = 0;
+        for (let dy = -5; dy <= 5; dy++) {
+          for (let dx = -5; dx <= 5; dx++) {
+            const nx = x + dx;
+            const ny = y + dy;
+            if ((!dx && !dy) || nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE || !ice[idx(nx, ny)]) continue;
+            const de = this.w.elev[idx(nx, ny)]! - this.w.elev[i]!;
+            gx -= de * dx;
+            gy -= de * dy;
+          }
+        }
+        const len = Math.hypot(gx, gy);
+        if (len) {
+          this.flowX[i] = gx / len;
+          this.flowY[i] = gy / len;
+        }
+      }
+    }
+    this.traceRunnels();
+    // A stream's head beside the ice (no stream above it) comes out of the ice in a cave: in the
+    // highest ice tile beside it.
+    const SIDES = [[0, 1], [1, 0], [-1, 0], [0, -1]] as const;
+    const stream = (t: number) => t === T.stream || t === T.gravel;
+    for (let i = 0; i < n; i++) {
+      if (!stream(this.w.terrain[i]!)) continue;
+      const x = i % SIZE;
+      const y = (i - x) / SIZE;
+      let head = true;
+      let best = -1;
+      let side = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) continue;
+          const j = idx(nx, ny);
+          if (stream(this.w.terrain[j]!) && this.w.elev[j]! > this.w.elev[i]!) head = false;
+        }
+      }
+      if (!head) continue;
+      SIDES.forEach(([dx, dy], k) => {
+        const nx = x - dx;
+        const ny = y - dy;
+        if (nx < 0 || ny < 0 || nx >= SIZE || ny >= SIZE) return;
+        const j = idx(nx, ny);
+        if (ice[j] && (best < 0 || this.w.elev[j]! > this.w.elev[best]!)) [best, side] = [j, k];
+      });
+      if (best >= 0) this.portals.set(best, side);
+    }
+  }
+
+  /**
+   * Meltwater runnels: from scattered heads on the bare ice, each runs downhill (the smoothed flow),
+   * meandering a little, until it reaches the ice's dirty edge or joins another.
+   */
+  private traceRunnels(): void {
+    const taken = new Set<number>();
+    for (let i = 0; i < SIZE * SIZE; i++) {
+      if (!this.ice[i] || this.iceIn[i]! < 3) continue;
+      const tx = i % SIZE;
+      const ty = (i - tx) / SIZE;
+      if (rh(tx, ty, 140) > 0.022 || this.firn(tx * TILE + 8, ty * TILE + 8) > 0.2) continue;
+      let x = tx * TILE + 2 + rh(tx, ty, 141) * 12;
+      let y = ty * TILE + 2 + rh(tx, ty, 142) * 12;
+      let last = -1;
+      for (let step = 0; step < 220; step++) {
+        const fx = this.field(this.flowX, x, y);
+        const fy = this.field(this.flowY, x, y);
+        const turn = perlin(this.seed + 143, x / 11, y / 11) * 1.1;
+        const ct = Math.cos(turn);
+        const st = Math.sin(turn);
+        const len = Math.hypot(fx, fy) || 1;
+        x += (fx * ct - fy * st) / len;
+        y += (fx * st + fy * ct) / len;
+        if (this.field(this.ice, x, y) < 0.92 || this.field(this.iceIn, x, y) < 1.5) break;
+        const px = Math.floor(x);
+        const py = Math.floor(y);
+        const key = py * SIZE * TILE + px;
+        if (key === last) continue;
+        if (taken.has(key) && step > 3) break;
+        taken.add(key);
+        last = key;
+        const tile = idx(Math.floor(px / TILE), Math.floor(py / TILE));
+        let list = this.runnels.get(tile);
+        if (!list) this.runnels.set(tile, (list = []));
+        list.push(px % TILE, py % TILE);
+      }
+    }
+  }
+
+  /**
+   * A trail's line: its bend points' tile centres, the corners rounded (twice cut, never by more than a
+   * tile and a bit, so the line stays on the tiles the trail was laid on), each segment listed on every
+   * tile within a tile of it.
+   */
+  private indexTrail(bends: number[]): void {
+    let pts = bends.map((i) => [(i % SIZE) * TILE + 8, Math.floor(i / SIZE) * TILE + 8] as [number, number]);
+    for (let pass = 0; pass < 2 && pts.length > 2; pass++) {
+      const next: [number, number][] = [pts[0]!];
+      for (let k = 0; k + 1 < pts.length; k++) {
+        const [ax, ay] = pts[k]!;
+        const [bx, by] = pts[k + 1]!;
+        const len = Math.hypot(bx - ax, by - ay) || 1;
+        const c = Math.min(0.25, 20 / len);
+        if (k > 0) next.push([ax + (bx - ax) * c, ay + (by - ay) * c]);
+        if (k + 2 < pts.length) next.push([ax + (bx - ax) * (1 - c), ay + (by - ay) * (1 - c)]);
+      }
+      next.push(pts[pts.length - 1]!);
+      pts = next;
+    }
+    for (let k = 0; k + 1 < pts.length; k++) {
+      const [ax, ay] = pts[k]!;
+      const [bx, by] = pts[k + 1]!;
+      const tx0 = Math.max(0, Math.floor((Math.min(ax, bx) - TILE) / TILE));
+      const ty0 = Math.max(0, Math.floor((Math.min(ay, by) - TILE) / TILE));
+      const tx1 = Math.min(SIZE - 1, Math.floor((Math.max(ax, bx) + TILE) / TILE));
+      const ty1 = Math.min(SIZE - 1, Math.floor((Math.max(ay, by) + TILE) / TILE));
+      for (let ty = ty0; ty <= ty1; ty++) {
+        for (let tx = tx0; tx <= tx1; tx++) {
+          if (segDist(tx * TILE + 8, ty * TILE + 8, ax, ay, bx, by) > TILE * 1.25) continue;
+          const t = idx(tx, ty);
+          let list = this.trailSegs.get(t);
+          if (!list) this.trailSegs.set(t, (list = []));
+          list.push(ax, ay, bx, by);
+        }
       }
     }
   }
@@ -181,8 +421,8 @@ export class Ground {
    * for their ground with its bilinear weight; votes for the same ground add up, each ground's total is
    * stirred by its own noise, and the most wins. So outlines run in smooth, wandering curves through
    * the tiles, never along the grid: a staircase of tiles reads as a slope, a lone tile as a rounded
-   * patch. Water is stirred less, so a stream a tile wide stays whole. The falls and the overhang's floor
-   * (`HARD`) keep their own tiles exactly and never reach into others.
+   * patch. Water is stirred less, so a stream a tile wide stays whole. The overhang's floor (`HARD`)
+   * keeps its own tiles exactly and never reaches into others.
    */
   private owner(wx: number, wy: number): number {
     const own = this.terrainAt(Math.floor(wx / TILE), Math.floor(wy / TILE));
@@ -254,33 +494,33 @@ export class Ground {
         if (water && near === 1) c = lerp(c, FOAM, 0.75);
         else if (water && near === 2) c = lerp(c, FOAM, 0.25);
         else if (!water && near <= 2 && t !== T.cliff && t !== T.headwall) c = lerp(c, WET, near === 1 ? 0.28 : 0.14);
-        // Trails: a worn line joining the trail tiles.
-        if (!water && this.w.flags[tile]! & FLAG.trail) {
-          const lx = wx % TILE - 7.5;
-          const ly = wy % TILE - 7.5;
-          const tx = Math.floor(wx / TILE);
-          const ty = Math.floor(wy / TILE);
-          const tr = (dx: number, dy: number) => (this.w.flags[idx(tx + dx, ty + dy)] ?? 0) & FLAG.trail;
-          const e = tr(1, 0);
-          const wv = tr(-1, 0);
-          const s = tr(0, 1);
-          const n = tr(0, -1);
-          let dist: number;
-          if ((e ? 1 : 0) + (wv ? 1 : 0) + (s ? 1 : 0) + (n ? 1 : 0) === 2 && (e || wv) && (n || s)) {
-            // A turn (one step of a trail running on a slant): cut across the corner, edge to edge, so a
-            // staircase of tiles reads as one slanting line.
-            const hx = e ? 1 : -1;
-            const hy = s ? 1 : -1;
-            dist = Math.abs(lx * hy + ly * hx - 8 * hx * hy) / Math.SQRT2;
-          } else {
-            dist = Math.hypot(lx, ly);
-            if (e && lx > 0) dist = Math.min(dist, Math.abs(ly));
-            if (wv && lx < 0) dist = Math.min(dist, Math.abs(ly));
-            if (s && ly > 0) dist = Math.min(dist, Math.abs(lx));
-            if (n && ly < 0) dist = Math.min(dist, Math.abs(lx));
+        // Beside falling water the banks are wet dark rock: a little gorge.
+        if (!water) {
+          for (let r = 1; r <= M; r++) {
+            if (own[k - r] === T.waterfall || own[k + r] === T.waterfall || own[k - r * W] === T.waterfall || own[k + r * W] === T.waterfall) {
+              c = lerp(c, FALL_ROCK, r === 1 ? 0.85 : 0.55);
+              break;
+            }
           }
-          const wob = perlin(seed + 31, wx / 3, wy / 3) * 1.5;
-          if (dist + wob < 2.2) c = lerp(c, PATH, 0.45 + rh(wx, wy, 33) * 0.15);
+        }
+        // A glacier stands up off the ground: its snout and sides facing the viewer are a low wall of ice
+        // in shade, and its far edge catches the light.
+        if (t === T.snow && this.field(this.ice, wx, wy) > 0.5) {
+          if (own[k + W] !== T.snow || own[k + 2 * W] !== T.snow) c = lerp(c, ICE_FACE, own[k + W] !== T.snow ? 0.8 : 0.55);
+          else if (own[k - W] !== T.snow) c = lerp(c, SNOW, 0.6);
+        }
+        // Trails: each one a worn line along its route, wherever the ground holds a tread, thinning out
+        // where it doesn't. Two trails side by side are two paths, braided, never joined by rungs.
+        const segs = water ? undefined : this.trailSegs.get(tile);
+        if (segs) {
+          const tread = this.field(this.tread, wx, wy);
+          if (tread > 0.3) {
+            let dist = Infinity;
+            for (let q = 0; q < segs.length; q += 4) dist = Math.min(dist, segDist(wx + 0.5, wy + 0.5, segs[q]!, segs[q + 1]!, segs[q + 2]!, segs[q + 3]!));
+            const width = 1.1 + Math.min(1, (tread - 0.3) / 0.4) * 1.1;
+            const wob = perlin(seed + 31, wx / 3, wy / 3) * 1.2;
+            if (dist + wob < width) c = lerp(c, PATH, 0.45 + rh(wx, wy, 33) * 0.15);
+          }
         }
         // Snow lying where the snowline has come down to.
         if (this.w.band[tile]! >= snow && !water && t !== T.cliff && t !== T.headwall) {
@@ -306,38 +546,95 @@ export class Ground {
     }
   }
 
+  /** How snowed-over glacier ice is at a pixel: 0 bare ice (low on the glacier), 1 firn (high up), with a ragged line between. */
+  private firn(wx: number, wy: number): number {
+    const up = this.field(this.iceUp, wx, wy) + perlin(this.seed + 75, wx / 30, wy / 30) * 0.3 + perlin(this.seed + 78, wx / 7, wy / 7) * 0.035;
+    return Math.max(0, Math.min(1, (up - 0.55) * 6));
+  }
+
   /**
-   * Glacier ice at a world pixel: blue-white, whiter where snow lies on it, and dirty with the rock it
-   * carries toward its edges. `ice` is how deep inside the glacier the pixel is (1 well inside).
-   * Crevasses are drawn over it afterwards (`crevasses`).
+   * Glacier ice at a world pixel. Low on the glacier it's bare: blue-grey, crossed by faint bands where
+   * each year's ice comes down (along the contours, so they bow downstream), with a sparkle here and
+   * there. High up it's under old snow (`firn`). Toward its edges it's dirty with the rock it carries, in
+   * blotches with stones in them. Crevasses and the raised edge are drawn over it (`crevasses`, `paint`).
    */
-  private glacier(wx: number, wy: number, ice: number, seed: number): RGB {
-    let c = lerp(C('#c9d9df'), SNOW, Math.max(0, perlin(seed + 74, wx / 18, wy / 18) + 0.15));
-    const grit = rh(wx, wy, 19);
-    if (ice < 0.85 && grit < (0.85 - ice) * 1.2) c = lerp(c, C(grit < 0.1 ? '#5e5a52' : '#8f8a7e'), 0.6);
+  private glacier(wx: number, wy: number, seed: number): RGB {
+    // Bare ice: blue-grey, a little bluer here and there, with a sparkle now and then.
+    let c = lerp(ICE, ICE_BAND, Math.max(0, perlin(seed + 76, wx / 24, wy / 24)) * 0.5);
+    if (rh(wx, wy, 20) < 0.005) c = SNOW;
+    // Old snow high up, its lower edge ragged and crisp, with wind ripples.
+    const firn = this.firn(wx, wy);
+    if (firn > 0.5) {
+      c = firn < 0.6 ? lerp(FIRN, ICE, 0.35) : FIRN;
+      if (rh(Math.floor(wx / 4), wy, 21) < 0.06) c = lerp(c, C('#c9d6dc'), 0.7);
+    }
+    // Rock carried along the sides: dirty ice in blotches, stones lying in it.
+    const inside = this.field(this.iceIn, wx, wy);
+    const dirt = 1.2 - inside / 1.4 + perlin(seed + 77, wx / 5, wy / 5) * 0.7;
+    if (dirt > 0.45) {
+      c = lerp(c, ICE_DIRT, firn > 0.5 ? 0.3 : 0.5);
+      const st = rh(Math.floor(wx / 2), Math.floor(wy / 2), 19);
+      if (st < (dirt - 0.45) * 0.12) c = C(st < 0.02 ? '#4e4b44' : '#77746b');
+    }
     return c;
   }
 
   /**
-   * A glacier tile's crevasses: soft blue cracks across the way the ice flows (so they run along its
-   * contours, bowed downstream), only in a few fields where the ice bends; most of the ice is smooth.
+   * A glacier tile's crevasses: where the ice steepens and near its sides (where it drags past the rock),
+   * low on the glacier where it's bare, sets of long cracks across the way the ice flows, bowed down it;
+   * each a dark blue slot with its far wall lit. Where meltwater leaves the ice, a dark cave mouth.
    */
   private crevasses(g: CanvasRenderingContext2D, tx: number, ty: number, ox: number, oy: number): void {
     const i = idx(tx, ty);
-    if (!this.ice[i] || perlin(this.seed + 72, tx / 6, ty / 6) < 0.18 || rh(tx, ty, 70) < 0.35) return;
+    if (!this.ice[i]) return;
+    const ww = tx * TILE - ox;
+    const wh = ty * TILE - oy;
+    const run = this.runnels.get(i);
+    if (run) {
+      for (let k = 0; k < run.length; k += 2) dot(g, ox + run[k]!, oy + run[k + 1]!, '#7fa8bb');
+    }
+    // The meltwater's cave, where a stream comes out from under the ice.
+    const side = this.portals.get(i);
+    if (side !== undefined) {
+      const [dx, dy] = ([[0, 1], [1, 0], [-1, 0], [0, -1]] as const)[side]!;
+      const cx = ox + 8 + dx * 5;
+      const cy = oy + 8 + dy * 5;
+      for (let a = -3; a <= 3; a++) {
+        const r = 3.5 - (a * a) / 5;
+        for (let b = 0; b < r; b++) {
+          const x = Math.round(cx + (dy ? a : -dx * b));
+          const y = Math.round(cy + (dy ? -dy * b : a));
+          dot(g, x, y, b > r - 1.2 ? '#6d93a6' : '#24394a');
+        }
+      }
+      return;
+    }
+    const steep = this.iceSteep[i]!;
+    const inside = this.iceIn[i]!;
+    const chance = (steep - 1.15) * 1.6 + (inside === 2 || inside === 3 ? 0.4 : 0) + perlin(this.seed + 72, tx / 5, ty / 5) * 0.6;
+    if (inside < 2 || this.firn(ww + 8, wh + 8) > 0.6 || rh(tx, ty, 70) > chance) return;
     const fx = this.flowX[i]!;
     const fy = this.flowY[i]!;
-    const cx = ox + 4 + rh(tx, ty, 71) * 8;
-    const cy = oy + 4 + rh(tx, ty, 73) * 8;
-    const half = 2 + rh(tx, ty, 75) * 2.5;
-    for (let s = -half; s <= half; s += 0.5) {
-      // Across the flow, bowed a little down it toward the middle.
-      const bow = (1 - (s * s) / (half * half)) * 1.2;
-      const x = Math.round(cx - fy * s + fx * bow);
-      const y = Math.round(cy + fx * s + fy * bow);
-      // (x, y) are chunk pixels; the chunk's corner is at world pixel (tx * TILE - ox, ty * TILE - oy).
-      if (this.field(this.ice, x + tx * TILE - ox, y + ty * TILE - oy) < 0.85) continue;
-      dot(g, x, y, Math.abs(s) > half - 1 ? '#9cb9c6' : '#6b8fa2');
+    // Near the sides the cracks lean up-glacier toward the middle; elsewhere they run straight across.
+    const lean = inside <= 3 ? (rh(tx, ty, 74) - 0.5) * 1.2 : (rh(tx, ty, 74) - 0.5) * 0.35;
+    const ax = -fy + fx * lean;
+    const ay = fx + fy * lean;
+    const al = Math.hypot(ax, ay) || 1;
+    const sets = rh(tx, ty, 76) < 0.55 ? 2 : 1;
+    for (let k = 0; k < sets; k++) {
+      const cx = ox + 8 + (rh(tx, ty, 71 + k) - 0.5) * 5 + fx * (k ? 5 : -1);
+      const cy = oy + 8 + (rh(tx, ty, 73 + k) - 0.5) * 5 + fy * (k ? 5 : -1);
+      const half = 4 + rh(tx, ty, 75 + k) * 4;
+      for (let s = -half; s <= half; s += 0.5) {
+        const bow = (1 - (s * s) / (half * half)) * 0.9;
+        const x = Math.round(cx + (ax / al) * s + fx * bow);
+        const y = Math.round(cy + (ay / al) * s + fy * bow);
+        if (this.field(this.ice, x + ww, y + wh) < 0.9 || this.field(this.iceIn, x + ww, y + wh) < 1.6) continue;
+        const end = Math.abs(s) > half - 1.5;
+        dot(g, x, y, end ? '#7ea3b5' : '#2e5770');
+        // The far wall, lit: one pixel down the flow from the slot.
+        if (!end) dot(g, Math.round(x + fx), Math.round(y + fy), '#a9c8d4');
+      }
     }
   }
 
@@ -360,7 +657,18 @@ export class Ground {
       if (rh(wx, Math.floor(wy / 2), 5) < 0.04) c = lerp(c, FOAM, 0.45);
       if (t === T.gravel && h < 0.22) c = lerp(c, C(h < 0.1 ? '#9c8c62' : '#6f706a'), 0.55);
     } else if (t === T.waterfall) {
-      c = lerp(FOAM, SNOW, rh(wx, 0, 7) * 0.6);
+      // A cascade down the river's own bed: ledges of wet dark rock across the flow every few pixels, the
+      // water pouring white over each (most of the way across), churned white below it, then running on
+      // green-blue with white streaks along the flow.
+      const [fx, fy] = this.fallDir.get(tile) ?? [0, 1];
+      const along = wx * fx + wy * fy;
+      const across = -wx * fy + wy * fx;
+      const step = (((along + perlin(seed + 64, across / 4, 0.5) * 3) / 7) % 1 + 1) % 1;
+      const pours = perlin(seed + 65, across / 3, Math.floor(along / 7)) > -0.25;
+      const n = perlin(seed + 62, along / 9, across / 1.6) + perlin(seed + 63, along / 3, across / 1.1) * 0.35;
+      if (step < 0.16) c = pours ? C('#f4f8f6') : FALL_ROCK;
+      else if (step < 0.42) c = lerp(C('#f4f8f6'), FALL_WATER, (step - 0.16) * 1.6 + (n > 0.2 ? 0 : 0.15));
+      else c = n > 0.18 ? lerp(FALL_WATER, C('#f4f8f6'), 0.75) : n > -0.05 ? lerp(FALL_WATER, C('#f4f8f6'), 0.3) : FALL_WATER;
     } else {
       const m = MOOD[t];
       c = m ? lerp(m[0], m[1], this.mood[tile]!) : BASE[t]!;
@@ -403,7 +711,11 @@ export class Ground {
           const hollow = perlin(seed + 73, wx / 10, wy / 10);
           c = lerp(c, C('#c4d0d8'), Math.max(0, hollow) * 0.5);
           if (rh(Math.floor(wx / 5), wy, 17) < 0.05) c = lerp(c, C('#d3dbe0'), 0.6);
-          if (ice > 0.02) c = lerp(c, this.glacier(wx, wy, ice, seed), Math.min(1, ice * 1.6));
+          if (ice > 0.02) {
+            c = lerp(c, this.glacier(wx, wy, seed), Math.min(1, ice * 1.6));
+            // Ice is lit flat: the ground's broad light and dark would read on it as fog.
+            return [c[0] * (1 + (bright - 1) * 0.25), c[1] * (1 + (bright - 1) * 0.25), c[2] * (1 + (bright - 1) * 0.25)];
+          }
           break;
         }
         case T.cliff:
@@ -439,6 +751,15 @@ export class Ground {
 }
 
 // ---- Ground detail: drawn only, in sizes (SPEC 6.8) ----
+
+/** Distance from (px, py) to the segment (ax, ay)–(bx, by). */
+function segDist(px: number, py: number, ax: number, ay: number, bx: number, by: number): number {
+  const dx = bx - ax;
+  const dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  const t = l2 ? Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / l2)) : 0;
+  return Math.hypot(px - ax - dx * t, py - ay - dy * t);
+}
 
 function dot(g: CanvasRenderingContext2D, x: number, y: number, c: string, w = 1, h = 1): void {
   g.fillStyle = c;
@@ -481,7 +802,7 @@ function fern(g: CanvasRenderingContext2D, x: number, y: number, size: number): 
 }
 
 /** Scatter a tile's drawn detail: what, how big, and how much, from its ground, hash, and the mood field. */
-function decorate(g: CanvasRenderingContext2D, w: World, tx: number, ty: number, ox: number, oy: number, mood: number, seed: number): void {
+export function decorate(g: CanvasRenderingContext2D, w: World, tx: number, ty: number, ox: number, oy: number, mood: number, seed: number): void {
   const t = w.terrain[idx(tx, ty)]!;
   const f = w.feature[idx(tx, ty)]!;
   const blocked = f !== F.none && f !== F.plant && f !== F.herb;

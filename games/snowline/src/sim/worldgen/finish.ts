@@ -39,8 +39,10 @@ export function layTrails(g: Gen): void {
     return c;
   };
   let by: number = TRAIL_BY.elk;
-  const lay = (path: number[] | null) => {
-    if (!path || path.length > 320) return;
+  const lay = (route: { path: number[]; bends: number[] } | null) => {
+    if (!route || route.path.length > 320) return;
+    const path = route.path;
+    g.trailLines.push(route.bends);
     for (const i of path) {
       if (g.water[i] !== WATER.none) continue;
       // The route is the animal's everywhere, but a worn path shows only where the ground holds a tread:
@@ -70,7 +72,7 @@ export function layTrails(g: Gen): void {
    * they're going, not along the grid, so a trail runs at any angle and bends only where the ground
    * makes it (SPEC 6.3 step 7).
    */
-  const taut = (route: number[]): number[] => {
+  const taut = (route: number[], bends: number[]): number[] => {
     const out = [route[0]!];
     let i = 0;
     while (i < route.length - 1) {
@@ -84,8 +86,10 @@ export function layTrails(g: Gen): void {
         if (straight <= walkCost(route, i, j) * 1.06) break;
       }
       out.push(...line4(route[i]!, route[j]!).slice(1));
+      if (!bends.length || bends[bends.length - 1] !== route[i]) bends.push(route[i]!);
       i = j;
     }
+    bends.push(route[route.length - 1]!);
     return out;
   };
   const water = (i: number) => drinkable(g, i);
@@ -95,7 +99,7 @@ export function layTrails(g: Gen): void {
    * field (so it swings in curves), each leg the easiest way between them.
    */
   let legs = 0;
-  const meander = (a: number, b: number): number[] | null => {
+  const meander = (a: number, b: number): { path: number[]; bends: number[] } | null => {
     const ax = a % 256;
     const ay = (a - ax) / 256;
     const bx = b % 256;
@@ -128,13 +132,14 @@ export function layTrails(g: Gen): void {
     legs++;
     pts.push(b);
     const out: number[] = [];
+    const bends: number[] = [];
     for (let j = 0; j + 1 < pts.length; j++) {
       const route = cheapestPath(pts[j]!, cost, (i) => i === pts[j + 1], true);
       if (!route) return null;
-      const leg = taut(route);
+      const leg = taut(route, bends);
       out.push(...(j ? leg.slice(1) : leg));
     }
-    return out;
+    return { path: out, bends };
   };
   const between = (a: number, b: number) => lay(meander(a, b));
   const toWater = (a: number) => {

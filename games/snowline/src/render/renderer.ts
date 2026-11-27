@@ -2,7 +2,7 @@
 // time-of-day grade, firelight, and darkness with a lit circle round each light. It reads GameState and
 // never writes to it; its own randomness (shimmer, flicker) never feeds back (SPEC 11.3, rule 3).
 
-import { SCREEN_H, SCREEN_W, TILE } from '../content/balance.ts';
+import { SCREEN_H, SCREEN_W, SUB, TILE } from '../content/balance.ts';
 import { F, T, TERRAIN } from '../content/terrain.ts';
 import type { Fire, GameState } from '../sim/state.ts';
 import { burning } from '../sim/surroundings.ts';
@@ -17,8 +17,10 @@ import { gradeAt } from './grade.ts';
 import { PALETTE } from './palette.ts';
 import { buildAtlas, rh, type Atlas } from './tiles.ts';
 import { Ground } from './ground.ts';
-import { type AspenLeaf, LOG_SIZE, aspen, boulder, conifer, crag, log, snag, stunted, type Tall } from './flora.ts';
+import { type AspenLeaf, CONIFER_VARIANTS, type ConiferForm, LOG_SIZE, aspen, boulder, conifer, crag, log, stunted, type Tall } from './flora.ts';
+import { bearDen, bonePile, carcass, rockArch, tallSnag } from './landmarks.ts';
 import { WRECK_W, crashScar, forwardWreck, tailWreck } from './wreck.ts';
+import { type Fall, type FallsArt, faceOn, fallsArt, findFalls } from './falls.ts';
 import { LooseArt } from './looseArt.ts';
 import { L, isTracks } from '../content/loose.ts';
 import { looseAt, looseData } from '../sim/loose.ts';
@@ -73,6 +75,8 @@ export class Renderer {
   reduceFlashes = false;
   /** Per tile: a tree's size (0 sapling to 4 giant), and low ground near water where dawn mist lies. */
   private treeSize = new Uint8Array(0);
+  /** Per tile, which conifer grows there (ConiferForm): from the ground's history, height, and aspect. */
+  private treeForm = new Uint8Array(0);
   private lowland = new Uint8Array(0);
   /** Where each fish is drawn (world pixels), easing toward its tile; rings where trout rise at dusk. */
   private readonly fishAt = new Map<number, { x: number; y: number; left: boolean }>();
@@ -87,6 +91,11 @@ export class Renderer {
   private groveSeed = 0;
   /** The forward wreck: its left tile, how many tiles wide, which way it lies, and the scar under it. */
   private wreck: { x: number; y: number; wide: number; mirror: boolean; scar: HTMLCanvasElement; ox: number; oy: number } | null = null;
+  /** Each waterfall's drawing, by the tile it stands on; and per falling-water tile, the way it runs. */
+  private falls = new Map<number, Fall>();
+  private fallDir = new Map<number, [number, number]>();
+  /** Per tile, 1 beside falling water or near a falls' foot: the cliff there is left to the falls' own rock. */
+  private byFalls = new Uint8Array(0);
   private clouds: HTMLCanvasElement | null = null;
   private mistBlob: HTMLCanvasElement | null = null;
 
@@ -108,9 +117,19 @@ export class Renderer {
     this.groveSeed = hashString(`${world.genSeed}/groves`)[0];
     const n = world.size;
     this.treeSize = new Uint8Array(n * n);
+    this.treeForm = new Uint8Array(n * n);
     this.rockSize = new Uint8Array(n * n);
     this.lowland = new Uint8Array(n * n);
     this.wreck = this.layWreck(world);
+    const found = findFalls(world);
+    this.falls = new Map(found.falls.map((f) => [idx(f.x, f.y), f]));
+    this.fallDir = found.dir;
+    this.byFalls = new Uint8Array(n * n);
+    const near = (cx: number, cy: number, r: number) => {
+      for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) if (cx + dx >= 0 && cy + dy >= 0 && cx + dx < n && cy + dy < n) this.byFalls[idx(cx + dx, cy + dy)] = 1;
+    };
+    for (const i of found.dir.keys()) near(i % n, Math.floor(i / n), 1);
+    for (const f of found.falls) near(f.x, f.y, 2);
     const isTree = (i: number) => {
       const f = world.feature[i];
       return f === F.conifer || f === F.aspen || f === F.stunted;
@@ -135,6 +154,7 @@ export class Renderer {
           if (world.feature[i] === F.aspen) size = Math.min(3, size);
           this.treeSize[i] = Math.max(0, Math.min(4, size));
         }
+        if (world.feature[i] === F.conifer || world.feature[i] === F.thicket) this.treeForm[i] = this.formAt(world, x, y);
         const f = world.feature[i];
         if (f === F.boulder || f === F.outcrop) {
           // Rocks that crowd together grow into one outcropping; a lone one is a boulder.
@@ -166,21 +186,67 @@ export class Renderer {
   /** Where the camera is for this frame. `alpha` is how far into the next tick we are (0–1). */
   camera(state: GameState, alpha: number): Camera {
     const p = state.player;
-    let t = 1;
-    if (p.stepLeft > 0 && p.stepTotal > 0) t = Math.min(1, Math.max(0, 1 - (p.stepLeft - alpha) / p.stepTotal));
-    const px = p.fromX + (p.x - p.fromX) * t;
-    const py = p.fromY + (p.y - p.fromY) * t;
+    let px: number;
+    let py: number;
+    if (state.walk === 'free' && p.fx !== undefined && p.fy !== undefined) {
+      // Free walking: between where the feet were a tick ago and where they are, the sprite's corner half a tile up and left of them.
+      const fx = (p.lastFx ?? p.fx) + (p.fx - (p.lastFx ?? p.fx)) * alpha;
+      const fy = (p.lastFy ?? p.fy) + (p.fy - (p.lastFy ?? p.fy)) * alpha;
+      px = fx / SUB - 0.5;
+      py = fy / SUB - 0.5;
+    } else {
+      let t = 1;
+      if (p.stepLeft > 0 && p.stepTotal > 0) t = Math.min(1, Math.max(0, 1 - (p.stepLeft - alpha) / p.stepTotal));
+      px = p.fromX + (p.x - p.fromX) * t;
+      py = p.fromY + (p.y - p.fromY) * t;
+    }
     const size = (this.world?.size ?? 256) * TILE;
     const x = Math.round(Math.max(0, Math.min(size - SCREEN_W, px * TILE + TILE / 2 - SCREEN_W / 2)));
     const y = Math.round(Math.max(0, Math.min(size - SCREEN_H, py * TILE + TILE / 2 - SCREEN_H / 2)));
     return { x, y, px, py };
   }
 
-  private tree(kind: number, size: number, v: number, leaf: AspenLeaf = 0): Tall {
-    const key = `${kind}:${size}:${v}:${leaf}`;
+  /**
+   * Which conifer grows on a tile. Pine comes back first after a fire and holds the dry slopes facing
+   * the sun; fir is the tree of the high ground up to the treeline; spruce has the damp valley and the old
+   * forest. Each mixed a little with the others, by hash.
+   */
+  private formAt(world: World, x: number, y: number): ConiferForm {
+    const i = idx(x, y);
+    const age = world.age[i] ?? 0;
+    const north = world.elev[idx(x, Math.max(0, y - 1))]!;
+    const south = world.elev[idx(x, Math.min(world.size - 1, y + 1))]!;
+    const sunny = (north - south) / 12;
+    const r = rh(x, y, 96);
+    if (age > 0 && age < 120) return r < 0.75 ? 2 : r < 0.9 ? 0 : 1;
+    if (world.band[i]! >= 2) return r < 0.7 ? 1 : r < 0.9 ? 0 : 2;
+    if (sunny > 0.3) return r < 0.55 ? 2 : r < 0.85 ? 0 : 1;
+    return r < 0.65 ? 0 : r < 0.9 ? 1 : 2;
+  }
+
+  /**
+   * How far a thing on (tx, ty) sits off its tile's centre, in pixels: up to `mx` across, `up` up, and
+   * `down` down. A smooth noise field (things near each other drift together a little, as seedlings do
+   * along a log or a seep, or stones down a slope) plus a per-tile hash, each its own for every kind
+   * (`salt`), so nothing lines up in rows or columns. Kept inside the tile, so clicking finds the thing.
+   */
+  private offset(tx: number, ty: number, salt: number, mx: number, up: number, down: number): [number, number] {
+    const span = (up + down) / 2;
+    const nx = perlin(this.groveSeed + salt, tx / 3.3, ty / 3.3) * mx * 0.7 + (rh(tx, ty, 200 + salt * 2) - 0.5) * mx * 1.3;
+    const ny = perlin(this.groveSeed + salt + 1, tx / 3.3, ty / 3.3) * span * 0.7 + (rh(tx, ty, 201 + salt * 2) - 0.5) * span * 1.3 + (down - up) / 2;
+    return [Math.max(-mx, Math.min(mx, Math.round(nx))), Math.max(-up, Math.min(down, Math.round(ny)))];
+  }
+
+  /** A tree's offset: up to 7 px across, 5 up, 4 down (thickets half that). */
+  private treeOffset(tx: number, ty: number): [number, number] {
+    return this.offset(tx, ty, 7, 7, 5, 4);
+  }
+
+  private tree(kind: number, size: number, v: number, leaf: AspenLeaf = 0, form: ConiferForm = 0): Tall {
+    const key = `${kind}:${size}:${v}:${leaf}:${form}`;
     let t = this.trees.get(key);
     if (!t) {
-      t = kind === F.aspen ? aspen(size, v, leaf) : kind === F.stunted ? stunted(v) : conifer(size, v);
+      t = kind === F.aspen ? aspen(size, v, leaf) : kind === F.stunted ? stunted(v) : conifer(size, v, form);
       this.trees.set(key, t);
     }
     return t;
@@ -273,8 +339,9 @@ export class Renderer {
       b = log(angle, len, burnt, v);
       this.boulders.set(key, b);
     }
-    const dx = 8 - LOG_SIZE / 2 + Math.floor(rh(tx, ty, 83) * 7) - 3;
-    const dy = 9 - LOG_SIZE / 2 + Math.floor(rh(tx, ty, 84) * 5) - 2;
+    const [ox, oy] = this.offset(tx, ty, 37, 5, 3, 3);
+    const dx = 8 - LOG_SIZE / 2 + ox;
+    const dy = 9 - LOG_SIZE / 2 + oy;
     return { art: b, dx, dy };
   }
 
@@ -327,6 +394,8 @@ export class Renderer {
     // Rows below the view are included: a tall tree there can reach up into it (three tiles).
     const layer: (() => void)[] = [];
     const over: (() => void)[] = [];
+    // Whether anything tall stands over the survivor this frame (each fades, but several together can hide them).
+    let hidden = false;
     const pcol = Math.round(cam.px);
     for (let ty = y0; ty <= Math.min(world.size - 1, y1 + 3); ty++) {
       // Two columns either side too: a wide tree, rock, or the wreck there can reach into the view.
@@ -338,20 +407,22 @@ export class Renderer {
           const l = looseAt(state, world, i);
           if (l) {
             const v = Math.floor(rh(tx, ty, 77) * 3);
-            const ox = Math.floor(rh(tx, ty, 78) * 5) - 2;
-            const oy = Math.floor(rh(tx, ty, 79) * 3) - 1;
+            const [ox, oy] = this.offset(tx, ty, 41, 5, 4, 3);
             const stoneTint = l === L.chip ? (looseData(world, i, 'outcrop') ?? 1) : 1;
             const art = this.looseArt.get(l, v, stoneTint);
             layer.push(() => g.drawImage(art, sx + ox, sy + oy));
             if (!isTracks(l)) shadows.push([sx + 8 + ox, sy + 14 + oy, 9, 2]);
           }
         }
+        // A falls seen face-on only where its river runs toward the viewer; any other way it's the cascade on the ground.
+        const fall = this.falls.get(i);
+        if (fall && faceOn(fall) && this.drawFalls(fall, sx, sy, timeMs, layer, survivorPx, survivorPy, prow, ty)) hidden = true;
         const f = state.arc.felled[i] ? F.log : world.feature[i]!;
         if (!f) {
           // Cliffs and the rim are rock: the face is the ground (ground.ts); buttresses stand along its
           // open edge, most of the way, and here and there a big one back on the rim.
           const tt = world.terrain[i];
-          if ((tt === T.cliff || tt === T.headwall) && !arcOpens(state, world, i)) {
+          if ((tt === T.cliff || tt === T.headwall) && !arcOpens(state, world, i) && !this.byFalls[i]) {
             let open = false;
             for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as const) {
               const n = world.terrain[idx(Math.max(0, Math.min(world.size - 1, tx + dx)), Math.max(0, Math.min(world.size - 1, ty + dy)))];
@@ -362,9 +433,11 @@ export class Renderer {
             const big = rh(tx, ty, 78);
             const size = !open ? 3 : tt === T.headwall ? (big < 0.5 ? 2 : 3) : big < 0.45 ? 1 : big < 0.85 ? 2 : 3;
             const r = this.rock(size, -1, Math.floor(rh(tx, ty, 75) * 6));
-            const left = sx + 8 - Math.floor(r.c.width / 2);
-            const top = sy + 16 - r.c.height;
+            const [bx, by] = this.offset(tx, ty, 29, 4, 3, 2);
+            const left = sx + 8 + bx - Math.floor(r.c.width / 2);
+            const top = sy + 16 + by - r.c.height;
             const behind = prow < ty && survivorPx + 12 > left + 3 && survivorPx + 4 < left + r.c.width - 3 && survivorPy + 14 > top && survivorPy < sy;
+            if (behind) hidden = true;
             layer.push(() => {
               if (behind) g.globalAlpha = 0.5;
               g.drawImage(r.c, left, top);
@@ -375,15 +448,24 @@ export class Renderer {
         }
         if (f === F.conifer || f === F.aspen || f === F.stunted) {
           const size = this.treeSize[i]!;
-          const t = this.tree(f, size, Math.floor(rh(tx, ty, 73) * 3), f === F.aspen ? this.aspenLeaf(world, tx, ty, day) : 0);
-          const left = sx + 8 - Math.floor(t.c.width / 2);
-          const top = sy + 16 - t.c.height;
+          const t = this.tree(
+            f,
+            size,
+            Math.floor(rh(tx, ty, 73) * (f === F.conifer ? CONIFER_VARIANTS : 3)),
+            f === F.aspen ? this.aspenLeaf(world, tx, ty, day) : 0,
+            this.treeForm[i] as ConiferForm,
+          );
+          // Trees grow where their seed fell, not on the grid: each off its tile's centre (`treeOffset`).
+          const [jx, jy] = this.treeOffset(tx, ty);
+          const left = sx + 8 + jx - Math.floor(t.c.width / 2);
+          const top = sy + 16 + jy - t.c.height;
           const h = t.c.height;
-          shadows.push([sx + 8, sy + 15, 6 + size * 2, h]);
+          shadows.push([sx + 8 + jx, sy + 15 + jy, 6 + size * 2, h]);
           // The canopy fades when the survivor is behind it, or under it: standing among the trunks, the
           // tree is drawn over them (SPEC 12.1).
           const under = tx === pcol && ty === prow;
           const behind = under || (prow < ty && survivorPx + 12 > left + 3 && survivorPx + 4 < left + t.c.width - 3 && survivorPy + 14 > top && survivorPy < sy);
+          if (behind) hidden = true;
           const s = sway(tx, ty);
           // Stripped bark leaves the raw wood showing, for the rest of the run.
           const stripped = barkStripped(state, i);
@@ -393,7 +475,7 @@ export class Renderer {
             g.drawImage(t.c, 0, t.crown, t.c.width, h - t.crown, left, top + t.crown, t.c.width, h - t.crown);
             if (stripped) {
               g.fillStyle = '#d2b07c';
-              g.fillRect(f === F.aspen ? sx + 7 : sx + 6, sy + 12, 2, 3);
+              g.fillRect(sx + 7 + jx, sy + 12 + jy, 2, 3);
             }
             g.globalAlpha = 1;
           });
@@ -409,11 +491,13 @@ export class Renderer {
           ] as const;
           shadows.push([sx + 8, sy + 15, 14, 22]);
           const behind = prow < ty && Math.abs(survivorPx - sx) < 14 && survivorPy + 14 > sy - 24 && survivorPy < sy;
+          if (behind) hidden = true;
           layer.push(() => {
             if (behind) g.globalAlpha = 0.5;
+            const [jx, jy] = this.treeOffset(tx, ty);
             for (const [ox, oy, size] of parts) {
-              const t = this.tree(F.conifer, size, (v + ox + 9) % 3);
-              g.drawImage(t.c, sx + 8 + ox - Math.floor(t.c.width / 2), sy + 16 + oy - t.c.height);
+              const t = this.tree(F.conifer, size, (v + ox + 9) % CONIFER_VARIANTS, 0, this.treeForm[i] as ConiferForm);
+              g.drawImage(t.c, sx + 8 + Math.round(jx / 2) + ox - Math.floor(t.c.width / 2), sy + 16 + Math.round(jy / 2) + oy - t.c.height);
             }
             g.globalAlpha = 1;
           });
@@ -421,11 +505,12 @@ export class Renderer {
         }
         // Things taller than their tile: rocks, the snag, the wreckage. Each blocks only its own tile(s);
         // the survivor can stand behind it, and it fades a little then (SPEC 12.1).
-        const standUp = (t: Tall, cx: number, mirror = false, shadowW = 12) => {
+        const standUp = (t: Tall, cx: number, mirror = false, shadowW = 12, dy = 0) => {
           const left = cx - Math.floor(t.c.width / 2);
-          const top = sy + 16 - t.c.height;
+          const top = sy + 16 + dy - t.c.height;
           const behind = prow < ty && survivorPx + 12 > left + 3 && survivorPx + 4 < left + t.c.width - 3 && survivorPy + 14 > top && survivorPy < sy;
-          shadows.push([cx, sy + 15, shadowW, t.c.height]);
+          if (behind) hidden = true;
+          shadows.push([cx, sy + 15 + dy, shadowW, t.c.height]);
           layer.push(() => {
             if (behind) g.globalAlpha = 0.5;
             if (mirror) {
@@ -442,13 +527,30 @@ export class Renderer {
         if (f === F.boulder || f === F.outcrop || f === F.overhang) {
           const size = f === F.overhang ? 3 : this.rockSize[i]!;
           const r = this.rock(size, f === F.boulder ? -2 : f === F.overhang ? -1 : world.data[i]!, Math.floor(rh(tx, ty, 75) * 6));
-          // Boulders sit anywhere on their tile, and either way round.
-          const ox = f === F.boulder ? Math.floor(rh(tx, ty, 79) * 5) - 2 : rh(tx, ty, 76) < 0.5 ? 0 : 1;
-          standUp(r, sx + 8 + ox, f === F.boulder && rh(tx, ty, 80) < 0.5, r.c.width - 2);
+          // Boulders sit anywhere on their tile, and either way round; an outcrop shifts a little; the overhang stays put.
+          const [ox, oy] = f === F.boulder ? this.offset(tx, ty, 21, 5, 4, 3) : f === F.outcrop ? this.offset(tx, ty, 25, 3, 2, 2) : [0, 0];
+          standUp(r, sx + 8 + ox, f === F.boulder && rh(tx, ty, 80) < 0.5, r.c.width - 2, oy);
           continue;
         }
         if (f === F.snag) {
-          standUp(this.once(`snag:${v3 % 2}`, () => snag(v3 % 2)), sx + 8, false, 8);
+          standUp(this.once(`snag:${v3 % 2}`, () => tallSnag(v3 % 2)), sx + 8, false, 10);
+          continue;
+        }
+        // Landmarks and the bear's den, drawn over several tiles (landmarks.ts).
+        if (f === F.arch) {
+          standUp(this.once(`arch:${v3 % 2}`, () => rockArch(v3 % 2)), sx + 8, rh(tx, ty, 92) < 0.5, 40);
+          continue;
+        }
+        if (f === F.bones) {
+          standUp(this.once(`bones:${v3 % 2}`, () => bonePile(v3 % 2)), sx + 8, rh(tx, ty, 92) < 0.5, 8);
+          continue;
+        }
+        if (f === F.carcass) {
+          standUp(this.once(`carcass:${v3 % 2}`, () => carcass(v3 % 2)), sx + 8, rh(tx, ty, 92) < 0.5, 22);
+          continue;
+        }
+        if (f === F.den && world.data[i] === 0) {
+          standUp(this.once(`bear-den:${v3 % 2}`, () => bearDen(v3 % 2)), sx + 8, rh(tx, ty, 92) < 0.5, 44);
           continue;
         }
         if (f === F.tail) {
@@ -469,11 +571,9 @@ export class Renderer {
           continue;
         }
         const art = this.atlas.feature(f, world.data[i]!);
-        if (f === F.arch) shadows.push([sx + 8, sy + 15, 12, 14]);
         // Bushes and plants grow where they took root, not on a grid: off-centre, and either way round.
         const grows = f === F.plant || f === F.herb || f === F.bush;
-        const ox = grows ? Math.floor(rh(tx, ty, 85) * 7) - 3 : 0;
-        const oy = grows ? Math.floor(rh(tx, ty, 86) * 5) - 2 : 0;
+        const [ox, oy] = grows ? this.offset(tx, ty, 33, 5, 4, 3) : [0, 0];
         const flip = grows && rh(tx, ty, 87) < 0.5;
         layer.push(() => {
           if (bare) g.globalAlpha = 0.4;
@@ -500,6 +600,13 @@ export class Renderer {
     this.shadows(sun, shadows);
     for (const d of layer) d();
     if (prow > y1 + 3) this.drawSurvivor(state, cam);
+    // Faded trees and rocks stack: in a thick stand three or four can stand over the survivor and hide
+    // them. So when anything does, they're drawn again on top, a little see-through, always in sight.
+    if (hidden) {
+      g.globalAlpha = 0.7;
+      this.drawSurvivor(state, cam);
+      g.globalAlpha = 1;
+    }
 
     if (hover) {
       g.strokeStyle = 'rgba(255,255,255,0.6)';
@@ -512,6 +619,45 @@ export class Renderer {
     this.light(state, cam, timeMs);
     this.ground.warm(cam.x, cam.y, SCREEN_W, SCREEN_H, snow);
     return cam;
+  }
+
+  /**
+   * A waterfall's drawing, standing on its foot tile and rising over the tiles behind (SPEC 12.1): the
+   * rock and the sheet, then the water's moving streaks down the sheet and spray off the pool. It fades
+   * when the survivor is behind it, like a tall rock. Returns whether it does.
+   */
+  private drawFalls(fall: Fall, sx: number, sy: number, timeMs: number, layer: (() => void)[], survivorPx: number, survivorPy: number, prow: number, ty: number): boolean {
+    const big = fall.size >= 4;
+    const v = Math.floor(rh(fall.x, fall.y, 95) * 3);
+    const art = this.once(`falls:${big ? 1 : 0}:${v}`, () => fallsArt(big, v)) as FallsArt;
+    // The pool's middle on the foot tile's centre, where the stream below carries on.
+    const left = sx + 8 - Math.floor(art.c.width / 2);
+    const top = sy + 8 - (art.sheet.y1 + 2);
+    const behind = prow < ty && survivorPx + 12 > left + 3 && survivorPx + 4 < left + art.c.width - 3 && survivorPy + 14 > top && survivorPy < sy;
+    const g = this.g;
+    const { x0, x1, y0, y1 } = art.sheet;
+    layer.push(() => {
+      if (behind) g.globalAlpha = 0.5;
+      g.drawImage(art.c, left, top);
+      // Streaks of white sliding down the sheet, quicker toward the bottom.
+      g.fillStyle = 'rgba(255,255,255,0.85)';
+      for (let k = 0; k < (x1 - x0) * 1.4; k++) {
+        const x = x0 + ((k * 7) % (x1 - x0));
+        const h = y1 - y0;
+        const p = ((timeMs / 420 + k * 0.37 + ((k * 13) % 5) * 0.11) % 1) ** 1.4;
+        g.fillRect(left + x, top + y0 + Math.floor(p * (h - 3)), 1, 2 + Math.floor(p * 3));
+      }
+      // Spray off the pool: soft puffs rising and fading.
+      for (let k = 0; k < 6; k++) {
+        const p = (timeMs / 1300 + k / 6) % 1;
+        const x = left + art.c.width / 2 + (((k * 11) % 7) - 3) * 2.4 + Math.sin(p * 4 + k) * 2;
+        const y = top + y1 - p * 9;
+        g.fillStyle = `rgba(236,244,244,${0.45 * (1 - p)})`;
+        g.fillRect(Math.round(x - 2), Math.round(y - 1), 4, 3);
+      }
+      g.globalAlpha = 1;
+    });
+    return behind;
   }
 
   /** Builds, stashes, fires, and animals on one row. */
@@ -608,10 +754,16 @@ export class Renderer {
         const dx = tx * TILE - cam.x;
         const dy = ty * TILE - cam.y;
         if (t === T.waterfall) {
-          for (let k = 0; k < 4; k++) {
-            const y = (timeMs / 9 + k * 4 + tx * 5) % TILE;
-            g.fillStyle = 'rgba(240,248,246,0.6)';
-            g.fillRect(dx + 1 + k * 4, dy + Math.floor(y), 1, 3);
+          // Foam racing the way the water runs.
+          const [fx, fy] = this.fallDir.get(idx(tx, ty)) ?? [0, 1];
+          g.fillStyle = 'rgba(244,250,248,0.7)';
+          for (let k = 0; k < 5; k++) {
+            const run = ((timeMs / 7 + k * 9 + (tx * 7 + ty * 3) * 5) % 22) - 11;
+            const side = ((k * 5 + tx + ty) % 9) - 4;
+            const x = dx + 8 + fx * run - fy * side;
+            const y = dy + 8 + fy * run + fx * side;
+            if (x < dx || y < dy || x > dx + TILE - 2 || y > dy + TILE - 2) continue;
+            g.fillRect(Math.round(x), Math.round(y), Math.abs(fx) > 0.5 ? 3 : 1, Math.abs(fy) > 0.5 ? 3 : 1);
           }
           continue;
         }
@@ -753,9 +905,11 @@ export class Renderer {
 
   private drawSurvivor(state: GameState, cam: Camera): void {
     const p = state.player;
-    const moving = p.stepLeft > 0;
-    // Walking alternates feet; working (a task) rocks slowly between the frames.
-    const frame = moving ? (p.stepLeft * 2 > p.stepTotal ? 1 : 0) : state.task ? Math.floor(performance.now() / 350) % 2 : 0;
+    const free = state.walk === 'free' && p.fx !== undefined && p.fy !== undefined;
+    const moving = free ? p.fx !== p.lastFx || p.fy !== p.lastFy : p.stepLeft > 0;
+    // Walking alternates feet (free walking: every half tile walked); working (a task) rocks slowly between the frames.
+    const stride = free ? ((p.fx! >> 7) + (p.fy! >> 7)) & 1 : p.stepLeft * 2 > p.stepTotal ? 1 : 0;
+    const frame = moving ? stride : state.task ? Math.floor(performance.now() / 350) % 2 : 0;
     const asleep = state.sleep !== null && !state.sleep.awake;
     const sprite = this.atlas.person(state.protagonist, asleep ? -1 : p.facing, frame);
     this.g.drawImage(sprite, Math.round(cam.px * TILE) - cam.x, Math.round(cam.py * TILE) - cam.y);

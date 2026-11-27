@@ -492,6 +492,11 @@ function dirTo(fx: number, fy: number, tx: number, ty: number): Dir {
 /** Play one run to its end (or `maxDays`). */
 export function playBot(seed: string, protagonist: Protagonist | number, knowsDeal: boolean, maxDays = 75): BotResult {
   const { state, world } = startScenario({ seed, protagonist, commands: [], ticks: 0 });
+  // The bot steps tile by tile (it was written for it), so it plays on the grid even while free walking is tried (SPEC 5.2).
+  if (state.walk === 'free') {
+    delete state.walk;
+    for (const k of ['fx', 'fy', 'lastFx', 'lastFy', 'vx', 'vy', 'nudge'] as const) delete state.player[k];
+  }
   if (knowsDeal) handDeal(state);
   const bot = new Bot(state, world);
   const end = maxDays * 14400;

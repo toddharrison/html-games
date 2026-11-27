@@ -28,5 +28,5 @@ Raised while building, each with the simple option taken so work could go on (20
 - **Q42. Turning in place.** *Taken:* Shift and a direction turns without stepping. Lighting a fire needs the survivor to face open ground, and nothing else turned them.
 - **Q43. Who draws the final art.** The M6 pass draws every feature, animal, and the survivor as sprites in code; terrain is still a flat colour with a glyph. Keep this, have Claude draw terrain tiles too, or bring in an artist (the renderer can take an atlas image instead, SPEC 12.1)? *2026-11-26:* Claude draws terrain too, in the beauty pass (12.1); an artist is still a later option.
 - **Q44. The music.** *Taken:* four short synthesized pieces (first fire, first wide view, first snow, rescue), played once each per run. Right moments? Real instruments before release?
-- **Q45. The version at release.** Nothing has been released yet and `package.json` still says 0.1.0. Release it as 0.1.0, or number it for the milestones reached?
+- **Q45. The version at release.** *Taken (2026-11-26):* the first release is 0.0.1; from there, semver as the repo's rules say.
 - **Q46. Free walking or grid steps.** *Being tried:* the survivor walks freely over the tile grid (5.2), behind one switch (`FREE_WALK`). Keep it, and rewrite 5.2 and the step tests for it, or go back to grid steps?

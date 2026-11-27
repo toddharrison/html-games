@@ -150,7 +150,7 @@ Placed in order, each on a random tile meeting its rule, claiming room round its
 - **Gotcha:** anything that assumed trees block (a test, a path, the bot) now sees them as slow ground; a thicket is the blocking tree.
 
 ### Log bridges
-`M7` · `uncommitted` · `playtest: pending` · SPEC §6.3
+`M7` · `9ed349b` · `playtest: pending` · SPEC §6.3
 
 `layLogBridges` (`src/sim/worldgen/bridges.ts`, after `layTrails`): candidates are crossings east or south from an open bank over 1–3 stream or gravel tiles (`MAX_SPAN`) to an open bank, with a conifer or aspen within 2 tiles of a bank (a tree that could have fallen over it). Score: trees (capped), a hash, +2 where a game trail reaches either bank, +1.5 within 30 tiles of the start. Best first, at least 18 tiles apart (`SPACING`), up to 12 (`MAX_BRIDGES`). The crossed tiles get `FLAG.bridge`; `World.bridges` keeps each (first stream tile, way across, length). On a bridge tile: no wetting (`entered` in `sim/step.ts`), drying as on land (`body.ts`), a step takes `LOG_STEP_TICKS` (9; `stepTicks`), and in the dark (8%) or exhausted (5%) a slip into the stream (`stepHazards`, `HAZARD_TEXT.offLog`: wet through). Drawn flat under everything by `spanLog` (`flora.ts`): a trunk from root plate to broken top, rotated for north–south crossings. On the kid's map, "log bridge (stay dry!)" once seen. Every sample valley has 12; first-light's nearest is 22 tiles from the start. **Gotcha:** the world hash includes the flags, so the goldens moved.
 
@@ -306,17 +306,17 @@ Cattail roots dug from reeds, crayfish and mussels felt for in the shallows (soa
 The journal's first page (`src/ui/journal.ts`): for each kind of dealt thing, the outcomes its deck can hold with their possible counts, highlighted when some are found and struck through when all are; then a row for each thing come across, *unknown*, *suspected?* (italic), or known, with how it was learned. It reads only `GameState.known`.
 
 ### The kid's notebook (the journal's look)
-`M7` · `uncommitted` · `playtest: pending` · SPEC §8.1, §12.1
+`M7` · `9ed349b` · `playtest: pending` · SPEC §8.1, §12.1
 
 The journal (J) is the kid's notebook, in the same paper and hand as their map (§8 "The kid's map"): `.notebook` in `src/ui/style.css`: ruled paper (a fixed line height `--rule`, `calc(var(--k) * 7px * var(--text))`, so writing of every size sits on the lines; the rules a background that scrolls with the page), a red margin, a hand font (Comic Sans MS or the like), pencil colours, the page a little askew, coloured index tabs ("Valley notes", "Diary", "What I can do", "How I feel"). In the notes, a known outcome is underlined green, or in red with a wavy underline when it turned out badly (`BAD` in `journal.ts`: deadly, sickening, foul, irritant, crumbles, fails, inert, nothing, bold); unknown is "?". The diary (the log) is grouped under headings for each stretch of a day, "day 2, early morning": the part of the day (`partOfDay`), the clock time only if the kid has a watch, as on the HUD. "How I feel" draws the vitals as pencil-hatched bars, and "What's wrong" lists conditions. `npm run tour` shows three of the pages (`renders/tour/08`–`10`).
 
 ### The diary in the kid's words
-`M7` · `uncommitted` · `playtest: pending` · SPEC §8.1, §12.2
+`M7` · `9ed349b` · `playtest: pending` · SPEC §8.1, §12.2
 
 `diaryLine` (`src/content/diary.ts`) writes each log line as the kid would in the diary (the log itself, and the captions, stay as narration). `firstPerson`: the name becomes "I" where it starts a clause (after the start, a stop or comma, or a joining word: `CLAUSE_START`) and "me" elsewhere; "Name's" "my"; she/he "I"; her as "me" or "my" by the next word (`AFTER_ME`); his "my", him "me", herself/himself "myself"; a few verb fixes ("I am", "I have"). Then `PHRASES`, about 100 rules: weather, signs, sleep, body, tasting and eating, fire, animals, hazards, things noticed, small things, each as a kid would write it ("Started raining.", "Woke up freezing.", "Felt sick. DON'T eat the glossy red berries.", "FIRE!!! The tinder caught and I MADE FIRE!!"). Unmatched lines keep the first person and lose a leading "I" before a doing verb (`DROP_I`: "Found 3 sticks."). Thoughts are written without their quotes. Tests: `tests/notebook.test.ts`. **Gotcha:** the phrasebook matches the narration's exact words; changing a line in `content/*Text.ts` or `messages.ts` can make its diary line fall back to the plain first person.
 
 ### Water damage to the notebook
-`M7` · `uncommitted` · `playtest: pending` · SPEC §8.1, §12.1
+`M7` · `9ed349b` · `playtest: pending` · SPEC §8.1, §12.1
 
 `src/sim/notebook.ts`, each game minute (`minuteHooks`): the notebook (in a pocket) takes up water while the kid's clothes are soaked (`player.wet` ≥ 30: a quarter of the difference a minute) and dries 0.2 a minute otherwise. Crossing 50 is a soaking (`notebook-soakings`, a tide mark) and while it's 50 or more it takes lasting damage (`notebook-damage`, up to 0.0625 a minute, capped at 100, never mends) and everything written so far counts as under water (`notebook-soaked-at`). All in `memory`, written only once it's been wet (a dry run's state is unchanged). `notebookWear` reads it. **Journal**: a tide mark per soaking (up to 7, hashed size and place); writing from before the last soaking is smudged (blurred, ink run blue) or washed half away (blurred, faint) by hash as the damage grows (`blot`); the page is darker while damp. The map stays dry (the user chose this: it's kept apart from the notebook). `renders/kidmap/wet.mjs` (git-ignored) shows a soaked diary. Tests: `tests/notebook.test.ts`.
 

@@ -53,6 +53,7 @@
 | The diary is in the first person and the kid's own words, not the narration's; thoughts without quotes. | 8.1, 12.2 |
 | The notebook gets wet when the kid does (wading, a fall in, rain without shelter): each soaking leaves a tide mark, time soaked leaves damage that never mends, and what was written before smudges or washes out. The map stays dry. | 8.1, 12.1 |
 | Fallen trees lie across the streams (up to a dozen, near trees, where trails cross first, one near the start): a dry way over, slower, and slippery in the dark or when worn out. | 6.3 |
+| The first public release is 0.0.1 (was Q45). | 11.1 |
 | The bear's den is a cave: a mound of rock about three tiles wide with a dark mouth wide enough for a bear, the spoil heaped in front. The cougar's lair and the marmots' burrows stay small. | 6.3, 9, 12.1 |
 
 **2026-11-25.**

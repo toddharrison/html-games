@@ -3,7 +3,7 @@
   "title": "Snowline",
   "description": "A top-down survival game about a teenager alone in a mountain valley whose rules change with every seed.",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

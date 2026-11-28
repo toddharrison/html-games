@@ -401,7 +401,7 @@ What's gathered or made but doesn't fit is set down at the survivor's feet as a 
 `M7` · `46d8182` · `playtest: pending` · SPEC §8.2, §6.7, §7.4
 
 Only what really comes back within a run regrows on a timer (`GameState.regrow`): plant patches, bushes, reeds, the shallows, and loose things. Fallen twigs and branches and driftwood (`blows` in `LOOSE`) also come back as soon as a hard wind has blown since they were taken (`blewSince` in `src/sim/weather.ts`: any forecast period after the take with `WEATHER[id].wind >= BLOWING`, i.e. high wind, thunderstorm, the great storm; read from the forecast, no state). Everything else is used up for good after a few takes per tile (`SUPPLY` in balance.ts; times taken in `GameState.taken`, keys `<kind><tile>`; `supplyLeft`/`useSupply` in `actionKit.ts`): a tree's limbs (`w`, 3 cuts), its bark (`b`, 3: *Strip bark* and *Shred inner bark* share it), lichen (`li`, 2), a deadfall's wood (`w`, 3; the trunk stays, "only the trunk is left") and punk (`p`, 2), and loose stones and outcrop chips (`once` in `LOOSE`; `taken['l<tile>']`). Green boughs never run out. A tree with any bark taken is drawn with a pale scar on its trunk (`barkStripped`, `src/render/renderer.ts`).
-- Saves went to schema 4 for `taken`, then 5 when the valleys changed (the history pipeline); older saves can't be carried on.
+- Saves went to schema 4 for `taken`, then 5 when the valleys changed (the history pipeline), then 6 for 0.2.0 (the clock at 20 ticks a minute, and gravel shallows in the valley); older saves can't be carried on.
 - Bot, 30 seeds, measured before the new valleys: learning the valley, median 19.6 days (was 19.1); handed the deal, 21.8 (was 22.2). It lived mostly on driftwood and branches, so it rarely met a used-up woodland; the playtest is the real test. (On the new valleys, see TODO.md's bot note.)
 - **Gotcha:** `GameState.regrow` and `taken` are looked up, never iterated (determinism); wind is worked out from the forecast at lookup, not by sweeping the map.
 - Extra hooks for later systems: `src/sim/systems.ts` (per tick, per minute, commands, tiles a system opens or blocks) and `src/sim/start.ts` (setup at the start of a run).
@@ -427,7 +427,7 @@ R offers: rest an hour (awake), sleep three hours, sleep until first light, slee
 ### Saves
 `M2` · `12a039f` · `playtest: pending` · SPEC §5.4, §11.6
 
-`src/platform/saves.ts`: one slot in IndexedDB (database `snowline`, store `runs`), saved on sleep, when the tab is hidden, and from the pause menu (*Save and leave*). The title offers *Carry on* when one exists. Death deletes it (permadeath). *Save to a file* exports it; *Load a saved file* on the title imports one. A save is the GameState without the deal and the map (`toRecord`, `restore`); `migrate` refuses a save from another schema (`SCHEMA` in `src/sim/newGame.ts`, now 5).
+`src/platform/saves.ts`: one slot in IndexedDB (database `snowline`, store `runs`), saved on sleep, when the tab is hidden, and from the pause menu (*Save and leave*). The title offers *Carry on* when one exists. Death deletes it (permadeath). *Save to a file* exports it; *Load a saved file* on the title imports one. A save is the GameState without the deal and the map (`toRecord`, `restore`); `migrate` refuses a save from another schema (`SCHEMA` in `src/sim/newGame.ts`, now 6).
 - **Gotcha:** the save is the whole state, not the differences from a fresh world that SPEC §11.6 describes (Q19). It's about 40 KB, mostly the explored bitset.
 
 ### Run codes and the summary

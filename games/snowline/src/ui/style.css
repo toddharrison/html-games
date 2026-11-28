@@ -954,6 +954,57 @@ button:focus-visible,
   right: 8%;
 }
 
+/* The opening: what happened, a page at a time, over black, then over the scene as it fades in with
+   the kid lying by the wreck. */
+.overlay.waking {
+  align-items: flex-end;
+  background: rgba(4, 5, 8, 0.3);
+  transition: background 3s ease-in;
+  cursor: pointer;
+}
+
+.overlay.waking.dark {
+  align-items: center;
+  background: #040508;
+  /* Into the dark at once; only coming out of it fades (the scene appearing). */
+  transition: none;
+}
+
+.waking-page {
+  max-width: 32em;
+  margin: 0 1em 1.6em;
+  text-align: center;
+  font-style: italic;
+  text-shadow: 0 0 0.6em rgba(0, 0, 0, 0.95), 0 0 0.2em rgba(0, 0, 0, 0.9);
+  animation: waking-in 1.4s ease-out;
+}
+
+.waking-page .line {
+  margin: 0.4em 0;
+  font-size: 1.15em;
+  line-height: 1.4;
+}
+
+.waking-page .hint {
+  margin: 0.9em 0 0;
+  font-style: normal;
+  font-size: 0.85em;
+  color: var(--warm);
+}
+
+.waking-page .keys {
+  margin: 0.9em 0 0;
+  font-style: normal;
+  font-size: 0.7em;
+  opacity: 0.55;
+}
+
+@keyframes waking-in {
+  from {
+    opacity: 0;
+  }
+}
+
 /* A thought or something worked out: the game stops, and it's a slip of the notebook's paper in the
    kid's hand, the scene still in view behind it. */
 .overlay.noting {

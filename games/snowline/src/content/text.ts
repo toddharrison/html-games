@@ -6,11 +6,6 @@ export const TEXT = {
   tagline: 'A survival game about a teenager alone in a mountain valley.',
   /** Shown on the title until a run could end in rescue (SPEC 11.1); empty since M5. */
   inDevelopment: '',
-  opening: (name: string): string[] => [
-    'The engine coughed and quit somewhere over the mountains.',
-    'Now there was only the lake, the trees, and the quiet.',
-    `${name} was alone.`,
-  ],
   viewpoint: 'From up here the valley lay open, all the way down to the lake.',
   viewpointWreck: 'Far up on the bare rock, something caught the light.',
   viewpointKnoll: 'An open knoll, high and bare. Anyone flying over would see it.',

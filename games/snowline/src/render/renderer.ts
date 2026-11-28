@@ -98,6 +98,8 @@ export class Renderer {
   private readonly fishAt = new Map<number, { x: number; y: number; left: boolean }>();
   private rings: { x: number; y: number; t: number }[] = [];
   private lastFrame = 0;
+  /** Draw the survivor lying down whatever the state says: the opening scene, before they get up. */
+  lying = false;
   /** Where the camera's eased aim is (the survivor's sprite corner, world pixels); null snaps it next frame. */
   private follow: { x: number; y: number } | null = null;
   private readonly trees = new Map<string, Tall>();
@@ -1012,7 +1014,7 @@ export class Renderer {
     // Walking alternates feet (free walking: every half tile walked); working (a task) rocks slowly between the frames.
     const stride = free ? ((p.fx! >> 7) + (p.fy! >> 7)) & 1 : p.stepLeft * 2 > p.stepTotal ? 1 : 0;
     const frame = moving ? stride : state.task ? Math.floor(performance.now() / 350) % 2 : 0;
-    const asleep = state.sleep !== null && !state.sleep.awake;
+    const asleep = this.lying || (state.sleep !== null && !state.sleep.awake);
     const sprite = this.atlas.person(state.protagonist, asleep ? -1 : p.facing, frame);
     // On a device pixel, not a screen pixel: the survivor moves as smoothly as the camera (see `camera`).
     this.g.drawImage(sprite, this.snap(cam.px * TILE) - cam.x, this.snap(cam.py * TILE) - cam.y);

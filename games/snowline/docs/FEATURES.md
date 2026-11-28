@@ -287,6 +287,13 @@ Trees are two to three tiles tall (`CONIFER` and `ASPEN` sizes in `src/render/fl
 
 On a `discovery` event the app asks `insightText` (`src/ui/insight.ts`) for a card: a technique gives "New idea!", its name, its text, and the recipes it adds to Make; a fact gives "Now I know" or "I think...", "The <look> <what it means>" (`MEANS`, else the raw value), and how it was learned. Shown as a note (below). UI only.
 
+### The opening: waking by the wreck
+`M7` · `uncommitted` · `playtest: pending` · SPEC §12.2
+
+A new run (tick 0; not when debug's `ff` or `at` starts it somewhere, for a script) opens on `App.wakeUp` (`src/platform/app.ts`): the pages of `wakingPages(who, background)` (`src/content/waking.ts`), each shown by `nextWaking` in the `waking` modal (`wakingPage`, `src/ui/waking.ts`), which pauses the loop like a note. Pages in the dark (`dark`: the overlay solid black at once) tell the flight (where the kid was flying to, by background: `BOUND_FOR`), the engine, the crash; then the overlay fades over 3 s to show the scene, the kid drawn lying by the wreck (`Renderer.lying`), waking: the pilot (implied, never shown), the tail gone, someone looking, and the last page's plain line on what the game is. A click, E, Space, or Enter turns the page (not within `NOTE_GUARD`); Esc skips the rest. `endWaking` stands the kid up and shows the HUD. Replaces the old caption (`TEXT.opening`). Platform, UI, and render only: hashes unchanged. Scripts: `clearNotes()` reads the pages away too; the tour shoots `03-waking-dark` and `04-waking`.
+- **Gotcha:** the dark overlay has `transition: none`, so going into the dark is instant and only coming out fades.
+- **Gotcha (originality):** keep the flight's reasons away from a trip to see a parent and the pilot away from a heart attack: that's the novel's opening.
+
 ### Thoughts and insights as notes
 `M7` · `d88b426` · `playtest: pending` · SPEC §12.2
 
@@ -362,7 +369,7 @@ The journal's first page (`src/ui/journal.ts`): for each kind of dealt thing, th
 ### The kid's notebook (the journal's look)
 `M7` · `9ed349b` · `playtest: pending` · SPEC §8.1, §12.1
 
-The journal (J) is the kid's notebook, in the same paper and hand as their map (§8 "The kid's map"): `.notebook` in `src/ui/style.css`: ruled paper (a fixed line height `--rule`, `calc(var(--k) * 7px * var(--text))`, so writing of every size sits on the lines; the rules a background that scrolls with the page), a red margin, a hand font (Comic Sans MS or the like), pencil colours, the page a little askew, coloured index tabs ("Valley notes", "Diary", "What I can do", "How I feel"). In the notes, a known outcome is underlined green, or in red with a wavy underline when it turned out badly (`BAD` in `journal.ts`: deadly, sickening, foul, irritant, crumbles, fails, inert, nothing, bold); unknown is "?". The diary (the log) is grouped under headings for each stretch of a day, "day 2, early morning": the part of the day (`partOfDay`), the clock time only if the kid has a watch, as on the HUD. "How I feel" draws the vitals as pencil-hatched bars, and "What's wrong" lists conditions. `npm run tour` shows three of the pages (`renders/tour/08`–`10`).
+The journal (J) is the kid's notebook, in the same paper and hand as their map (§8 "The kid's map"): `.notebook` in `src/ui/style.css`: ruled paper (a fixed line height `--rule`, `calc(var(--k) * 7px * var(--text))`, so writing of every size sits on the lines; the rules a background that scrolls with the page), a red margin, a hand font (Comic Sans MS or the like), pencil colours, the page a little askew, coloured index tabs ("Valley notes", "Diary", "What I can do", "How I feel"). In the notes, a known outcome is underlined green, or in red with a wavy underline when it turned out badly (`BAD` in `journal.ts`: deadly, sickening, foul, irritant, crumbles, fails, inert, nothing, bold); unknown is "?". The diary (the log) is grouped under headings for each stretch of a day, "day 2, early morning": the part of the day (`partOfDay`), the clock time only if the kid has a watch, as on the HUD. "How I feel" draws the vitals as pencil-hatched bars, and "What's wrong" lists conditions. `npm run tour` shows three of the pages (`renders/tour/12`–`14`).
 
 ### The diary in the kid's words
 `M7` · `9ed349b` · `playtest: pending` · SPEC §8.1, §12.2

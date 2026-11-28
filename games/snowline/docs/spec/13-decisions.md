@@ -2,6 +2,12 @@
 
 ### 13.1 Decided
 
+**2026-11-27, the opening.** The user asked for a wake-up scene, the kid lying at the crash site, that explains the start.
+
+| Decision | Where it shows up |
+|---|---|
+| A new run opens on pages read a click at a time: the flight and the crash in the dark, then waking by the wreck as the scene fades in (the pilot implied, the tail gone, someone looking, the goal). Where the kid was flying to depends on their background, and is never to see a parent. Esc skips it. It replaces the three-line caption. | 12.2 |
+
 **2026-11-27, slower days, a kid who notices, clues, better walks, the wreck, shelters, fords.** The user asked for gravel shallows in the rivers and lakes, for what the kid notices to vary (not always the snow and the cold first; hunger, thirst; the wind through the jacket), for a clue to what to try when something fails, for clicked walks to take the kid's best way (a bridge in sight and near, easier ground), for something useful in the plane, for watching the trout not to come from clicking the ground, for builds to be clickable (sleep in the lean-to), and for time to run half as fast (tasks as they are).
 
 | Decision | Where it shows up |

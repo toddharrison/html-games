@@ -21,6 +21,9 @@ import { makePage } from '../ui/make.ts';
 import { packPage, type PackTab } from '../ui/pack.ts';
 import { insightText } from '../ui/insight.ts';
 import { notePage, type Note } from '../ui/note.ts';
+import { wakingPage } from '../ui/waking.ts';
+import { wakingPages, type WakingPage } from '../content/waking.ts';
+import { who as whoOf } from '../content/messages.ts';
 import type { MakeEntry } from '../sim/craft.ts';
 import { fireSiteProblem } from '../sim/fire.ts';
 import { buildDef, buildSiteProblem } from '../sim/craft.ts';
@@ -45,7 +48,7 @@ import { download, parseReplay, toReplay } from './replay.ts';
 import { deleteRun, loadRun, migrate, parseSave, restore, saveRun, toRecord, type SaveRecord } from './saves.ts';
 import { Loop, Session } from './session.ts';
 
-type Modal = 'title' | 'loading' | 'select' | 'map' | 'pause' | 'menu' | 'journal' | 'make' | 'pack' | 'summary' | 'settings' | 'note' | null;
+type Modal = 'title' | 'loading' | 'select' | 'map' | 'pause' | 'menu' | 'journal' | 'make' | 'pack' | 'summary' | 'settings' | 'note' | 'waking' | null;
 
 /** A note can't be closed this soon after it shows (ms), so a key or click already on its way doesn't skip it unread. */
 const NOTE_GUARD = 400;
@@ -101,6 +104,8 @@ export class App {
   /** Thoughts and insights waiting to be shown as notes, each pausing the game (SPEC 12.2). */
   private notes: Note[] = [];
   private noteAt = 0;
+  /** The opening scene's pages still to read (a new run only). */
+  private waking: WakingPage[] = [];
   readonly sound = new Sound();
 
   constructor(root: HTMLElement, params: URLSearchParams) {
@@ -138,6 +143,7 @@ export class App {
     });
     this.overlay.addEventListener('mousedown', (e) => {
       if (this.modal === 'note') this.closeNote();
+      else if (this.modal === 'waking') this.nextWaking();
       else if (e.target === this.overlay && this.modal === 'menu') this.setModal(null);
     });
     this.overlay.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -202,6 +208,7 @@ export class App {
     this.overlay.replaceChildren(...(content ? [content] : []));
     this.overlay.classList.toggle('ctx', !!content?.classList.contains('context'));
     this.overlay.classList.toggle('noting', m === 'note');
+    this.overlay.classList.toggle('waking', m === 'waking');
     this.overlay.hidden = !content;
     this.input.playing = m === null;
     if (m !== null) this.input.release();
@@ -290,7 +297,9 @@ export class App {
       this.setModal(null);
       this.loop.stop();
       this.loop.start();
-      if (s.state.tick === 0) this.hud.say(TEXT.opening(who.name), 9000);
+      // A new run opens on the kid waking (not when debug starts it somewhere, or at some time, for a script).
+      const scripted = this.debug && (this.params.has('ff') || this.params.has('at'));
+      if (s.state.tick === 0 && !scripted) this.wakeUp(s.state.protagonist);
     }, 30);
   }
 
@@ -352,6 +361,33 @@ export class App {
     if (this.notes.length && this.modal === null) this.showNote();
   }
 
+  /** A new run opens on the kid lying by the wreck: what happened, read a page at a time, then they get up. */
+  private wakeUp(p: Protagonist): void {
+    this.waking = wakingPages(whoOf(p), p.background);
+    this.renderer.lying = true;
+    this.hud.el.hidden = true;
+    this.noteAt = performance.now();
+    this.nextWaking(true);
+  }
+
+  /** The next page of the opening, or up and into play. */
+  private nextWaking(first = false): void {
+    if (!first && performance.now() - this.noteAt < NOTE_GUARD) return;
+    const page = this.waking.shift();
+    if (!page) return this.endWaking();
+    this.noteAt = performance.now();
+    this.overlay.classList.toggle('dark', page.dark);
+    this.setModal('waking', wakingPage(page, this.waking.length === 0));
+  }
+
+  private endWaking(): void {
+    this.waking = [];
+    this.renderer.lying = false;
+    this.overlay.classList.remove('dark');
+    this.hud.el.hidden = false;
+    this.setModal(null);
+  }
+
   /** Pause on the next thought or insight, on a notebook slip. */
   private showNote(): void {
     const n = this.notes.shift();
@@ -393,6 +429,11 @@ export class App {
     }
     if (this.modal === 'note') {
       if (a === 'act' || a === 'confirm' || a === 'pause') this.closeNote();
+      return;
+    }
+    if (this.modal === 'waking') {
+      if (a === 'pause') this.endWaking();
+      else if (a === 'act' || a === 'confirm') this.nextWaking();
       return;
     }
     if (this.modal === 'menu' && this.menu) {

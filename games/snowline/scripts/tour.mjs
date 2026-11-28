@@ -22,7 +22,7 @@ const base = server.resolvedUrls.local[0];
 const b = await openBrowser();
 let n = 0;
 const shot = async (name) => {
-  if (name !== 'note') await b.clearNotes();
+  if (name !== 'note' && !name.startsWith('waking')) await b.clearNotes();
   await sleep(350);
   const file = join(outDir, `${String(++n).padStart(2, '0')}-${name}.png`);
   writeFileSync(file, await b.screenshot());
@@ -48,6 +48,17 @@ try {
   await b.waitFor("document.querySelector('.select .card')");
   await shot('select');
   await b.evaluate("document.querySelector('.select .card').click()");
+  // The opening: the crash in the dark, then waking by the wreck as the scene fades in.
+  await b.waitFor("document.querySelector('.waking-page')");
+  await hideDebug();
+  await shot('waking-dark');
+  for (let k = 0; k < 2; k++) {
+    await sleep(450);
+    await b.evaluate("document.querySelector('.overlay').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))");
+  }
+  await sleep(3200);
+  await shot('waking');
+  await b.clearNotes();
   await b.waitFor("document.querySelector('.hud') && !document.querySelector('.hud').hidden");
   await hideDebug();
   await sleep(1500);

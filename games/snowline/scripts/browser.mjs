@@ -121,9 +121,9 @@ export async function openBrowser({ width = 1152, height = 648 } = {}) {
       await sleep(holdMs);
       await page('Input.dispatchKeyEvent', { type: 'keyUp', code, key: keyName });
     },
-    /** Thoughts and insights pause the game as notes: read away any that are up (each can't be closed for 400 ms). */
+    /** Thoughts and insights pause the game as notes, and a new run opens on pages of the waking scene: read away any that are up (each can't be closed for 400 ms). */
     async clearNotes() {
-      for (let k = 0; k < 30 && (await evaluate("!!document.querySelector('.note')")); k++) {
+      for (let k = 0; k < 30 && (await evaluate("!!document.querySelector('.note, .waking-page')")); k++) {
         await sleep(450);
         await evaluate("document.querySelector('.overlay').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))");
       }

@@ -288,7 +288,7 @@ Trees are two to three tiles tall (`CONIFER` and `ASPEN` sizes in `src/render/fl
 On a `discovery` event the app asks `insightText` (`src/ui/insight.ts`) for a card: a technique gives "New idea!", its name, its text, and the recipes it adds to Make; a fact gives "Now I know" or "I think...", "The <look> <what it means>" (`MEANS`, else the raw value), and how it was learned. Shown as a note (below). UI only.
 
 ### The opening: waking by the wreck
-`M7` · `uncommitted` · `playtest: pending` · SPEC §12.2
+`M7` · `757d35f` · `playtest: pending` · SPEC §12.2
 
 A new run (tick 0; not when debug's `ff` or `at` starts it somewhere, for a script) opens on `App.wakeUp` (`src/platform/app.ts`): the pages of `wakingPages(who, background)` (`src/content/waking.ts`), each shown by `nextWaking` in the `waking` modal (`wakingPage`, `src/ui/waking.ts`), which pauses the loop like a note. Pages in the dark (`dark`: the overlay solid black at once) tell the flight (where the kid was flying to, by background: `BOUND_FOR`), the engine, the crash; then the overlay fades over 3 s to show the scene, the kid drawn lying by the wreck (`Renderer.lying`), waking: the pilot (implied, never shown), the tail gone, someone looking, and the last page's plain line on what the game is. A click, E, Space, or Enter turns the page (not within `NOTE_GUARD`); Esc skips the rest. `endWaking` stands the kid up and shows the HUD. Replaces the old caption (`TEXT.opening`). Platform, UI, and render only: hashes unchanged. Scripts: `clearNotes()` reads the pages away too; the tour shoots `03-waking-dark` and `04-waking`.
 - **Gotcha:** the dark overlay has `transition: none`, so going into the dark is instant and only coming out fades.

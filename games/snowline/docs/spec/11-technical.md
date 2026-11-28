@@ -6,7 +6,7 @@ The game is one npm workspace, `games/snowline/`, in the html-games monorepo. It
 
 **The game itself**
 
-- TypeScript in strict mode. World rendered on a Canvas 2D context, with a colour grade and firelight drawn over it (12.1). Menus, inventory, journal, and HUD are HTML and CSS layered over the canvas.
+- TypeScript in strict mode. World rendered on a Canvas 2D context, with a colour grade and firelight drawn over it (12.1). The art is on a 384×216 pixel grid, but the canvas is at the screen's own pixels, so the camera can move by less than a game pixel (2026-11-27). Menus, inventory, journal, and HUD are HTML and CSS layered over the canvas.
 - **No backend.** The shipped game is static files that make no network requests: no server, accounts, analytics, CDN scripts, or web fonts. Everything, including art and audio, is bundled.
 - **No game framework** and, ideally, no runtime dependencies. The repo's other game uses Phaser, and Phaser was considered here and turned down for v1 (2026-11-25). The reasons:
   - The interface is mostly text (inventory, crafting, journal, valley notes, map), which HTML and CSS handle far better than a framework's bitmap text.

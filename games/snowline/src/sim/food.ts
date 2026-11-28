@@ -1,7 +1,7 @@
 // Eating, tasting, and drinking (SPEC 7.3, 7.4, 6.6). What a dealt plant does comes from
 // GameState.rules; what the survivor learns from it goes in GameState.known.
 
-import { DRINK, FOUL_RISK, PLANT_NUTRITION, TASTE_DELAY, WATER_ONSET_DAYS, WATER_RISK } from '../content/balance.ts';
+import { DAY, DRINK, FOUL_RISK, MIN, PLANT_NUTRITION, TASTE_DELAY, WATER_ONSET_DAYS, WATER_RISK } from '../content/balance.ts';
 import { WATER_SOURCES } from '../content/decks.ts';
 import { itemDef } from '../content/items.ts';
 import { MSG, who } from '../content/messages.ts';
@@ -42,7 +42,7 @@ export function eat(s: GameState, slot: number, events: SimEvent[]): void {
     v.hydration = clamp(v.hydration + 1);
     say(s, MSG.eat(w, lookName('plant', it.d)), events);
     // The whole effect shows within the half hour.
-    s.pending.push({ t: s.tick + 300, kind: 'eat', d: it.d });
+    s.pending.push({ t: s.tick + 30 * MIN, kind: 'eat', d: it.d });
     return;
   }
   const food = def.food;
@@ -70,7 +70,7 @@ export function taste(s: GameState, slot: number, events: SimEvent[]): void {
   if (!it || it.k !== 'plant' || it.d === undefined) return;
   takeFromSlot(s, slot, 1);
   say(s, MSG.taste(who(s.protagonist), lookName('plant', it.d)), events);
-  s.pending.push({ t: s.tick + TASTE_DELAY * 10, kind: 'taste', d: it.d });
+  s.pending.push({ t: s.tick + TASTE_DELAY * MIN, kind: 'taste', d: it.d });
 }
 
 /** Deliver what's due: a taste's answer, a meal's full effect, an illness from old water. */
@@ -128,7 +128,7 @@ export function resolvePending(s: GameState, events: SimEvent[]): void {
 
 /** After waterborne illness, the survivor suspects the water they drank most of in the days before. */
 function suspectWater(s: GameState, events: SimEvent[]): void {
-  const from = s.tick - (WATER_ONSET_DAYS[1] + 2) * 14400;
+  const from = s.tick - (WATER_ONSET_DAYS[1] + 2) * DAY;
   const counts = [0, 0, 0];
   for (const d of s.drinks) if (d.t >= from && d.w >= 0 && d.w < 3) counts[d.w]!++;
   let most = -1;
@@ -172,7 +172,7 @@ export function waterRisk(s: GameState, w: World, body: number, highUp: boolean)
   const alreadyIll = s.pending.some((p) => p.kind === 'water-ill') || s.conditions.some((c) => c.id === 'waterborne');
   if (!alreadyIll && chance(s.rng.health, risk)) {
     const days = nextRange(s.rng.health, WATER_ONSET_DAYS[0], WATER_ONSET_DAYS[1]);
-    s.pending.push({ t: s.tick + days * 14400, kind: 'water-ill', d: src });
+    s.pending.push({ t: s.tick + days * DAY, kind: 'water-ill', d: src });
   }
 }
 
@@ -180,7 +180,7 @@ export function waterRisk(s: GameState, w: World, body: number, highUp: boolean)
 export function spoil(s: GameState, events: SimEvent[]): void {
   const bad = (it: Item) => {
     const f = itemDef(it.k).food;
-    return !!f && f.spoils > 0 && it.t !== undefined && s.tick - it.t >= f.spoils * 10;
+    return !!f && f.spoils > 0 && it.t !== undefined && s.tick - it.t >= f.spoils * MIN;
   };
   const w = who(s.protagonist);
   for (let i = s.inventory.length - 1; i >= 0; i--) {

@@ -1,10 +1,10 @@
 // One simulation tick (SPEC 5): step(state, world, commands) -> events. It mutates `state` in place and
 // reads nothing but its arguments.
 
-import { CORNER_EASE, FOOT_HALF_H, FOOT_HALF_W, SUB, TAP_TICKS, TICKS_PER_MINUTE, VIEWPOINT_REACH, VIEWPOINT_REVEAL } from '../content/balance.ts';
+import { CORNER_EASE, FOOT_HALF_H, FOOT_HALF_W, FORD_WET, HOUR, ROUTE_FORD, ROUTE_MUCK, ROUTE_ROUGH, ROUTE_TRAIL, ROUTE_UNKNOWN, ROUTE_WADE, SUB, TAP_TICKS, TICKS_PER_MINUTE, VIEWPOINT_REACH, VIEWPOINT_REVEAL } from '../content/balance.ts';
 import { ITEMS, itemDef } from '../content/items.ts';
 import { MSG, who } from '../content/messages.ts';
-import { FLAG, T } from '../content/terrain.ts';
+import { FLAG, T, TERRAIN } from '../content/terrain.ts';
 import { startAction, startUse, workTask } from './actions.ts';
 import { bodyMinute, slowFactor } from './body.ts';
 import { resolvePending, spoil } from './food.ts';
@@ -24,6 +24,7 @@ import { addCondition } from './body.ts';
 import { ANIMAL_TEXT } from '../content/animalText.ts';
 import { idx, inBounds, passable, stepTicks, type World } from './world.ts';
 import { findRoute } from './route.ts';
+import { lieDown } from './rest.ts';
 
 const DX = [0, 1, 0, -1] as const;
 const DY = [-1, 0, 1, 0] as const;
@@ -55,7 +56,7 @@ function minute(s: GameState, w: World, events: SimEvent[]): void {
   if (s.sleep) {
     if (s.tick >= s.sleep.until) wake(s, w, MSG.wake(wh), events);
     else if (!s.sleep.awake && s.vitals.hydration < 6) wake(s, w, MSG.wakeThirst(wh), events);
-    else if (!s.sleep.awake && s.vitals.warmth < 8 && s.tick - s.sleep.from > 600 && (s.memory['woke-cold'] ?? -1e9) < s.tick - 1800) {
+    else if (!s.sleep.awake && s.vitals.warmth < 8 && s.tick - s.sleep.from > HOUR && (s.memory['woke-cold'] ?? -1e9) < s.tick - 3 * HOUR) {
       s.memory['woke-cold'] = s.tick;
       wake(s, w, MSG.wakeCold(wh), events);
     }
@@ -154,11 +155,7 @@ function apply(state: GameState, world: World, cmd: Command, events: SimEvent[])
       break;
     case 'sleep':
       if (state.task || state.sleep) break;
-      state.sleep = { until: state.tick + Math.max(1, Math.round(cmd.minutes)) * TICKS_PER_MINUTE, awake: cmd.awake, from: state.tick };
-      p.intent = -1;
-      p.queued = -1;
-      say(state, cmd.awake ? MSG.rest(who(state.protagonist)) : MSG.sleep(who(state.protagonist)), events);
-      events.push({ type: 'sleep' });
+      lieDown(state, cmd.minutes, cmd.awake, events);
       break;
     case 'wake':
       if (state.sleep) wake(state, world, MSG.wake(who(state.protagonist)), events);
@@ -256,10 +253,15 @@ function entered(state: GameState, world: World, events: SimEvent[]): void {
   const to = idx(p.x, p.y);
   state.stats.distance++;
   const t = world.terrain[to]!;
-  // On a fallen tree across the stream, feet stay dry (worldgen bridges.ts).
+  // On a fallen tree across the stream, feet stay dry (worldgen bridges.ts); gravel shallows wet the feet
+  // only (worldgen fords.ts).
   const onLog = world.flags[to]! & FLAG.bridge;
-  if (!onLog && t === T.shallows) p.wet = 100;
-  else if (!onLog && (t === T.stream || t === T.gravel)) p.wet = Math.max(p.wet, 60);
+  const ford = world.flags[to]! & FLAG.ford;
+  if (!onLog) {
+    if (ford && TERRAIN[t]!.water) p.wet = Math.max(p.wet, FORD_WET);
+    else if (t === T.shallows) p.wet = 100;
+    else if (t === T.stream || t === T.gravel) p.wet = Math.max(p.wet, 60);
+  }
   events.push({ type: 'step', x: p.x, y: p.y, terrain: t });
   state.memory['last-step'] = state.tick;
   stepHazards(state, world, to, events);
@@ -394,6 +396,8 @@ function moveFree(state: GameState, world: World, events: SimEvent[]): boolean {
   p.lastFx = p.fx;
   p.lastFy = p.fy;
   p.stepLeft = p.stepTotal = 0;
+  const was = p.pace ?? 0;
+  p.pace = 0;
   if (state.sleep || state.task) return false;
   let vx = p.vx ?? 0;
   let vy = p.vy ?? 0;
@@ -426,6 +430,9 @@ function moveFree(state: GameState, world: World, events: SimEvent[]): boolean {
   if (load(state) > carryLimit(state) * 0.8) ticks *= 1.3;
   let speed = Math.max(1, Math.round(SUB / Math.max(1, ticks)));
   if (vx && vy) speed = Math.max(1, Math.round((speed * 181) / 256));
+  // From a standstill, straight off at the ground's speed; on the move, half the gap each tick, so a
+  // change of ground (meadow into trees) slows or quickens the walk over a few ticks instead of a jolt.
+  if (was > 0) speed = easePace(was, speed);
   const [bx, by] = [p.fx, p.fy];
   slide(state, world, vx, vy, speed);
   if (routed && p.fx === bx && p.fy === by) {
@@ -447,6 +454,7 @@ function moveFree(state: GameState, world: World, events: SimEvent[]): boolean {
     return false;
   }
   p.bumped = false;
+  p.pace = speed;
   const tx = Math.floor(p.fx / SUB);
   const ty = Math.floor(p.fy / SUB);
   if (tx !== p.x || ty !== p.y) {
@@ -463,6 +471,13 @@ function moveFree(state: GameState, world: World, events: SimEvent[]): boolean {
   return true;
 }
 
+/** A walking speed halfway (at least one unit) from `was` toward `target`: whole numbers only. */
+export function easePace(was: number, target: number): number {
+  const d = target - was;
+  if (d === 0) return target;
+  return d > 0 ? was + Math.max(1, d >> 1) : was - Math.max(1, -d >> 1);
+}
+
 // ---- Walking somewhere (SPEC 5.2) ----
 
 type Goto = Extract<Command, { c: 'goto' }>;
@@ -470,6 +485,24 @@ type Goto = Extract<Command, { c: 'goto' }>;
 /** Is (x, y) where a route to (tx, ty) ends: on it, or beside it (four-way) if not walking onto it. */
 function routeGoal(tx: number, ty: number, onto: boolean): (x: number, y: number) => boolean {
   return onto ? (x, y) => x === tx && y === ty : (x, y) => Math.abs(x - tx) + Math.abs(y - ty) === 1;
+}
+
+/**
+ * What a step costs a clicked walk (SPEC 5.2): its ticks, and what the kid would rather avoid. Wading gets
+ * you wet and can take your feet, so a route goes round by a log or gravel shallows when one isn't far out
+ * of the way; ground not yet seen costs more, so it's the ways the kid knows of; muck and loose rock a
+ * little; a game trail is a little easier. Whole numbers, so routes stay exact.
+ */
+export function routeCost(state: GameState, world: World, from: number, to: number): number {
+  let c = stepTicks(world, from, to);
+  const t = world.terrain[to]!;
+  const f = world.flags[to]!;
+  if (TERRAIN[t]!.water && !(f & FLAG.bridge)) c += f & FLAG.ford ? ROUTE_FORD : ROUTE_WADE;
+  else if (t === T.marsh || t === T.reeds) c += ROUTE_MUCK;
+  else if (t === T.talus || t === T.scree || t === T.boulders) c += ROUTE_ROUGH;
+  if (f & FLAG.trail) c -= ROUTE_TRAIL;
+  if (!isExplored(state, to)) c += ROUTE_UNKNOWN;
+  return c;
 }
 
 function planRoute(state: GameState, world: World, tx: number, ty: number, onto: boolean): Dir[] | null {
@@ -481,7 +514,7 @@ function planRoute(state: GameState, world: World, tx: number, ty: number, onto:
     ty,
     routeGoal(tx, ty, onto),
     (x, y) => canEnter(state, world, x, y),
-    (from, to) => stepTicks(world, from, to),
+    (from, to) => routeCost(state, world, from, to),
   );
 }
 

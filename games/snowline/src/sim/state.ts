@@ -44,6 +44,8 @@ export interface PlayerState {
   vx?: number;
   vy?: number;
   nudge?: number;
+  /** Free walking: last tick's speed (1/256ths of a tile a tick), 0 when stopped; it eases toward the ground's. */
+  pace?: number;
 }
 
 /**

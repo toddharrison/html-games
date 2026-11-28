@@ -44,6 +44,8 @@ const SHALLOW = C('#55888c');
 const DEEP = C('#2b5163');
 const STREAM = C('#3a6a74');
 const FOAM = C('#a9c6bf');
+/** Ankle-deep water over a gravel bar (gravel shallows). */
+const GRAVEL_WATER = C('#8aa79c');
 const SNOW = C('#e9ece6');
 const PATH = C('#7d6c52');
 const ICE = C('#b4ccd6');
@@ -89,6 +91,8 @@ export class Ground {
   private readonly trailSegs = new Map<number, number[]>();
   /** Per tile, 1 where the worn path shows (FLAG.trail); read smoothly, it thins the line out at the ends. */
   private readonly tread: Float32Array;
+  /** Per tile, 1 on gravel shallows (FLAG.ford); read smoothly, so a bar or a fan has a soft, rounded edge. */
+  private readonly ford: Float32Array;
   /** The way the water runs on each tile of a waterfall. */
   private readonly fallDir: Map<number, [number, number]>;
   /** Ice caves where meltwater comes out: per ice tile, the side (0 south, 1 east, 2 west, 3 north). */
@@ -111,6 +115,8 @@ export class Ground {
     this.fallDir = findFalls(world).dir;
     this.tread = new Float32Array(n);
     for (let i = 0; i < n; i++) this.tread[i] = world.flags[i]! & FLAG.trail ? 1 : 0;
+    this.ford = new Float32Array(n);
+    for (let i = 0; i < n; i++) this.ford[i] = world.flags[i]! & FLAG.ford ? 1 : 0;
     for (const line of world.trailLines ?? []) this.indexTrail(line);
     for (let i = 0; i < n; i++) {
       this.ice[i] = world.flags[i]! & FLAG.glacier ? 1 : 0;
@@ -638,6 +644,21 @@ export class Ground {
     }
   }
 
+  /** Gravel shallows (FLAG.ford): the bed showing through, pale and stony, with riffles where the water runs thin. */
+  private gravelBar(c: RGB, wx: number, wy: number, seed: number): RGB {
+    // Read smoothly across the neighbouring water too, with a ragged edge, so a bar has no tile corners.
+    const near = this.field(this.ford, wx, wy);
+    if (near <= 0) return c;
+    const bar = Math.min(1, Math.max(0, (near + perlin(seed + 88, wx / 5, wy / 5) * 0.3 - 0.3) * 3));
+    if (bar <= 0) return c;
+    c = lerp(c, GRAVEL_WATER, 0.8 * bar);
+    // Pebbles in clumps (a coarse hash, so they're stones, not noise), and thin riffles of white.
+    const stone = rh(wx >> 1, wy >> 1, 7);
+    if (stone < 0.42 * bar) return lerp(c, C(stone < 0.12 ? '#b3a57e' : stone < 0.26 ? '#8a8b82' : '#cfc4a0'), 0.7);
+    if (rh(wx, Math.floor(wy / 2), 6) < 0.1 * bar) return lerp(c, FOAM, 0.6);
+    return c;
+  }
+
   /** The colour of ground `t` at a world pixel, before shore, trail, snow, and shade. */
   private colour(t: number, wx: number, wy: number, tile: number, seed: number): RGB {
     const h = rh(wx, wy, 3);
@@ -651,11 +672,13 @@ export class Ground {
       const swell = perlin(seed + 47, wx / 14, wy / 7) * 0.08;
       c = [c[0] * (1 + swell), c[1] * (1 + swell), c[2] * (1 + swell)];
       if (rh(Math.floor(wx / 4), wy, 49) < 0.012) c = lerp(c, SHALLOW, 0.6);
+      if (t === T.shallows) c = this.gravelBar(c, wx, wy, seed);
     } else if (t === T.stream || t === T.gravel) {
       c = STREAM;
       // Ripples across the current, and stones showing through on the gravel.
       if (rh(wx, Math.floor(wy / 2), 5) < 0.04) c = lerp(c, FOAM, 0.45);
       if (t === T.gravel && h < 0.22) c = lerp(c, C(h < 0.1 ? '#9c8c62' : '#6f706a'), 0.55);
+      c = this.gravelBar(c, wx, wy, seed);
     } else if (t === T.waterfall) {
       // A cascade down the river's own bed: ledges of wet dark rock across the flow every few pixels, the
       // water pouring white over each (most of the way across), churned white below it, then running on

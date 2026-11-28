@@ -96,6 +96,8 @@ export const ITEMS: Record<string, ItemDef> = {
   // Washed up on the shore in the first days (SPEC 6.7).
   peanuts: { name: 'peanuts', weight: 0.1, stack: 6, small: true, food: { nutrition: 9, hydration: 0, spoils: 0 } },
   'metal-scrap': { name: 'scrap of bright aluminium', weight: 0.3, stack: 1 },
+  // From the forward wreck, searched (SPEC 10). Carries like a basket.
+  'flight-bag': { name: 'flight bag', weight: 0.6, stack: 1 },
 };
 
 /** Inventory slots in pockets and hands, and what a basket or pack adds (SPEC 7.8). */

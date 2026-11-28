@@ -19,7 +19,7 @@ import {
   WEATHER_IDS,
   type WeatherId,
 } from '../content/weather.ts';
-import { BLOWING, START_MINUTE } from '../content/balance.ts';
+import { BLOWING, HOUR, MIN, START_MINUTE } from '../content/balance.ts';
 import { T } from '../content/terrain.ts';
 import { learn, see } from './knowledge.ts';
 import { say } from './log.ts';
@@ -31,7 +31,7 @@ import { idx, type World } from './world.ts';
 
 /** Every weather id, in the order the forecast stores them. */
 export const ALL: readonly WeatherId[] = [...WEATHER_IDS, 'severe'];
-const PERIOD_TICKS = PERIOD_HOURS * 600;
+const PERIOD_TICKS = PERIOD_HOURS * HOUR;
 
 /** The forecast for a run: one weather per three-hour period from midnight before day 1. */
 export function makeForecast(rng: RngState): { f: number[]; severeDay: number } {
@@ -85,7 +85,7 @@ export function blewSince(s: GameState, since: number): boolean {
 
 /** The forecast period at a tick. */
 export function periodAt(tick: number): number {
-  return Math.floor((START_MINUTE * 10 + tick) / PERIOD_TICKS);
+  return Math.floor((START_MINUTE * MIN + tick) / PERIOD_TICKS);
 }
 
 export function weatherAt(s: GameState, tick = s.tick): WeatherId {
@@ -134,7 +134,7 @@ export function rainOn(s: GameState, w: World, f: Fire): boolean {
 }
 
 function stormWithin(s: GameState, fromTick: number, hours: number): boolean {
-  for (let t = fromTick; t <= fromTick + hours * 600; t += PERIOD_TICKS / 3) if (STORMY.includes(weatherAt(s, t))) return true;
+  for (let t = fromTick; t <= fromTick + hours * HOUR; t += PERIOD_TICKS / 3) if (STORMY.includes(weatherAt(s, t))) return true;
   return false;
 }
 
@@ -145,8 +145,8 @@ export function weatherMinute(s: GameState, w: World, ev: SimEvent[], strike: ()
   const awake = !s.sleep || s.sleep.awake;
 
   // A new period: the sky changes, and signs may show.
-  if (periodAt(s.tick) !== periodAt(s.tick - 10)) {
-    const prev = weatherAt(s, s.tick - 10);
+  if (periodAt(s.tick) !== periodAt(s.tick - MIN)) {
+    const prev = weatherAt(s, s.tick - MIN);
     if (prev !== id && awake) say(s, WEATHER_TEXT.change[id], ev);
     ev.push({ type: 'weather', id });
     if (awake && c.hour >= 5 && c.hour < 22) showSigns(s, ev);
@@ -163,20 +163,20 @@ export function weatherMinute(s: GameState, w: World, ev: SimEvent[], strike: ()
   const due = s.pending.filter((p) => p.kind === 'sign' && p.t <= s.tick);
   if (due.length) {
     s.pending = s.pending.filter((p) => !due.includes(p));
-    for (const p of due) judgeSign(s, p.d, p.t - (SIGN_LEAD + 3) * 600, ev);
+    for (const p of due) judgeSign(s, p.d, p.t - (SIGN_LEAD + 3) * HOUR, ev);
   }
   void w;
 }
 
 function showSigns(s: GameState, ev: SimEvent[]): void {
-  const storm = stormWithin(s, s.tick + 600, SIGN_LEAD);
+  const storm = stormWithin(s, s.tick + HOUR, SIGN_LEAD);
   SIGNS.forEach((_, i) => {
     const foretells = s.rules.signs[i] === 'foretells';
     const p = foretells ? (storm ? 0.7 : 0.04) : 0.1;
     if (!chance(s.rng.weather, p)) return;
     see(s, 'sign', i);
     say(s, WEATHER_TEXT.sign[i]!, ev);
-    s.pending.push({ t: s.tick + (SIGN_LEAD + 3) * 600, kind: 'sign', d: i });
+    s.pending.push({ t: s.tick + (SIGN_LEAD + 3) * HOUR, kind: 'sign', d: i });
   });
 }
 

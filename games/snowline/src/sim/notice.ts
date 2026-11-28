@@ -11,9 +11,9 @@ import type { GameState, SimEvent } from './state.ts';
 import { daylight } from './time.ts';
 import { cheb } from './animals.ts';
 import { idx, inBounds, passableAt, type World } from './world.ts';
+import { MIN } from '../content/balance.ts';
 
 const SIZE = 256;
-const MIN = 10;
 
 /** Shore tiles near the crash where wreckage can wash up: dry, open, beside the lake. */
 function shoreNearCrash(w: World, r: number): number[] {

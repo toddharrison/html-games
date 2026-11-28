@@ -81,7 +81,8 @@ export class Loop {
         }
         if (n >= max) this.acc = 0;
       }
-      this.onFrame(this.paused ? 0 : this.acc / TICK_MS, now);
+      // Paused, the picture holds where it was (not back at the last tick, which jolted when a note popped up).
+      this.onFrame(Math.min(1, this.acc / TICK_MS), now);
       this.raf = requestAnimationFrame(frame);
     };
     this.raf = requestAnimationFrame(frame);

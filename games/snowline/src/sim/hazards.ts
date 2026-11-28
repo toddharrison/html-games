@@ -17,6 +17,7 @@ import { burning } from './surroundings.ts';
 import { clock, daylight } from './time.ts';
 import { snowBand, weatherAt } from './weather.ts';
 import { idx, type World } from './world.ts';
+import { DAY, HOUR } from '../content/balance.ts';
 
 /** The run ends in winter on this day if nothing else has ended it (SPEC 10). */
 export const WINTER_DAY = 72;
@@ -76,7 +77,7 @@ export function hazardsMinute(s: GameState, w: World, ev: SimEvent[]): void {
 
   // A wound left uncleaned for half a day goes bad (SPEC 7.7).
   const wound = hasCondition(s, 'wound');
-  if (wound && !recall(s, `cleaned:${wound.since}`) && s.tick - wound.since > 7200 && !recall(s, `infected:${wound.since}`)) {
+  if (wound && !recall(s, `cleaned:${wound.since}`) && s.tick - wound.since > 12 * HOUR && !recall(s, `infected:${wound.since}`)) {
     remember(s, `infected:${wound.since}`);
     if (chance(s.rng.health, 0.55)) {
       addCondition(s, 'infection', 55);
@@ -95,7 +96,7 @@ export function hazardsMinute(s: GameState, w: World, ev: SimEvent[]): void {
     }
     s.memory['walked-at-midnight'] = s.stats.distance;
     const band = snowBand(s.tick);
-    if (band !== snowBand(s.tick - 14400)) {
+    if (band !== snowBand(s.tick - DAY)) {
       say(s, band === 0 ? WEATHER_TEXT.winter : WEATHER_TEXT.snowFirst, ev);
       ev.push({ type: 'snow', band });
     }
@@ -137,11 +138,22 @@ export function stepHazards(s: GameState, w: World, tile: number, ev: SimEvent[]
     }
     return;
   }
-  if (s.protagonist.trait === 'poor-swimmer' && (t === T.stream || t === T.shallows) && chance(s.rng.health, 0.03)) {
-    s.player.wet = 100;
-    s.vitals.warmth = Math.max(0, s.vitals.warmth - 15);
-    s.vitals.morale = Math.max(0, s.vitals.morale - 6);
-    say(s, HAZARD_TEXT.slipped(wh), ev);
+  // Wading: the current and the slick stones can take anyone's feet now and then, more in the dark, worn
+  // out, or for a poor swimmer, and in a running stream than the lake's still shallows. Gravel shallows are
+  // firm and ankle-deep: nobody goes under there (2026-11-27; before, only a poor swimmer could).
+  const wading = (t === T.stream || t === T.gravel || t === T.shallows) && !(w.flags[tile]! & FLAG.ford);
+  if (wading) {
+    const poor = s.protagonist.trait === 'poor-swimmer';
+    let slip = t === T.shallows ? 0.003 : 0.012;
+    if (dark) slip += 0.04;
+    if (s.vitals.rest < 20) slip += 0.03;
+    if (poor) slip += 0.03;
+    if (chance(s.rng.health, slip)) {
+      s.player.wet = 100;
+      s.vitals.warmth = Math.max(0, s.vitals.warmth - (poor ? 15 : 10));
+      s.vitals.morale = Math.max(0, s.vitals.morale - (poor ? 6 : 4));
+      say(s, HAZARD_TEXT.slipped(wh), ev);
+    }
   }
 }
 
@@ -178,7 +190,7 @@ function useHerb(s: GameState, slot: number, use: Use, ev: SimEvent[]): void {
     } else if (use === 'wound') {
       treat(s, 'wound', 40);
       treat(s, 'infection', 40);
-    } else s.memory['repel-until'] = s.tick + 6 * 600;
+    } else s.memory['repel-until'] = s.tick + 6 * HOUR;
     say(s, HAZARD_TEXT.herbWorked(wh, name, use), ev);
     learn(s, 'remedy', d, 'known', use, 'it worked', ev);
   } else if (o === 'irritant') {

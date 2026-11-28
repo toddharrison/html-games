@@ -5,6 +5,7 @@ import {
   BAND_COOLING,
   COLD_LOSS,
   COMFORT,
+  DAY,
   DAY_CURVE,
   DRAIN,
   DRYING,
@@ -13,6 +14,7 @@ import {
   FIRE_WARMTH,
   HEAL_ABOVE,
   HEAL_RATE,
+  MIN,
   MORALE_DRIFT,
   NIGHT_POOLING,
   SEASON_BASE,
@@ -40,7 +42,7 @@ export function airTemp(s: GameState, w: World, x: number, y: number): number {
   const curve = DAY_CURVE[h]! + ((DAY_CURVE[h + 1]! - DAY_CURVE[h]!) * m) / 60;
   const band = w.band[idx(x, y)]!;
   const night = h < 6 || h >= 21;
-  const days = (s.tick / 14400) | 0;
+  const days = (s.tick / DAY) | 0;
   return SEASON_BASE - SEASON_COOLING * days + curve - BAND_COOLING * band - (night && band === 0 ? NIGHT_POOLING : 0) + weatherHere(s).temp;
 }
 
@@ -53,14 +55,14 @@ export function hasCondition(s: GameState, id: ConditionId): Condition | null {
 /** Start a condition (or make an existing one worse). `delay` is minutes before it shows. */
 export function addCondition(s: GameState, id: ConditionId, sev: number, delay = 0): Condition {
   const def = CONDITIONS[id];
-  const since = s.tick + delay * 10;
+  const since = s.tick + delay * MIN;
   const old = s.conditions.find((c) => c.id === id);
   if (old) {
     old.sev = Math.min(100, old.sev + sev * 0.6);
-    old.until = Math.max(old.until, since + Math.round((def.minutes * old.sev) / 100) * 10);
+    old.until = Math.max(old.until, since + Math.round((def.minutes * old.sev) / 100) * MIN);
     return old;
   }
-  const c: Condition = { id, sev: Math.min(100, sev), since, until: since + Math.round((def.minutes * Math.min(100, sev)) / 100) * 10 };
+  const c: Condition = { id, sev: Math.min(100, sev), since, until: since + Math.round((def.minutes * Math.min(100, sev)) / 100) * MIN };
   s.conditions.push(c);
   s.conditions.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   return c;
@@ -71,7 +73,7 @@ export function treat(s: GameState, id: ConditionId, by: number): void {
   const c = s.conditions.find((x) => x.id === id);
   if (!c) return;
   c.sev = Math.max(0, c.sev - by);
-  c.until = Math.max(s.tick, c.until - Math.round(by * 6) * 10);
+  c.until = Math.max(s.tick, c.until - Math.round(by * 6) * MIN);
 }
 
 /** Steps take this many times longer, from conditions, exhaustion, and load. */

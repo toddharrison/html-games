@@ -272,6 +272,16 @@ const SKETCHES: Record<string, (p: Pen) => void> = {
     for (let k = 0; k < 5; k++) p.line(13 + k * 6, 23, 15 + k * 5, 39, SOFT);
     for (const y of [27, 32, 36]) p.line(12, y, 36, y, SOFT);
   },
+  'flight-bag': (p) => {
+    // A canvas bag with a flap and a buckle, the strap torn short on one side.
+    p.path([[8, 20], [40, 20], [40, 40], [8, 40]], true);
+    p.path([[8, 20], [12, 30], [36, 30], [40, 20]], false);
+    box(p, 21, 29, 6, 4);
+    p.path([[12, 20], [14, 8], [26, 6]]);
+    p.path([[36, 20], [35, 14], [33, 12]], false, SOFT);
+    p.hatch(10, 32, 28, 7);
+    p.colour(30, 36, 3, TINT.blue!);
+  },
   snare: (p) => {
     p.circle(20, 28, 9);
     p.path([[29, 28], [36, 24], [38, 10]]);

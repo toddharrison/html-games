@@ -4,7 +4,7 @@
 
 import { ANIMALS } from '../content/animals.ts';
 import { DENS, isTracks } from '../content/loose.ts';
-import { F, FEATURES, T, TERRAIN } from '../content/terrain.ts';
+import { F, FEATURES, FLAG, T, TERRAIN } from '../content/terrain.ts';
 import { itemName } from '../sim/food.ts';
 import { lookName, thingName } from '../sim/knowledge.ts';
 import { looseAt, looseName } from '../sim/loose.ts';
@@ -37,6 +37,8 @@ const OBVIOUS = [
   'look-den',
   'watch-fish',
   'search-crash',
+  // A lean-to, a bed, the overhang, at bedtime: walk in and lie down.
+  'sleep-in',
   'examine-cause',
   'pick',
   'pick-herb',
@@ -104,6 +106,7 @@ export function nameAt(s: GameState, w: World, x: number, y: number): string {
   if (f === F.outcrop) return `an outcrop of ${lookName('stone', w.data[i]!)}`;
   if (f === F.den) return DENS[w.data[i]!]?.name ?? 'a den';
   if (f) return FEATURES[f]!.name;
+  if (w.flags[i]! & FLAG.ford && TERRAIN[w.terrain[i]!]!.water) return 'gravel shallows';
   return TERRAIN[w.terrain[i]!]!.name;
 }
 

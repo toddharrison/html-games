@@ -16,10 +16,8 @@ import { idx, type World } from '../src/sim/world.ts';
 import { migrate, restore, toRecord } from '../src/platform/saves.ts';
 import { runTo, stateHash } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
-import { START_MINUTE } from '../src/content/balance.ts';
+import { DAY, MIN, START_MINUTE } from '../src/content/balance.ts';
 
-const MIN = 10;
-const DAY = 14400;
 
 function who(over: Partial<Protagonist> = {}): Protagonist {
   return { ...candidate('flat', 0), background: 'city', trait: 'restless', tool: 'knife', pockets: [], ...over };

@@ -16,6 +16,7 @@ import { fishMinute, fishTick } from './fish.ts';
 import { noticeMinute } from './notice.ts';
 import { thinkMinute } from './thoughts.ts';
 import { notebookMinute } from './notebook.ts';
+import { HOUR } from '../content/balance.ts';
 
 type Hook = (s: GameState, w: World, events: SimEvent[]) => void;
 
@@ -34,7 +35,7 @@ export function minuteHooks(s: GameState, w: World, events: SimEvent[]): void {
   weatherMinute(s, w, events, () => strikeSnag(s, w, events));
   hazardsMinute(s, w, events);
   arcMinute(s, w, events);
-  if (s.tick % 600 === 0) trapsHour(s, w, events);
+  if (s.tick % HOUR === 0) trapsHour(s, w, events);
   fishMinute(s, w);
   noticeMinute(s, w, events);
   thinkMinute(s, w, events);

@@ -3,8 +3,9 @@
 // `availableActions` and `itemActions`; the sim checks again when the command arrives, so a stale menu
 // can never do anything the rules don't allow.
 
-import { REGROW_DAYS } from '../content/balance.ts';
+import { MIN, REGROW_DAYS } from '../content/balance.ts';
 import { PLANTS } from '../content/decks.ts';
+import { CRASH_FINDS } from '../content/arc.ts';
 import { itemDef } from '../content/items.ts';
 import { MSG, who } from '../content/messages.ts';
 import { F, T } from '../content/terrain.ts';
@@ -21,6 +22,7 @@ import {
   gather,
   inSeason,
   ready,
+  receive,
   spentUntilBack,
   yieldRoll,
 } from './actionKit.ts';
@@ -32,7 +34,7 @@ import type { GameState, SimEvent } from './state.ts';
 import { idx, type World } from './world.ts';
 import { SYSTEM_ACTIONS, SYSTEM_ITEM_ACTIONS } from './systemActions.ts';
 import { finishCraft } from './craft.ts';
-import { remember } from './memory.ts';
+import { recall, remember } from './memory.ts';
 
 export type { ActionOption } from './actionKit.ts';
 export { frontTile } from './actionKit.ts';
@@ -184,8 +186,17 @@ export const ACTIONS: ActionDef[] = [
   {
     id: 'search-crash',
     offer: (_s, w, t) => (w.feature[t] === F.crash ? 'Search the wreck' : null),
-    minutes: 5,
-    done: (s, _w, _t, ev) => say(s, MSG.crash(who(s.protagonist)), ev),
+    spent: (s) => (recall(s, 'crash-searched') >= CRASH_FINDS.length ? 'nothing more to take' : null),
+    // Something useful each time, until it's been gone through (content/arc.ts CRASH_FINDS).
+    minutes: 20,
+    needsLight: true,
+    done: (s, _w, _t, ev) => {
+      const find = CRASH_FINDS[recall(s, 'crash-searched')];
+      if (!find) return say(s, MSG.crash(who(s.protagonist)), ev);
+      remember(s, 'crash-searched');
+      say(s, find.text(who(s.protagonist)), ev);
+      receive(s, find.k, find.n, ev);
+    },
   },
   ...SYSTEM_ACTIONS,
 ];
@@ -279,7 +290,7 @@ export function startAction(s: GameState, w: World, action: string, tile: number
     say(s, MSG.tooDark(), events);
     return;
   }
-  const ticks = minutesFor(s, w, a, tile) * 10;
+  const ticks = minutesFor(s, w, a, tile) * MIN;
   s.task = { action, tile, slot: -1, left: ticks, total: ticks };
   events.push({ type: 'task-start', action });
 }
@@ -288,7 +299,7 @@ export function startUse(s: GameState, w: World, action: string, slot: number, e
   if (s.over || s.sleep || s.task) return;
   const a = ITEM_ACTIONS.find((x) => x.id === action);
   if (!a || !a.offer(s, w, slot)) return;
-  const ticks = Math.max(1, Math.round(a.minutes * clumsyFactor(s))) * 10;
+  const ticks = Math.max(1, Math.round(a.minutes * clumsyFactor(s))) * MIN;
   s.task = { action: `item:${action}`, tile: -1, slot, left: ticks, total: ticks };
   events.push({ type: 'task-start', action });
 }

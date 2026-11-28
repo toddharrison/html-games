@@ -2,6 +2,27 @@
 
 ### 13.1 Decided
 
+**2026-11-27, slower days, a kid who notices, clues, better walks, the wreck, shelters, fords.** The user asked for gravel shallows in the rivers and lakes, for what the kid notices to vary (not always the snow and the cold first; hunger, thirst; the wind through the jacket), for a clue to what to try when something fails, for clicked walks to take the kid's best way (a bridge in sight and near, easier ground), for something useful in the plane, for watching the trout not to come from clicking the ground, for builds to be clickable (sleep in the lean-to), and for time to run half as fast (tasks as they are).
+
+| Decision | Where it shows up |
+|---|---|
+| A game minute is 20 ticks (was 10): an hour is a real minute. Tasks run at 16× and sleep at 180×, so they take the real time they did (sleep's speed kept for now; the user will check it in play). Walking and animals keep their pace. Every game-time duration in ticks is written with `MIN`, `HOUR`, `DAY`. | 5.1 |
+| What the kid notices (thirst, hunger, wind, rain, wet clothes, hot sun, cold, tiredness) comes first when it's really so, most pressing first, back after eight hours in another wording. How the crash left the kid is dealt (as usual, parched, hungry, soaked and chilled). With nothing pressing, the first idea is the plane. The snow-on-the-peaks thought comes in the afternoon, or once the kid has felt cold. Water and food leave the first day's chain. | 12.2 |
+| A failure's clue comes at once as a note, from the cause the game really had, in two steps at most, each once; thinking the flat-tinder clue through twice is the tinder-nest insight. The old one-off "it won't catch" reaction is gone. | 12.2, 8.3 |
+| A clicked walk costs wading about six tiles of walking, gravel shallows a little, unseen ground a step more, marsh and loose rock a little; a game trail a tick less. | 5.2 |
+| The forward wreck holds three finds, one per search: the flight bag (a second basket), wire (3 cord), aluminium (a signal flash). | 10 |
+| Watching the trout is offered by clicking a trout, not the ground. | 12.4 |
+| A lean-to, bed, or the overhang clicked: walk onto it and sleep till morning (at bedtime) or rest an hour (lean-to, bed). | 7.6, 5.2 |
+| Gravel shallows: a flag on stream and lake-shallows tiles, where streams run slow and at the lake's stream mouths. Wet to the ankles, 8 ticks a step, no going under. Anyone wading elsewhere can now go under (before, only a poor swimmer); the user confirmed anyone can slip. | 6.3, 7.7 |
+
+**2026-11-27, a smooth walk and camera.** The user found the camera too jerky following the survivor and asked for smoother movement or an easing camera; then, still jerky, for sub-pixel scrolling.
+
+| Decision | Where it shows up |
+|---|---|
+| Free walking's pace eases toward the new ground's speed (half the gap a tick) instead of changing the instant the feet cross into a tile; from a standstill the survivor still sets off at full speed. | 5.2 |
+| The camera eases after the survivor (about a seventh of a second behind) instead of being fixed to them, snaps on a jump, and keeps the survivor on the same screen pixel while the world scrolls. | 12.1 |
+| Still jerky, so the game is drawn at the screen's own pixels: the camera and the survivor move by device pixels, not game pixels, while the art stays on the game's pixel grid. | 12.1, 11 |
+
 **2026-11-27, thoughts and insights stop the game.** The user asked for every thought or realization of the kid's to pop up as a note and pause the game, instead of passing by at the bottom left.
 
 | Decision | Where it shows up |

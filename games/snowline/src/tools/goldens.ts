@@ -30,56 +30,57 @@ function walk(legs: [dir: 0 | 1 | 2 | 3, from: number, hold: number][]): Command
 
 export const GOLDENS: Golden[] = [
   {
-    // Round the start of the default valley and into the dusk of day 1.
+    // Round the start of the default valley and into the dusk of day 1. (Times doubled 2026-11-27, when a game
+    // minute went from 10 ticks to 20, so each command falls at the same game hour; walks keep their real length.)
     name: 'first steps',
     seed: 'first-light',
     candidate: 0,
-    ticks: 12000,
+    ticks: 24000,
     commands: walk([
-      [1, 5, 120],
-      [0, 140, 200],
-      [3, 400, 90],
-      [0, 500, 1],
-      [0, 503, 1],
-      [2, 520, 300],
-      [1, 900, 400],
-      [0, 2000, 600],
-      [3, 4000, 250],
-      [2, 9000, 500],
+      [1, 10, 120],
+      [0, 280, 200],
+      [3, 800, 90],
+      [0, 1000, 1],
+      [0, 1006, 1],
+      [2, 1040, 300],
+      [1, 1800, 400],
+      [0, 4000, 600],
+      [3, 8000, 250],
+      [2, 18000, 500],
     ]).concat([
-      { t: 50, c: 'debug-give', k: 'cattail-root', d: -1, n: 2 },
-      { t: 60, c: 'use', action: 'eat', slot: 3 },
-      { t: 70, c: 'debug-give', k: 'stick', d: -1, n: 3 },
-      { t: 200, c: 'craft', recipe: 'sharp-stick' },
-      { t: 3000, c: 'sleep', minutes: 120, awake: false },
+      { t: 100, c: 'debug-give', k: 'cattail-root', d: -1, n: 2 },
+      { t: 120, c: 'use', action: 'eat', slot: 3 },
+      { t: 140, c: 'debug-give', k: 'stick', d: -1, n: 3 },
+      { t: 400, c: 'craft', recipe: 'sharp-stick' },
+      { t: 6000, c: 'sleep', minutes: 120, awake: false },
       // A click: walk to a tile by the route the simulation finds (SPEC 5.2).
-      { t: 10500, c: 'goto', x: 150, y: 175, onto: true, action: null, at: 'front' },
+      { t: 21000, c: 'goto', x: 150, y: 175, onto: true, action: null, at: 'front' },
     ]).sort((a, b) => a.t - b.t),
-    worldHash: 'ba0804cf',
-    stateHash: 'f3a7e866',
+    worldHash: '5b73f872',
+    stateHash: '4c5e3878',
   },
   {
     // Another valley: a debug fire after dark, a walk through the night, and a teleport back to the start.
     name: 'night walk',
     seed: 'golden-2',
     candidate: 1,
-    ticks: 16000,
+    ticks: 32000,
     commands: [
       ...walk([
-        [3, 10, 200],
-        [2, 300, 300],
+        [3, 20, 200],
+        [2, 600, 300],
       ]),
-      { t: 8000, c: 'debug-fire' },
-      { t: 8050, c: 'sleep', minutes: 60, awake: true },
+      { t: 16000, c: 'debug-fire' },
+      { t: 16100, c: 'sleep', minutes: 60, awake: true },
       ...walk([
-        [1, 8100, 400],
-        [0, 9000, 300],
+        [1, 16200, 400],
+        [0, 18000, 300],
       ]),
-      { t: 11000, c: 'debug-teleport', x: 144, y: 144 },
-      ...walk([[3, 12000, 800]]),
+      { t: 22000, c: 'debug-teleport', x: 144, y: 144 },
+      ...walk([[3, 24000, 800]]),
     ],
-    worldHash: 'e23c937b',
-    stateHash: 'da5b671b',
+    worldHash: 'ce98368d',
+    stateHash: '6436502b',
   },
 ];
 

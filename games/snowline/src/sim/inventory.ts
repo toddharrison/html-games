@@ -4,12 +4,17 @@
 import { BASKET_CARRY, BASKET_SLOTS, CARRY_LIMIT, POCKET_SLOTS, itemDef } from '../content/items.ts';
 import type { GameState, Item } from './state.ts';
 
+/** A bark basket or the flight bag from the wreck: either carries more (not both). */
+export function hasBag(s: GameState): boolean {
+  return has(s, 'basket') || has(s, 'flight-bag');
+}
+
 export function maxSlots(s: GameState): number {
-  return POCKET_SLOTS + (has(s, 'basket') ? BASKET_SLOTS : 0);
+  return POCKET_SLOTS + (hasBag(s) ? BASKET_SLOTS : 0);
 }
 
 export function carryLimit(s: GameState): number {
-  return CARRY_LIMIT + (has(s, 'basket') ? BASKET_CARRY : 0) + (has(s, 'warm-layers') ? 1.5 : 0);
+  return CARRY_LIMIT + (hasBag(s) ? BASKET_CARRY : 0) + (has(s, 'warm-layers') ? 1.5 : 0);
 }
 
 export function weightOf(items: readonly Item[]): number {

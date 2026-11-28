@@ -15,10 +15,8 @@ import { idx, type World } from '../src/sim/world.ts';
 import { playBot } from '../src/tools/bot.ts';
 import { runTo } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
-import { START_MINUTE } from '../src/content/balance.ts';
+import { DAY, HOUR, MIN, START_MINUTE } from '../src/content/balance.ts';
 
-const MIN = 10;
-const DAY = 14400;
 
 function setup(edit?: (w: World) => void) {
   const world = flatWorld();
@@ -41,7 +39,7 @@ describe('flights (SPEC 10)', () => {
       expect(search.length).toBeGreaterThanOrEqual(2);
       expect(search.length).toBeLessThanOrEqual(3);
       for (const f of search) {
-        const day = Math.floor((f.t / 10 + START_MINUTE) / 1440) + 1;
+        const day = Math.floor((f.t / MIN + START_MINUTE) / 1440) + 1;
         expect(day).toBeGreaterThanOrEqual(2);
         expect(day).toBeLessThanOrEqual(10);
       }
@@ -81,7 +79,7 @@ describe('flights (SPEC 10)', () => {
     runTo(state, world, [], 110);
     expect(flightNow(state)).not.toBeNull();
     step(state, world, [{ t: state.tick, c: 'act', action: 'flash-mirror', tile: idx(128, 128) }]);
-    runTo(state, world, [], state.tick + 30);
+    runTo(state, world, [], state.tick + 3 * MIN);
     expect(state.memory['mirror-at']).toBeGreaterThan(0);
   });
 });
@@ -104,13 +102,13 @@ describe('the severe storm and the rockslide (SPEC 6.5, 10)', () => {
     state.fires.push({ x: 130, y: 130, fuel: 500, coals: 0, banked: false, smoke: 0, signal: false });
     drop(state, 125, 125, { k: 'stick', n: 3 });
     expect(canEnter(state, world, 128, 120)).toBe(false);
-    runTo(state, world, [], 4 * 600 * MIN / 10 * 10);
+    runTo(state, world, [], 40 * HOUR);
     fresh(state);
     expect(state.arc.stormHit).toBe(true);
     expect(state.builds.map((b) => b.kind)).toEqual(['reflector']);
     expect(state.fires).toHaveLength(0);
     expect(state.stashes.reduce((n, st) => n + st.items.reduce((m, i) => m + i.n, 0), 0)).toBe(3);
-    runTo(state, world, [], state.tick + 9 * 600);
+    runTo(state, world, [], state.tick + 9 * HOUR);
     expect(state.arc.slide).toBe(true);
     expect(canEnter(state, world, 128, 120)).toBe(true);
   });

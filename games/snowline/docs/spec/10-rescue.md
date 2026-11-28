@@ -1,6 +1,6 @@
 ## 10. Rescue
 
-The aircraft broke up on the mountain. The forward section came down near the lake, which is where the run starts. The tail, carrying the emergency beacon, stayed high in the alpine band. It can be seen from viewpoints as a glint long before it can be reached.
+The aircraft broke up on the mountain. The forward section came down near the lake, which is where the run starts. Searched (20 minutes each, by daylight), it gives three things in turn (decided 2026-11-27): the pilot's canvas flight bag (carries like a bark basket), a tangle of wire from behind the panel (cord), and a strip of bright aluminium (a signal flash); then there's nothing more to take. The tail, carrying the emergency beacon, stayed high in the alpine band. It can be seen from viewpoints as a glint long before it can be reached.
 
 Three ways a run can end in rescue:
 

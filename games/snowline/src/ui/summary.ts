@@ -4,11 +4,12 @@
 import { encodeRun } from '../sim/runCode.ts';
 import type { GameState } from '../sim/state.ts';
 import { h } from './dom.ts';
+import { DAY, HOUR } from '../content/balance.ts';
 
 export function summaryScreen(s: GameState, actions: { newValley(): void; again(): void; title(): void }): HTMLElement {
   const o = s.over!;
-  const days = Math.floor(o.tick / 14400);
-  const hours = Math.floor((o.tick % 14400) / 600);
+  const days = Math.floor(o.tick / DAY);
+  const hours = Math.floor((o.tick % DAY) / HOUR);
   const last = s.log[s.log.length - 1]?.text ?? '';
   const known = s.known.facts.filter((f) => f.level === 'known').length;
   const code = encodeRun(s.seed, s.protagonist);

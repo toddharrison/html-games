@@ -86,6 +86,7 @@ export function newGame(seed: string, protagonist: Protagonist, world: World, ru
     stats: { discoveries: 0, meals: 0, distance: 0 },
     exerting: false,
   };
+  crashLeft(state);
   give(state, protagonist.tool, 1);
   for (const p of protagonist.pockets) give(state, p, 1);
   startingFact(state);
@@ -93,6 +94,27 @@ export function newGame(seed: string, protagonist: Protagonist, world: World, ru
   state.stats.discoveries = 0;
   reveal(state);
   return state;
+}
+
+/**
+ * How the crash left the kid, dealt per run (2026-11-27), so what they notice first differs: as usual
+ * (a little thirsty, a while since breakfast), parched, hungry, or soaked and chilled from wading out of
+ * the shallows. From the `protagonist` stream, which nothing else draws on during a run.
+ */
+function crashLeft(s: GameState): void {
+  const v = s.vitals;
+  switch (nextInt(s.rng.protagonist, 4)) {
+    case 1:
+      v.hydration = 52;
+      break;
+    case 2:
+      v.nutrition = 50;
+      break;
+    case 3:
+      s.player.wet = 60;
+      v.warmth = 60;
+      break;
+  }
 }
 
 /** Each background except City kid starts with one valley fact from its own field (SPEC 6.6). */

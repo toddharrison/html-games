@@ -9,6 +9,7 @@ import { SCHEMA } from '../sim/newGame.ts';
 import type { Rules } from '../sim/rules.ts';
 import type { GameState } from '../sim/state.ts';
 import { VERSION } from './version.ts';
+import { DAY } from '../content/balance.ts';
 
 export interface SaveRecord {
   game: 'snowline';
@@ -62,7 +63,7 @@ export function toRecord(s: GameState): SaveRecord {
     savedAt: Date.now(),
     seed: s.seed,
     name: s.protagonist.name,
-    day: Math.floor(s.tick / 14400) + 1,
+    day: Math.floor(s.tick / DAY) + 1,
     state: structuredClone(rest),
   };
 }

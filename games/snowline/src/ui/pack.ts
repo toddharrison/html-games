@@ -13,6 +13,7 @@ import { fact, lookName, ROWS, type Row } from '../sim/knowledge.ts';
 import type { Fact, GameState, Item } from '../sim/state.ts';
 import { sketchCopy, type SketchOf } from '../render/sketch.ts';
 import { h } from './dom.ts';
+import { MIN } from '../content/balance.ts';
 
 export type PackTab = 'carrying' | 'found';
 
@@ -77,7 +78,7 @@ export function noteOn(s: GameState, it: Item): string {
 function freshness(s: GameState, it: Item): string {
   const food = itemDef(it.k).food;
   if (!food?.spoils || it.t === undefined) return '';
-  const left = food.spoils - (s.tick - it.t) / 10;
+  const left = food.spoils - (s.tick - it.t) / MIN;
   return left < 240 ? 'going off!' : left < 1440 ? 'eat soon' : '';
 }
 

@@ -16,10 +16,12 @@ import { knowsTechnique, lookName } from './knowledge.ts';
 import { say } from './log.ts';
 import { toolTime } from './materials.ts';
 import { chance } from './rng.ts';
+import { clue } from './thoughts.ts';
 import { level, practise, speedAt } from './skills.ts';
 import { burning, fireNear } from './surroundings.ts';
 import type { Build, GameState, Item, SimEvent } from './state.ts';
 import type { World } from './world.ts';
+import { MIN } from '../content/balance.ts';
 
 export interface CraftOption {
   recipe: string;
@@ -72,7 +74,7 @@ export function startCraft(s: GameState, w: World, recipe: string, events: SimEv
   if (s.task || s.sleep || s.over) return;
   const o = craftOptions(s, w).find((x) => x.recipe === recipe);
   if (!o || o.missing) return;
-  const ticks = o.minutes * 10;
+  const ticks = o.minutes * MIN;
   s.task = { action: `craft:${recipe}`, tile: -1, slot: -1, left: ticks, total: ticks };
   events.push({ type: 'task-start', action: recipe });
 }
@@ -88,6 +90,7 @@ export function finishCraft(s: GameState, _w: World, recipe: string, events: Sim
   const failChance = (r.fail ?? 0) * (1 - level(s, 'crafting') / 5);
   if (failChance > 0 && chance(s.rng['skill-checks'], failChance)) {
     say(s, CRAFT_MSG.failed(wh, `a ${itemDef(r.out.k).name}`), events);
+    clue(s, 'craftFail', events);
     return;
   }
   say(s, CRAFT_MSG.made(wh, r.out.n > 1 ? `${r.out.n} ${itemDef(r.out.k).name}` : `a ${itemDef(r.out.k).name}`), events);

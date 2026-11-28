@@ -17,6 +17,7 @@ import { nextRange } from './rng.ts';
 import { level, practise } from './skills.ts';
 import type { GameState } from './state.ts';
 import { idx, inBounds, type World } from './world.ts';
+import { DAY } from '../content/balance.ts';
 
 const SIZE = 256;
 
@@ -27,7 +28,7 @@ export function looseAt(s: GameState, w: World, tile: number): number {
   const def = LOOSE[l]!;
   if (def.once && s.taken[`l${tile}`]) return 0;
   const back = s.regrow[`l${tile}`] ?? 0;
-  if (back > s.tick && !(def.blows && blewSince(s, back - def.regrow * 14400))) return 0;
+  if (back > s.tick && !(def.blows && blewSince(s, back - def.regrow * DAY))) return 0;
   if (def.season && !inSeason(s, def.season)) return 0;
   // A fire laid on the tile, or a stash, covers what was there.
   if (s.fires.some((f) => idx(f.x, f.y) === tile)) return 0;
@@ -111,7 +112,7 @@ export const LOOSE_ACTIONS: ActionDef[] = [
       }
       practise(s, 'foraging', 0.3);
       if (def.once) s.taken[`l${t}`] = 1;
-      else s.regrow[`l${t}`] = s.tick + def.regrow * 14400;
+      else s.regrow[`l${t}`] = s.tick + def.regrow * DAY;
     },
   },
   {

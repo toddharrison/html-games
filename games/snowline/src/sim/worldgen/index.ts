@@ -5,6 +5,7 @@ import type { Rules } from '../rules.ts';
 import { SIZE, type World } from '../world.ts';
 import { coverGround } from './cover.ts';
 import { layLogBridges } from './bridges.ts';
+import { layFords } from './fords.ts';
 import { layTrails, validate } from './finish.ts';
 import { type Gen, newGen, pt } from './gen.ts';
 import { placeSetPieces } from './setpieces.ts';
@@ -39,6 +40,7 @@ export function tryGenerate(genSeed: string, rules: Rules): { gen: Gen; problems
   }
   layTrails(g);
   layLogBridges(g);
+  layFords(g);
   return { gen: g, problems: validate(g) };
 }
 

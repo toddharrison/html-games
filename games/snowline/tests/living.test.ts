@@ -17,10 +17,8 @@ import { ALL, snowBand, weatherAt } from '../src/sim/weather.ts';
 import { idx, type World } from '../src/sim/world.ts';
 import { runTo, startScenario } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
-import { START_MINUTE } from '../src/content/balance.ts';
+import { DAY, HOUR, MIN, START_MINUTE } from '../src/content/balance.ts';
 
-const MIN = 10;
-const DAY = 14400;
 const FRONT = idx(128, 129);
 
 function setup(opts: { edit?: (w: World) => void; rules?: (r: Rules) => void; who?: Partial<Protagonist> } = {}) {
@@ -50,10 +48,10 @@ function animal(s: GameState, kind: Animal['kind'], x: number, y: number): Anima
 
 /** Set the time to a given hour on the current day. */
 function at(s: GameState, hour: number): void {
-  const now = (s.tick / 10 + START_MINUTE) % 1440;
+  const now = (s.tick / MIN + START_MINUTE) % 1440;
   let delta = hour * 60 - now;
   if (delta < 0) delta += 1440;
-  s.tick += Math.round(delta) * 10;
+  s.tick += Math.round(delta) * MIN;
   s.tick -= s.tick % 10;
 }
 
@@ -108,7 +106,7 @@ describe('weather (SPEC 6.5)', () => {
 
   it('winter ends a run that lasts too long', () => {
     const { state, world } = setup();
-    state.tick = 71 * DAY + 9 * 600 * 10;
+    state.tick = 71 * DAY + 90 * HOUR;
     for (let k = 0; k < 2 && !state.over; k++) {
       minutes(state, world, 1440);
       state.vitals = { health: 100, hydration: 100, nutrition: 100, rest: 100, warmth: 100, morale: 60 };
@@ -145,7 +143,8 @@ describe('animals (SPEC 9)', () => {
   it('a bear crowded warns; shouting turns one that backs off from noise, and its temper is known', () => {
     const { state, world, b } = bear('noise');
     const ev: SimEvent[] = [];
-    minutes(state, world, 3, ev);
+    // The warning gives a few real seconds to act (animals run in ticks, not game minutes).
+    runTo(state, world, [], state.tick + 30, (e) => ev.push(...e));
     expect(b.mode).toBe('warn');
     act(state, world, 'shout', idx(128, 128));
     minutes(state, world, 10, ev);
@@ -165,7 +164,7 @@ describe('animals (SPEC 9)', () => {
 
   it('backing well away always works', () => {
     const { state, world, b } = bear('fire');
-    minutes(state, world, 3);
+    runTo(state, world, [], state.tick + 30);
     expect(b.mode).toBe('warn');
     runTo(state, world, [{ t: state.tick, c: 'move', dir: 0 }], state.tick + 70);
     step(state, world, [{ t: state.tick, c: 'halt' }]);

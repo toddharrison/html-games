@@ -1,7 +1,7 @@
 // Shared pieces for actions (SPEC 5.2): the action types and the helpers every system's actions use.
 // Systems export their own lists of actions; sim/actions.ts gathers them.
 
-import { SEASONS } from '../content/balance.ts';
+import { DAY, SEASONS } from '../content/balance.ts';
 import { itemDef } from '../content/items.ts';
 import { MSG, who } from '../content/messages.ts';
 import type { SkillId } from '../content/protagonists.ts';
@@ -81,7 +81,7 @@ export function ready(s: GameState, tile: number): boolean {
 }
 
 export function deplete(s: GameState, tile: number, days: number): void {
-  s.regrow[tile] = s.tick + days * 14400;
+  s.regrow[tile] = s.tick + days * DAY;
 }
 
 /** How many more times a harvest that never comes back can be taken from a tile (of `supply`). */

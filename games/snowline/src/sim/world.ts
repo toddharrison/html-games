@@ -2,7 +2,7 @@
 // arrays; it is not part of GameState. What changes during play (the rockslide, a felled tree) will be
 // kept in GameState as differences from it.
 
-import { BASE_STEP_TICKS, CLIMB_PER_TICK, LOG_STEP_TICKS, MAP_SIZE, MAX_CLIMB_TICKS } from '../content/balance.ts';
+import { BASE_STEP_TICKS, CLIMB_PER_TICK, FORD_STEP_TICKS, LOG_STEP_TICKS, MAP_SIZE, MAX_CLIMB_TICKS } from '../content/balance.ts';
 import { FEATURES, FLAG, TERRAIN } from '../content/terrain.ts';
 
 export interface Point {
@@ -119,6 +119,8 @@ export function stepTicks(w: World, from: number, to: number): number {
   if (w.flags[to]! & FLAG.trail) ticks = Math.min(ticks, BASE_STEP_TICKS);
   // A fallen tree across a stream: careful steps, but no wading.
   if (w.flags[to]! & FLAG.bridge) ticks = LOG_STEP_TICKS;
+  // Gravel shallows: ankle-deep over firm gravel, quicker than wading.
+  else if (w.flags[to]! & FLAG.ford) ticks = Math.min(ticks, FORD_STEP_TICKS);
   const climb = w.elev[to]! - w.elev[from]!;
   if (climb > 0) ticks += Math.min(MAX_CLIMB_TICKS, Math.floor(climb / CLIMB_PER_TICK));
   return Math.max(BASE_STEP_TICKS, ticks);

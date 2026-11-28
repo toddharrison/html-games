@@ -3,9 +3,13 @@
 
 /** Simulation ticks per real second (SPEC 5.1). */
 export const TICKS_PER_SECOND = 20;
-/** Ticks per game minute. A game hour is 30 real seconds; a game day 12 real minutes. */
-export const TICKS_PER_MINUTE = 10;
+/** Ticks per game minute. A game hour is a real minute; a game day 24 real minutes (2026-11-27: was 10, twice as fast). */
+export const TICKS_PER_MINUTE = 20;
 export const MINUTES_PER_DAY = 1440;
+/** Ticks in a game minute, hour, and day: write every game-time duration in ticks with these, never a bare number. */
+export const MIN = TICKS_PER_MINUTE;
+export const HOUR = 60 * MIN;
+export const DAY = MINUTES_PER_DAY * MIN;
 /** The crash happens late in the morning of day 1, leaving most of a day of light (2026-11-26: was 14:30). */
 export const START_MINUTE = 11 * 60;
 
@@ -24,6 +28,22 @@ export const CLIMB_PER_TICK = 2;
 export const MAX_CLIMB_TICKS = 6;
 /** Ticks a step along a fallen tree across a stream takes (careful, but dry). */
 export const LOG_STEP_TICKS = 9;
+/** Ticks a step through gravel shallows takes: ankle-deep, firm underfoot. */
+export const FORD_STEP_TICKS = 8;
+/**
+ * What a clicked walk would rather avoid, in ticks added to a step (SPEC 5.2, 2026-11-27): wading (about
+ * six tiles of meadow, so a bridge or gravel shallows a few tiles off the line is taken instead), gravel
+ * shallows (a little), ground not yet seen (a step's worth: the kid takes the way they know), muck and
+ * loose rock. A game trail is a tick easier.
+ */
+export const ROUTE_WADE = 36;
+export const ROUTE_FORD = 3;
+export const ROUTE_UNKNOWN = BASE_STEP_TICKS;
+export const ROUTE_MUCK = 2;
+export const ROUTE_ROUGH = 3;
+export const ROUTE_TRAIL = 1;
+/** How wet gravel shallows leave the clothes (0–100): the feet and ankles (wading a stream is 60, the lake's shallows 100). */
+export const FORD_WET = 25;
 
 /**
  * Free walking (prototype, SPEC 5.2): the survivor walks over the tile grid in any of eight directions

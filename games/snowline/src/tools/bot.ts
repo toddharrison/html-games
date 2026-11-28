@@ -28,6 +28,7 @@ import { L } from '../content/loose.ts';
 import { looseAt } from '../sim/loose.ts';
 import { woodLeft } from '../sim/materials.ts';
 import { startScenario } from './runner.ts';
+import { DAY } from '../content/balance.ts';
 
 const DX = [0, 1, 0, -1] as const;
 const DY = [-1, 0, 1, 0] as const;
@@ -509,7 +510,7 @@ export function playBot(seed: string, protagonist: Protagonist | number, knowsDe
   }
   if (knowsDeal) handDeal(state);
   const bot = new Bot(state, world);
-  const end = maxDays * 14400;
+  const end = maxDays * DAY;
   while (!state.over && state.tick < end) {
     const cmds = state.tick % 2 === 0 ? bot.decide() : [];
     step(state, world, cmds.map((c) => ({ ...c, t: state.tick }) as Command));
@@ -520,7 +521,7 @@ export function playBot(seed: string, protagonist: Protagonist | number, knowsDe
     knowsDeal,
     outcome: state.over ? state.over.kind : 'alive',
     cause: state.over?.cause ?? '',
-    days: Math.round((state.over?.tick ?? state.tick) / 1440) / 10,
+    days: Math.round(((state.over?.tick ?? state.tick) * 10) / DAY) / 10,
     firstFireDay: bot.firstFireDay,
     facts: state.known.facts.filter((f) => f.level === 'known').length,
     techniques: state.known.techniques.length,

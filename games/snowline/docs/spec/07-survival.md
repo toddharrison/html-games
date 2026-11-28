@@ -59,6 +59,8 @@ A shelter site has four ratings: rain cover, wind cover, insulation, and securit
 - Woodpile with cover (dry fuel after rain)
 - Signal fire pile on open ground (see section 10)
 
+A lean-to, a bough bed, or the overhang can be clicked (decided 2026-11-27): the kid walks onto it and sleeps there till morning (offered in the evening, at night, or worn out), or rests there an hour out of the weather (the lean-to and bed).
+
 The player may build further camps, including a rough high camp for the climb to the wreckage. Unsecured food and small items attract raiders.
 
 ### 7.7 Illness and injury
@@ -70,6 +72,7 @@ Each condition is a small state machine: onset, acute phase, recovery, with a se
 | Food poisoning | Toxic plants, raw or spoiled food | Vomiting, hydration and nutrition loss, weakness for 1–2 days; the deadly bulb can kill | Rest, water |
 | Waterborne illness | Untreated water (delayed onset, 2–5 days) | Recurring cramps, hydration loss for a week | Boiled water, rest |
 | Hypothermia | Warmth at zero | Slowed actions, then health loss | Fire, dry clothes, shelter |
+| Going under | Wading a stream (more in the dark, worn out, or a poor swimmer; less in the lake's still shallows; never on gravel shallows) | Soaked through, warmth and morale lost | Fire, dry clothes |
 | Wound | Animal attack, tool slip when exhausted | Bleeding, pain, infection risk | Clean with boiled water, rest |
 | Infection | Untreated wound | Fever, health loss over days | Cleaning early; first-aid kit from wreckage |
 | Sprain | Falls on talus, scrambles, night travel | Slow movement for days | Rest, a splint |

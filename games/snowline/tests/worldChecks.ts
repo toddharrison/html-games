@@ -61,6 +61,14 @@ export function checkWorld(w: World, rules: Rules): string[] {
   const dy = w.sparkOutcrop.y - w.overhang.shelter.y;
   if (dx * dx + dy * dy > 32) out.push('spark-stone not by the overhang');
 
+  // Gravel shallows lie only in water a kid can wade, and never under a log.
+  for (let i = 0; i < w.size * w.size; i++) {
+    if (!(w.flags[i]! & FLAG.ford)) continue;
+    const t = w.terrain[i];
+    if (t !== T.stream && t !== T.gravel && t !== T.shallows) out.push(`gravel shallows on dry ground at ${i % w.size},${Math.floor(i / w.size)}`);
+    if (w.flags[i]! & FLAG.bridge) out.push(`gravel shallows under a log at ${i % w.size},${Math.floor(i / w.size)}`);
+  }
+
   // Food: the near safe patch is the good lookalike, its twin is the bad one, both placed.
   const safe = w.patches.filter((p) => p.role === 'safe');
   const twins = w.patches.filter((p) => p.role === 'lookalike');

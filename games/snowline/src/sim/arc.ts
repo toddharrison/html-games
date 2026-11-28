@@ -5,7 +5,7 @@
 // the range after day 40.
 
 import { ARC_TEXT, BEACON_DAYS, FLIGHT_MINUTES, LATE_FROM, LATE_GAP, SEARCH_DAYS, SEARCH_FLIGHTS, WRECK_ITEMS } from '../content/arc.ts';
-import { START_MINUTE } from '../content/balance.ts';
+import { DAY, MIN, START_MINUTE } from '../content/balance.ts';
 import { itemDef } from '../content/items.ts';
 import { who } from '../content/messages.ts';
 import { F, FLAG, TERRAIN } from '../content/terrain.ts';
@@ -23,8 +23,6 @@ import { daylight } from './time.ts';
 import { weatherAt } from './weather.ts';
 import { idx, inBounds, passableAt, type World } from './world.ts';
 
-const MIN = 10;
-const DAY = 14400;
 
 export interface Arc {
   /** Ticks when an aircraft is overhead; `late` ones from day 40 see less. */

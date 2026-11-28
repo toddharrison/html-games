@@ -145,6 +145,8 @@ export const FLAG = {
   glacier: 32,
   /** A fallen tree across a stream: walked on, not waded (worldgen bridges.ts). */
   bridge: 64,
+  /** Gravel shallows: a stream's gravel bar, or its fan at the lake: wet feet only, no going under (worldgen fords.ts). */
+  ford: 128,
 } as const;
 
 /** Water bodies, for the valley's dealt water rule (SPEC 7.3). */

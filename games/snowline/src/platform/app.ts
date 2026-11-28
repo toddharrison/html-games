@@ -5,7 +5,7 @@
 //   ?at=X,Y         with debug, start at that tile (a logged teleport, so replays still hold)
 //   ?check=1        the golden replay check page (platform/check.ts)
 
-import { SCREEN_H, SCREEN_W, TILE } from '../content/balance.ts';
+import { DAY, HOUR, MIN, SCREEN_H, SCREEN_W, TILE } from '../content/balance.ts';
 import { TEXT } from '../content/text.ts';
 import { Renderer } from '../render/renderer.ts';
 import { availableActions, itemActions } from '../sim/actions.ts';
@@ -50,10 +50,13 @@ type Modal = 'title' | 'loading' | 'select' | 'map' | 'pause' | 'menu' | 'journa
 /** A note can't be closed this soon after it shows (ms), so a key or click already on its way doesn't skip it unread. */
 const NOTE_GUARD = 400;
 
+/** The most device pixels the canvas draws to a game pixel: past it, a high-density screen gets the window's own scale (a 4K canvas costs too much a frame). */
+const MAX_DEVICE_SCALE = 8;
+
 /** Game minutes pass this many times faster while the survivor sleeps (SPEC 5.1: by running ticks). */
-const SLEEP_SPEED = 90;
+const SLEEP_SPEED = 180;
 /** Game minutes pass this many times faster while the survivor is busy with a task (SPEC 5.1). */
-const TASK_SPEED = 8;
+const TASK_SPEED = 16;
 /** Events that drop a fast-forwarded task back to normal speed for the rest of it: the player should see them. */
 const STEADY_ON = new Set<SimEvent['type']>(['animal', 'thought', 'storm', 'slide', 'aircraft', 'sick', 'weather', 'lightning', 'notice', 'over']);
 
@@ -84,6 +87,8 @@ export class App {
   /** The Make page's entries, for its number keys. */
   private makeEntries: MakeEntry[] = [];
   private scale = 1;
+  /** The valley behind the title, kept to draw again when a resize clears the canvas. */
+  private backdrop: GameState | null = null;
   private hover: { x: number; y: number } | null = null;
   /** The mouse in stage pixels, for the label beside it. */
   private mouse: { x: number; y: number } | null = null;
@@ -183,6 +188,12 @@ export class App {
     this.stage.style.width = `${SCREEN_W * this.scale}px`;
     this.stage.style.height = `${SCREEN_H * this.scale}px`;
     this.stage.style.setProperty('--k', String(this.scale));
+    // Draw at the screen's own pixels (on a high-density screen too, unless that's a huge canvas), so the
+    // camera can move by less than a game pixel and the land glides.
+    const dense = this.scale * Math.max(1, Math.round(devicePixelRatio || 1));
+    this.renderer.resize(dense <= MAX_DEVICE_SCALE ? dense : this.scale);
+    // A new size clears the canvas; in a run the loop draws the next frame, but the title's valley is drawn once.
+    if (this.modal === 'title' && this.backdrop) this.renderer.draw(this.backdrop, 0, performance.now());
   }
 
   private setModal(m: Modal, content?: HTMLElement): void {
@@ -205,17 +216,16 @@ export class App {
     this.session = null;
     this.notes = [];
     this.hud.el.hidden = true;
-    const ctx = this.canvas.getContext('2d')!;
-    ctx.fillStyle = '#14161a';
-    ctx.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    this.renderer.clear('#14161a');
     // Behind the title, the first valley at dusk.
     setTimeout(() => {
       if (this.modal !== 'title') return;
       const { rules, world } = valley(DEFAULT_SEED);
       const s = new Session(DEFAULT_SEED, candidate(DEFAULT_SEED, 0), world, rules);
       s.state.animals = [];
-      for (let n = 0; n < 2500; n++) s.tick();
+      for (let n = 0; n < 250 * MIN; n++) s.tick();
       this.renderer.setWorld(world);
+      this.backdrop = s.state;
       if (this.modal === 'title') this.renderer.draw(s.state, 0, performance.now());
     }, 50);
     const screen = titleScreen({
@@ -290,7 +300,7 @@ export class App {
     const m = ff ? /^(\d{1,2}):(\d{2})$/.exec(ff) : null;
     if (!m) return;
     const target = Number(m[1]) * 60 + Number(m[2]);
-    for (let n = 0; n < 15000 && clock(s.state.tick).minute !== target; n++) s.tick();
+    for (let n = 0; n < DAY + HOUR && clock(s.state.tick).minute !== target; n++) s.tick();
   }
 
   private showSummary(): void {
@@ -534,7 +544,7 @@ export class App {
       if (l.walk) s.queue({ c: 'goto', x: l.x, y: l.y, onto: true, action: null, at: 'front' });
       return;
     }
-    s.queue({ c: 'goto', x: l.x, y: l.y, onto: here, action: r.action, at: r.at });
+    s.queue({ c: 'goto', x: l.x, y: l.y, onto: here || !!r.onto, action: r.action, at: r.at });
   }
 
   private click(): void {

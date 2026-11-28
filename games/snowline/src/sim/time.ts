@@ -15,6 +15,13 @@ export function totalMinutes(tick: number): number {
   return START_MINUTE + Math.floor(tick / TICKS_PER_MINUTE);
 }
 
+/** Game minutes from a tick until a time of day (the next one; a whole day if it's now). */
+export function minutesUntil(tick: number, hour: number, minute = 0): number {
+  const now = clock(tick).minute;
+  const target = hour * 60 + minute;
+  return (target - now + MINUTES_PER_DAY) % MINUTES_PER_DAY || MINUTES_PER_DAY;
+}
+
 export function clock(tick: number): Clock {
   const total = totalMinutes(tick);
   const minute = total % MINUTES_PER_DAY;

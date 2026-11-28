@@ -3,8 +3,8 @@
 ### 5.1 Time
 
 - The simulation runs at a fixed **20 ticks per second**.
-- **10 ticks = 1 game minute**, so 1 game hour is 30 real seconds and 1 game day is 12 real minutes. The ratio is a single constant.
-- Sleeping, resting, and tasks fast-forward by running ticks faster (never by skipping them), so results are identical at any speed. A task runs at 8× (decided 2026-11-26), so most take under a second; anything the player should see (an animal, a thought, the weather turning) drops it back to normal speed for the rest of that task.
+- **20 ticks = 1 game minute** (decided 2026-11-27; it was 10, and the days went too fast), so 1 game hour is 1 real minute and 1 game day is 24 real minutes. The ratio is a single constant (`TICKS_PER_MINUTE`); every game-time duration is written with `MIN`, `HOUR`, and `DAY`. Walking and animals stay in ticks, so they keep their real-time pace.
+- Sleeping, resting, and tasks fast-forward by running ticks faster (never by skipping them), so results are identical at any speed. A task runs at 16× (8× until 2026-11-27, when the clock slowed: a task takes the same real time as before), so most take under a second; anything the player should see (an animal, a thought, the weather turning) drops it back to normal speed for the rest of that task.
 - The crash is at 11:00 on day 1 (decided 2026-11-26; it was 14:30), leaving most of a day of light to find water, gather, and get a fire going.
 - The run starts in late summer. Temperatures fall week by week and the snowline creeps down the mountain (6.5). Snow reaches the lake around day 60 and makes survival close to impossible; this is the soft time limit. Winter play is out of scope for v1.
 
@@ -12,9 +12,9 @@
 
 Movement is real-time and grid-snapped. The survivor moves one tile per step; a step takes 6 ticks on open ground and more on rough or steep terrain, when injured, or when carrying a heavy load. Actions (chop, drink, craft) take a set number of ticks and can be interrupted. The game pauses in menus.
 
-**Being tried (2026-11-26, Q46): free walking.** The survivor walks over the grid in any of eight directions (two keys walk on a slant) at the speed of the ground underfoot, and stops against what blocks, sliding along it; the world, what the survivor is on, and "the tile in front" stay on tiles. A tap walks a little. If it's kept, this section is rewritten for it.
+**Being tried (2026-11-26, Q46): free walking.** The survivor walks over the grid in any of eight directions (two keys walk on a slant) at the speed of the ground underfoot (a change of ground eases the pace over a few steps' worth of ticks rather than jolting it), and stops against what blocks, sliding along it; the world, what the survivor is on, and "the tile in front" stay on tiles. A tap walks a little. If it's kept, this section is rewritten for it.
 
-A click on something in view (12.4) sends the survivor to it: they walk a path to the tile beside it, face it, and do what was asked. The walk is a command to the simulation (`goto`), found and followed inside it, so replays stay exact; a direction key or Esc cancels it.
+A click on something in view (12.4) sends the survivor to it: they walk a path to the tile beside it, face it, and do what was asked. **The path is the kid's best way, not only the quickest** (decided 2026-11-27): wading costs about six tiles of walking, so a log or gravel shallows a few tiles off the line is taken instead (a far one isn't); ground not yet seen costs more, so a way the kid hasn't seen doesn't draw the path; marsh and loose rock cost a little; a game trail is a little easier. A click on a lean-to, bough bed, or the overhang walks onto it to sleep or rest there (7.6). The walk is a command to the simulation (`goto`), found and followed inside it, so replays stay exact; a direction key or Esc cancels it.
 
 ### 5.3 Arc of a run
 

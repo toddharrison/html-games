@@ -1,21 +1,22 @@
 // Finding a way to somewhere (SPEC 5.2): the path a `goto` command follows. A* on the four-way grid,
-// costed by how long each step takes, bounded so a click far away can't stall a tick. Ties break by
+// costed by each step's ticks and what the kid would rather avoid (step.ts routeCost), bounded so a click
+// far away can't stall a tick. Ties break by
 // tile index, so the same state always finds the same path (SPEC 11.3).
 
-import { BASE_STEP_TICKS } from '../content/balance.ts';
+import { BASE_STEP_TICKS, ROUTE_TRAIL } from '../content/balance.ts';
 import type { Dir } from './state.ts';
 
 const SIZE = 256;
 const DX = [0, 1, 0, -1] as const;
 const DY = [-1, 0, 1, 0] as const;
 
-/** How many tiles the search may open before it gives up. */
-export const ROUTE_LIMIT = 9000;
+/** How many tiles the search may open before it gives up (more since routes go round water, 2026-11-27). */
+export const ROUTE_LIMIT = 16000;
 
 /**
  * The directions to walk from (sx, sy) to the nearest tile where `goal` holds, or null if none is found
  * within ROUTE_LIMIT. `open(x, y)` says whether a tile can be stepped onto; `cost(from, to)` is a step's
- * ticks. (tx, ty) is where the goal is, for the estimate.
+ * cost, never less than CHEAPEST. (tx, ty) is where the goal is, for the estimate.
  */
 export function findRoute(
   sx: number,
@@ -57,8 +58,11 @@ export function findRoute(
   return null;
 }
 
+/** The cheapest a step can cost (a step along a game trail), so the estimate never overshoots. */
+const CHEAPEST = BASE_STEP_TICKS - ROUTE_TRAIL;
+
 function est(x: number, y: number, tx: number, ty: number): number {
-  return (Math.abs(x - tx) + Math.abs(y - ty)) * BASE_STEP_TICKS;
+  return (Math.abs(x - tx) + Math.abs(y - ty)) * CHEAPEST;
 }
 
 function unwind(prev: Map<number, number>, start: number, end: number): Dir[] {

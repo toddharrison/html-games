@@ -13,15 +13,17 @@ import { itemName, waterRisk } from './food.ts';
 import { count, giveOrDrop, has, slotOf, take, takeFromSlot } from './inventory.ts';
 import { fact, knownWith, knowsTechnique, learn, learnTechnique, lookName } from './knowledge.ts';
 import { say } from './log.ts';
-import { remember } from './memory.ts';
+import { recall, remember } from './memory.ts';
 import { chance } from './rng.ts';
 import { level, practise } from './skills.ts';
 import { burning, fireNear } from './surroundings.ts';
 import type { MakePart } from './craft.ts';
 import type { Build, Fire, GameState, Item, SimEvent } from './state.ts';
 import { technique } from '../content/insights.ts';
+import { clue } from './thoughts.ts';
 import { clock } from './time.ts';
 import { idx, type World } from './world.ts';
+import { HOUR, MIN } from '../content/balance.ts';
 
 /** Minutes embers keep alive wrapped in bark. */
 const EMBER_LIFE = 240;
@@ -256,6 +258,7 @@ function light(s: GameState, _w: World, tile: number, m: Method, ev: SimEvent[])
     // Sticks and wood alone won't take a spark or a match: it needs something finer first.
     remember(s, 'fire-fails');
     say(s, FIRE_MSG.noTinder(wh, m === 'sparks'), ev);
+    clue(s, 'noTinder', ev);
     learnTechnique(s, 'tinder-nest', technique('tinder-nest').learned, ev);
     return;
   }
@@ -274,6 +277,7 @@ function light(s: GameState, _w: World, tile: number, m: Method, ev: SimEvent[])
     say(s, FIRE_MSG.wouldNotCatch(wh, lookName('tinder', tinder)), ev);
     if (outcome === 'fails' && n >= 2) learn(s, 'tinder', tinder, 'known', 'fails', 'it would never catch', ev);
     else if (n >= 2 && !fact(s, 'tinder', tinder)) learn(s, 'tinder', tinder, 'suspected', 'fails', 'it would not catch', ev);
+    catchClue(s, tinder, outcome, m, ev);
     return;
   }
   if (parts.sticks < LAY_STICKS) {
@@ -281,6 +285,7 @@ function light(s: GameState, _w: World, tile: number, m: Method, ev: SimEvent[])
     remember(s, 'fire-fails');
     learn(s, 'tinder', tinder, 'known', outcome, 'it caught', ev);
     say(s, FIRE_MSG.flaredOut(wh, lookName('tinder', tinder)), ev);
+    clue(s, 'flaredOut', ev);
     learnTechnique(s, 'kindling', technique('kindling').learned, ev);
     return;
   }
@@ -301,6 +306,31 @@ function light(s: GameState, _w: World, tile: number, m: Method, ev: SimEvent[])
   if (wood >= 0) burnWood(s, wood);
 }
 
+/**
+ * Tinder that didn't catch: the kid's clue to why (2026-11-27), from what really counted against it, worst
+ * first: a tinder that never catches, a spark with no nest to land in (thought through twice, that's the
+ * insight: a tinder nest), the multi-tool's thin sparks, a slow tinder, or only bad luck.
+ */
+function catchClue(s: GameState, tinder: number, outcome: string, m: Method, ev: SimEvent[]): void {
+  const name = lookName('tinder', tinder);
+  if (outcome === 'fails') {
+    // Point at a tinder that might do better: one known to catch, or another kind carried or known of.
+    const others = s.rules.tinders.map((_, i) => i).filter((i) => i !== tinder && fact(s, 'tinder', i)?.value !== 'fails');
+    const sure = others.find((i) => fact(s, 'tinder', i)?.value === 'catches');
+    const carried = others.find((i) => s.inventory.some((it) => it.k === 'tinder' && it.d === i));
+    const other = sure ?? carried;
+    clue(s, 'dudTinder', ev, { tinder: name, other: other !== undefined ? `. Maybe the ${lookName('tinder', other)}` : ': something drier and finer, that comes apart in my fingers' });
+    return;
+  }
+  if (!knowsTechnique(s, 'tinder-nest')) {
+    if (clue(s, 'nest', ev) >= 2) learnTechnique(s, 'tinder-nest', technique('tinder-nest').learned, ev);
+    return;
+  }
+  if (m === 'sparks' && steelTool(s) === 'multitool' && recall(s, 'thought:clue:weakSparks') === 0) return void clue(s, 'weakSparks', ev);
+  if (outcome === 'slow' && recall(s, 'thought:clue:slow') === 0) return void clue(s, 'slow', ev, { tinder: name });
+  clue(s, 'unlucky', ev);
+}
+
 /** The bow drill makes a coal only from the right wood; the wrong one smokes, and teaches that. */
 function drillWorks(s: GameState, ev: SimEvent[]): boolean {
   const it = s.inventory.find((i) => i.k === 'bow-drill')!;
@@ -309,13 +339,14 @@ function drillWorks(s: GameState, ev: SimEvent[]): boolean {
   say(s, FIRE_MSG.drillSmoked(who(s.protagonist), lookName('wood', it.d ?? 0)), ev);
   const n = remember(s, `drill-fail:${it.d}`);
   learn(s, 'wood', it.d ?? 0, n >= 2 ? 'known' : 'suspected', 'not for the drill', 'the bow drill only smoked', ev);
+  clue(s, 'drillWood', ev);
   practise(s, 'firecraft', 1);
   return false;
 }
 
 /** Wood put on a fire teaches what it does, once it has burned a while (a pending lesson). */
 function burnWood(s: GameState, wood: number): void {
-  s.pending.push({ t: s.tick + 400, kind: 'wood', d: wood });
+  s.pending.push({ t: s.tick + 40 * MIN, kind: 'wood', d: wood });
 }
 
 /** What burning a wood taught (called from food.ts's pending queue). */
@@ -385,7 +416,7 @@ export function fireMinute(s: GameState, w: World, ev: SimEvent[], wind: number,
   // Embers in bark die after a few hours.
   for (let i = s.inventory.length - 1; i >= 0; i--) {
     const it = s.inventory[i]!;
-    if (it.k === 'ember-pouch' && it.t !== undefined && s.tick - it.t > EMBER_LIFE * 10) {
+    if (it.k === 'ember-pouch' && it.t !== undefined && s.tick - it.t > EMBER_LIFE * MIN) {
       s.inventory.splice(i, 1);
       say(s, FIRE_MSG.embersDied(wh), ev);
     }
@@ -403,7 +434,7 @@ function near(s: GameState, f: Fire, r: number): boolean {
 export function strikeSnag(s: GameState, w: World, ev: SimEvent[]): void {
   const snag = w.landmarks.find((l) => l.kind === 'snag');
   if (!snag) return;
-  s.smoulder = { x: snag.x, y: snag.y, until: s.tick + 6 * 600 };
+  s.smoulder = { x: snag.x, y: snag.y, until: s.tick + 6 * HOUR };
   say(s, FIRE_MSG.lightning(), ev);
 }
 

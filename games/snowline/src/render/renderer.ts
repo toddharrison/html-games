@@ -2,7 +2,7 @@
 // time-of-day grade, firelight, and darkness with a lit circle round each light. It reads GameState and
 // never writes to it; its own randomness (shimmer, flicker) never feeds back (SPEC 11.3, rule 3).
 
-import { SCREEN_H, SCREEN_W, SUB, TILE } from '../content/balance.ts';
+import { MIN, SCREEN_H, SCREEN_W, SUB, TILE } from '../content/balance.ts';
 import { F, T, TERRAIN } from '../content/terrain.ts';
 import type { Fire, GameState } from '../sim/state.ts';
 import { burning } from '../sim/surroundings.ts';
@@ -44,6 +44,10 @@ const STONE_LOOK: [string, string][] = [
 const OWN_SIGHT_LIFT = 0.62;
 /** How dark full night is, 0–1. */
 const NIGHT_DARKNESS = 0.95;
+/** How far behind the survivor the camera eases, in seconds (the time to close about two-thirds of a gap). */
+const FOLLOW_TAU = 0.14;
+/** A jump bigger than this (world pixels) is a teleport, not a walk: the camera snaps to it. */
+const FOLLOW_SNAP = 4 * TILE;
 
 export interface Camera {
   /** Top-left of the view, in world pixels. */
@@ -54,10 +58,10 @@ export interface Camera {
   py: number;
 }
 
-function offscreen(): { c: HTMLCanvasElement; g: CanvasRenderingContext2D } {
+function offscreen(w = SCREEN_W, h = SCREEN_H): { c: HTMLCanvasElement; g: CanvasRenderingContext2D } {
   const c = document.createElement('canvas');
-  c.width = SCREEN_W;
-  c.height = SCREEN_H;
+  c.width = w;
+  c.height = h;
   return { c, g: c.getContext('2d')! };
 }
 
@@ -65,10 +69,19 @@ export class Renderer {
   private readonly g: CanvasRenderingContext2D;
   private readonly atlas: Atlas = buildAtlas();
   private readonly looseArt = new LooseArt();
+  /**
+   * Device pixels to a screen pixel (`resize`). Everything is drawn in screen pixels (384×216) through a
+   * scale of `k`, so the camera can stand between screen pixels and the land glides instead of stepping.
+   * Sprites and blocks still land on whole screen pixels of the world, so they stay as crisp as before.
+   */
+  private k = 1;
+  // The firelight's buffers, at `k` like the canvas (drawn into through a scale of `k`).
   private readonly color = offscreen();
   private readonly tmp = offscreen();
+  /** The darkness: soft gradients only, so one pixel a screen pixel, smoothed as it's laid over. */
   private readonly mask = offscreen();
-  private readonly shadowLayer = offscreen();
+  /** Sun shadows, at one pixel a screen pixel and fixed to the world (a pixel wider than the screen each way). */
+  private readonly shadowLayer = offscreen(SCREEN_W + 2, SCREEN_H + 2);
   private world: World | null = null;
   private ground: Ground | null = null;
   private readonly lastX = new Map<number, number>();
@@ -85,6 +98,8 @@ export class Renderer {
   private readonly fishAt = new Map<number, { x: number; y: number; left: boolean }>();
   private rings: { x: number; y: number; t: number }[] = [];
   private lastFrame = 0;
+  /** Where the camera's eased aim is (the survivor's sprite corner, world pixels); null snaps it next frame. */
+  private follow: { x: number; y: number } | null = null;
   private readonly trees = new Map<string, Tall>();
   private readonly boulders = new Map<string, HTMLCanvasElement>();
   private readonly tall = new Map<string, Tall>();
@@ -114,8 +129,40 @@ export class Renderer {
     this.g.imageSmoothingEnabled = false;
   }
 
+  /** Draw at `k` device pixels to a screen pixel (the window's whole-number scale; more on a high-density screen). */
+  resize(k: number): void {
+    if (k === this.k && this.canvas.width === SCREEN_W * k) return;
+    this.k = k;
+    for (const b of [{ c: this.canvas, g: this.g }, this.color, this.tmp]) {
+      b.c.width = SCREEN_W * k;
+      b.c.height = SCREEN_H * k;
+      b.g.setTransform(k, 0, 0, k, 0, 0);
+      b.g.imageSmoothingEnabled = false;
+    }
+  }
+
+  /** Fill the whole screen with one colour (behind the title before its valley is drawn). */
+  clear(colour: string): void {
+    this.g.setTransform(this.k, 0, 0, this.k, 0, 0);
+    this.g.fillStyle = colour;
+    this.g.fillRect(0, 0, SCREEN_W, SCREEN_H);
+  }
+
+  /** The whole screen pixels covering (x0, y0)–(x1, y1), kept on the screen: [x, y, width, height]. */
+  private box(x0: number, y0: number, x1: number, y1: number): [number, number, number, number] {
+    const bx = Math.max(0, Math.floor(x0));
+    const by = Math.max(0, Math.floor(y0));
+    return [bx, by, Math.min(SCREEN_W, Math.ceil(x1)) - bx, Math.min(SCREEN_H, Math.ceil(y1)) - by];
+  }
+
+  /** A position in screen pixels rounded to the nearest device pixel. */
+  private snap(v: number): number {
+    return Math.round(v * this.k) / this.k;
+  }
+
   setWorld(world: World): void {
     this.world = world;
+    this.follow = null;
     this.ground = new Ground(world, hashString(`${world.genSeed}/look`)[0]);
     this.groveSeed = hashString(`${world.genSeed}/groves`)[0];
     const n = world.size;
@@ -186,8 +233,15 @@ export class Renderer {
     this.rings = [];
   }
 
-  /** Where the camera is for this frame. `alpha` is how far into the next tick we are (0–1). */
-  camera(state: GameState, alpha: number): Camera {
+  /**
+   * Where the camera is for this frame (`x`, `y` in screen pixels, on a device pixel: between screen
+   * pixels when `k` > 1). `alpha` is how far into the next tick we are (0–1); `dt` is the seconds since
+   * the last frame. The camera eases after the survivor (`FOLLOW_TAU`) rather than being bolted to them,
+   * and snaps on a jump (a new run, a load, a debug teleport). The lag is snapped on its own and the
+   * survivor's position is the one the sprite is drawn at, so the survivor holds still on screen while
+   * the world glides under them, instead of the two rounding apart.
+   */
+  camera(state: GameState, alpha: number, dt = 0): Camera {
     const p = state.player;
     let px: number;
     let py: number;
@@ -203,9 +257,18 @@ export class Renderer {
       px = p.fromX + (p.x - p.fromX) * t;
       py = p.fromY + (p.y - p.fromY) * t;
     }
+    const wx = px * TILE;
+    const wy = py * TILE;
+    let f = this.follow;
+    if (!f || Math.abs(wx - f.x) > FOLLOW_SNAP || Math.abs(wy - f.y) > FOLLOW_SNAP) f = this.follow = { x: wx, y: wy };
+    else {
+      const k = 1 - Math.exp(-dt / FOLLOW_TAU);
+      f.x += (wx - f.x) * k;
+      f.y += (wy - f.y) * k;
+    }
     const size = (this.world?.size ?? 256) * TILE;
-    const x = Math.round(Math.max(0, Math.min(size - SCREEN_W, px * TILE + TILE / 2 - SCREEN_W / 2)));
-    const y = Math.round(Math.max(0, Math.min(size - SCREEN_H, py * TILE + TILE / 2 - SCREEN_H / 2)));
+    const x = Math.max(0, Math.min(size - SCREEN_W, this.snap(wx) - this.snap(wx - f.x) + TILE / 2 - SCREEN_W / 2));
+    const y = Math.max(0, Math.min(size - SCREEN_H, this.snap(wy) - this.snap(wy - f.y) + TILE / 2 - SCREEN_H / 2));
     return { x, y, px, py };
   }
 
@@ -371,10 +434,11 @@ export class Renderer {
   ): Camera {
     const world = this.world;
     const g = this.g;
-    const cam = this.camera(state, alpha);
-    if (!world || !this.ground) return cam;
     const dt = Math.min(0.1, Math.max(0, (timeMs - this.lastFrame) / 1000));
     this.lastFrame = timeMs;
+    const cam = this.camera(state, alpha, dt);
+    if (!world || !this.ground) return cam;
+    g.setTransform(this.k, 0, 0, this.k, 0, 0);
     g.globalCompositeOperation = 'source-over';
     g.globalAlpha = 1;
     g.fillStyle = PALETTE.ink;
@@ -415,8 +479,8 @@ export class Renderer {
     const sun = this.sun(state);
     const day = clock(state.tick).day;
     const shadows: [number, number, number, number][] = [];
-    const survivorPx = Math.round(cam.px * TILE) - cam.x;
-    const survivorPy = Math.round(cam.py * TILE) - cam.y;
+    const survivorPx = this.snap(cam.px * TILE) - cam.x;
+    const survivorPy = this.snap(cam.py * TILE) - cam.y;
     const prow = Math.round(cam.py);
 
     // Features, loose things, and the survivor, row by row, so things lower on the screen stand in front.
@@ -626,7 +690,7 @@ export class Renderer {
       }
     }
     // Every shadow first, then everything in row order, so rows below stand in front of rows above.
-    this.shadows(sun, shadows);
+    this.shadows(cam, sun, shadows);
     for (const d of layer) d();
     if (prow > y1 + 3) this.drawSurvivor(state, cam);
     // Faded trees and rocks stack: in a thick stand three or four can stand over the survivor and hide
@@ -680,10 +744,10 @@ export class Renderer {
       // Spray off the pool: soft puffs rising and fading.
       for (let k = 0; k < 6; k++) {
         const p = (timeMs / 1300 + k / 6) % 1;
-        const x = left + art.c.width / 2 + (((k * 11) % 7) - 3) * 2.4 + Math.sin(p * 4 + k) * 2;
-        const y = top + y1 - p * 9;
+        const x = art.c.width / 2 + (((k * 11) % 7) - 3) * 2.4 + Math.sin(p * 4 + k) * 2;
+        const y = y1 - p * 9;
         g.fillStyle = `rgba(236,244,244,${0.45 * (1 - p)})`;
-        g.fillRect(Math.round(x - 2), Math.round(y - 1), 4, 3);
+        g.fillRect(left + Math.round(x - 2), top + Math.round(y - 1), 4, 3);
       }
       g.globalAlpha = 1;
     });
@@ -752,13 +816,19 @@ export class Renderer {
   }
 
   /** Every shadow on the screen, cast away from the sun, merged so overlaps don't darken twice. */
-  private shadows(sun: { dx: number; len: number; alpha: number } | null, list: [number, number, number, number][]): void {
+  private shadows(cam: Camera, sun: { dx: number; len: number; alpha: number } | null, list: [number, number, number, number][]): void {
     if (!sun || !list.length) return;
     const s = this.shadowLayer.g;
+    s.setTransform(1, 0, 0, 1, 0, 0);
     s.globalCompositeOperation = 'copy';
     s.fillStyle = 'rgba(0,0,0,0)';
-    s.fillRect(0, 0, SCREEN_W, SCREEN_H);
+    s.fillRect(0, 0, this.shadowLayer.c.width, this.shadowLayer.c.height);
     s.globalCompositeOperation = 'source-over';
+    // The layer's pixels lie on the world's, so the shadows keep their blocky edge and don't shimmer as
+    // the camera glides: draw shifted by the camera's part-pixel, then lay the layer back by it.
+    const fx = cam.x - Math.floor(cam.x);
+    const fy = cam.y - Math.floor(cam.y);
+    s.translate(fx, fy);
     s.fillStyle = '#0a0d12';
     for (const [x, y, w, h] of list) {
       const reach = h * sun.len * 0.55;
@@ -769,7 +839,7 @@ export class Renderer {
       s.fill();
     }
     this.g.globalAlpha = sun.alpha;
-    this.g.drawImage(this.shadowLayer.c, 0, 0);
+    this.g.drawImage(this.shadowLayer.c, -fx, -fy);
     this.g.globalAlpha = 1;
   }
 
@@ -794,7 +864,8 @@ export class Renderer {
             const x = dx + 8 + fx * run - fy * side;
             const y = dy + 8 + fy * run + fx * side;
             if (x < dx || y < dy || x > dx + TILE - 2 || y > dy + TILE - 2) continue;
-            g.fillRect(Math.round(x), Math.round(y), Math.abs(fx) > 0.5 ? 3 : 1, Math.abs(fy) > 0.5 ? 3 : 1);
+            // Rounded on the world's pixels, not the screen's (the camera can stand between them).
+            g.fillRect(Math.round(x + cam.x) - cam.x, Math.round(y + cam.y) - cam.y, Math.abs(fx) > 0.5 ? 3 : 1, Math.abs(fy) > 0.5 ? 3 : 1);
           }
           continue;
         }
@@ -848,7 +919,7 @@ export class Renderer {
       const age = (timeMs - r.t) / 1600;
       g.strokeStyle = `rgba(220,235,232,${0.55 * (1 - age)})`;
       g.beginPath();
-      g.ellipse(Math.round(r.x - cam.x) + 0.5, Math.round(r.y - cam.y) + 0.5, 1 + age * 6, 0.6 + age * 3, 0, 0, Math.PI * 2);
+      g.ellipse(Math.round(r.x) - cam.x + 0.5, Math.round(r.y) - cam.y + 0.5, 1 + age * 6, 0.6 + age * 3, 0, 0, Math.PI * 2);
       g.stroke();
     }
   }
@@ -943,7 +1014,8 @@ export class Renderer {
     const frame = moving ? stride : state.task ? Math.floor(performance.now() / 350) % 2 : 0;
     const asleep = state.sleep !== null && !state.sleep.awake;
     const sprite = this.atlas.person(state.protagonist, asleep ? -1 : p.facing, frame);
-    this.g.drawImage(sprite, Math.round(cam.px * TILE) - cam.x, Math.round(cam.py * TILE) - cam.y);
+    // On a device pixel, not a screen pixel: the survivor moves as smoothly as the camera (see `camera`).
+    this.g.drawImage(sprite, this.snap(cam.px * TILE) - cam.x, this.snap(cam.py * TILE) - cam.y);
   }
 
   private drawFire(fire: Fire, x: number, y: number, timeMs: number): void {
@@ -986,10 +1058,26 @@ export class Renderer {
     const grade = gradeAt(minute);
     const fires = sightCircles(state).filter((c) => c.fire);
 
-    // Keep the full-colour scene for the firelit pools.
-    if (fires.length) {
+    const flicker = (k: number) => 1 + (rh(k, Math.floor(timeMs / 90), 11) - 0.5) * 0.06;
+    const centre = (x: number, y: number) => [x * TILE + TILE / 2 - cam.x, y * TILE + TILE / 2 - cam.y] as const;
+    const pool = (f: { x: number; y: number; r: number }, k: number) => {
+      const [cx, cy] = centre(f.x, f.y);
+      const r = (f.r + 0.5) * TILE * flicker(k);
+      return { cx, cy, r, box: this.box(cx - r, cy - r, cx + r, cy + r) };
+    };
+
+    // Keep the full-colour scene for the firelit pools: only round the fires (a box over them all), since
+    // the buffers are the screen's full size. Drawn through the same scale, a whole buffer is SCREEN_W × SCREEN_H.
+    let [ux0, uy0, ux1, uy1] = [SCREEN_W, SCREEN_H, 0, 0];
+    fires.forEach((f, k) => {
+      const [bx, by, bw, bh] = pool(f, k).box;
+      if (bw <= 0 || bh <= 0) return;
+      [ux0, uy0, ux1, uy1] = [Math.min(ux0, bx), Math.min(uy0, by), Math.max(ux1, bx + bw), Math.max(uy1, by + bh)];
+    });
+    if (ux1 > ux0 && uy1 > uy0) {
+      const d = this.k;
       this.color.g.globalCompositeOperation = 'copy';
-      this.color.g.drawImage(this.canvas, 0, 0);
+      this.color.g.drawImage(this.canvas, ux0 * d, uy0 * d, (ux1 - ux0) * d, (uy1 - uy0) * d, ux0, uy0, ux1 - ux0, uy1 - uy0);
       this.color.g.globalCompositeOperation = 'source-over';
     }
 
@@ -1007,22 +1095,22 @@ export class Renderer {
 
     this.weather(state, cam, timeMs);
 
-    const flicker = (k: number) => 1 + (rh(k, Math.floor(timeMs / 90), 11) - 0.5) * 0.06;
-    const centre = (x: number, y: number) => [x * TILE + TILE / 2 - cam.x, y * TILE + TILE / 2 - cam.y] as const;
     const dark = (1 - daylight(state.tick) / 100) * NIGHT_DARKNESS;
 
     // A fire is a warm pool of light, and the only colour at night.
     fires.forEach((f, k) => {
-      const [cx, cy] = centre(f.x, f.y);
-      const r = (f.r + 0.5) * TILE * flicker(k);
-      if (cx < -r || cy < -r || cx > SCREEN_W + r || cy > SCREEN_H + r) return;
-      // The scene in full colour, lit warm, fading out from the fire.
+      // The scene in full colour, lit warm, fading out from the fire. Only the box round the fire's
+      // light is worked on: the buffers are the screen's full size, and whole-screen passes add up.
+      const { cx, cy, r, box } = pool(f, k);
+      const [bx, by, bw, bh] = box;
+      if (bw <= 0 || bh <= 0) return;
+      const d = this.k;
       const t = this.tmp.g;
       t.globalCompositeOperation = 'copy';
-      t.drawImage(this.color.c, 0, 0);
+      t.drawImage(this.color.c, bx * d, by * d, bw * d, bh * d, bx, by, bw, bh);
       t.globalCompositeOperation = 'multiply';
       t.fillStyle = 'rgb(255,190,125)';
-      t.fillRect(0, 0, SCREEN_W, SCREEN_H);
+      t.fillRect(bx, by, bw, bh);
       t.globalCompositeOperation = 'destination-in';
       const keep = t.createRadialGradient(cx, cy, 0, cx, cy, r);
       const strength = 0.35 + 0.65 * dark;
@@ -1031,16 +1119,16 @@ export class Renderer {
       keep.addColorStop(0.8, `rgba(0,0,0,${0.3 * strength})`);
       keep.addColorStop(1, 'rgba(0,0,0,0)');
       t.fillStyle = keep;
-      t.fillRect(0, 0, SCREEN_W, SCREEN_H);
+      t.fillRect(bx, by, bw, bh);
       t.globalCompositeOperation = 'source-over';
-      g.drawImage(this.tmp.c, 0, 0);
+      g.drawImage(this.tmp.c, bx * d, by * d, bw * d, bh * d, bx, by, bw, bh);
       // A glow at the heart of it.
       g.globalCompositeOperation = 'screen';
       const glow = g.createRadialGradient(cx, cy, 0, cx, cy, r * 0.5);
       glow.addColorStop(0, `rgba(255,150,60,${0.1 + 0.15 * dark})`);
       glow.addColorStop(1, 'rgba(255,150,60,0)');
       g.fillStyle = glow;
-      g.fillRect(0, 0, SCREEN_W, SCREEN_H);
+      g.fillRect(...this.box(cx - r * 0.5, cy - r * 0.5, cx + r * 0.5, cy + r * 0.5));
       g.globalCompositeOperation = 'source-over';
     });
 
@@ -1064,7 +1152,9 @@ export class Renderer {
       m.fillRect(0, 0, SCREEN_W, SCREEN_H);
     }
     m.globalCompositeOperation = 'source-over';
-    g.drawImage(this.mask.c, 0, 0);
+    g.imageSmoothingEnabled = true;
+    g.drawImage(this.mask.c, 0, 0, SCREEN_W, SCREEN_H);
+    g.imageSmoothingEnabled = false;
     this.flash(timeMs);
     this.aircraft(state);
   }
@@ -1073,7 +1163,7 @@ export class Renderer {
   private aircraft(state: GameState): void {
     const f = flightNow(state);
     if (!f) return;
-    const t = (state.tick - f.t) / (FLIGHT_MINUTES * 10);
+    const t = (state.tick - f.t) / (FLIGHT_MINUTES * MIN);
     this.g.globalAlpha = daylight(state.tick) > 20 ? 0.9 : 0.4;
     this.g.drawImage(this.atlas.sprite('plane'), Math.round(-20 + t * (SCREEN_W + 40)), 18 + Math.round(t * 30));
     this.g.globalAlpha = 1;

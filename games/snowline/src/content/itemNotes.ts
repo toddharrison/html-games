@@ -42,6 +42,7 @@ export const ITEM_NOTES: Record<string, string> = {
   'boiled-water': 'Boiled water. Safe to drink.',
   'ember-pouch': 'Live embers wrapped in bark. They won\'t last forever.',
   basket: 'A bark basket. I can carry more.',
+  'flight-bag': "The pilot's bag from the plane. The strap's torn but I can carry more in it.",
   snare: 'A snare. Set it on a trail where hares run.',
   bow: 'My bow.',
   arrows: 'Arrows.',

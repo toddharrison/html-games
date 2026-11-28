@@ -16,6 +16,7 @@ import { effect } from './effects.ts';
 import { playPiece } from './music.ts';
 import { flightNow } from '../sim/arc.ts';
 import { FLIGHT_MINUTES } from '../content/arc.ts';
+import { MIN } from '../content/balance.ts';
 
 interface Loop {
   gain: GainNode;
@@ -109,7 +110,7 @@ export class Sound {
     const fire = s.fires.some((f) => burning(f) && Math.abs(f.x - p.x) <= 4 && Math.abs(f.y - p.y) <= 4);
     set(L.fire, fire ? 0.02 : 0);
     const flight = flightNow(s);
-    set(L.drone, flight ? 0.06 * (1 - Math.abs((s.tick - flight.t) / (FLIGHT_MINUTES * 10) - 0.5) * 1.6) : 0);
+    set(L.drone, flight ? 0.06 * (1 - Math.abs((s.tick - flight.t) / (FLIGHT_MINUTES * MIN) - 0.5) * 1.6) : 0);
     if (fire && now > this.nextCrackle) {
       this.nextCrackle = now + 0.05 + Math.random() * 0.4;
       this.burst(1800 + Math.random() * 2000, 0.012 + Math.random() * 0.03, 0.04 + Math.random() * 0.05);

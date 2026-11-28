@@ -1,13 +1,13 @@
 // Unit tests for movement, sight, and viewpoints, on a hand-built flat world.
 
 import { describe, expect, it } from 'vitest';
-import { BASE_STEP_TICKS, FOOT_HALF_W, START_MINUTE, SUB, TICKS_PER_MINUTE, VIEWPOINT_REVEAL } from '../src/content/balance.ts';
+import { BASE_STEP_TICKS, FOOT_HALF_W, FORD_WET, START_MINUTE, SUB, TICKS_PER_MINUTE, VIEWPOINT_REVEAL } from '../src/content/balance.ts';
 import { F, FLAG, T } from '../src/content/terrain.ts';
 import { newGame } from '../src/sim/newGame.ts';
 import { candidate } from '../src/sim/protagonist.ts';
 import { dealRules } from '../src/sim/rules.ts';
 import type { Command, GameState, SimEvent } from '../src/sim/state.ts';
-import { isExplored, sightCircles, step } from '../src/sim/step.ts';
+import { easePace, isExplored, routeCost, sightCircles, step } from '../src/sim/step.ts';
 import { idx, stepTicks, type World } from '../src/sim/world.ts';
 import { runTo } from '../src/tools/runner.ts';
 import { flatWorld } from './sample.ts';
@@ -36,6 +36,36 @@ describe('free walking (SPEC 5.2, prototype)', () => {
     run(state, world, [], BASE_STEP_TICKS * 5 - 3);
     expect(state.player.x).toBe(133);
     expect(state.player.facing).toBe(1);
+  });
+
+  it('eases into a slower ground over a few ticks instead of a jolt, and starts off at full speed', () => {
+    const { state, world } = setup((w) => {
+      for (let y = 120; y < 140; y++) for (let x = 130; x < 140; x++) w.terrain[idx(x, y)] = T.marsh;
+    }, 'free');
+    const fast = Math.round(SUB / BASE_STEP_TICKS);
+    const slow = Math.round(SUB / stepTicks(world, idx(130, 128), idx(131, 128)));
+    const moves: number[] = [];
+    let x = feet(state)[0]!;
+    for (let t = 0; t < 24; t++) {
+      run(state, world, t ? [] : [{ t: 0, c: 'walk', dx: 1, dy: 0, dir: 1 }], 1);
+      moves.push(feet(state)[0]! - x);
+      x = feet(state)[0]!;
+    }
+    expect(moves[0], 'no wind-up from a standstill').toBe(fast);
+    expect(moves.at(-1), 'settles at the marsh speed').toBe(slow);
+    for (let k = 1; k < moves.length; k++) {
+      const gap = moves[k - 1]! - slow;
+      expect(moves[k - 1]! - moves[k]!, `tick ${k}: at most half the gap closed`).toBeLessThanOrEqual(Math.max(1, gap >> 1));
+    }
+    expect(moves.filter((m) => m > slow && m < fast).length, 'some ticks in between').toBeGreaterThanOrEqual(3);
+  });
+
+  it('easePace closes half the gap a tick, at least one unit, either way', () => {
+    expect(easePace(40, 20)).toBe(30);
+    expect(easePace(20, 40)).toBe(30);
+    expect(easePace(21, 20)).toBe(20);
+    expect(easePace(20, 21)).toBe(21);
+    expect(easePace(20, 20)).toBe(20);
   });
 
   it('walks on a slant with two keys, as fast overall, so slower along each axis', () => {
@@ -83,6 +113,73 @@ describe('free walking (SPEC 5.2, prototype)', () => {
     const { state, world } = setup(undefined, 'free');
     run(state, world, [{ t: 0, c: 'move', dir: 2 }, { t: BASE_STEP_TICKS * 3, c: 'halt' }], 30);
     expect(state.player.y).toBe(131);
+  });
+});
+
+describe('clicked walks (SPEC 5.2)', () => {
+  /** A stream two tiles wide across the map at rows 132–133, everything seen; a log over it at column `logX`, if any. */
+  function across(logX?: number) {
+    const { state, world } = setup((w) => {
+      for (let x = 0; x < 256; x++) for (const y of [132, 133]) {
+        w.terrain[idx(x, y)] = T.stream;
+        if (x === logX) w.flags[idx(x, y)]! |= FLAG.bridge;
+      }
+    }, 'grid');
+    state.explored.fill(-1);
+    return { state, world };
+  }
+  const path = (s: GameState, w: World, x: number, y: number) => {
+    const seen: string[] = [];
+    step(s, w, [{ t: s.tick, c: 'goto', x, y, onto: true, action: null, at: 'front' }]);
+    seen.push(`${s.player.x},${s.player.y}`);
+    for (let k = 0; k < 2000 && s.player.route; k++) {
+      step(s, w, []);
+      seen.push(`${s.player.x},${s.player.y}`);
+    }
+    return seen;
+  };
+
+  it('goes round by a log a few tiles off the line rather than wading', () => {
+    const { state, world } = across(131);
+    const walked = path(state, world, 128, 136);
+    expect(walked).toContain('131,132');
+    expect(walked.some((t) => t === '128,132' || t === '129,132' || t === '130,132')).toBe(false);
+    expect(state.player.wet).toBe(0);
+  });
+
+  it('wades when the only log is far out of the way', () => {
+    const { state, world } = across(160);
+    const walked = path(state, world, 128, 136);
+    expect(walked).not.toContain('160,132');
+    expect([state.player.x, state.player.y]).toEqual([128, 136]);
+    expect(state.player.wet).toBeGreaterThan(0);
+  });
+
+  it('crosses at gravel shallows, wet to the ankles only', () => {
+    const { state, world } = across();
+    for (const y of [132, 133]) world.flags[idx(131, y)]! |= FLAG.ford;
+    const walked = path(state, world, 128, 136);
+    expect(walked).toContain('131,132');
+    expect(state.player.wet, 'wet to the ankles (drying a little since)').toBeGreaterThan(FORD_WET - 3);
+    expect(state.player.wet).toBeLessThanOrEqual(FORD_WET);
+  });
+
+  it('takes a game trail when it is little out of the way', () => {
+    const { state, world } = setup((w) => {
+      for (let y = 120; y <= 140; y++) w.flags[idx(130, y)]! |= FLAG.trail;
+    }, 'grid');
+    state.explored.fill(-1);
+    const walked = path(state, world, 131, 138);
+    expect(walked.filter((t) => t.startsWith('130,')).length).toBeGreaterThan(5);
+  });
+
+  it('would rather the ground it has seen', () => {
+    const cost = (seen: boolean) => {
+      const { state, world } = setup(undefined, 'grid');
+      state.explored.fill(seen ? -1 : 0);
+      return routeCost(state, world, idx(128, 128), idx(129, 128));
+    };
+    expect(cost(false)).toBeGreaterThan(cost(true));
   });
 });
 

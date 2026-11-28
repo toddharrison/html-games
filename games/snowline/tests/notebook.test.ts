@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { diaryLine, firstPerson } from '../src/content/diary.ts';
-import { FLAG, T } from '../src/content/terrain.ts';
+import { FLAG, T, WATER } from '../src/content/terrain.ts';
 import { notebookMinute, notebookWear } from '../src/sim/notebook.ts';
 import { newGame } from '../src/sim/newGame.ts';
 import { candidate } from '../src/sim/protagonist.ts';
@@ -95,5 +95,24 @@ describe('fallen trees across the streams', () => {
     }
     const nearest = Math.min(...world.bridges.map((b) => Math.hypot(b.x - world.start.x, b.y - world.start.y)));
     expect(nearest).toBeLessThan(40);
+  });
+
+  it('gravel shallows cross the streams in slow water, and fan out where streams meet the lake', () => {
+    const { world } = valley(DEFAULT_SEED);
+    let stream = 0;
+    let lake = 0;
+    for (let i = 0; i < world.size * world.size; i++) {
+      if (!(world.flags[i]! & FLAG.ford)) continue;
+      expect(world.flags[i]! & FLAG.bridge, 'never on a log').toBeFalsy();
+      if (world.terrain[i] === T.shallows) {
+        expect(world.water[i]).toBe(WATER.lake);
+        lake++;
+      } else {
+        expect([T.stream, T.gravel]).toContain(world.terrain[i]);
+        stream++;
+      }
+    }
+    expect(stream).toBeGreaterThan(10);
+    expect(lake).toBeGreaterThan(5);
   });
 });

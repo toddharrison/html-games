@@ -5,7 +5,7 @@
 // labels ("PLANE", "camp", "BEAR!!", "good berries"). A "me" only when they're near somewhere drawn on
 // it. Render only: it reads the state and the world and never feeds back.
 
-import { BAND, F, T, WATER } from '../content/terrain.ts';
+import { BAND, F, FLAG, T, WATER } from '../content/terrain.ts';
 import { PLANTS, REMEDIES } from '../content/decks.ts';
 import { fact, lookName } from '../sim/knowledge.ts';
 import type { GameState } from '../sim/state.ts';
@@ -225,6 +225,11 @@ function icon(g: CanvasRenderingContext2D, kind: string, x: number, y: number, s
       break;
     case 'dam':
       for (let k = -2; k <= 2; k++) ln([[x + k * 3 - 2, y - 4], [x + k * 3 + 2, y + 4]], '#6b5236', 1.4);
+      break;
+    case 'ford':
+      // Stepping stones in a row across the water.
+      for (const [dx, dy] of [[-8, 2], [-3, -1], [2, 1], [7, -2]] as const) dot(dx, dy, 2.2, '#8a8478');
+      ln([[x - 11, y + 5], [x + 11, y + 4]], '#5b84a8', 1.2);
       break;
     case 'log':
       ln([[x - 11, y + 1], [x + 11, y - 1]], '#6b5236', 4);
@@ -549,6 +554,16 @@ export function drawKidMap(g: CanvasRenderingContext2D, state: GameState, world:
     const mx = b.x + (b.dx * (b.len - 1)) / 2;
     const my = b.y + (b.dy * (b.len - 1)) / 2;
     if (seen(Math.round(mx), Math.round(my))) put('log', Math.round(mx), Math.round(my), 'log bridge (stay dry!)', '#6b5236', 14);
+  }
+  // Gravel shallows across the streams, seen: one mark for each crossing (not the lake's fans).
+  const fords: [number, number][] = [];
+  for (let i = 0; i < world.size * world.size; i++) {
+    if (!(world.flags[i]! & FLAG.ford) || world.terrain[i] === T.shallows) continue;
+    const x = i % world.size;
+    const y = Math.floor(i / world.size);
+    if (!seen(x, y) || fords.some(([fx, fy]) => Math.abs(fx - x) + Math.abs(fy - y) <= 6)) continue;
+    fords.push([x, y]);
+    put('ford', x, y, 'shallow crossing', '#5b84a8', 14);
   }
   // Rocks that spark, once a stone from them has.
   const sx = world.sparkOutcrop.x;

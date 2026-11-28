@@ -20,10 +20,10 @@ import type { Animal, GameState, SimEvent, Stash } from './state.ts';
 import { burning } from './surroundings.ts';
 import { clock, daylight } from './time.ts';
 import { idx, inBounds, passableAt, type World } from './world.ts';
+import { DAY } from '../content/balance.ts';
 
 const DX = [0, 1, 0, -1] as const;
 const DY = [-1, 0, 1, 0] as const;
-const DAY = 14400;
 
 export function cheb(ax: number, ay: number, bx: number, by: number): number {
   return Math.max(Math.abs(ax - bx), Math.abs(ay - by));

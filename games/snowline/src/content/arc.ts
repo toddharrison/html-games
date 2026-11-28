@@ -24,6 +24,16 @@ export const WRECK_ITEMS: readonly { k: string; n: number }[] = [
   { k: 'ration-pack', n: 4 },
 ];
 
+/**
+ * What the forward wreck still holds, found one search at a time, in this order (2026-11-27): the tail
+ * has the real supplies, but the cabin isn't empty.
+ */
+export const CRASH_FINDS: readonly { k: string; n: number; text: (w: Who) => string }[] = [
+  { k: 'flight-bag', n: 1, text: (w) => `Wedged behind the seats, ${w.name} found the pilot's canvas flight bag: empty, the strap torn, but it would carry things.` },
+  { k: 'cord', n: 3, text: (w) => `${w.name} pulled a tangle of thin wire from behind the broken panel. It bent, and it held a knot.` },
+  { k: 'metal-scrap', n: 1, text: (w) => `${w.name} worked a strip of bright aluminium loose from the torn skin. It flashed in the light.` },
+];
+
 export const ARC_TEXT = {
   droneFar: () => 'A drone, very faint, somewhere beyond the ridge. An engine.',
   overhead: () => 'An aircraft came low over the valley, searching.',

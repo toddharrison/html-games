@@ -6,7 +6,7 @@ import { DEBRIS } from '../src/content/discoveries.ts';
 import { L, LOOSE } from '../src/content/loose.ts';
 import { F, T, WATER } from '../src/content/terrain.ts';
 import { availableActions } from '../src/sim/actions.ts';
-import { count, give } from '../src/sim/inventory.ts';
+import { count, give, maxSlots } from '../src/sim/inventory.ts';
 import { knowsTechnique } from '../src/sim/knowledge.ts';
 import { looseAt } from '../src/sim/loose.ts';
 import { ALL, periodAt } from '../src/sim/weather.ts';
@@ -14,6 +14,7 @@ import { newGame } from '../src/sim/newGame.ts';
 import { debrisSites } from '../src/sim/notice.ts';
 import { candidate } from '../src/sim/protagonist.ts';
 import { actionsAt } from '../src/sim/reach.ts';
+import { clock } from '../src/sim/time.ts';
 import { dealRules } from '../src/sim/rules.ts';
 import type { Command, GameState } from '../src/sim/state.ts';
 import type { CommandBody } from '../src/platform/session.ts';
@@ -21,9 +22,8 @@ import { step } from '../src/sim/step.ts';
 import { idx, type World } from '../src/sim/world.ts';
 import { runTo, startScenario } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
-import { START_MINUTE } from '../src/content/balance.ts';
+import { DAY, HOUR, MIN, START_MINUTE } from '../src/content/balance.ts';
 
-const MIN = 10;
 
 function setup(edit?: (w: World) => void) {
   const world = flatWorld();
@@ -61,7 +61,7 @@ describe('loose things (SPEC 6.7)', () => {
     run(state, world, [{ c: 'act', action: 'gather-loose', tile: idx(128, 129) }], 200);
     expect(count(state, 'stick')).toBeGreaterThanOrEqual(2);
     expect(looseAt(state, world, idx(128, 129))).toBe(0);
-    state.tick += LOOSE[L.twigs]!.regrow * 14400;
+    state.tick += LOOSE[L.twigs]!.regrow * DAY;
     expect(looseAt(state, world, idx(128, 129))).toBe(L.twigs);
   });
 
@@ -69,18 +69,18 @@ describe('loose things (SPEC 6.7)', () => {
     const { state, world } = setup((w) => (w.loose[idx(128, 129)] = L.stones));
     run(state, world, [{ c: 'act', action: 'gather-loose', tile: idx(128, 129) }], 200);
     expect(count(state, 'stone')).toBeGreaterThanOrEqual(1);
-    state.tick += 60 * 14400;
+    state.tick += 60 * DAY;
     expect(looseAt(state, world, idx(128, 129))).toBe(0);
   });
 
   it('a hard wind brings down fresh twigs before they would come back', () => {
     const { state, world } = setup((w) => (w.loose[idx(128, 129)] = L.twigs));
     run(state, world, [{ c: 'act', action: 'gather-loose', tile: idx(128, 129) }], 200);
-    state.tick += 3 * 600; // hours on, still calm
+    state.tick += 3 * HOUR; // hours on, still calm
     expect(looseAt(state, world, idx(128, 129))).toBe(0);
     state.weather.f[periodAt(state.tick) + 1] = ALL.indexOf('wind');
     expect(looseAt(state, world, idx(128, 129)), 'not before the wind comes').toBe(0);
-    state.tick += 6 * 600;
+    state.tick += 6 * HOUR;
     expect(looseAt(state, world, idx(128, 129))).toBe(L.twigs);
   });
 
@@ -138,6 +138,35 @@ describe('walking somewhere by a click (SPEC 5.2)', () => {
     expect(state.player.route).toBeNull();
   });
 
+  it('a lean-to clicked at bedtime: the survivor walks in and sleeps there; by day, rests there', () => {
+    const { state, world } = setup();
+    const { x, y } = state.player;
+    state.builds.push({ kind: 'lean-to', x: x + 3, y });
+    const day = actionsAt(state, world, x + 3, y);
+    expect(day.map((o) => o.action)).toEqual(['rest-in']);
+    state.tick += DAY - ((state.tick + START_MINUTE * MIN) % DAY) + 20 * HOUR;
+    const night = actionsAt(state, world, x + 3, y).find((o) => o.action === 'sleep-in')!;
+    expect(night).toMatchObject({ at: 'here', onto: true, label: 'Sleep in the lean-to till morning' });
+    run(state, world, [{ c: 'goto', x: x + 3, y, onto: true, action: 'sleep-in', at: 'here' }], 200);
+    expect([state.player.x, state.player.y]).toEqual([x + 3, y]);
+    expect(state.sleep?.awake).toBe(false);
+    expect(clock(state.sleep!.until).hour).toBe(6);
+  });
+
+  it('searching the forward wreck finds the flight bag, wire, and aluminium, then nothing', () => {
+    const { state, world } = setup();
+    const { x, y } = state.player;
+    world.feature[idx(x + 1, y)] = F.crash;
+    state.player.facing = 1;
+    const slots = maxSlots(state);
+    for (const k of ['flight-bag', 'cord', 'metal-scrap']) {
+      run(state, world, [{ c: 'act', action: 'search-crash', tile: idx(x + 1, y) }], 25 * MIN);
+      expect(state.inventory.some((i) => i.k === k)).toBe(true);
+    }
+    expect(maxSlots(state), 'the bag carries like a basket').toBeGreaterThan(slots);
+    expect(actionsAt(state, world, x + 1, y).find((o) => o.action === 'search-crash')?.spent).toBe('nothing more to take');
+  });
+
   it('a click offers what the keyboard would, once there', () => {
     const { state, world } = setup((w) => (w.loose[idx(134, 131)] = L.grass));
     expect(actionsAt(state, world, 134, 131).map((o) => o.action)).toEqual(['gather-loose']);
@@ -177,13 +206,22 @@ describe('trout in the water (SPEC 7.4)', () => {
     expect(spooked).toBe(true);
   });
 
+  it('are watched by clicking a trout, not the ground the survivor stands on', () => {
+    const { state, world } = setup(stream);
+    state.player.y = state.player.fromY = 131;
+    state.fish = [{ id: 1, x: 129, y: 132, hx: 129, hy: 132, t: 1e6, spook: 0 }];
+    state.tick += DAY - ((state.tick + START_MINUTE * MIN) % DAY) + 12 * HOUR;
+    expect(actionsAt(state, world, 128, 131).map((o) => o.action)).not.toContain('watch-fish');
+    expect(actionsAt(state, world, 129, 132).map((o) => o.action)).toContain('watch-fish');
+  });
+
   it('watching them long enough teaches to aim low, without a single miss', () => {
     const { state, world } = setup(stream);
     state.player.y = state.player.fromY = 131;
     for (let k = 0; k < 3; k++) {
       state.fish = [{ id: k + 1, x: 129, y: 132, hx: 129, hy: 132, t: 1e6, spook: 0 }];
-      state.tick += 14400 - ((state.tick + START_MINUTE * 10) % 14400) + 12 * 600;
-      run(state, world, [{ c: 'act', action: 'watch-fish', tile: idx(128, 131) }], 200);
+      state.tick += DAY - ((state.tick + START_MINUTE * MIN) % DAY) + 12 * HOUR;
+      run(state, world, [{ c: 'act', action: 'watch-fish', tile: idx(128, 131) }], 20 * MIN);
     }
     expect(knowsTechnique(state, 'aim-low')).toBe(true);
     expect(state.memory['fish-miss'] ?? 0).toBe(0);

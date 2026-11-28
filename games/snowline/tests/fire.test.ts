@@ -6,7 +6,7 @@ import { availableActions } from '../src/sim/actions.ts';
 import { sleepQuality } from '../src/sim/body.ts';
 import { buildDef, buildSiteProblem, craftOptions, makeBook } from '../src/sim/craft.ts';
 import { fireSiteProblem, layAt, layParts, layReady, strikeSnag } from '../src/sim/fire.ts';
-import { SUPPLY } from '../src/content/balance.ts';
+import { DAY, MIN, SUPPLY } from '../src/content/balance.ts';
 import { count, give } from '../src/sim/inventory.ts';
 import { fact, knowsTechnique } from '../src/sim/knowledge.ts';
 import { newGame } from '../src/sim/newGame.ts';
@@ -19,7 +19,6 @@ import { L } from '../src/content/loose.ts';
 import { runTo } from '../src/tools/runner.ts';
 import { calm, flatWorld } from './sample.ts';
 
-const MIN = 10;
 const FRONT = idx(128, 129);
 const HERE = idx(128, 128);
 
@@ -163,6 +162,22 @@ describe('fire by sparks', () => {
     for (let k = 0; k < 6 && count(state, 'tinder') > 0; k++) tryLight(state, world, 'sparks');
     expect(state.fires).toHaveLength(0);
     expect(fact(state, 'tinder', 0)).toMatchObject({ level: 'known', value: 'fails' });
+    // Each failure's clue comes once, then a surer one, then no more: this tinder is no good.
+    expect(state.memory['thought:clue:dudTinder']).toBe(2);
+    expect(state.log.some((l) => l.text.includes('I need a different kind of tinder'))).toBe(true);
+  });
+
+  it('a tinder that can catch but did not: the clue works toward a tinder nest, then says try again', () => {
+    const { state, world } = sparksReady('catches');
+    state.rules.tinders[0] = 'slow';
+    state.known.techniques = state.known.techniques.filter((t) => t !== 'tinder-nest');
+    give(state, 'tinder', 30, 0);
+    for (let k = 0; k < 40 && !knowsTechnique(state, 'tinder-nest'); k++) {
+      tryLight(state, world, 'sparks');
+      state.fires = []; // lit: put it out and try again, for the next failure
+    }
+    expect(state.memory['thought:clue:nest']).toBe(2);
+    expect(knowsTechnique(state, 'tinder-nest'), 'thinking it through twice is the insight').toBe(true);
   });
 
   it('is offered on a laid fire only once the kid knows of sparks, greyed out with why until a spark-stone is carried', () => {
@@ -188,6 +203,7 @@ describe('fire by sparks', () => {
     act(state, world, 'fire-sparks', FRONT);
     expect(state.fires, 'sticks alone will not take a spark').toHaveLength(0);
     expect(knowsTechnique(state, 'tinder-nest')).toBe(true);
+    expect(state.memory['thought:clue:noTinder'], 'and the kid thinks what to try').toBe(1);
     act(state, world, 'unlay-fire', FRONT);
     // Tinder and nothing to catch from it: it flares and is gone.
     state.inventory = state.inventory.filter((i) => i.k !== 'stick');
@@ -200,6 +216,7 @@ describe('fire by sparks', () => {
     }
     expect(state.fires).toHaveLength(0);
     expect(knowsTechnique(state, 'kindling')).toBe(true);
+    expect(state.memory['thought:clue:flaredOut']).toBe(1);
   });
 });
 
@@ -356,7 +373,7 @@ describe('the tool chain (SPEC 8.2)', () => {
     expect(offer('bark').spent).toBe('already stripped');
     expect(offer('tinder-bark').spent).toBe('already stripped');
     expect(offer('cut-wood').spent).toBeUndefined();
-    state.tick += 60 * 14400;
+    state.tick += 60 * DAY;
     expect(offer('bark').spent, 'bark does not grow back in a run').toBe('already stripped');
     step(state, world, [{ t: state.tick, c: 'act', action: 'bark', tile: FRONT }]);
     expect(state.task, 'stripped bark takes no time').toBeNull();
